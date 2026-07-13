@@ -1,0 +1,8 @@
+{
+  "name": "playbook",
+  "description": "Generic engineering workflows: adversarial review (/dg), structured debugging (/diagnose), worktree branching (/feature-start), pre-merge checks, and guarded commits.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Murali Kavassery"
+  }
+}

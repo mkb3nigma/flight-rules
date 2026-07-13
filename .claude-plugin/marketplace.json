@@ -1,0 +1,13 @@
+{
+  "name": "dev-playbook",
+  "owner": {
+    "name": "Murali Kavassery"
+  },
+  "plugins": [
+    {
+      "name": "playbook",
+      "source": "./",
+      "description": "Generic engineering workflows: adversarial review (/dg), structured debugging (/diagnose), worktree branching (/feature-start), pre-merge checks, and guarded commits."
+    }
+  ]
+}
