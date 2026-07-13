@@ -49,3 +49,13 @@ Skills refer to placeholders rather than hardcoding a project's setup:
 | `{TEST_COMMANDS}` | the project's suites | `pytest` / `npm run test:run` |
 
 A project defines these once in its own rules file; skills read them from there.
+
+## Credits & license
+
+MIT for original content (see `LICENSE`). Two pieces are adaptations of other people's
+work and carry their upstream licenses — the `dg` skill (from
+[v1r3n/dinesh-gilfoyle](https://github.com/v1r3n/dinesh-gilfoyle), Apache-2.0) and the
+engineering principles (from
+[multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills),
+MIT, after Andrej Karpathy's observations). Details and modification notes:
+[ATTRIBUTIONS.md](ATTRIBUTIONS.md).
