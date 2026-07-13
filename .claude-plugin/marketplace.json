@@ -1,13 +1,13 @@
 {
-  "name": "dev-playbook",
+  "name": "flight-rules",
   "owner": {
     "name": "Murali Kavassery"
   },
   "plugins": [
     {
-      "name": "playbook",
+      "name": "flight-rules",
       "source": "./",
-      "description": "Generic engineering workflows: adversarial review (/dg), structured debugging (/diagnose), worktree branching (/feature-start), pre-merge checks, and guarded commits."
+      "description": "Generic engineering workflows: adversarial review (/dg), structured debugging (/diagnose), worktree branching (/feature-start), pre-merge checks, guarded commits, and docs linting."
     }
   ]
 }

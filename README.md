@@ -1,8 +1,12 @@
-# dev-playbook
+# flight-rules
 
 Generic, project-agnostic engineering rules and AI workflows, distilled from real
-projects (first: AppliHawk). One source of truth — projects consume this repo instead
-of maintaining drifting copies.
+projects (first: [AppliHawk](https://applihawk.com)). One source of truth — projects
+consume this repo instead of maintaining drifting copies.
+
+The name is borrowed from NASA's *flight rules* — the accumulated, written-down
+procedures for every situation a mission has already encountered, so nobody improvises
+a known problem twice.
 
 Everything here is **plain Markdown and tool-agnostic**: the same files work with
 Claude Code, Cursor, Windsurf, Codex, or any assistant that reads Markdown context.
@@ -20,14 +24,14 @@ skills/    Invocable workflows (/dg, /diagnose, /feature-start, /pre-merge-check
 
 **Claude Code (skills, native):**
 ```
-/plugin marketplace add <you>/dev-playbook     # or the local clone path
-/plugin install playbook@dev-playbook
+/plugin marketplace add mkb3nigma/flight-rules     # or the local clone path
+/plugin install flight-rules@flight-rules
 ```
 
 **Any AI tool (rules, by pointer):** add one line to the project's rules entry point
 (CLAUDE.md, .cursorrules, `.ai/master-rules.md`, …):
 
-> Generic engineering rules: read `~/Projects/dev-playbook/rules/` (or the repo URL).
+> Generic engineering rules: read `~/Projects/flight-rules/rules/` (or the repo URL).
 > Project rules extend and override them.
 
 ## Project-specific extensions
