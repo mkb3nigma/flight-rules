@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# post-merge hook — cleanup reminder after merging into the integration branch.
+#   1. Flags worktrees whose branch is now merged (stale — remove them)
+#   2. Lists merged branches safe to delete
+#   3. Writes a note file the next AI session picks up as context
+#   4. (Optional, off by default) clears the AI assistant's stored conversation
+#      context for this project so the next session starts fresh
+#
+# Adapt the parameters below, commit into the repo, install via install.sh.
+
+INTEGRATION_BRANCH='dev'            # project parameter: {INTEGRATION_BRANCH}
+NOTE_PATH='.claude/post-merge-note.md'  # where the next-session note is written
+CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
+                                           # files for this project (keeps memory/).
+                                           # Read the block below before enabling.
+
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+[[ "$CURRENT_BRANCH" != "$INTEGRATION_BRANCH" ]] && exit 0
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+NOTE_FILE="$REPO_ROOT/$NOTE_PATH"
+
+# Parse merged branch from merge commit message
+MERGE_MSG=$(git log -1 --pretty=%s HEAD 2>/dev/null)
+MERGED_BRANCH=$(echo "$MERGE_MSG" | grep -oP "(?<=Merge branch ').*?(?='( into|$))" 2>/dev/null || echo "")
+[[ -z "$MERGED_BRANCH" ]] && MERGED_BRANCH=$(echo "$MERGE_MSG" | grep -oP "(?<=Merge ).*?(?= into)" 2>/dev/null || echo "unknown")
+
+# All branches already merged into the integration branch
+ALL_MERGED=$(git branch --merged "$INTEGRATION_BRANCH" 2>/dev/null \
+  | grep -vE "^\*|^\s*(main|staging|$INTEGRATION_BRANCH)$" \
+  | sed 's/^[[:space:]]*//' \
+  | grep -v '^$')
+
+JUST_MERGED="$MERGED_BRANCH"
+PREVIOUSLY_MERGED=$(echo "$ALL_MERGED" | grep -vF "$JUST_MERGED" || true)
+
+# Worktrees whose branch is in the merged list
+STALE_WORKTREES=()
+while IFS= read -r line; do
+  wt_path=$(echo "$line" | awk '/^worktree /{print substr($0,10)}')
+  [[ -z "$wt_path" || "$wt_path" == "$REPO_ROOT" ]] && continue
+  [[ ! -d "$wt_path" ]] && continue
+  wt_branch=$(git -C "$wt_path" branch --show-current 2>/dev/null || echo "")
+  if echo "$ALL_MERGED" | grep -qF "$wt_branch" 2>/dev/null; then
+    STALE_WORKTREES+=("$wt_path")
+  fi
+done < <(git worktree list --porcelain 2>/dev/null)
+
+# --- Optional: clear Claude Code conversation context (keeps memory/) ---
+# Deletes conversation .jsonl files + their artifact dirs for THIS project under
+# ~/.claude/projects/. Guards: skips files touched in the last 5 minutes (active
+# session) and never touches memory/. Useful when your flow is "one branch, one
+# session"; leave off if you keep long-running sessions across merges.
+CLEARED_COUNT=0
+if [[ "$CLEAR_AI_CONTEXT" == "1" ]]; then
+  ENCODED_PATH=$(echo "$REPO_ROOT" | sed 's|/|-|g')
+  CLAUDE_PROJECT_DIR="$HOME/.claude/projects/$ENCODED_PATH"
+  if [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
+    while IFS= read -r f; do
+      rm -f "$f" && (( CLEARED_COUNT++ )) || true
+    done < <(find "$CLAUDE_PROJECT_DIR" -maxdepth 1 -name "*.jsonl" -mmin +5 2>/dev/null)
+    while IFS= read -r d; do
+      basename_d=$(basename "$d")
+      [[ "$basename_d" == "memory" ]] && continue
+      if [[ "$basename_d" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+        if [[ ! -f "$CLAUDE_PROJECT_DIR/$basename_d.jsonl" ]]; then
+          rm -rf "$d" && (( CLEARED_COUNT++ )) || true
+        fi
+      fi
+    done < <(find "$CLAUDE_PROJECT_DIR" -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
+  fi
+fi
+
+# --- Write note file ---
+mkdir -p "$(dirname "$NOTE_FILE")"
+{
+  echo "## Post-merge to $INTEGRATION_BRANCH: \`$MERGED_BRANCH\`"
+  echo ""
+
+  if [[ ${#STALE_WORKTREES[@]} -gt 0 ]]; then
+    echo "### ⚠ Worktrees still present (remove after confirming work is merged):"
+    for wt in "${STALE_WORKTREES[@]}"; do
+      rel="${wt#$REPO_ROOT/}"
+      wt_branch=$(git -C "$wt" branch --show-current 2>/dev/null || echo "?")
+      echo "  Branch: $wt_branch  →  $rel"
+      echo "  git worktree remove $rel"
+    done
+  else
+    echo "### Worktrees: none stale ✓"
+  fi
+
+  echo ""
+
+  if [[ -n "$ALL_MERGED" ]]; then
+    echo "### ⚠ Branches merged into $INTEGRATION_BRANCH (safe to delete):"
+    if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]]; then
+      echo "  git branch -d $JUST_MERGED  ← just merged"
+    fi
+    if [[ -n "$PREVIOUSLY_MERGED" ]]; then
+      echo "  (previously merged, not yet deleted:)"
+      while IFS= read -r branch; do
+        [[ -n "$branch" ]] && echo "  git branch -d $branch"
+      done <<< "$PREVIOUSLY_MERGED"
+    fi
+  else
+    echo "### Branches: none to delete ✓"
+  fi
+} > "$NOTE_FILE"
+
+echo ""
+if [[ "$CLEAR_AI_CONTEXT" == "1" ]]; then
+  echo "✅ post-merge: context cleared ($CLEARED_COUNT items), cleanup note written to $NOTE_PATH."
+else
+  echo "✅ post-merge: cleanup note written to $NOTE_PATH."
+fi
+exit 0
