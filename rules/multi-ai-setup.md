@@ -26,7 +26,20 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    quick-reference table. Content lives in `.ai/`, never in the pointers.
 2. **Skills are plain Markdown** — invocation, numbered process, output format. Any
    assistant that reads Markdown can execute them; Claude Code additionally loads them
-   as slash commands (directly or via a plugin).
+   as slash commands (directly or via a plugin). Project-local registration is a thin
+   pointer file per skill in `.claude/commands/` — frontmatter plus one line:
+
+   ```markdown
+   ---
+   description: One-line summary shown in the command picker.
+   argument-hint: "<what to pass>"
+   ---
+
+   Read and follow `.ai/skills/<name>/SKILL.md`. Arguments: $ARGUMENTS
+   ```
+
+   The pointer may also pin a model (`model: opus`) for expensive skills. Logic never
+   goes in the pointer — same rule as the root pointer files.
 3. **Tiered reading** — mark rules by tier (essential / patterns / reference) so
    assistants stop reading when the current tier suffices; context is a budget.
 4. **Two-layer rules** — generic rules live in a shared playbook repo (this one);
