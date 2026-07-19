@@ -33,8 +33,15 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    ```bash
    ln -s "$PWD/<path>/.env" {WORKTREE_DIR}/<slug>/<path>/.env
    ```
-   Skip with a warning if the source file is missing. If the project has heavyweight
-   untracked dirs (venv, node_modules), symlink them the same way when a task needs them.
+   Skip with a warning if the source file is missing. This step is required even when
+   a worktree was created with a raw `git worktree add` instead of this skill — a
+   worktree running without its env files fails in confusing ways (missing keys,
+   stale service URLs).
+
+   Heavyweight untracked dirs are NOT all symlink-safe: interpreter venvs generally
+   tolerate a symlink, but **do not symlink `node_modules`** — dev tools that resolve
+   real paths (e.g. the Vite dev server) break through the link. Run a fresh
+   `npm ci` in the worktree instead.
 7. **Confirm** — print the worktree path, the `cd` command, and the reminder:
    "Work only in this directory. ONE purpose per branch." If the repo ships git hooks
    and `core.hooksPath` isn't set, print the one-time install command.

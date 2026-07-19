@@ -39,6 +39,18 @@ AI shell sessions reset or drift their working directory between commands. Two r
 - Never run `git merge` from inside a feature worktree — it merges into the feature
   branch, not the integration branch. Merge from the main checkout, verified with
   `git branch --show-current` in the same command.
+- Run the worktree commit and the integration-branch merge as **separate commands** —
+  a compound command that commits in one directory and merges in another is exactly
+  how the wrong branch gets merged.
+
+## The merge-collision trap
+
+`git merge` refuses to proceed when a file tracked on the incoming branch also exists
+in the main checkout as an untracked or locally-modified copy (common when a parallel
+tool or a manual edit produced the same file in both places). Never blind-delete the
+local copy: first `diff` it against the branch's version. Byte-identical → remove the
+local copy (`rm` untracked / `git checkout -- <file>` modified) and merge. Different →
+stop and reconcile; one of the two versions holds work that would be lost.
 
 ## Merge flow
 
@@ -52,7 +64,8 @@ feature/* → {INTEGRATION_BRANCH} → (staging) → main
 
 ## Enforcement (optional but recommended)
 
-Commit the hooks into the repo (e.g. `.ai/hooks/`) and point git at them once per clone:
+Ready-made templates for all of the below live in this repo's `hooks/` directory.
+Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
 
 - `pre-merge-commit` — blocks merges into `{PROTECTED_BRANCHES}` unless the pre-merge
   check stamped a passing git note (`refs/notes/pre-merge-check`) on the incoming HEAD

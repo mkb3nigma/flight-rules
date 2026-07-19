@@ -20,25 +20,32 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
 1. **Backend/primary test suite** — run it; show the summary line.
 2. **Frontend/secondary test suite** — if the project has one.
 3. **E2E suite** — if the project has one and the branch touches runtime behavior.
-   Skipping (docs-only branch, known-baseline failures) must be reported explicitly,
-   never silent.
+   Two worktree traps: the servers under test must serve the **branch's** code
+   (long-running dev servers usually serve the main checkout, not the worktree), and
+   non-idempotent seeded fixtures must be reseeded first. Skipping is allowed for a
+   docs-only branch or known-baseline failures, but must be reported as
+   `WAIVED: <reason>` — never silent.
 4. **Type check** — e.g. `tsc --noEmit`, `mypy`; show errors in full.
-5. **Secrets scan** — grep the diff for cloud keys (`AKIA[A-Z0-9]{16}`), API-key
+5. **Lint check (error level)** — e.g. `eslint`, `ruff check`. Type checkers do not
+    catch lint findings, so an ungated linter's error debt silently creeps back
+    between cleanups. Gate only suites the project keeps at zero errors; report
+    known-debt suites explicitly instead of failing on them.
+6. **Secrets scan** — grep the diff for cloud keys (`AKIA[A-Z0-9]{16}`), API-key
    literals (`sk-[a-zA-Z0-9]{32,}`), private-key headers, and hardcoded
    `password/secret/token/api_key = "<literal>"`. ❌ on any hit (redact values).
-6. **Debug-logging check** — new `console.log` / stray print/debug lines: ⚠️ warn.
-7. **Conventional commits** — every commit on the branch starts with an allowed prefix.
-8. **Single-purpose scope** — commits describe one coherent concern; ⚠️ if clearly not.
-9. **Merge-conflict markers** — none added in the diff.
-10. **Dependency audits** — `npm audit --audit-level=high` / `pip-audit` (or the
+7. **Debug-logging check** — new `console.log` / stray print/debug lines: ⚠️ warn.
+8. **Conventional commits** — every commit on the branch starts with an allowed prefix.
+9. **Single-purpose scope** — commits describe one coherent concern; ⚠️ if clearly not.
+10. **Merge-conflict markers** — none added in the diff.
+11. **Dependency audits** — `npm audit --audit-level=high` / `pip-audit` (or the
     ecosystem's equivalent). ❌ on new high/critical introduced by this branch;
     ⚠️ + explicit note for pre-existing findings on the destination.
-11. **No untracked env/secret files** staged or appearing.
-12. **Tests accompany source changes** — source files changed without a test change:
+12. **No untracked env/secret files** staged or appearing.
+13. **Tests accompany source changes** — source files changed without a test change:
     ⚠️ list them.
-13. **Migrations present if models/schema changed** — ⚠️ if not.
-14. **New TODO/FIXME/HACK** — ⚠️ list; resolve or track before merge.
-15. **Commit-count sanity** — ⚠️ above ~20 commits: consider splitting.
+14. **Migrations present if models/schema changed** — ⚠️ if not.
+15. **New TODO/FIXME/HACK** — ⚠️ list; resolve or track before merge.
+16. **Commit-count sanity** — ⚠️ above ~20 commits: consider splitting.
 
 ## Report
 

@@ -17,8 +17,15 @@ A thin Claude Code plugin wrapper is included so Claude installs the skills nati
 ```
 rules/     Always-on principles a project's CLAUDE.md / .cursorrules should point at
 skills/    Invocable workflows (/dg, /diagnose, /feature-start, /pre-merge-check, /commit)
+hooks/     Enforcement templates — git merge-gate hooks + agent commit/secret guards
 .claude-plugin/   Claude Code marketplace + plugin manifests
 ```
+
+The skills say what the workflow is; the hooks make it non-optional. `hooks/git/`
+blocks merges into protected branches without a stamped passing pre-merge check, and
+`hooks/agent/` stops the assistant from committing on a protected branch or with
+secrets staged. They are copy-into-project templates (each project sets its own
+branch names) — see `hooks/README.md`.
 
 ## Consuming from a project
 

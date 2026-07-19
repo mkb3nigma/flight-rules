@@ -10,7 +10,8 @@ every assistant reaches them through a small pointer file.
 .ai/
 ├── master-rules.md          # The project's rules (tech stack, patterns, workflow)
 ├── rules/                   # Focused rule files (security, testing, …)
-└── skills/                  # Reusable AI workflows (plain Markdown, tool-agnostic)
+├── skills/                  # Reusable AI workflows (plain Markdown, tool-agnostic)
+└── hooks/                   # Git hooks (core.hooksPath) + agent/ hook scripts
 
 Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 ├── CLAUDE.md                        # Claude Code
@@ -34,3 +35,10 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 5. **Local extensions pattern** — a project extending a shared skill keeps the shared
    body verbatim and appends a clearly marked `## <Project> Extensions` section that
    is never synced upstream.
+6. **Hook logic lives in `.ai/hooks/`, not in a tool's config dir** — git hooks are
+   already tool-agnostic (`git config core.hooksPath .ai/hooks`); assistant-event hook
+   *scripts* (commit guards, session banners) go in `.ai/hooks/agent/`, and each
+   tool's own config (e.g. `.claude/settings.json` or a `.claude/hooks/*` shim) is a
+   thin pointer that just `exec`s them. Caveat: the scripts consume each tool's hook
+   I/O protocol (Claude Code: JSON on stdin, structured deny output), so a second
+   tool needs a small adapter — but the guard logic stays in one place.
