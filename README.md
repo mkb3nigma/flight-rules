@@ -109,7 +109,7 @@ its own rules file. **Generic changes flow here; project flavor stays in the pro
 
 Skills refer to placeholders rather than hardcoding a project's setup:
 
-| Placeholder | Meaning | AppliHawk example |
+| Placeholder | Meaning | Example |
 |---|---|---|
 | `{PROTECTED_BRANCHES}` | branches that never take direct commits | `main`, `staging`, `dev` |
 | `{INTEGRATION_BRANCH}` | where feature branches merge | `dev` |
