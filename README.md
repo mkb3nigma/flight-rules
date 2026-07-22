@@ -12,8 +12,9 @@ procedures for every situation a mission has already encountered, so nobody impr
 a known problem twice.
 
 Everything here is **plain Markdown and tool-agnostic**: the same files work with
-Claude Code, Cursor, Windsurf, Codex, or any assistant that reads Markdown context.
-A thin Claude Code plugin wrapper is included so Claude installs the skills natively.
+Claude Code, Cursor, Codex, Copilot, Antigravity, or any assistant that reads Markdown
+context. A thin Claude Code plugin wrapper is included so Claude installs the skills
+natively.
 
 ## How it flows
 
@@ -93,7 +94,7 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 **Or just point your assistant at it.** No clone, plugin, or marketplace required — give
 your assistant the repo link and ask it to incorporate the rules, or point your project's
 rules file at the URL. The Claude Code plugin is a convenience wrapper, not a dependency;
-a native plugin for other assistants (Cursor, Windsurf, …) can follow if there's demand.
+a native plugin for other assistants (Cursor, Copilot, Antigravity, …) can follow if there's demand.
 However you adopt it, keep the attribution — the MIT licence simply asks that the
 copyright and licence notice travel with the content ([LICENSE](LICENSE),
 [ATTRIBUTIONS.md](ATTRIBUTIONS.md)).
@@ -121,7 +122,7 @@ A project defines these once in its own rules file; skills read them from there.
 ## Design notes
 
 - **Tool-agnostic by default.** Plain Markdown, so the same rules work in Claude Code,
-  Cursor, Windsurf, or Codex — no lock-in to one assistant.
+  Cursor, Codex, or Copilot — no lock-in to one assistant.
 - **Enforcement, not etiquette.** The workflows ship with git hooks that *block* the
   mistake — merging without a passing check, committing on a protected branch or with
   secrets staged — instead of trusting everyone to remember.
