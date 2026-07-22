@@ -22,11 +22,29 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 2. **Check stashes** — `git stash list`; if any exist, list them and ask whether to
    proceed or resolve first.
 3. **Validate the branch name** — ask if not provided; verify the prefix.
-4. **Update the base** — `git fetch origin {INTEGRATION_BRANCH}` and report whether the
-   local base is behind.
-5. **Create the worktree** (from the repo root, absolute paths):
+4. **Sync the base from origin — non-negotiable.**
+   - `git fetch origin` first, **always**. New branches derive from
+     **`origin/{INTEGRATION_BRANCH}`** (the true remote state) — never a local copy
+     that may be behind. Branching off a stale local base is the exact way work gets
+     built on the wrong foundation.
+   - **Reconcile `main` into the integration branch** — only when
+     `{INTEGRATION_BRANCH}` differs from `main`. A hotfix or change applied straight
+     to `main` is not on the integration branch, so a branch built off it silently
+     misses it. Check:
+     ```bash
+     git log --oneline origin/{INTEGRATION_BRANCH}..origin/main
+     ```
+     If non-empty, bring it back BEFORE branching:
+     ```bash
+     git checkout {INTEGRATION_BRANCH} && git merge --ff-only origin/main \
+       && git push origin {INTEGRATION_BRANCH}
+     ```
+     (a clean non-fast-forward merge is fine too). If it will **not** merge cleanly,
+     STOP and **warn** — do not branch off a divergent base; the reconcile needs a
+     human decision.
+5. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
    ```bash
-   git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> {INTEGRATION_BRANCH}
+   git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> origin/{INTEGRATION_BRANCH}
    ```
 6. **Symlink untracked env files** from the main checkout (symlinks, not copies —
    copies go stale):
