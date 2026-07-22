@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# pre-merge-commit hook — the merge gate.
+# Blocks merges into protected branches unless the pre-merge-check skill stamped a
+# passing git note (refs/notes/pre-merge-check) on the incoming commit.
+#
+# Adapt PROTECTED_RE to the project, commit this file into the repo (e.g. .ai/hooks/),
+# then run install.sh once per clone.
+#
+# Bypass (breaks the rules — emergencies only):  git merge --no-verify
+
+set -euo pipefail
+
+PROTECTED_RE='^main$'   # project parameter: {PROTECTED_BRANCHES}
+
+CURRENT_BRANCH=$(git branch --show-current)
+
+# Only enforce on protected branches
+if [[ ! "$CURRENT_BRANCH" =~ $PROTECTED_RE ]]; then
+    exit 0
+fi
+
+# Locate MERGE_HEAD — path differs between main worktree and supplementary worktrees
+GIT_DIR=$(git rev-parse --git-dir)
+MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
+
+if [ ! -f "$MERGE_HEAD_FILE" ]; then
+    # Not a merge commit (e.g. fast-forward or rebase) — nothing to check.
+    # install.sh sets merge.ff=false so real merges always come through here.
+    exit 0
+fi
+
+MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
+MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
+
+# Look for the pre-merge-check note on the incoming commit
+NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
+
+if echo "$NOTE" | grep -q "^passed:"; then
+    echo "✅ Pre-merge check verified for $MERGE_BRANCH → $CURRENT_BRANCH"
+    exit 0
+fi
+
+echo ""
+echo "❌  PRE-MERGE CHECK REQUIRED"
+echo "    Merging: $MERGE_BRANCH"
+echo "    Into:    $CURRENT_BRANCH"
+echo ""
+echo "    Run the pre-merge-check skill in the feature worktree first. When all"
+echo "    checks pass it stamps a git note on the commit so this hook lets the"
+echo "    merge through."
+echo ""
+echo "    To bypass (emergencies only):  git merge --no-verify"
+echo ""
+exit 1

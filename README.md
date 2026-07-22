@@ -125,7 +125,8 @@ A project defines these once in its own rules file; skills read them from there.
   Cursor, Codex, or Copilot — no lock-in to one assistant.
 - **Enforcement, not etiquette.** The workflows ship with git hooks that *block* the
   mistake — merging without a passing check, committing on a protected branch or with
-  secrets staged — instead of trusting everyone to remember.
+  secrets staged — instead of trusting everyone to remember. This repo runs those hooks
+  on itself (`.ai/hooks/`): the rules repo obeys its own rules.
 - **One source of truth.** Projects consume the playbook and reconcile with `/rules-sync`
   rather than copy-pasting rules that silently drift apart.
 - **Provenance as a system.** Each adaptation is pinned to an upstream ref and re-checked
