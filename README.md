@@ -16,9 +16,10 @@ A thin Claude Code plugin wrapper is included so Claude installs the skills nati
 
 ```
 rules/     Always-on principles a project's CLAUDE.md / .cursorrules should point at
-skills/    Invocable workflows (/dg, /diagnose, /feature-start, /pre-merge-check, /pr-create, /commit)
+skills/    Invocable workflows (/dg, /diagnose, /feature-start, /pre-merge-check, /pr-create, /commit, /rules-sync, /upstream-check)
 hooks/     Enforcement templates — git merge-gate hooks + agent commit/secret guards
 .claude-plugin/   Claude Code marketplace + plugin manifests
+UPSTREAMS.md      Sources this playbook adapts from + last-synced refs (see /upstream-check)
 ```
 
 The skills say what the workflow is; the hooks make it non-optional. `hooks/git/`

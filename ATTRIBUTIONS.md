@@ -4,6 +4,10 @@ This playbook stands on other people's work. Original content here is MIT-licens
 (see LICENSE); the portions below are adaptations of third-party works and remain
 subject to their upstream licenses.
 
+The **sync state** for these sources — which upstream ref each adaptation was last
+reviewed against — is tracked in [UPSTREAMS.md](UPSTREAMS.md); run `/upstream-check`
+to see what has moved since.
+
 ## skills/dg/ — adversarial review
 
 Derived from **[dinesh-gilfoyle](https://github.com/v1r3n/dinesh-gilfoyle)** by
