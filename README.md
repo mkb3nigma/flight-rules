@@ -23,8 +23,9 @@ One hub, two directions. Improvements from the sources this playbook adapts flow
 reconciled via `/rules-sync`) — so nobody maintains a drifting copy.
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph sources["Upstream sources"]
+        direction LR
         S1["dinesh-gilfoyle"]
         S2["karpathy-skills"]
         S3["depshield-mcp"]
