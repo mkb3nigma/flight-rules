@@ -20,6 +20,21 @@ CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 REPO_ROOT=$(git rev-parse --show-toplevel)
 NOTE_FILE="$REPO_ROOT/$NOTE_PATH"
 
+# A "feature completed — start fresh" event is only a topic branch actually merged
+# IN: a merge commit whose second parent is NOT main's tip. Skip fast-forwards (no
+# merge commit) and back-merges of main into the integration branch (routine
+# reconcile/maintenance) — those must not clear the assistant's context.
+_merged_in=$(git rev-parse -q --verify 'HEAD^2' 2>/dev/null || echo "")
+is_feature_merge() {
+  [[ -z "$_merged_in" ]] && return 1            # fast-forward / not a merge commit
+  local ref ref_sha
+  for ref in main origin/main; do
+    ref_sha=$(git rev-parse -q --verify "$ref" 2>/dev/null) || continue
+    [[ "$_merged_in" == "$ref_sha" ]] && return 1   # merged-in commit IS main's tip → back-merge
+  done
+  return 0
+}
+
 # Parse merged branch from merge commit message
 MERGE_MSG=$(git log -1 --pretty=%s HEAD 2>/dev/null)
 MERGED_BRANCH=$(echo "$MERGE_MSG" | grep -oP "(?<=Merge branch ').*?(?='( into|$))" 2>/dev/null || echo "")
@@ -52,7 +67,7 @@ done < <(git worktree list --porcelain 2>/dev/null)
 # session) and never touches memory/. Useful when your flow is "one branch, one
 # session"; leave off if you keep long-running sessions across merges.
 CLEARED_COUNT=0
-if [[ "$CLEAR_AI_CONTEXT" == "1" ]]; then
+if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
   ENCODED_PATH=$(echo "$REPO_ROOT" | sed 's|/|-|g')
   CLAUDE_PROJECT_DIR="$HOME/.claude/projects/$ENCODED_PATH"
   if [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
@@ -108,7 +123,7 @@ mkdir -p "$(dirname "$NOTE_FILE")"
 } > "$NOTE_FILE"
 
 echo ""
-if [[ "$CLEAR_AI_CONTEXT" == "1" ]]; then
+if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
   echo "✅ post-merge: context cleared ($CLEARED_COUNT items), cleanup note written to $NOTE_PATH."
 else
   echo "✅ post-merge: cleanup note written to $NOTE_PATH."
