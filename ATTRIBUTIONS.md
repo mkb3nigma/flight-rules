@@ -4,6 +4,10 @@ This playbook stands on other people's work. Original content here is MIT-licens
 (see LICENSE); the portions below are adaptations of third-party works and remain
 subject to their upstream licenses.
 
+The **sync state** for these sources — which upstream ref each adaptation was last
+reviewed against — is tracked in [UPSTREAMS.md](UPSTREAMS.md); run `/upstream-check`
+to see what has moved since.
+
 ## skills/dg/ — adversarial review
 
 Derived from **[dinesh-gilfoyle](https://github.com/v1r3n/dinesh-gilfoyle)** by
@@ -31,6 +35,15 @@ The lint operation is inspired by the *lint* step of **Andrej Karpathy's**
 [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern.
 The skill text is original; the idea that knowledge bases need periodic
 contradiction/staleness checks by the LLM that maintains them is his.
+
+## rules/dependency-lockfile.md — "before a new dependency" section — concept credit
+
+The agent-aware pre-install checkpoint (verify a package exists, isn't a
+typosquat/hallucination, is not deprecated, and is CVE-clean before adding it) is
+inspired by **[depshield-mcp](https://github.com/devanshkaria88/depshield-mcp)** by
+**[@devanshkaria88](https://github.com/devanshkaria88)**. The rule text is original; the
+insight — that AI agents install from stale memory with no gate between decision and
+install — is theirs.
 
 ## skills/ format
 
