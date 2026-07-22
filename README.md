@@ -12,11 +12,29 @@ Everything here is **plain Markdown and tool-agnostic**: the same files work wit
 Claude Code, Cursor, Windsurf, Codex, or any assistant that reads Markdown context.
 A thin Claude Code plugin wrapper is included so Claude installs the skills natively.
 
+## How it flows
+
+One hub, two directions. Improvements from the sources this playbook adapts flow **in**
+(reviewed via `/upstream-check`); the playbook flows **out** to every project (pulled and
+reconciled via `/rules-sync`) — so nobody maintains a drifting copy.
+
+```mermaid
+flowchart LR
+    subgraph sources["Upstream sources"]
+        S1["dinesh-gilfoyle"]
+        S2["karpathy-skills"]
+        S3["depshield-mcp"]
+    end
+    sources -- "/upstream-check" --> FR["flight-rules<br/>(single source of truth)"]
+    FR -- "/rules-sync" --> P1["AppliHawk"]
+    FR -- "/rules-sync" --> P2["project N…"]
+```
+
 ## Layout
 
 ```
 rules/     Always-on principles a project's CLAUDE.md / .cursorrules should point at
-skills/    Invocable workflows (/dg, /diagnose, /feature-start, /pre-merge-check, /pr-create, /commit, /rules-sync, /upstream-check)
+skills/    Invocable workflows — see the catalog below
 hooks/     Enforcement templates — git merge-gate hooks + agent commit/secret guards
 .claude-plugin/   Claude Code marketplace + plugin manifests
 UPSTREAMS.md      Sources this playbook adapts from + last-synced refs (see /upstream-check)
@@ -27,6 +45,33 @@ blocks merges into protected branches without a stamped passing pre-merge check,
 `hooks/agent/` stops the assistant from committing on a protected branch or with
 secrets staged. They are copy-into-project templates (each project sets its own
 branch names) — see `hooks/README.md`.
+
+## Rules
+
+Always-on principles a project's rules entry point points at.
+
+| Rule | Governs |
+|---|---|
+| [`engineering-principles`](rules/engineering-principles.md) | How to approach a change — scope discipline, verify before claiming done, suggest better ways, judge ideas on merit not authorship |
+| [`git-worktree-workflow`](rules/git-worktree-workflow.md) | One change per branch via worktrees; never commit to a protected branch |
+| [`dependency-lockfile`](rules/dependency-lockfile.md) | Intent-file + lockfile pinning, deliberate upgrades, and agent-aware pre-install checks |
+| [`multi-ai-setup`](rules/multi-ai-setup.md) | Conventions for running more than one AI assistant in a repo |
+
+## Skills
+
+Invocable workflows. In Claude Code they're slash commands; in any other tool they read as plain Markdown procedures.
+
+| Skill | Does | Reach for it when |
+|---|---|---|
+| [`/dg`](skills/dg/SKILL.md) | Adversarial review — one persona defends, one tears it apart | Pressure-testing code, a design, or a decision |
+| [`/diagnose`](skills/diagnose/SKILL.md) | Structured debugging — reproduce, minimise, fix, verify | A bug you can't one-shot |
+| [`/feature-start`](skills/feature-start/SKILL.md) | Open a new branch as an isolated git worktree | Starting any unit of work |
+| [`/pre-merge-check`](skills/pre-merge-check/SKILL.md) | Automated pre-merge checklist; stamps a git note the merge-gate verifies | Before merging a branch |
+| [`/pr-create`](skills/pr-create/SKILL.md) | Push the branch and open a GitHub PR with the checklist in the body | Ready to raise a PR |
+| [`/commit`](skills/commit/SKILL.md) | Guarded commit — protected-branch, secret-scan, and test-coverage checks | Every commit |
+| [`/docs-lint`](skills/docs-lint/SKILL.md) | Health-check living docs for drift, contradictions, and stale claims | Docs start to rot |
+| [`/rules-sync`](skills/rules-sync/SKILL.md) | Pull the latest playbook and reconcile a project's local copies | After the playbook updates |
+| [`/upstream-check`](skills/upstream-check/SKILL.md) | Check the sources this playbook adapts from for changes to fold in | Maintaining flight-rules itself |
 
 ## Consuming from a project
 
@@ -64,10 +109,14 @@ A project defines these once in its own rules file; skills read them from there.
 
 ## Credits & license
 
-MIT for original content (see `LICENSE`). Two pieces are adaptations of other people's
-work and carry their upstream licenses — the `dg` skill (from
+MIT for original content (see `LICENSE`). Several pieces adapt other people's work and
+carry their upstream licenses — notably the `dg` skill (from
 [v1r3n/dinesh-gilfoyle](https://github.com/v1r3n/dinesh-gilfoyle), Apache-2.0) and the
 engineering principles (from
 [multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills),
-MIT, after Andrej Karpathy's observations). Details and modification notes:
-[ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+MIT, after Andrej Karpathy's observations).
+
+Provenance is tracked as a system, not a footnote: every adaptation is credited with its
+modifications in [ATTRIBUTIONS.md](ATTRIBUTIONS.md), and each source's last-reviewed ref
+is pinned in [UPSTREAMS.md](UPSTREAMS.md) so `/upstream-check` can tell when an upstream
+has moved and something is worth folding back in.
