@@ -1,5 +1,8 @@
 # flight-rules
 
+[![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-8A63D4)](.claude-plugin/plugin.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Generic, project-agnostic engineering rules and AI workflows, distilled from real
 projects (first: [AppliHawk](https://applihawk.com)). One source of truth — projects
 consume this repo instead of maintaining drifting copies.
@@ -87,6 +90,11 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 > Generic engineering rules: read `~/Projects/flight-rules/rules/` (or the repo URL).
 > Project rules extend and override them.
 
+**Or just clone it.** Nothing here requires the plugin or a marketplace — `git clone`
+(or copy the files) and read the Markdown directly, or point your assistant's rules file
+at the path. The Claude Code plugin is a convenience wrapper, not a dependency; a native
+plugin for other assistants (Cursor, Windsurf, …) can follow if there's demand.
+
 ## Project-specific extensions
 
 Never edit these files with project details. A project that needs to extend a skill
@@ -106,6 +114,18 @@ Skills refer to placeholders rather than hardcoding a project's setup:
 | `{TEST_COMMANDS}` | the project's suites | `pytest` / `npm run test:run` |
 
 A project defines these once in its own rules file; skills read them from there.
+
+## Design notes
+
+- **Tool-agnostic by default.** Plain Markdown, so the same rules work in Claude Code,
+  Cursor, Windsurf, or Codex — no lock-in to one assistant.
+- **Enforcement, not etiquette.** The workflows ship with git hooks that *block* the
+  mistake — merging without a passing check, committing on a protected branch or with
+  secrets staged — instead of trusting everyone to remember.
+- **One source of truth.** Projects consume the playbook and reconcile with `/rules-sync`
+  rather than copy-pasting rules that silently drift apart.
+- **Provenance as a system.** Each adaptation is pinned to an upstream ref and re-checked
+  with `/upstream-check`, so credited work stays current and honestly attributed.
 
 ## Credits & license
 
