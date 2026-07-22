@@ -26,13 +26,11 @@ reconciled via `/rules-sync`) — so nobody maintains a drifting copy.
 flowchart TB
     subgraph sources["Upstream sources"]
         direction LR
-        S1["dinesh-gilfoyle"]
-        S2["karpathy-skills"]
-        S3["depshield-mcp"]
+        S1["dinesh-gilfoyle"] ~~~ S2["karpathy-skills"] ~~~ S3["depshield-mcp"]
     end
     sources -- "/upstream-check" --> FR["flight-rules<br/>(single source of truth)"]
     FR -- "/rules-sync" --> P1["AppliHawk"]
-    FR -- "/rules-sync" --> P2["project N…"]
+    FR -- "/rules-sync" --> P2["other projects"]
 ```
 
 ## Layout
