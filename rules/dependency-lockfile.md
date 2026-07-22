@@ -10,6 +10,25 @@ Production installs the lockfile.
 | Node | `package.json` | `package-lock.json` | `npm ci` |
 | Python (pip) | `requirements.in` | `requirements.txt` (via `pip-compile`) | `pip install -r requirements.txt` |
 
+## Before a new dependency enters the intent file (agent-aware)
+
+An agent — or a rushed human — reaches for a package from memory. But training data goes
+stale, and models **hallucinate package names, fall for typosquats, and default to
+deprecated libraries**. There is no gate between "decide to use X" and "X is installed"
+unless you make one. Before adding a new direct dependency, verify:
+
+- **It exists** — on the real registry (npm / PyPI), spelled exactly. A plausible-looking
+  name you didn't confirm is a typosquat/hallucination risk, not a dependency.
+- **It's alive** — recent releases, not archived or deprecated; prefer the maintained
+  successor if one exists (see the PyPDF2 → pypdf note below).
+- **It's clean** — no known CVEs for the version you'd pin (`osv.dev`, `pip-audit`,
+  `npm audit`).
+- **It's worth it** — a direct dependency is a permanent liability and drags in a
+  transitive tree; a few lines of your own often beat it.
+
+Treat this as an enforced checkpoint, not a judgment call — the same instinct as the
+lockfile: nothing enters the tree that you didn't deliberately admit.
+
 ## Why floors/ranges alone fail
 
 - `pkg>=1.5` lets a major version arrive as a side effect of an unrelated install.

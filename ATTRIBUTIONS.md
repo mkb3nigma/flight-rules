@@ -36,6 +36,15 @@ The lint operation is inspired by the *lint* step of **Andrej Karpathy's**
 The skill text is original; the idea that knowledge bases need periodic
 contradiction/staleness checks by the LLM that maintains them is his.
 
+## rules/dependency-lockfile.md — "before a new dependency" section — concept credit
+
+The agent-aware pre-install checkpoint (verify a package exists, isn't a
+typosquat/hallucination, is not deprecated, and is CVE-clean before adding it) is
+inspired by **[depshield-mcp](https://github.com/devanshkaria88/depshield-mcp)** by
+**[@devanshkaria88](https://github.com/devanshkaria88)**. The rule text is original; the
+insight — that AI agents install from stale memory with no gate between decision and
+install — is theirs.
+
 ## skills/ format
 
 The skill-file conventions echo Anthropic's Claude Code skill/plugin format so the

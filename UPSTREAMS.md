@@ -13,6 +13,7 @@ derivation), then run `/upstream-check`.
 | [v1r3n/dinesh-gilfoyle](https://github.com/v1r3n/dinesh-gilfoyle) | `skills/dg/` | git repo | `48d2f6428cfd0dde7b099bc8a3b4405452937c65` | 2026-07-22 |
 | [multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) | `rules/engineering-principles.md` (principles 1–4) | git repo | `2c606141936f1eeef17fa3043a72095b4765b9c2` | 2026-07-22 |
 | [karpathy LLM-wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) | `skills/docs-lint/` (concept only) | gist | revision as of 2026-07-22 | 2026-07-22 |
+| [devanshkaria88/depshield-mcp](https://github.com/devanshkaria88/depshield-mcp) | `rules/dependency-lockfile.md` ("before a new dependency" section, concept only) | git repo | `2ff4d13efed3d4383c121c9935528bdb17bad150` | 2026-07-22 |
 
 > **Baseline note:** pins were initialised on 2026-07-22 to each source's then-current
 > state. The existing adaptations predate this pin, so a one-time manual review of each
