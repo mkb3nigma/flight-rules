@@ -1,7 +1,7 @@
 {
   "name": "flight-rules",
-  "description": "Generic engineering workflows: adversarial review (/dg), structured debugging (/diagnose), worktree branching (/feature-start), pre-merge checks, guarded commits, and docs linting.",
-  "version": "0.3.0",
+  "description": "Generic engineering workflows: adversarial review (/dg), structured debugging (/diagnose), worktree branching (/feature-start), pre-merge checks, PR creation (/pr-create), guarded commits, and docs linting.",
+  "version": "0.4.0",
   "author": {
     "name": "Murali Kavassery"
   }
