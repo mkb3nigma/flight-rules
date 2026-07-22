@@ -1,31 +1,63 @@
 #!/usr/bin/env bash
-# pre-merge-commit hook — the merge gate.
-# Blocks merges into protected branches unless the pre-merge-check skill stamped a
-# passing git note (refs/notes/pre-merge-check) on the incoming commit.
+# pre-merge-commit hook — the merge gate. Two mechanisms:
 #
-# Adapt PROTECTED_RE to the project, commit this file into the repo (e.g. .ai/hooks/),
+#  1. PR-ONLY branches (default: main). Blocked from ANY local merge — they move
+#     only through a reviewed pull request. pre-merge-commit fires only when git
+#     is about to create a merge commit; a fast-forward (e.g. `git pull --ff-only`)
+#     does NOT fire it. So the hook firing on a PR-only branch IS the violation.
+#     This needs no MERGE_HEAD and is robust. Sync the branch locally with:
+#         git checkout <branch> && git pull --ff-only origin <branch>
+#
+#  2. NOTE-GATED branches (e.g. dev/staging). Require a passing pre-merge-check
+#     note (refs/notes/pre-merge-check) on the incoming commit.
+#     ⚠️ KNOWN BUG (tracked): modern git writes MERGE_HEAD *after* this hook runs
+#     (verified on git 2.55), so the lookup below never finds it and mechanism 2
+#     is currently a NO-OP — note-gated branches are not actually enforced. The
+#     repair is to relocate the note check to a hook where MERGE_HEAD exists
+#     (commit-msg / prepare-commit-msg). Left in place, with merge.ff=false, so
+#     that repair stays a localized change.
+#
+# Adapt the *_RE parameters to the project, commit this file (e.g. into .ai/hooks/),
 # then run install.sh once per clone.
 #
 # Bypass (breaks the rules — emergencies only):  git merge --no-verify
 
 set -euo pipefail
 
-PROTECTED_RE='^main$'   # project parameter: {PROTECTED_BRANCHES}
+PR_ONLY_RE='^main$'              # project parameter: {PR_ONLY_BRANCHES}
+PROTECTED_RE='^(dev|staging)$'   # project parameter: {NOTE_GATED_BRANCHES}
 
 CURRENT_BRANCH=$(git branch --show-current)
 
-# Only enforce on protected branches
+# --- Mechanism 1: PR-only branches — block any local merge commit -------------
+if [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]]; then
+    echo ""
+    echo "⛔  $CURRENT_BRANCH IS PR-ONLY — local merge blocked"
+    echo ""
+    echo "    $CURRENT_BRANCH is updated only through a reviewed pull request, never a"
+    echo "    local git merge. Do this instead:"
+    echo "      1. gh pr create --base $CURRENT_BRANCH   (open a PR)"
+    echo "      2. let CI run, review, then Merge on the host"
+    echo "      3. git checkout $CURRENT_BRANCH && git pull --ff-only origin $CURRENT_BRANCH"
+    echo ""
+    echo "    Undo this half-finished merge:   git merge --abort"
+    echo "    Emergency bypass (discouraged):  git merge --no-verify"
+    echo ""
+    exit 1
+fi
+
+# --- Mechanism 2: note-gated protected branches (see KNOWN BUG above) ----------
 if [[ ! "$CURRENT_BRANCH" =~ $PROTECTED_RE ]]; then
     exit 0
 fi
 
-# Locate MERGE_HEAD — path differs between main worktree and supplementary worktrees
+# Locate MERGE_HEAD — path differs between main worktree and supplementary worktrees.
 GIT_DIR=$(git rev-parse --git-dir)
 MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
 
 if [ ! -f "$MERGE_HEAD_FILE" ]; then
-    # Not a merge commit (e.g. fast-forward or rebase) — nothing to check.
-    # install.sh sets merge.ff=false so real merges always come through here.
+    # Not a merge commit, OR (the tracked bug) MERGE_HEAD not yet written. Either
+    # way there is nothing to check here — the gate is a no-op until the repair.
     exit 0
 fi
 

@@ -16,10 +16,18 @@ variables at the top of each script, and commit them.
 
 ## Git hooks (`git/`)
 
-- **`pre-merge-commit`** — blocks a merge into any protected branch unless the
-  `pre-merge-check` skill stamped a passing git note (`refs/notes/pre-merge-check`)
-  on the incoming commit. This is the merge gate: green checks are required, not
-  requested.
+- **`pre-merge-commit`** — the merge gate, two mechanisms:
+  - **PR-only branches** (`PR_ONLY_RE`, default `main`) are blocked from any local
+    merge — they move only through a reviewed pull request. The hook fires only when
+    git creates a merge commit (a `--ff-only` pull does not), so its firing on a
+    PR-only branch is the violation; robust, needs no `MERGE_HEAD`. Sync with
+    `git pull --ff-only origin main`.
+  - **Note-gated branches** (`PROTECTED_RE`, e.g. `dev`/`staging`) require a passing
+    `pre-merge-check` note on the incoming commit. ⚠️ **Known bug (tracked):** modern
+    git writes `MERGE_HEAD` *after* `pre-merge-commit` runs (verified on git 2.55), so
+    this mechanism is currently a **no-op** — the note is never read. Repair = relocate
+    the check to `commit-msg`, where `MERGE_HEAD` exists. Until then only mechanism 1
+    (PR-only) actually enforces.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) that the next AI session picks up.
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored

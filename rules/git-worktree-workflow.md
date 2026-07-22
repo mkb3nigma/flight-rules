@@ -20,6 +20,7 @@ branch — feature work physically cannot dirty the main checkout.
 5. Force-pushing protected branches
 6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add`
 7. Merging into a protected branch without explicit user instruction
+8. Merging into a **PR-only branch (default `main`) locally at all** — it moves only through a reviewed pull request. After the PR merges, sync locally with `git pull --ff-only origin main` (a fast-forward, never a local merge commit).
 
 ### ✅ Required
 1. All branches created as worktrees under `{WORKTREE_DIR}`
@@ -67,8 +68,16 @@ feature/* → {INTEGRATION_BRANCH} → (staging) → main
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
 Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
 
-- `pre-merge-commit` — blocks merges into `{PROTECTED_BRANCHES}` unless the pre-merge
-  check stamped a passing git note (`refs/notes/pre-merge-check`) on the incoming HEAD
-- `git config core.hooksPath <hooks-dir>` + `git config merge.ff false` (so the hook
-  always fires)
+- `pre-merge-commit` — two mechanisms:
+  - **PR-only branches** (`{PR_ONLY_BRANCHES}`, default `main`): any local merge is
+    blocked outright. The hook fires only when git creates a merge commit — a
+    `--ff-only` pull does not fire it — so its firing on a PR-only branch is itself the
+    violation. Robust; needs no `MERGE_HEAD`.
+  - **Note-gated branches** (`{NOTE_GATED_BRANCHES}`, e.g. `dev`/`staging`): require a
+    passing `refs/notes/pre-merge-check` note on the incoming commit. ⚠️ **Known bug
+    (tracked):** modern git (verified on 2.55) writes `MERGE_HEAD` *after* this hook
+    runs, so the note lookup is skipped and this mechanism is currently a **no-op**.
+    Repair = move the note check to `commit-msg` (where `MERGE_HEAD` exists).
+- `git config core.hooksPath <hooks-dir>` + `git config merge.ff false` (so real merges
+  always fire the hook; `--ff-only` still bypasses it for legitimate `main` syncs)
 - A session-start / prompt hook that blocks commits while on a protected branch
