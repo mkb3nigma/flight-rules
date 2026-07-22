@@ -90,10 +90,13 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 > Generic engineering rules: read `~/Projects/flight-rules/rules/` (or the repo URL).
 > Project rules extend and override them.
 
-**Or just clone it.** Nothing here requires the plugin or a marketplace — `git clone`
-(or copy the files) and read the Markdown directly, or point your assistant's rules file
-at the path. The Claude Code plugin is a convenience wrapper, not a dependency; a native
-plugin for other assistants (Cursor, Windsurf, …) can follow if there's demand.
+**Or just point your assistant at it.** No clone, plugin, or marketplace required — give
+your assistant the repo link and ask it to incorporate the rules, or point your project's
+rules file at the URL. The Claude Code plugin is a convenience wrapper, not a dependency;
+a native plugin for other assistants (Cursor, Windsurf, …) can follow if there's demand.
+However you adopt it, keep the attribution — the MIT licence simply asks that the
+copyright and licence notice travel with the content ([LICENSE](LICENSE),
+[ATTRIBUTIONS.md](ATTRIBUTIONS.md)).
 
 ## Project-specific extensions
 
