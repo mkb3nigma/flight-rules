@@ -31,6 +31,7 @@ branch — feature work physically cannot dirty the main checkout.
 6. Symlink untracked env files from the main checkout into new worktrees
    (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`
 7. Clean up after merging: `git worktree remove …` + `git branch -d …` — never leave stale worktrees
+8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main`, first reconcile any `main`-only commits back into it (fast-forward / clean merge if possible; **warn and stop** if not) so no branch is born missing a change that went straight to `main`. See the `feature-start` skill, step 4.
 
 ## The cwd-drift trap (learned the hard way)
 
