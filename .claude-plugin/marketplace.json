@@ -7,7 +7,7 @@
     {
       "name": "flight-rules",
       "source": "./",
-      "description": "Generic engineering workflows: adversarial review (/dg), structured debugging (/diagnose), worktree branching (/feature-start), pre-merge checks, guarded commits, and docs linting."
+      "description": "Generic engineering workflows: adversarial review (/dg), structured debugging (/diagnose), worktree branching (/feature-start), pre-merge checks, PR creation (/pr-create), guarded commits, docs linting, rule syncing (/rules-sync), and upstream-source checks (/upstream-check)."
     }
   ]
 }
