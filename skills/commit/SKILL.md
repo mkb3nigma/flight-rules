@@ -1,34 +1,34 @@
 ---
 name: commit
-description: Create a git commit enforcing playbook commit-time rules — protected-branch guard, secrets scan, test-coverage check, conventional format, post-commit diff review.
+description: Create a git commit with conventional-format validation and a test-coverage warning. Branch protection and secrets scanning are enforced by the hook layer.
 ---
 
 # /commit — Create a Guarded Git Commit
 
-## Rules (non-negotiable)
-- NEVER commit while on any of `{PROTECTED_BRANCHES}` — feature worktrees only
-- Message MUST start with: `feature:`, `fix:`, `refactor:`, `test:`, `docs:`, or `chore:`
-- Tests updated or added for every source-code change
-- Review the full diff after committing
-- NEVER commit env files or secrets
+## Division of labour
+
+The hooks enforce the hard gates; this skill covers what a hook cannot judge.
+
+- **Hook-enforced** (see `hooks/README.md`): no commits on `{PROTECTED_BRANCHES}` and
+  no staged secrets (`hooks/agent/pre-commit-check.sh`); no unchecked merges into
+  protected branches (`hooks/git/` merge gate).
+- **Skill-covered**: commit-message format, test-coverage warning, stray-debug-logging
+  warning.
+
+## Rules
+- Message starts with `feature:`, `fix:`, `refactor:`, `test:`, `docs:`, or `chore:`
+- Commits happen on feature worktrees, not `{PROTECTED_BRANCHES}` (hook-enforced)
+- Env files and secrets are never committed (hook-enforced)
 
 ## Steps
 
-1. **Branch guard** — `git branch --show-current`; on a protected branch, STOP and
-   direct the user to a feature worktree (see `/feature-start`).
-2. **Show staged changes** — `git diff --cached --stat`.
-3. **Secrets scan** — scan the staged diff for cloud-key patterns
-   (`AKIA[A-Z0-9]{16}`), API-key literals (`sk-[a-zA-Z0-9]{32,}`), private-key
-   headers, and hardcoded credential assignments. Any hit → STOP, list findings
-   (values redacted), proceed only on explicit confirmation.
-4. **Debug-logging check** — grep staged sources for stray `console.log` / debug
-   prints. Warn (non-blocking), ask whether to proceed.
-5. **Test-coverage check** — if non-test source files are staged with no test file,
-   warn: "No test file is included. Every code change requires a test update.
-   Continue anyway?" Wait for explicit confirmation. (Files with no test surface —
-   static markup, config — note the reason instead.)
-6. **Validate the message** — ask if missing; verify the prefix.
-7. **Commit** — `git commit -m "<message>"`, appending the assistant's co-author
+1. **Show staged changes** — `git diff --cached --stat`.
+2. **Test-coverage warning** — if non-test source files are staged with no test file,
+   warn plainly that the change ships without a test update, and say so in the commit
+   summary to the user. (Files with no test surface — static markup, config — note the
+   reason instead.)
+3. **Debug-logging warning** — if staged sources contain stray `console.log` / debug
+   prints, warn (non-blocking).
+4. **Validate the message** — ask if missing; verify the conventional prefix.
+5. **Commit** — `git commit -m "<message>"`, appending the assistant's co-author
    trailer if the environment specifies one.
-8. **Post-commit diff review** — run `git diff HEAD~1` and actually review it; this is
-   mandatory, not ceremonial.
