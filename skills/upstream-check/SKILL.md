@@ -5,6 +5,13 @@ description: Check whether the external sources this playbook adapts from (track
 
 # /upstream-check — Check Upstream Sources for Updates
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/upstream-check/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 flight-rules is **downstream** of a few third-party works — the dg persona, Karpathy's
 LLM-pitfalls principles, and others (see `ATTRIBUTIONS.md`). Those upstreams keep
 evolving. This skill checks each tracked source for changes since the ref we last

@@ -5,6 +5,13 @@ description: Structured debugging loop — reproduce, minimize, hypothesize, ins
 
 # /diagnose — Structured Debugging Loop
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/diagnose/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 Debug a reported bug methodically: reproduce → minimize → hypothesize → instrument →
 fix → verify → clean up. Never jump straight to a fix.
 

@@ -5,6 +5,13 @@ description: Run the automated pre-merge checklist for the current feature branc
 
 # /pre-merge-check — Automated Pre-Merge Checklist
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/pre-merge-check/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 Run every automated check before merging a feature branch into its destination
 (default: `{INTEGRATION_BRANCH}`). Prints a pass/fail report and stamps a git note when
 clean so a `pre-merge-commit` hook can allow the merge. Does NOT merge, push, or run AI

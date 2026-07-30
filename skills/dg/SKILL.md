@@ -5,6 +5,13 @@ description: Adversarial review — Dinesh defends, Gilfoyle tears it apart. Wor
 
 # /dg — Adversarial Review
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/dg/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 Two personas review whatever you put in front of them and argue about it. Dinesh
 defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 

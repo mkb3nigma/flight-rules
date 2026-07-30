@@ -5,6 +5,13 @@ description: Pull the latest playbook (flight-rules) and diff a project's local 
 
 # /rules-sync — Sync a Project's Local Rule Copies With the Playbook
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/rules-sync/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 A project that adopts flight-rules keeps **local copies** of some rules/skills under
 `{LOCAL_RULES_DIRS}` (default: `.ai/rules/`, `.ai/skills/`), adapted with filled-in
 `{PLACEHOLDER}` values and `## <Project> Extensions` sections. Those forks drift as the

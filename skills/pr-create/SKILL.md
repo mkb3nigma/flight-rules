@@ -5,6 +5,13 @@ description: Push the current feature branch and open a GitHub pull request with
 
 # /pr-create — Create a GitHub Pull Request
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/pr-create/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 Open a GitHub PR for the current feature branch. Project parameters:
 `{INTEGRATION_BRANCH}`, `{PROTECTED_BRANCHES}`, `{WORKTREE_DIR}`, `{TEST_COMMANDS}`
 (defaults: `main` / `main` / `.ai/worktrees/` / the project's test commands).

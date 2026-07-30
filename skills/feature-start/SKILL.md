@@ -5,6 +5,13 @@ description: Create a new feature branch as a git worktree following the playboo
 
 # /feature-start — Create a Feature Branch Worktree
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/feature-start/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 Create a new branch as a git worktree per `rules/git-worktree-workflow.md`.
 Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`
 (defaults: `main` / `main` / `.ai/worktrees/`).

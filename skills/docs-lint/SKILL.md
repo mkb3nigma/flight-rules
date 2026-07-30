@@ -5,6 +5,13 @@ description: Health-check the project's living docs — find contradictions, sta
 
 # /docs-lint — Living-Docs Health Check
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/docs-lint/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 > Adapted from the *lint* operation in Karpathy's
 > [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern:
 > knowledge bases rot through bookkeeping neglect, and bookkeeping is what AI is for.

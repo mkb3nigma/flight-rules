@@ -5,6 +5,13 @@ description: Create a git commit with conventional-format validation and a test-
 
 # /commit — Create a Guarded Git Commit
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/commit/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 ## Division of labour
 
 The hooks enforce the hard gates; this skill covers what a hook cannot judge.
