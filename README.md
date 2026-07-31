@@ -100,10 +100,20 @@ copyright and licence notice travel with the content ([LICENSE](LICENSE),
 
 ## Project-specific extensions
 
-Never edit these files with project details. A project that needs to extend a skill
-keeps a local copy with a clearly marked `## <Project> Extensions` section at the
-bottom (see the sync note pattern inside `skills/dg/SKILL.md`), or overrides a rule in
-its own rules file. **Generic changes flow here; project flavor stays in the project.**
+Never edit these files with project details. **Generic changes flow here; project
+flavor stays in the project.** Two ways to consume, in order of preference:
+
+1. **Plugin + `EXTENSIONS.md` (recommended).** Install the plugin and keep the
+   playbook's skills as the single registered copy. A project extends a skill by
+   creating `.ai/skills/<name>/EXTENSIONS.md` carrying only its delta: `{PLACEHOLDER}`
+   values, additional or replacement steps, and project-specific rules. Every skill
+   checks for that file before executing and gives it precedence — projects get
+   playbook updates automatically while their flavor stays local, and nothing is
+   registered twice.
+2. **Copy-in (legacy).** A project keeps a full local copy of a skill with a clearly
+   marked `## <Project> Extensions` section at the bottom (see the sync note pattern
+   inside `skills/dg/SKILL.md`), or overrides a rule in its own rules file. Copies
+   drift; reconcile with `/rules-sync`.
 
 ## Parameters
 

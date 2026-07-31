@@ -5,61 +5,35 @@ description: Push the current feature branch and open a GitHub pull request with
 
 # /pr-create — Create a GitHub Pull Request
 
+## Project extensions
+
+Before executing, check the consuming project for `.ai/skills/pr-create/EXTENSIONS.md`.
+If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
+additional or replacement steps and project-specific rules — extensions take
+precedence over the generic defaults below. If absent, use the defaults as-is.
+
 Open a GitHub PR for the current feature branch. Project parameters:
 `{INTEGRATION_BRANCH}`, `{PROTECTED_BRANCHES}`, `{WORKTREE_DIR}`, `{TEST_COMMANDS}`
 (defaults: `main` / `main` / `.ai/worktrees/` / the project's test commands).
 
----
+## Constraints
+- Never open a PR from one of `{PROTECTED_BRANCHES}`.
+- Base-branch routing: `feature/ fix/ refactor/ test/ docs/ chore/` branches target
+  `{INTEGRATION_BRANCH}`; `hotfix/*` targets `main`; anything else → ask the user.
+- `/pre-merge-check` must be clean first — no ❌ items may remain. ⚠️ warnings are
+  non-blocking but must be listed in the PR body.
+- PR title in conventional-commit format — derived from the branch name unless the
+  user supplies one as arguments.
+- Never force-push after opening a PR.
 
-## Rules
-- `feature/ fix/ refactor/ test/ docs/ chore/` branches target `{INTEGRATION_BRANCH}` — never a protected branch
-- `hotfix/*` targets `main`
-- PR title follows conventional-commit format
-- Run `/pre-merge-check` before opening the PR — no ❌ items may remain
-- Never force-push after opening a PR
+## Procedure
 
-## Steps
+1. Verify the current branch and pick the base per the routing rules; push with
+   `git push -u origin <branch>` if the branch isn't on the remote yet.
+2. Run `/pre-merge-check`; STOP on any ❌ failure.
+3. Summarize `git log <base>..HEAD` (one user-facing bullet per commit) and
+   `git diff <base>...HEAD --stat` (files-changed summary), then create the PR:
 
-### 1. Check prerequisites
-```bash
-git branch --show-current
-```
-- If on one of `{PROTECTED_BRANCHES}`: STOP — cannot open a PR from a protected branch.
-- Determine the base branch:
-  - `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATION_BRANCH}`
-  - `hotfix/*` → `main`
-  - anything else → ask the user which base to target
-
-### 2. Ensure the branch is pushed
-```bash
-git ls-remote --heads origin <branch-name>
-```
-If it isn't on the remote, push it first:
-```bash
-git push -u origin <branch-name>
-```
-
-### 3. Run pre-merge checks
-Run the full `/pre-merge-check`. If any ❌ failures remain, STOP:
-> "Pre-merge checks failed. Fix all ❌ items before opening the PR. Run `/pre-merge-check` to verify."
-
-⚠️ warnings are non-blocking but must be listed in the PR body.
-
-### 4. Gather PR content
-```bash
-git log <base>..HEAD --oneline      # → summary bullets (one per commit)
-git diff <base>...HEAD --stat        # → files-changed summary
-```
-
-### 5. Generate the PR title
-Derive it from the branch name in conventional-commit format:
-- `feature/search-filters` → `feature: add search and advanced filters`
-- `fix/reset-token-bug` → `fix: correct password-reset token validation`
-- `docs/api-reference` → `docs: add API reference`
-
-If arguments are provided, use them as the PR title instead.
-
-### 6. Create the PR
 ```bash
 gh pr create \
   --base <base> \
@@ -95,18 +69,9 @@ gh pr create \
 EOF
 )"
 ```
-Mark any checklist row ❌ if its check failed. A PR should not normally be opened
+
+Mark any checklist row ❌ if its check failed — a PR should not normally be opened
 with ❌ items unless the user explicitly overrides.
 
-### 7. Print the result
-Show the PR URL, then print:
-```
-✅ PR created: <url>
-
-Next steps:
-1. Review the diff on GitHub
-2. Request a review if needed
-3. After merge, clean up the worktree:
-   git worktree remove {WORKTREE_DIR}/<slug>
-   git branch -d <branch-name>
-```
+4. Show the PR URL. After merge, clean up:
+   `git worktree remove {WORKTREE_DIR}/<slug>` then `git branch -d <branch-name>`.

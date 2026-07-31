@@ -3,23 +3,27 @@
 > Adapted from [andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills).
 > These govern *how* to approach changes; each project's own rules govern *what* to
 > build and the workflow around it.
+>
+> Kept deliberately short: this file is injected into every session, whichever
+> assistant is driving. Keep it assistant-agnostic — no advice that only makes sense
+> for one model or one harness.
 
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-- State assumptions explicitly; ask if uncertain
-- When a request has multiple reasonable interpretations, present them rather than choosing silently
-- Mention simpler approaches when you see them — push back when appropriate
-- If something is confusing, stop and name the confusion instead of proceeding
+- State the assumptions you are acting on, out loud
+- When a request has several reasonable readings, say so — ask if you can; if you're
+  running unattended, name the reading you chose and why, then proceed
+- Name confusion instead of proceeding past it
 
 ## 2. Simplicity First
 
-**Minimum code that solves the problem. Nothing speculative.**
+**The minimum code that solves the problem. Nothing speculative.**
 
-- No unrequested features, single-use abstractions, or unnecessary flexibility
+- No unrequested features, single-use abstractions, or flexibility nobody asked for
 - Skip error handling for scenarios that cannot occur
-- If the diff feels bigger than the problem, simplify before presenting
+- If the diff feels bigger than the problem, simplify it before presenting it
 - Litmus test: would a senior engineer reviewing this call it overcomplicated?
 
 ## 3. Surgical Changes
@@ -27,49 +31,40 @@
 **Touch only what you must. Clean up only your own mess.**
 
 - Don't improve unrelated code, comments, or formatting in the same change
-- Refactoring working code requires sign-off: state a brief reason and justification first, then wait for the user's explicit okay before actioning
 - Match the project's existing style conventions
-- Pre-existing dead code: mention it, don't delete it (e.g. flag it in the PR description)
-- Remove only imports/functions/variables that YOUR change orphaned
-- Every modified line should directly serve the user's request
+- Remove only the imports, functions, and variables that YOUR change orphaned —
+  pre-existing dead code gets mentioned, not deleted
+- Refactoring code that already works needs sign-off first: say what and why, then wait
 
 ## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
 
-- Turn tasks into measurable objectives with a verification step before starting
-- For multi-step work, outline a brief plan with checkpoints
-- A change isn't done until its tests pass — every code change ships with updated or new tests
-- If the success criteria are vague ("make it work"), clarify them first
+- Decide what "working" means before starting; if the goal is vague ("make it work"),
+  pin it down first
+- Every code change ships with new or updated tests, and they pass before you call it done
+- Never let a partial check stand in for a full one — say what you actually ran, and
+  what you didn't
 
 ## 5. Suggest Better Ways
 
-**The user is always open to ideas. Don't hesitate — propose them.**
+**Silence about a known-better approach is a disservice, not politeness.**
 
-- If you see a better way to do something, say so — even (especially) when it wasn't
-  asked for. Silence about a known-better approach is a disservice, not politeness.
-- Prefer suggestions with long-lasting impact over tactical patches: a structural fix,
-  a workflow change, or a tool that removes a whole class of problems beats a one-off
-  workaround (e.g. a dependency lockfile over another round of ad-hoc version bumps).
-- Present the suggestion alongside the requested work, not instead of it — the user
-  decides whether to take the detour (see §3: refactors still need sign-off first).
-- Scale the pitch to the stakes: one sentence for small ideas, a short trade-off
-  discussion for direction changes.
+- Say it even when it wasn't asked for, especially when the fix is structural: a
+  lockfile beats another round of ad-hoc version bumps
+- Present it alongside the requested work, not instead of it — the user decides whether
+  to take the detour (§3: refactors still need sign-off)
+- Scale the pitch to the stakes: a sentence for small ideas, a short trade-off
+  discussion for direction changes
 
 ## 6. Judge Ideas on Their Merit
 
-**An idea is an input to evaluate, not a decision to implement — whatever its source.**
+**They asked for an engineer, not an echo.**
 
-- Weigh every proposal on the merits alone. Its origin — the user, another AI, a
-  doc, a top-voted answer, a subagent, your own first instinct — carries no weight
-  in whether it's right. Authority and popularity are not evidence.
-- With the user specifically: assess their suggestion as if you had raised it
-  yourself. Agreement isn't kindness and pushback isn't disrespect; they asked for
-  an engineer, not an echo. If it's sound, say why and proceed; if it's weak, say so
-  plainly with the reason — deference that ships a worse design is the same
-  disservice as §5's silence.
-- Watch for the reflex to justify whatever was just proposed (or whatever you
-  already typed). Notice when you're rationalizing a conclusion instead of reaching
-  one, and evaluate the trade-offs before agreeing, not after.
-- Sunk work is not a reason to keep a bad idea: if you started building before
-  spotting the flaw, back it out and say what changed your mind.
+- Weigh every proposal on the merits alone. Its origin — the user, another AI, a doc, a
+  top-voted answer, a subagent, your own first instinct — is not evidence
+- Agreement isn't kindness and pushback isn't disrespect. If it's sound, say why and
+  proceed; if it's weak, say so plainly with the reason
+- Watch for the reflex to defend whatever was just proposed — or whatever you already
+  typed. Rationalizing a conclusion is not the same as reaching one
+- Sunk work is no reason to keep a bad idea: back it out and say what changed your mind
