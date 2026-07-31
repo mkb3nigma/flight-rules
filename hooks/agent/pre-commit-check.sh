@@ -10,16 +10,27 @@
 # same checks.
 
 # ── Project configuration ────────────────────────────────────────────────────
-# Override per project WITHOUT forking this file, from the consuming project's
-# .claude/settings.json "env" block:
+# Override per project WITHOUT forking this file. Resolution order, first match wins:
 #
-#   "env": {
-#     "FLIGHT_RULES_PROTECTED_BRANCHES": "^(main|release/.*)$",
-#     "FLIGHT_RULES_WORKTREE_DIR": ".worktrees"
-#   }
+#   1. Environment             FLIGHT_RULES_PROTECTED_BRANCHES=...   (override)
+#   2. .ai/flight-rules.conf   PROTECTED_BRANCHES=^(main|dev)$       (the normal home)
+#   3. The defaults below
 #
-# Deliberately environment-only: sourcing a config file out of the repo would let
-# any cloned repository run code in this hook.
+# Put the policy in .ai/flight-rules.conf. It sits beside the rules in the
+# tool-agnostic .ai/ directory, so a git hook, a Claude Code hook and any other
+# assistant's adapter read one list instead of each restating it in its own settings
+# file — the same reason this script lives in .ai/hooks/ rather than .claude/.
+# The environment is for a one-off, or a policy meant for one tool only.
+#
+# It is parsed as DATA — matched with sed, never sourced — so a hostile repository
+# cannot execute code through it. Do not "simplify" this to `source`.
+read_conf() {
+  local key="$1" file="$2"
+  [ -r "$file" ] || return 1
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
 #
 # The default covers the branch names teams protect in practice, across the common
 # conventions (git-flow's develop, release trains, QA/UAT gates), because the guard
@@ -27,7 +38,7 @@
 # message; NOT being stopped on one you did costs work. Matching is
 # case-insensitive, so QA, Qa and qa are all the same branch to this check.
 #
-# ⚠️  Setting FLIGHT_RULES_PROTECTED_BRANCHES *REPLACES* the list below — it does not
+# ⚠️  Either source *REPLACES* the default list below — it does not
 #     add to it. "^(integration)$" protects that branch and NOTHING ELSE: main and dev
 #     become unguarded. To keep the defaults and add your own, copy the whole pattern
 #     and extend the first group:
@@ -35,8 +46,12 @@
 # `^release(/|$)` covers both a bare `release` branch and a `release/1.0` train.
 # hotfix/* is deliberately absent: you commit to a hotfix branch, so it is a working
 # branch, not one to defend.
-PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)\$|^release(/|\$)}"
-WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-.ai/worktrees}"
+DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
+DEFAULT_WORKTREE_DIR='.ai/worktrees'
+
+# Resolution happens further down, once the command has told us which repo is
+# being acted on — the conf file is read from that repo, not from wherever the
+# shell happens to be.
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
@@ -83,6 +98,17 @@ if [[ -n "$WORK_DIR" ]]; then
 else
   CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 fi
+
+# Now that the target repo is known, resolve config from it: environment first,
+# then that repo's .ai/flight-rules.conf, then the built-in defaults.
+CONF_ROOT=$(git -C "${WORK_DIR:-.}" rev-parse --show-toplevel 2>/dev/null)
+[ -z "$CONF_ROOT" ] && CONF_ROOT="${CLAUDE_PROJECT_DIR:-.}"
+CONF_FILE="$CONF_ROOT/.ai/flight-rules.conf"
+
+PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$CONF_FILE")}"
+PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
+WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF_FILE")}"
+WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WORKTREE_DIR}"
 
 # Case-insensitively, so QA/Qa/qa and Main/main are each one branch to this check.
 # Scoped to this one comparison: the command-matching regexes above must stay

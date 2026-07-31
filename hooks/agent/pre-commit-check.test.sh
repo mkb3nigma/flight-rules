@@ -99,6 +99,64 @@ check "custom REPLACES, not extends"     allow main 'git rm f.txt' \
 check "custom: worktree dir in message"  deny  main 'git rm f.txt' \
       FLIGHT_RULES_WORKTREE_DIR='.worktrees'
 
+echo "Config file (.ai/flight-rules.conf) — the tool-agnostic home:"
+# conf_check <desc> <expect> <branch> <command> <conf-contents>
+conf_check() {
+  local desc="$1" expect="$2" branch="$3" cmd="$4" conf="$5"
+  local dir out got
+  dir=$(make_repo "$branch")
+  mkdir -p "$dir/.ai"; printf '%s\n' "$conf" > "$dir/.ai/flight-rules.conf"
+  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
+  fi
+  rm -rf "$dir"
+}
+
+conf_check "conf protects a custom branch"  deny  integration 'git rm f' \
+  'PROTECTED_BRANCHES=^integration$'
+conf_check "conf narrows: dev now allowed"  allow dev 'git rm f' \
+  'PROTECTED_BRANCHES=^integration$'
+conf_check "comments and blanks ignored"    deny  integration 'git rm f' \
+  '# flight-rules config
+
+PROTECTED_BRANCHES=^integration$'
+conf_check "quoted value is unwrapped"      deny  integration 'git rm f' \
+  'PROTECTED_BRANCHES="^integration$"'
+conf_check "spaces around = tolerated"      deny  integration 'git rm f' \
+  'PROTECTED_BRANCHES = ^integration$'
+conf_check "absent key falls back to default" deny main 'git rm f' \
+  'WORKTREE_DIR=.worktrees'
+# The conf file is parsed, never sourced. If someone "simplifies" read_conf to
+# `source`, this repo-supplied command would run and create the marker file.
+# Expect ALLOW: read as data, the value is the literal string "$(touch ...)^main$",
+# which is a regex that simply does not match the branch "main". That inertness is
+# the point — the real assertion is the marker check below.
+MARKER=$(cd "$(mktemp -d)" && pwd -P)/pwned
+conf_check "substitution in conf stays inert" allow main 'git rm f' \
+  "PROTECTED_BRANCHES=\$(touch $MARKER)^main\$"
+if [[ -e "$MARKER" ]]; then
+  FAIL=$((FAIL+1)); printf '  ❌ conf file was EXECUTED — read_conf must not source\n'
+else
+  PASS=$((PASS+1)); printf '  ✅ no code execution from conf file\n'
+fi
+
+echo "Precedence — environment beats the conf file:"
+D=$(make_repo dev)
+mkdir -p "$D/.ai"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.ai/flight-rules.conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' \
+      bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null)
+if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ env overrides conf\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ env did not override conf\n'
+fi
+rm -rf "$D"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

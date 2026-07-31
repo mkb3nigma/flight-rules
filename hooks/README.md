@@ -61,23 +61,31 @@ Guards that fire on the assistant's own events, before git ever runs:
 
 ### Configuration
 
-`pre-commit-check.sh` takes its project settings from environment variables, so a
-project can retune it without forking. Set them in the consuming project's
-`.claude/settings.json`:
+`pre-commit-check.sh` is configured per project **without forking it**. The primary
+home is `.ai/flight-rules.conf` — beside the rules, not inside any one tool's settings
+— so a git hook, a Claude Code hook and another assistant's adapter all read one list
+instead of each restating it:
 
-```json
-{
-  "env": {
-    "FLIGHT_RULES_PROTECTED_BRANCHES": "^(main|release/.*)$",
-    "FLIGHT_RULES_WORKTREE_DIR": ".worktrees"
-  }
-}
+```ini
+# .ai/flight-rules.conf
+PROTECTED_BRANCHES=^(main|release/.*)$
+WORKTREE_DIR=.worktrees
 ```
 
-| Variable | Controls |
-|---|---|
-| `FLIGHT_RULES_PROTECTED_BRANCHES` | Branches the guard defends. A POSIX ERE matched **case-insensitively** against the branch name — anchor it with `^`/`$`. |
-| `FLIGHT_RULES_WORKTREE_DIR` | Path suggested in the block message. Default `.ai/worktrees`. |
+The file is parsed as **data** (matched with `sed`, never `source`d), so a cloned
+repository cannot execute code through it. `#` comments, blank lines, spaces around
+`=`, and quoted values are all fine.
+
+| Setting | `.ai/flight-rules.conf` key | Environment variable | Controls |
+|---|---|---|---|
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | Branches the guard defends. A POSIX ERE matched **case-insensitively** — anchor it with `^`/`$`. |
+| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | Path suggested in the block message. Default `.ai/worktrees`. |
+
+Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
+the conf file is read from the repo the command targets, so a session spanning several
+repos gets each project's own policy. The environment variables carry a
+`FLIGHT_RULES_` prefix because the environment is a shared namespace; the file keys do
+not, because the filename already scopes them.
 
 **Default protected set** — `main`, `master`, `dev`, `develop`, `development`,
 `staging`, `stage`, `qa`, `uat`, `prod`, `production`, and `release` (bare or as a
@@ -105,17 +113,17 @@ Worked examples:
 
 ### Where to set it
 
-Two places work, and they resolve in this order:
+- **`.ai/flight-rules.conf`** (recommended) — tool-agnostic and committed with the
+  project, so every assistant and every contributor gets the same policy. This is the
+  one to use.
+- **`.claude/settings.json` `"env"`** — a Claude-Code-only override, for when a policy
+  should apply to Claude sessions but not to the git hooks.
+- **The shell environment** — `export FLIGHT_RULES_PROTECTED_BRANCHES='^main$'`. Useful
+  for a one-off; not durable.
 
-1. **`.claude/settings.json` `"env"`** (recommended) — committed with the project, so
-   every session and every contributor gets the same policy.
-2. **The shell environment** — `export FLIGHT_RULES_PROTECTED_BRANCHES='^main$'` before
-   launching the assistant. Useful for a one-off; not durable.
-
-The hook reads plain environment variables, so anything that ends up in the assistant's
-environment works. Note it does **not** load a `.env` file itself — if your project keeps
-these in `.env`, source it in your shell first, or mirror the value into
-`.claude/settings.json`, which is the reliable path.
+The hook does **not** read a `.env` file. If your project keeps settings there, put the
+branch policy in `.ai/flight-rules.conf` instead — `.env` is for secrets and
+per-machine values, and this policy is neither.
 
 Settings come from the environment and never from a file inside the repository: a
 sourced config file would let any cloned repo execute code inside the hook.
