@@ -67,11 +67,37 @@ check "git rm on a feature branch"       allow feature/x 'git rm f.txt'
 check "git reset --hard on feature"      allow feature/x 'git reset --hard HEAD'
 check "git commit on feature"            allow feature/x 'git commit -m "x"'
 
+echo "Default protected set covers the common conventions:"
+check "master"                           deny  master      'git rm f'
+check "develop (git-flow)"               deny  develop     'git rm f'
+check "development"                      deny  development 'git rm f'
+check "staging"                          deny  staging     'git rm f'
+check "qa"                               deny  qa          'git rm f'
+check "QA (case-insensitive)"            deny  QA          'git rm f'
+check "Main (case-insensitive)"          deny  Main        'git rm f'
+check "uat"                              deny  uat         'git rm f'
+check "production"                       deny  production  'git rm f'
+check "release (bare)"                   deny  release     'git rm f'
+check "release/1.0 (train)"              deny  release/1.0 'git rm f'
+
+echo "Default set does NOT over-reach:"
+check "hotfix/x is a working branch"     allow hotfix/x     'git rm f'
+check "feature/release-notes"            allow feature/release-notes 'git rm f'
+check "releases-page (not a release)"    allow releases-page 'git rm f'
+check "devtools (not dev)"               allow devtools     'git rm f'
+
 echo "Configurable protected set:"
 check "custom: release/1.0 protected"    deny  release/1.0 'git rm f.txt' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^(main|release/.*)$'
 check "custom: dev no longer protected"  allow dev  'git rm f.txt' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^(main|release/.*)$'
+# Pins the documented footgun: the variable REPLACES the defaults, so a narrow
+# custom value leaves previously-protected branches open. If this ever starts
+# failing, the override became additive and the README is wrong.
+check "custom REPLACES, not extends"     allow main 'git rm f.txt' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^integration$'
+check "custom: worktree dir in message"  deny  main 'git rm f.txt' \
+      FLIGHT_RULES_WORKTREE_DIR='.worktrees'
 
 echo
 echo "$PASS passed, $FAIL failed"

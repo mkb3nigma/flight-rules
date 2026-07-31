@@ -66,13 +66,56 @@ project can retune it without forking. Set them in the consuming project's
 `.claude/settings.json`:
 
 ```json
-{ "env": { "FLIGHT_RULES_PROTECTED_BRANCHES": "^(main|release/.*)$" } }
+{
+  "env": {
+    "FLIGHT_RULES_PROTECTED_BRANCHES": "^(main|release/.*)$",
+    "FLIGHT_RULES_WORKTREE_DIR": ".worktrees"
+  }
+}
 ```
 
-| Variable | Default | Controls |
-|---|---|---|
-| `FLIGHT_RULES_PROTECTED_BRANCHES` | `^(main\|staging\|dev)$` | Branches the guard defends. A POSIX ERE matched against the branch name — anchor it. |
-| `FLIGHT_RULES_WORKTREE_DIR` | `.ai/worktrees` | Path suggested in the block message. |
+| Variable | Controls |
+|---|---|
+| `FLIGHT_RULES_PROTECTED_BRANCHES` | Branches the guard defends. A POSIX ERE matched **case-insensitively** against the branch name — anchor it with `^`/`$`. |
+| `FLIGHT_RULES_WORKTREE_DIR` | Path suggested in the block message. Default `.ai/worktrees`. |
+
+**Default protected set** — `main`, `master`, `dev`, `develop`, `development`,
+`staging`, `stage`, `qa`, `uat`, `prod`, `production`, and `release` (bare or as a
+`release/1.0` train). Case-insensitive, so `QA` and `qa` are the same branch here.
+
+The default is broad on purpose: being stopped on a branch you did not mean to protect
+costs one message, while *not* being stopped on one you did costs work. It covers the
+common conventions (git-flow's `develop`, release trains, QA/UAT gates) so most projects
+need no configuration at all. `hotfix/*` is deliberately excluded — you commit to a
+hotfix branch, so it is a working branch, not one to defend.
+
+> ⚠️ **The variable replaces the default list — it does not extend it.** Setting
+> `FLIGHT_RULES_PROTECTED_BRANCHES` to `^integration$` protects that branch and
+> *nothing else*: `main` and `dev` become unguarded. To keep the defaults **and** add
+> your own, copy the whole pattern and extend the first group.
+
+Worked examples:
+
+| Goal | Value |
+|---|---|
+| Only `main` | `^main$` |
+| `main` plus release trains | `^(main\|release/.*)$` |
+| Trunk-based, one branch | `^trunk$` |
+| Defaults **plus** `integration` | `^(main\|master\|dev\|develop\|development\|staging\|stage\|qa\|uat\|prod\|production\|integration)$\|^release(/\|$)` |
+
+### Where to set it
+
+Two places work, and they resolve in this order:
+
+1. **`.claude/settings.json` `"env"`** (recommended) — committed with the project, so
+   every session and every contributor gets the same policy.
+2. **The shell environment** — `export FLIGHT_RULES_PROTECTED_BRANCHES='^main$'` before
+   launching the assistant. Useful for a one-off; not durable.
+
+The hook reads plain environment variables, so anything that ends up in the assistant's
+environment works. Note it does **not** load a `.env` file itself — if your project keeps
+these in `.env`, source it in your shell first, or mirror the value into
+`.claude/settings.json`, which is the reliable path.
 
 Settings come from the environment and never from a file inside the repository: a
 sourced config file would let any cloned repo execute code inside the hook.

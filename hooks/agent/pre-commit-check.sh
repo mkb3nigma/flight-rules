@@ -9,12 +9,33 @@
 # permissionDecision on stdout. Another assistant needs a thin adapter around the
 # same checks.
 
-# Project configuration. Override per project WITHOUT forking this file by setting
-# these in the consuming project's .claude/settings.json "env" block, e.g.:
-#   "env": { "FLIGHT_RULES_PROTECTED_BRANCHES": "^(main|release/.*)$" }
+# ── Project configuration ────────────────────────────────────────────────────
+# Override per project WITHOUT forking this file, from the consuming project's
+# .claude/settings.json "env" block:
+#
+#   "env": {
+#     "FLIGHT_RULES_PROTECTED_BRANCHES": "^(main|release/.*)$",
+#     "FLIGHT_RULES_WORKTREE_DIR": ".worktrees"
+#   }
+#
 # Deliberately environment-only: sourcing a config file out of the repo would let
 # any cloned repository run code in this hook.
-PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-^(main|staging|dev)\$}"
+#
+# The default covers the branch names teams protect in practice, across the common
+# conventions (git-flow's develop, release trains, QA/UAT gates), because the guard
+# should fail safe. Being stopped on a branch you did not mean to protect costs one
+# message; NOT being stopped on one you did costs work. Matching is
+# case-insensitive, so QA, Qa and qa are all the same branch to this check.
+#
+# ⚠️  Setting FLIGHT_RULES_PROTECTED_BRANCHES *REPLACES* the list below — it does not
+#     add to it. "^(integration)$" protects that branch and NOTHING ELSE: main and dev
+#     become unguarded. To keep the defaults and add your own, copy the whole pattern
+#     and extend the first group:
+#       ^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production|integration)$|^release(/|$)
+# `^release(/|$)` covers both a bare `release` branch and a `release/1.0` train.
+# hotfix/* is deliberately absent: you commit to a hotfix branch, so it is a working
+# branch, not one to defend.
+PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)\$|^release(/|\$)}"
 WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-.ai/worktrees}"
 
 INPUT=$(cat)
@@ -63,6 +84,13 @@ else
   CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 fi
 
+# Case-insensitively, so QA/Qa/qa and Main/main are each one branch to this check.
+# Scoped to this one comparison: the command-matching regexes above must stay
+# case-sensitive, or `git RM` style false matches creep in.
+shopt -s nocasematch
+[[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] && IS_PROTECTED=1 || IS_PROTECTED=0
+shopt -u nocasematch
+
 # Scope the branch policy to the project this hook belongs to. Without this, the
 # guard applies the project's branch rules to every repo the session touches —
 # including a sibling repo whose normal working branch IS main. (The secret scan
@@ -83,7 +111,7 @@ if [[ "$IN_THIS_PROJECT" == "0" ]]; then
 elif [[ -f "$GIT_DIR_PATH/MERGE_HEAD" ]]; then
   # This is a merge commit; let it through
   :
-elif [[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]]; then
+elif [[ "$IS_PROTECTED" == "1" ]]; then
   if [[ "$ACTION" == "destructive" ]]; then
     VERB="This command would modify or discard files in the working tree."
   else
