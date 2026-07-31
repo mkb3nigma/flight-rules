@@ -8,11 +8,16 @@ installed. Two kinds, deliberately separated:
 | `git/` | git hooks | git itself (`core.hooksPath`) | No — pure git |
 | `agent/` | assistant-event hook scripts | the AI assistant's hook events | Logic is generic; the I/O protocol is per-tool (currently Claude Code) |
 
-These are **templates to copy into a project**, not plugin-activated hooks — every
-project sets its own protected branches, so nothing here activates just by installing
-the flight-rules plugin. Copy them into the project (recommended home: `.ai/hooks/`
-for the git hooks, `.ai/hooks/agent/` for the agent scripts), adjust the parameter
-variables at the top of each script, and commit them.
+These are **templates to copy into a project**, not plugin-activated hooks — nothing
+here fires just by installing the flight-rules plugin. Copy them into the project
+(recommended home: `.ai/hooks/` for the git hooks, `.ai/hooks/agent/` for the agent
+scripts) and commit them.
+
+Branch names differ per project, so `pre-commit-check.sh` reads its settings from the
+**environment** rather than requiring you to edit the script — see
+[Configuration](#configuration). Fork it only to change its logic, not its branch list.
+The git hooks in `git/` still need their parameter variables edited in place: git runs
+them directly, so they never see a `.claude/settings.json` `env` block.
 
 ## Git hooks (`git/`)
 
@@ -41,11 +46,36 @@ variables at the top of each script, and commit them.
 
 Guards that fire on the assistant's own events, before git ever runs:
 
-- **`pre-commit-check.sh`** — PreToolUse guard on the Bash tool: denies `git commit`
-  on a protected branch (worktrees only) and denies commits with staged `.env` files,
-  cloud/API key patterns, private-key headers, or hardcoded credential literals.
+- **`pre-commit-check.sh`** — PreToolUse guard on the Bash tool. On a protected branch
+  it denies both `git commit` **and** the working-tree destroyers that would otherwise
+  slip past it — `git rm`, `git reset --hard`, `git clean -f`, `git checkout -- .`,
+  `git restore`. (Gating on `git commit` alone is porous: those commands do their damage
+  without any commit following, so the guard never sees them.) A merge in progress is
+  exempt, since resolving conflicts on the integration branch legitimately needs them.
+  Independently of branch, it denies commits with staged `.env` files, cloud/API key
+  patterns, private-key headers, or hardcoded credential literals.
+  Tests: `pre-commit-check.test.sh` (`./pre-commit-check.test.sh` — no arguments, no
+  network, builds throwaway repos).
 - **`session-start.sh`** — SessionStart banner: once a day, lists worktrees whose
   branches are already merged so they get cleaned up.
+
+### Configuration
+
+`pre-commit-check.sh` takes its project settings from environment variables, so a
+project can retune it without forking. Set them in the consuming project's
+`.claude/settings.json`:
+
+```json
+{ "env": { "FLIGHT_RULES_PROTECTED_BRANCHES": "^(main|release/.*)$" } }
+```
+
+| Variable | Default | Controls |
+|---|---|---|
+| `FLIGHT_RULES_PROTECTED_BRANCHES` | `^(main\|staging\|dev)$` | Branches the guard defends. A POSIX ERE matched against the branch name — anchor it. |
+| `FLIGHT_RULES_WORKTREE_DIR` | `.ai/worktrees` | Path suggested in the block message. |
+
+Settings come from the environment and never from a file inside the repository: a
+sourced config file would let any cloned repo execute code inside the hook.
 
 ### Wiring (Claude Code)
 
