@@ -98,7 +98,17 @@ repository cannot execute code through it. `#` comments, blank lines, spaces aro
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
-repos gets each project's own policy. The environment variables carry a
+repos gets each project's own policy.
+
+> ⚠️ **The two git hooks read the conf from `HEAD`, not the working tree.** During a
+> merge git updates the working tree *before* the hooks run, so a working-tree read
+> would let the incoming branch configure the gate that judges it — a branch shipping
+> `NOTE_GATED_BRANCHES=^nothing$` would wave itself through. They read
+> `HEAD:.ai/flight-rules.conf` (the merge target's committed policy) and fall back to
+> the built-in default, never to the working tree. Practical consequence: **a conf
+> change only takes effect on the merge gate once it is committed on the target
+> branch.** `pre-commit-check.sh` still reads the working tree on purpose — it guards
+> an interactive session, where an uncommitted edit should apply immediately. The environment variables carry a
 `FLIGHT_RULES_` prefix because the environment is a shared namespace; the file keys do
 not, because the filename already scopes them.
 

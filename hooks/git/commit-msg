@@ -11,11 +11,25 @@
 # it gates merges only, never ordinary commits. PR-only branches (default `main`)
 # are handled by pre-merge-commit and blocked before reaching this hook.
 #
-# Configuration — same contract as hooks/agent/pre-commit-check.sh. First match wins:
+# Configuration — first match wins:
 #   1. Environment              FLIGHT_RULES_NOTE_GATED_BRANCHES='^(dev|staging)$'
-#   2. <repo>/.ai/flight-rules.conf    NOTE_GATED_BRANCHES=^(dev|staging)$
+#   2. .ai/flight-rules.conf **as committed on the merge target** (see below)
 #   3. The default below
 # Parsed as data, never sourced, so a cloned repo cannot execute code here.
+#
+# ⚠️ The conf is read from `HEAD:.ai/flight-rules.conf` — the merge TARGET's committed
+#    state — NOT from the working tree. During a merge git updates the working tree
+#    before this hook runs, so a working-tree read would hand the incoming branch
+#    control over the gate that judges it: a branch shipping
+#    `NOTE_GATED_BRANCHES=^nothing$` would wave itself through. Reading from HEAD is
+#    also the semantically right answer — the gate enforces the policy of the branch
+#    you are merging INTO. If HEAD has no conf, fall back to the default rather than
+#    to the working tree; failing open would restore the hole.
+#
+#    hooks/agent/pre-commit-check.sh deliberately still reads the working tree: it
+#    guards against mistakes in an interactive session, where an uncommitted config
+#    edit SHOULD take effect immediately. Only the merge gate has to resist the thing
+#    it is gating.
 #
 # Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
 # install.sh once per clone.
@@ -25,22 +39,20 @@
 set -euo pipefail
 
 DEFAULT_NOTE_GATED='^(dev|staging)$'
+CONF_PATH='.ai/flight-rules.conf'   # repo-relative
 
-read_conf() {
-  local key="$1" file="$2"
-  # return 0, not 1: these hooks run under `set -e`, so a missing conf file must
-  # yield empty output rather than a failure status — otherwise the hook aborts
-  # and blocks every commit in a repo that has no conf file.
-  [ -r "$file" ] || return 0
-  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+read_conf_at_head() {
+  local key="$1" path="$2" content
+  # return 0, not 1, on a missing file: these hooks run under `set -e`, so a failure
+  # status here would abort the hook and block every commit in a repo with no conf.
+  content=$(git show "HEAD:$path" 2>/dev/null) || return 0
+  printf '%s\n' "$content" \
+    | sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" \
     | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
 
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
-CONF_FILE="$REPO_ROOT/.ai/flight-rules.conf"
-
-PROTECTED_RE="${FLIGHT_RULES_NOTE_GATED_BRANCHES:-$(read_conf NOTE_GATED_BRANCHES "$CONF_FILE")}"
+PROTECTED_RE="${FLIGHT_RULES_NOTE_GATED_BRANCHES:-$(read_conf_at_head NOTE_GATED_BRANCHES "$CONF_PATH")}"
 PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_NOTE_GATED}"
 
 CURRENT_BRANCH=$(git branch --show-current)

@@ -15,34 +15,40 @@
 #     commit-msg runs with MERGE_HEAD present, so the check works there.
 #     See hooks/git/commit-msg — install BOTH or the gate is only half built.
 #
-# Configuration — same contract as hooks/agent/pre-commit-check.sh. First match wins:
+# Configuration — first match wins:
 #   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
-#   2. <repo>/.ai/flight-rules.conf    PR_ONLY_BRANCHES=^main$
+#   2. .ai/flight-rules.conf **as committed on the merge target** (see below)
 #   3. The default below
 # Parsed as data, never sourced. Commit this file (e.g. into .ai/hooks/) and run
 # install.sh once per clone.
+#
+# ⚠️ The conf is read from `HEAD:.ai/flight-rules.conf` — the merge TARGET's committed
+#    state — NOT from the working tree. By the time this hook runs git has already
+#    updated the working tree with the merge result, so a working-tree read would let
+#    the incoming branch relax the very rule that judges it: a branch shipping
+#    `PR_ONLY_BRANCHES=^nothing$` could merge itself straight into main. Falling back
+#    to the default (not the working tree) when HEAD has no conf keeps that closed.
+#    See the longer note in hooks/git/commit-msg.
 #
 # Bypass (breaks the rules — emergencies only):  git merge --no-verify
 
 set -euo pipefail
 
 DEFAULT_PR_ONLY='^main$'
+CONF_PATH='.ai/flight-rules.conf'   # repo-relative
 
-read_conf() {
-  local key="$1" file="$2"
-  # return 0, not 1: these hooks run under `set -e`, so a missing conf file must
-  # yield empty output rather than a failure status — otherwise the hook aborts
-  # and blocks every commit in a repo that has no conf file.
-  [ -r "$file" ] || return 0
-  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+read_conf_at_head() {
+  local key="$1" path="$2" content
+  # return 0, not 1, on a missing file: these hooks run under `set -e`, so a failure
+  # status here would abort the hook and block every commit in a repo with no conf.
+  content=$(git show "HEAD:$path" 2>/dev/null) || return 0
+  printf '%s\n' "$content" \
+    | sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" \
     | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
 
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
-CONF_FILE="$REPO_ROOT/.ai/flight-rules.conf"
-
-PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf PR_ONLY_BRANCHES "$CONF_FILE")}"
+PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 
 CURRENT_BRANCH=$(git branch --show-current)
