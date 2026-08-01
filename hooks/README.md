@@ -98,7 +98,17 @@ repository cannot execute code through it. `#` comments, blank lines, spaces aro
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
-repos gets each project's own policy. The environment variables carry a
+repos gets each project's own policy.
+
+> ⚠️ **The two git hooks read the conf from `HEAD`, not the working tree.** During a
+> merge git updates the working tree *before* the hooks run, so a working-tree read
+> would let the incoming branch configure the gate that judges it — a branch shipping
+> `NOTE_GATED_BRANCHES=^nothing$` would wave itself through. They read
+> `HEAD:.ai/flight-rules.conf` (the merge target's committed policy) and fall back to
+> the built-in default, never to the working tree. Practical consequence: **a conf
+> change only takes effect on the merge gate once it is committed on the target
+> branch.** `pre-commit-check.sh` still reads the working tree on purpose — it guards
+> an interactive session, where an uncommitted edit should apply immediately. The environment variables carry a
 `FLIGHT_RULES_` prefix because the environment is a shared namespace; the file keys do
 not, because the filename already scopes them.
 
@@ -165,6 +175,35 @@ The scripts read Claude Code's hook protocol — tool input as JSON on stdin, a
 structured `permissionDecision` on stdout. To use them with another assistant, wrap
 the same checks in that tool's hook protocol; the point of keeping them in `.ai/` is
 that the logic has exactly one home.
+
+## What these hooks are — and are not
+
+**They are guardrails against mistakes, not security controls.** Every one is trivially
+bypassable by someone who means to: `git commit --no-verify`, `git merge --no-verify`,
+editing the hook script, or repointing `core.hooksPath`. That is unavoidable — the
+hooks live in a repository their user controls, and any design that "fixed" it would
+break the requirement that they work for anyone who clones without the plugin.
+
+This is deliberate, because the failures worth preventing are the accidental ones:
+
+- committing to `dev` out of habit, in the wrong terminal tab
+- merging a branch whose checks were never run
+- a `git rm` issued with a relative path after a `cd` silently failed
+- an assistant taking a shortcut past a block it does not understand
+
+**The design rule follows: close the paths reachable by accident; do not contort the
+design to stop someone acting deliberately.** A guard that catches the careless case
+and is honest about the willful one is more useful than one that poses as a security
+boundary and isn't.
+
+That rule settles real trade-offs. When the merge gate turned out to read its config
+from the working tree — letting an incoming branch relax the rule judging it — the
+config route was closed, because changing one line of config is something that happens
+by accident, or that an agent does to get unblocked. The *other* route to the same
+outcome, rewriting the hook script itself, was left open: it is conspicuous, it would
+stand out in review, and closing it would mean moving the hooks out of the repo. Same
+outcome, very different odds of being reached by accident, and only one of them worth
+engineering against.
 
 ## Layered defence
 

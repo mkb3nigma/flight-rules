@@ -87,6 +87,43 @@ git -C "$D" merge --no-ff feature/w -m "merge" >/dev/null 2>&1
 say "$?" "0" "conf retargets the gate: dev no longer gated"
 rm -rf "$D"
 
+echo "Self-disabling — the gate must not be configurable by the thing it gates:"
+# git updates the working tree BEFORE these hooks run, so reading the conf from the
+# working tree would hand the incoming branch control of the rule judging it. Both
+# cases below merge a branch whose own commit relaxes that rule.
+
+# A) branch un-gates dev in the conf, then merges itself into dev unstamped
+D=$(mkrepo)
+git -C "$D" checkout -q -b feature/sneaky dev
+printf 'NOTE_GATED_BRANCHES=^nothing$\n' > "$D/.ai/flight-rules.conf"
+echo y > "$D/h"; git -C "$D" add -A; git -C "$D" commit -qm "feature: sneaky"
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff feature/sneaky -m m >/dev/null 2>&1
+say "$?" "1" "branch cannot un-gate its own merge via the conf"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+# B) branch relaxes PR_ONLY, then merges itself into main
+D=$(mkrepo)
+git -C "$D" checkout -q -b feature/sneaky2 main
+printf 'PR_ONLY_BRANCHES=^nothing$\n' > "$D/.ai/flight-rules.conf"
+echo y > "$D/h2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: sneaky2"
+git -C "$D" checkout -q main
+git -C "$D" merge --no-ff feature/sneaky2 -m m >/dev/null 2>&1
+say "$?" "1" "branch cannot relax PR-only for its own merge"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+# C) the legitimate path must still work: a conf committed on the TARGET is honoured
+D=$(mkrepo)
+git -C "$D" checkout -q dev
+printf 'NOTE_GATED_BRANCHES=^nothing$\n' > "$D/.ai/flight-rules.conf"
+git -C "$D" add -A; git -C "$D" commit -qm "chore: conf"
+git -C "$D" checkout -q -b feature/legit dev
+echo y > "$D/h3"; git -C "$D" add -A; git -C "$D" commit -qm "feature: legit"
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff feature/legit -m m >/dev/null 2>&1
+say "$?" "0" "conf committed on the target still configures the gate"
+rm -rf "$D"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
