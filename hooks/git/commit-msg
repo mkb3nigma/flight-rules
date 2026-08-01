@@ -63,17 +63,43 @@ if echo "$NOTE" | grep -q "^passed:"; then
     exit 0
 fi
 
+# --- Box drawing --------------------------------------------------------------
+# A blocked merge scrolls past in a wall of terminal output; the box makes it
+# impossible to miss. Duplicated verbatim in pre-merge-commit: git hooks are
+# copied into projects individually and must stay self-contained, so a shared
+# library would be one more file to keep in sync for eight lines of formatting.
+#
+# `adj` is the number of EXTRA display columns the row's content occupies beyond
+# its character count — bash's ${#s} counts characters, and an emoji is one
+# character but two columns, so a row containing one emoji passes adj=1. Getting
+# it wrong shifts that row's right border by a column; it is cosmetic only.
+BOX_W=68
+_rule() { local c="$1" n=$BOX_W out=''; while [ $n -gt 0 ]; do out="$out$c"; n=$((n-1)); done; printf '%s' "$out"; }
+box_top() { printf '╔%s╗\n' "$(_rule ═)"; }
+box_sep() { printf '╠%s╣\n' "$(_rule ═)"; }
+box_bot() { printf '╚%s╝\n' "$(_rule ═)"; }
+box_row() {
+    local s="${1:-}" adj="${2:-0}" pad
+    pad=$(( BOX_W - ${#s} - 2 - adj ))
+    [ "$pad" -lt 0 ] && pad=0
+    printf '║ %s%*s ║\n' "$s" "$pad" ''
+}
+
 echo ""
-echo "❌  PRE-MERGE CHECK REQUIRED"
-echo ""
-echo "    Merging: $MERGE_BRANCH"
-echo "    Into:    $CURRENT_BRANCH"
-echo ""
-echo "    Run /pre-merge-check in the feature worktree first. When every check"
-echo "    passes it stamps a note on the commit, and this hook lets the merge"
-echo "    through."
-echo ""
-echo "    Undo this half-finished merge:   git merge --abort"
-echo "    Bypass (emergencies only):       git merge --no-verify"
+box_top
+box_row "❌  PRE-MERGE CHECK REQUIRED" 1
+box_sep
+box_row ""
+box_row "Merging: $MERGE_BRANCH"
+box_row "Into:    $CURRENT_BRANCH"
+box_row ""
+box_row "Run /pre-merge-check in the feature worktree first. When"
+box_row "every check passes it stamps a note on the commit, and"
+box_row "this hook lets the merge through."
+box_row ""
+box_row "Undo this half-finished merge:   git merge --abort"
+box_row "Bypass (emergencies only):       git merge --no-verify"
+box_row ""
+box_bot
 echo ""
 exit 1
