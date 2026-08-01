@@ -47,19 +47,47 @@ PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 
 CURRENT_BRANCH=$(git branch --show-current)
 
+# --- Box drawing --------------------------------------------------------------
+# A blocked merge scrolls past in a wall of terminal output; the box makes it
+# impossible to miss. Duplicated verbatim in commit-msg: git hooks are copied
+# into projects individually and must stay self-contained, so a shared library
+# would be one more file to keep in sync for eight lines of formatting.
+#
+# `adj` is the number of EXTRA display columns the row's content occupies beyond
+# its character count — bash's ${#s} counts characters, and an emoji is one
+# character but two columns, so a row containing one emoji passes adj=1. Getting
+# this wrong shifts that row's right border by a column; it is cosmetic only.
+BOX_W=68
+_rule() { local c="$1" n=$BOX_W out=''; while [ $n -gt 0 ]; do out="$out$c"; n=$((n-1)); done; printf '%s' "$out"; }
+box_top() { printf '╔%s╗\n' "$(_rule ═)"; }
+box_sep() { printf '╠%s╣\n' "$(_rule ═)"; }
+box_bot() { printf '╚%s╝\n' "$(_rule ═)"; }
+box_row() {
+    local s="${1:-}" adj="${2:-0}" pad
+    pad=$(( BOX_W - ${#s} - 2 - adj ))
+    [ "$pad" -lt 0 ] && pad=0
+    printf '║ %s%*s ║\n' "$s" "$pad" ''
+}
+
 # --- Mechanism 1: PR-only branches — block any local merge commit -------------
 if [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]]; then
     echo ""
-    echo "⛔  $CURRENT_BRANCH IS PR-ONLY — local merge blocked"
-    echo ""
-    echo "    $CURRENT_BRANCH is updated only through a reviewed pull request, never a"
-    echo "    local git merge. Do this instead:"
-    echo "      1. gh pr create --base $CURRENT_BRANCH   (open a PR)"
-    echo "      2. let CI run, review, then Merge on the host"
-    echo "      3. git checkout $CURRENT_BRANCH && git pull --ff-only origin $CURRENT_BRANCH"
-    echo ""
-    echo "    Undo this half-finished merge:   git merge --abort"
-    echo "    Emergency bypass (discouraged):  git merge --no-verify"
+    box_top
+    box_row "⛔  $CURRENT_BRANCH IS PR-ONLY — LOCAL MERGE BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "$CURRENT_BRANCH is updated only through a reviewed pull"
+    box_row "request, never a local git merge. Do this instead:"
+    box_row ""
+    box_row "  1. gh pr create --base $CURRENT_BRANCH"
+    box_row "  2. let CI run, review, then Merge on the host"
+    box_row "  3. git checkout $CURRENT_BRANCH"
+    box_row "     git pull --ff-only origin $CURRENT_BRANCH"
+    box_row ""
+    box_row "Undo this half-finished merge:   git merge --abort"
+    box_row "Emergency bypass (discouraged):  git merge --no-verify"
+    box_row ""
+    box_bot
     echo ""
     exit 1
 fi
