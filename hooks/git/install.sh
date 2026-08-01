@@ -8,8 +8,17 @@ set -euo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 HOOKS_DIR="$REPO_ROOT/.ai/hooks"   # adjust if the project keeps hooks elsewhere
 
-chmod +x "$HOOKS_DIR"/pre-merge-commit
-chmod +x "$HOOKS_DIR"/post-merge
+# commit-msg carries the note gate. Without it, pre-merge-commit blocks PR-only
+# branches but nothing enforces the pre-merge-check note — a half-built gate that
+# still looks installed. Fail loudly rather than degrade silently.
+for required in pre-merge-commit post-merge commit-msg; do
+    if [ ! -f "$HOOKS_DIR/$required" ]; then
+        echo "❌ $HOOKS_DIR/$required is missing — copy it in before installing."
+        [ "$required" = "commit-msg" ] && echo "   Without it the note gate never runs and merges go unchecked."
+        exit 1
+    fi
+    chmod +x "$HOOKS_DIR/$required"
+done
 
 # Point git at the committed hooks directory
 git config core.hooksPath "$HOOKS_DIR"

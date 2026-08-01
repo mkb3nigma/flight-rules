@@ -33,18 +33,21 @@ the assistant, so they see neither `settings.json` nor (yet) the conf file.
 
 ## Git hooks (`git/`)
 
-- **`pre-merge-commit`** — the merge gate, two mechanisms:
-  - **PR-only branches** (`PR_ONLY_RE`, default `main`) are blocked from any local
-    merge — they move only through a reviewed pull request. The hook fires only when
-    git creates a merge commit (a `--ff-only` pull does not), so its firing on a
-    PR-only branch is the violation; robust, needs no `MERGE_HEAD`. Sync with
-    `git pull --ff-only origin main`.
-  - **Note-gated branches** (`PROTECTED_RE`, e.g. `dev`/`staging`) require a passing
-    `pre-merge-check` note on the incoming commit. ⚠️ **Known bug (tracked):** modern
-    git writes `MERGE_HEAD` *after* `pre-merge-commit` runs (verified on git 2.55), so
-    this mechanism is currently a **no-op** — the note is never read. Repair = relocate
-    the check to `commit-msg`, where `MERGE_HEAD` exists. Until then only mechanism 1
-    (PR-only) actually enforces.
+- **`pre-merge-commit`** — mechanism 1 of the merge gate: **PR-only branches**
+  (`PR_ONLY_BRANCHES`, default `main`) are blocked from any local merge; they move
+  only through a reviewed pull request. The hook fires only when git creates a merge
+  commit (a `--ff-only` pull does not), so its firing on a PR-only branch *is* the
+  violation — robust, and needs no `MERGE_HEAD`. Sync with
+  `git pull --ff-only origin main`.
+- **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`,
+  default `dev`/`staging`) require a passing `pre-merge-check` note on the incoming
+  commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
+  modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
+  lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
+  runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates
+  merges, never ordinary commits. **Install both hooks**, or the gate is half built;
+  `install.sh` fails loudly if `commit-msg` is missing.
+  Tests: `merge-gate.test.sh` (no arguments, no network).
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) that the next AI session picks up.
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored

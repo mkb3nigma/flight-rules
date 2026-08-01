@@ -8,24 +8,42 @@
 #     This needs no MERGE_HEAD and is robust. Sync the branch locally with:
 #         git checkout <branch> && git pull --ff-only origin <branch>
 #
-#  2. NOTE-GATED branches (e.g. dev/staging). Require a passing pre-merge-check
-#     note (refs/notes/pre-merge-check) on the incoming commit.
-#     ⚠️ KNOWN BUG (tracked): modern git writes MERGE_HEAD *after* this hook runs
-#     (verified on git 2.55), so the lookup below never finds it and mechanism 2
-#     is currently a NO-OP — note-gated branches are not actually enforced. The
-#     repair is to relocate the note check to a hook where MERGE_HEAD exists
-#     (commit-msg / prepare-commit-msg). Left in place, with merge.ff=false, so
-#     that repair stays a localized change.
+#  2. NOTE-GATED branches (e.g. dev/staging) — moved to the **commit-msg** hook.
+#     It used to live here and was a silent no-op: modern git (verified on 2.55)
+#     writes MERGE_HEAD *after* pre-merge-commit runs, so the lookup never found
+#     the incoming commit and note-gated branches were never actually enforced.
+#     commit-msg runs with MERGE_HEAD present, so the check works there.
+#     See hooks/git/commit-msg — install BOTH or the gate is only half built.
 #
-# Adapt the *_RE parameters to the project, commit this file (e.g. into .ai/hooks/),
-# then run install.sh once per clone.
+# Configuration — same contract as hooks/agent/pre-commit-check.sh. First match wins:
+#   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
+#   2. <repo>/.ai/flight-rules.conf    PR_ONLY_BRANCHES=^main$
+#   3. The default below
+# Parsed as data, never sourced. Commit this file (e.g. into .ai/hooks/) and run
+# install.sh once per clone.
 #
 # Bypass (breaks the rules — emergencies only):  git merge --no-verify
 
 set -euo pipefail
 
-PR_ONLY_RE='^main$'              # project parameter: {PR_ONLY_BRANCHES}
-PROTECTED_RE='^(dev|staging)$'   # project parameter: {NOTE_GATED_BRANCHES}
+DEFAULT_PR_ONLY='^main$'
+
+read_conf() {
+  local key="$1" file="$2"
+  # return 0, not 1: these hooks run under `set -e`, so a missing conf file must
+  # yield empty output rather than a failure status — otherwise the hook aborts
+  # and blocks every commit in a repo that has no conf file.
+  [ -r "$file" ] || return 0
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+CONF_FILE="$REPO_ROOT/.ai/flight-rules.conf"
+
+PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf PR_ONLY_BRANCHES "$CONF_FILE")}"
+PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 
 CURRENT_BRANCH=$(git branch --show-current)
 
@@ -46,41 +64,5 @@ if [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]]; then
     exit 1
 fi
 
-# --- Mechanism 2: note-gated protected branches (see KNOWN BUG above) ----------
-if [[ ! "$CURRENT_BRANCH" =~ $PROTECTED_RE ]]; then
-    exit 0
-fi
-
-# Locate MERGE_HEAD — path differs between main worktree and supplementary worktrees.
-GIT_DIR=$(git rev-parse --git-dir)
-MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
-
-if [ ! -f "$MERGE_HEAD_FILE" ]; then
-    # Not a merge commit, OR (the tracked bug) MERGE_HEAD not yet written. Either
-    # way there is nothing to check here — the gate is a no-op until the repair.
-    exit 0
-fi
-
-MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
-MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
-
-# Look for the pre-merge-check note on the incoming commit
-NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
-
-if echo "$NOTE" | grep -q "^passed:"; then
-    echo "✅ Pre-merge check verified for $MERGE_BRANCH → $CURRENT_BRANCH"
-    exit 0
-fi
-
-echo ""
-echo "❌  PRE-MERGE CHECK REQUIRED"
-echo "    Merging: $MERGE_BRANCH"
-echo "    Into:    $CURRENT_BRANCH"
-echo ""
-echo "    Run the pre-merge-check skill in the feature worktree first. When all"
-echo "    checks pass it stamps a git note on the commit so this hook lets the"
-echo "    merge through."
-echo ""
-echo "    To bypass (emergencies only):  git merge --no-verify"
-echo ""
-exit 1
+# Mechanism 2 (the note gate) lives in the commit-msg hook — see hooks/git/commit-msg.
+exit 0
