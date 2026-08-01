@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# commit-msg hook — the note gate (merge-gate mechanism 2).
+#
+# Lives here rather than in pre-merge-commit because modern git (verified on
+# 2.55) writes MERGE_HEAD *after* pre-merge-commit runs. The note lookup there
+# never found the incoming commit, so the gate was a silent no-op — the worst
+# kind of guard, one that reports nothing and enforces nothing. commit-msg runs
+# while the merge is in progress with MERGE_HEAD present, so the check works.
+#
+# For a NON-merge commit MERGE_HEAD is absent and this hook exits 0 immediately:
+# it gates merges only, never ordinary commits. PR-only branches (default `main`)
+# are handled by pre-merge-commit and blocked before reaching this hook.
+#
+# Configuration — same contract as hooks/agent/pre-commit-check.sh. First match wins:
+#   1. Environment              FLIGHT_RULES_NOTE_GATED_BRANCHES='^(dev|staging)$'
+#   2. <repo>/.ai/flight-rules.conf    NOTE_GATED_BRANCHES=^(dev|staging)$
+#   3. The default below
+# Parsed as data, never sourced, so a cloned repo cannot execute code here.
+#
+# Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
+# install.sh once per clone.
+#
+# Bypass (breaks the rules — emergencies only):  git merge --no-verify
+
+set -euo pipefail
+
+DEFAULT_NOTE_GATED='^(dev|staging)$'
+
+read_conf() {
+  local key="$1" file="$2"
+  # return 0, not 1: these hooks run under `set -e`, so a missing conf file must
+  # yield empty output rather than a failure status — otherwise the hook aborts
+  # and blocks every commit in a repo that has no conf file.
+  [ -r "$file" ] || return 0
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+CONF_FILE="$REPO_ROOT/.ai/flight-rules.conf"
+
+PROTECTED_RE="${FLIGHT_RULES_NOTE_GATED_BRANCHES:-$(read_conf NOTE_GATED_BRANCHES "$CONF_FILE")}"
+PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_NOTE_GATED}"
+
+CURRENT_BRANCH=$(git branch --show-current)
+[[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] || exit 0
+
+# MERGE_HEAD present ⇒ a merge is in progress. Absent ⇒ ordinary commit, nothing to
+# gate. Ask git for the git-dir rather than assuming ./.git — the path differs
+# between the main worktree and supplementary worktrees.
+GIT_DIR=$(git rev-parse --git-dir)
+MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
+[ -f "$MERGE_HEAD_FILE" ] || exit 0
+
+MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
+MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
+
+NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
+
+if echo "$NOTE" | grep -q "^passed:"; then
+    echo "✅ Pre-merge check verified for $MERGE_BRANCH → $CURRENT_BRANCH"
+    exit 0
+fi
+
+echo ""
+echo "❌  PRE-MERGE CHECK REQUIRED"
+echo ""
+echo "    Merging: $MERGE_BRANCH"
+echo "    Into:    $CURRENT_BRANCH"
+echo ""
+echo "    Run /pre-merge-check in the feature worktree first. When every check"
+echo "    passes it stamps a note on the commit, and this hook lets the merge"
+echo "    through."
+echo ""
+echo "    Undo this half-finished merge:   git merge --abort"
+echo "    Bypass (emergencies only):       git merge --no-verify"
+echo ""
+exit 1
