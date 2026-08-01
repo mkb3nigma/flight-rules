@@ -110,11 +110,24 @@ PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
 WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF_FILE")}"
 WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WORKTREE_DIR}"
 
+# Escape hatch. Installing the plugin now activates this guard, so a project whose
+# normal working branch IS main (or one that simply does not want the worktree
+# workflow) needs a way out that is not "uninstall the plugin". PROTECTED_BRANCHES=off
+# turns the branch policy off. The secret scan below still runs — leaking a key is
+# not a workflow preference.
+GUARD_OFF=0
+if [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]]; then
+  GUARD_OFF=1
+  # Nothing else to check for a destructive command: the branch policy was its
+  # only gate, and there is no staged diff to scan.
+  [[ "$ACTION" == "destructive" ]] && exit 0
+fi
+
 # Case-insensitively, so QA/Qa/qa and Main/main are each one branch to this check.
 # Scoped to this one comparison: the command-matching regexes above must stay
 # case-sensitive, or `git RM` style false matches creep in.
 shopt -s nocasematch
-[[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] && IS_PROTECTED=1 || IS_PROTECTED=0
+[[ "$GUARD_OFF" == "0" && "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] && IS_PROTECTED=1 || IS_PROTECTED=0
 shopt -u nocasematch
 
 # Scope the branch policy to the project this hook belongs to. Without this, the
