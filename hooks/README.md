@@ -8,16 +8,28 @@ installed. Two kinds, deliberately separated:
 | `git/` | git hooks | git itself (`core.hooksPath`) | No — pure git |
 | `agent/` | assistant-event hook scripts | the AI assistant's hook events | Logic is generic; the I/O protocol is per-tool (currently Claude Code) |
 
-These are **templates to copy into a project**, not plugin-activated hooks — nothing
-here fires just by installing the flight-rules plugin. Copy them into the project
-(recommended home: `.ai/hooks/` for the git hooks, `.ai/hooks/agent/` for the agent
-scripts) and commit them.
+**`agent/pre-commit-check.sh` is plugin-activated.** Installing or updating the
+flight-rules plugin registers it as a `PreToolUse` hook — no copying, no wiring. It was
+a copy-in template only while its branch list had to be edited into the script; now
+that the list has safe defaults and reads `.ai/flight-rules.conf`, the plugin ships it
+live. A project consuming it this way should **delete any local fork**, or the guard
+runs twice.
 
-Branch names differ per project, so `pre-commit-check.sh` reads its settings from the
-**environment** rather than requiring you to edit the script — see
-[Configuration](#configuration). Fork it only to change its logic, not its branch list.
-The git hooks in `git/` still need their parameter variables edited in place: git runs
-them directly, so they never see a `.claude/settings.json` `env` block.
+⚠️ That means **installing the plugin starts blocking commits on `main`**. If a project
+does not want that, opt out rather than uninstalling:
+
+```ini
+# .ai/flight-rules.conf
+PROTECTED_BRANCHES=off
+```
+
+The secret scan keeps running when the branch policy is off — leaking a key is not a
+workflow preference.
+
+The **git hooks in `git/`** are still **templates to copy**: git finds them through
+`core.hooksPath`, which no plugin can set on your behalf. Copy them to `.ai/hooks/`,
+run `install.sh`, and edit their parameter variables in place — git runs them outside
+the assistant, so they see neither `settings.json` nor (yet) the conf file.
 
 ## Git hooks (`git/`)
 

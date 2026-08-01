@@ -145,6 +145,28 @@ else
   PASS=$((PASS+1)); printf '  ✅ no code execution from conf file\n'
 fi
 
+echo "Escape hatch — the plugin now activates this guard, so opting out must work:"
+check "off: commit on main allowed"      allow main 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=off
+check "off: git rm on main allowed"      allow main 'git rm f.txt' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=off
+check "none: synonym for off"            allow main 'git rm f.txt' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=none
+conf_check "off via the conf file"       allow main 'git rm f' 'PROTECTED_BRANCHES=off'
+# Opting out of the branch policy must NOT disable the secret scan — leaking a key
+# is not a workflow preference.
+D=$(make_repo main)
+printf 'AWS_KEY = "AKIAIOSFODNN7EXAMPLE"\n' > "$D/leak.py"
+git -C "$D" add leak.py >/dev/null 2>&1
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_PROTECTED_BRANCHES=off \
+      bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ secret scan still fires when the guard is off\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ secret scan was disabled by PROTECTED_BRANCHES=off\n'
+fi
+rm -rf "$D"
+
 echo "Precedence — environment beats the conf file:"
 D=$(make_repo dev)
 mkdir -p "$D/.ai"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.ai/flight-rules.conf"
