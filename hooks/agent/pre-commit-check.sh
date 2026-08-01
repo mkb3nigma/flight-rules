@@ -66,10 +66,17 @@ is_destructive() {
   # Normalise away an explicit "-C <dir>" so "git -C /x rm" matches like "git rm".
   local c
   c=$(printf '%s' "$1" | sed -E 's/git[[:space:]]+-C[[:space:]]+[^[:space:]]+/git/g')
-  [[ "$c" =~ (^|[[:space:]\;\&\|])git[[:space:]]+(rm|restore)([[:space:]]|$) ]] && return 0
-  [[ "$c" =~ (^|[[:space:]\;\&\|])git[[:space:]]+reset[[:space:]]+.*--hard ]] && return 0
-  [[ "$c" =~ (^|[[:space:]\;\&\|])git[[:space:]]+clean[[:space:]]+.*-[a-zA-Z]*f ]] && return 0
-  [[ "$c" =~ (^|[[:space:]\;\&\|])git[[:space:]]+checkout[[:space:]]+(--|\.)([[:space:]]|$) ]] && return 0
+  # $B is what may precede the `git` word. It is a NEGATED class rather than a list
+  # of separators: the first version enumerated space/;/&/| and so missed `(git rm)`
+  # and `x=$(git rm)`, letting a subshell or command substitution walk straight past
+  # the guard. Enumerating metacharacters means the next unlisted one is another hole,
+  # so anything that cannot continue a command word counts as a boundary. Excluding
+  # alnum/_/-/. keeps `mygit`, `legit` and `git-foo` from matching.
+  local B='(^|[^[:alnum:]_.-])'
+  [[ "$c" =~ ${B}git[[:space:]]+(rm|restore)([[:space:]]|$) ]] && return 0
+  [[ "$c" =~ ${B}git[[:space:]]+reset[[:space:]]+.*--hard ]] && return 0
+  [[ "$c" =~ ${B}git[[:space:]]+clean[[:space:]]+.*-[a-zA-Z]*f ]] && return 0
+  [[ "$c" =~ ${B}git[[:space:]]+checkout[[:space:]]+(--|\.)([[:space:]]|$) ]] && return 0
   return 1
 }
 

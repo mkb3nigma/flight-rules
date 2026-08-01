@@ -54,6 +54,24 @@ check "git checkout -- . on dev"         deny  dev  'git checkout -- .'
 check "git restore on staging"           deny  staging 'git restore f.txt'
 check "git commit on dev (regression)"   deny  dev  'git commit -m "x"'
 
+echo "Shell metacharacters must not smuggle a destructive command past the guard:"
+# Regression: the first version enumerated separators (space ; & |) and so missed "("
+# entirely — a subshell or command substitution was allowed on a protected branch.
+# Found in the wild: a verification command of the form `echo x && (git rm ...)` ran
+# unblocked on dev.
+check "subshell"                         deny  dev '(git rm f.txt)'
+check "subshell after &&"                deny  dev 'echo x && (git rm f.txt)'
+check "command substitution"             deny  dev 'out=$(git rm f.txt)'
+check "backtick substitution"            deny  dev 'out=`git rm f.txt`'
+check "brace group"                      deny  dev '{ git rm f.txt; }'
+check "if-then"                          deny  dev 'if true; then git rm f.txt; fi'
+check "pipeline"                         deny  dev 'git rm f.txt | cat'
+check "reset --hard in a subshell"       deny  dev '(git reset --hard HEAD~1)'
+# ...without matching words that merely contain the letters "git"
+check "mygit is not git"                 allow dev 'mygit rm f.txt'
+check "legit is not git"                 allow dev 'legit rm f.txt'
+check "git-foo is not git rm"            allow dev 'git-foo rm f.txt'
+
 echo "Protected branch — safe commands must pass:"
 check "git clean -n (dry run)"           allow dev  'git clean -n'
 check "git status"                       allow dev  'git status --short'
