@@ -1,20 +1,83 @@
 #!/bin/bash
 # Agent hook: Branch Policy Enforcer + Secret Leak Watcher
 # Wire as a Claude Code PreToolUse hook on the Bash tool (see hooks/README.md).
-# Fires on every Bash tool use; only acts when the command contains "git commit".
+# Fires on every Bash tool use; only acts on git commands that could damage a
+# protected branch — the commit itself, or a working-tree mutation that would
+# land there without ever reaching a commit.
 #
 # I/O protocol is Claude Code's: tool input as JSON on stdin, a structured
 # permissionDecision on stdout. Another assistant needs a thin adapter around the
 # same checks.
 
-PROTECTED_RE='^(main|staging|dev)$'   # project parameter: {PROTECTED_BRANCHES}
-WORKTREE_DIR='.ai/worktrees'          # project parameter: {WORKTREE_DIR}
+# ── Project configuration ────────────────────────────────────────────────────
+# Override per project WITHOUT forking this file. Resolution order, first match wins:
+#
+#   1. Environment             FLIGHT_RULES_PROTECTED_BRANCHES=...   (override)
+#   2. .ai/flight-rules.conf   PROTECTED_BRANCHES=^(main|dev)$       (the normal home)
+#   3. The defaults below
+#
+# Put the policy in .ai/flight-rules.conf. It sits beside the rules in the
+# tool-agnostic .ai/ directory, so a git hook, a Claude Code hook and any other
+# assistant's adapter read one list instead of each restating it in its own settings
+# file — the same reason this script lives in .ai/hooks/ rather than .claude/.
+# The environment is for a one-off, or a policy meant for one tool only.
+#
+# It is parsed as DATA — matched with sed, never sourced — so a hostile repository
+# cannot execute code through it. Do not "simplify" this to `source`.
+read_conf() {
+  local key="$1" file="$2"
+  [ -r "$file" ] || return 1
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
+#
+# The default covers the branch names teams protect in practice, across the common
+# conventions (git-flow's develop, release trains, QA/UAT gates), because the guard
+# should fail safe. Being stopped on a branch you did not mean to protect costs one
+# message; NOT being stopped on one you did costs work. Matching is
+# case-insensitive, so QA, Qa and qa are all the same branch to this check.
+#
+# ⚠️  Either source *REPLACES* the default list below — it does not
+#     add to it. "^(integration)$" protects that branch and NOTHING ELSE: main and dev
+#     become unguarded. To keep the defaults and add your own, copy the whole pattern
+#     and extend the first group:
+#       ^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production|integration)$|^release(/|$)
+# `^release(/|$)` covers both a bare `release` branch and a `release/1.0` train.
+# hotfix/* is deliberately absent: you commit to a hotfix branch, so it is a working
+# branch, not one to defend.
+DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
+DEFAULT_WORKTREE_DIR='.ai/worktrees'
+
+# Resolution happens further down, once the command has told us which repo is
+# being acted on — the conf file is read from that repo, not from wherever the
+# shell happens to be.
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
-# Only run on git commit commands
-if [[ "$COMMAND" != *"git commit"* ]]; then
+# Does this command destroy work in the tree without going through a commit?
+# Gating only on "git commit" leaves the branch policy bypassable: `git rm`,
+# `git reset --hard`, `git clean -f` and `git checkout -- .` all mutate a
+# protected branch's tree, and the guard never sees them because no commit
+# follows. `git clean -n` and a bare `git checkout <branch>` are not destructive
+# and stay allowed.
+is_destructive() {
+  # Normalise away an explicit "-C <dir>" so "git -C /x rm" matches like "git rm".
+  local c
+  c=$(printf '%s' "$1" | sed -E 's/git[[:space:]]+-C[[:space:]]+[^[:space:]]+/git/g')
+  [[ "$c" =~ (^|[[:space:]\;\&\|])git[[:space:]]+(rm|restore)([[:space:]]|$) ]] && return 0
+  [[ "$c" =~ (^|[[:space:]\;\&\|])git[[:space:]]+reset[[:space:]]+.*--hard ]] && return 0
+  [[ "$c" =~ (^|[[:space:]\;\&\|])git[[:space:]]+clean[[:space:]]+.*-[a-zA-Z]*f ]] && return 0
+  [[ "$c" =~ (^|[[:space:]\;\&\|])git[[:space:]]+checkout[[:space:]]+(--|\.)([[:space:]]|$) ]] && return 0
+  return 1
+}
+
+if [[ "$COMMAND" == *"git commit"* ]]; then
+  ACTION="commit"
+elif is_destructive "$COMMAND"; then
+  ACTION="destructive"
+else
   exit 0
 fi
 
@@ -24,12 +87,35 @@ fi
 WORK_DIR=""
 if [[ "$COMMAND" =~ cd[[:space:]]+([^[:space:]&;]+) ]]; then
   WORK_DIR="${BASH_REMATCH[1]}"
+elif [[ "$COMMAND" =~ git[[:space:]]+-C[[:space:]]+([^[:space:]]+) ]]; then
+  # `git -C <dir>` retargets the repo just as surely as a `cd` does. Without this
+  # the guard resolves the branch from the shell's cwd and can clear a command
+  # that is actually aimed at a protected branch in another checkout.
+  WORK_DIR="${BASH_REMATCH[1]}"
 fi
 if [[ -n "$WORK_DIR" ]]; then
   CURRENT_BRANCH=$(git -C "$WORK_DIR" branch --show-current 2>/dev/null)
 else
   CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 fi
+
+# Now that the target repo is known, resolve config from it: environment first,
+# then that repo's .ai/flight-rules.conf, then the built-in defaults.
+CONF_ROOT=$(git -C "${WORK_DIR:-.}" rev-parse --show-toplevel 2>/dev/null)
+[ -z "$CONF_ROOT" ] && CONF_ROOT="${CLAUDE_PROJECT_DIR:-.}"
+CONF_FILE="$CONF_ROOT/.ai/flight-rules.conf"
+
+PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$CONF_FILE")}"
+PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
+WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF_FILE")}"
+WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WORKTREE_DIR}"
+
+# Case-insensitively, so QA/Qa/qa and Main/main are each one branch to this check.
+# Scoped to this one comparison: the command-matching regexes above must stay
+# case-sensitive, or `git RM` style false matches creep in.
+shopt -s nocasematch
+[[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] && IS_PROTECTED=1 || IS_PROTECTED=0
+shopt -u nocasematch
 
 # Scope the branch policy to the project this hook belongs to. Without this, the
 # guard applies the project's branch rules to every repo the session touches —
@@ -51,16 +137,25 @@ if [[ "$IN_THIS_PROJECT" == "0" ]]; then
 elif [[ -f "$GIT_DIR_PATH/MERGE_HEAD" ]]; then
   # This is a merge commit; let it through
   :
-elif [[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]]; then
-  jq -n --arg branch "$CURRENT_BRANCH" --arg wt "$WORKTREE_DIR" '{
+elif [[ "$IS_PROTECTED" == "1" ]]; then
+  if [[ "$ACTION" == "destructive" ]]; then
+    VERB="This command would modify or discard files in the working tree."
+  else
+    VERB="Never commit directly to a protected branch."
+  fi
+  jq -n --arg branch "$CURRENT_BRANCH" --arg wt "$WORKTREE_DIR" --arg verb "$VERB" '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: ("⛔ BLOCKED: You are on the protected branch \"" + $branch + "\".\n\nNever commit directly to a protected branch.\n\nCreate a feature worktree instead:\n  git worktree add " + $wt + "/<name> -b feature/<name>\n  cd " + $wt + "/<name>")
+      permissionDecisionReason: ("⛔ BLOCKED: You are on the protected branch \"" + $branch + "\".\n\n" + $verb + "\n\nCreate a feature worktree instead:\n  git worktree add " + $wt + "/<name> -b feature/<name>\n  cd " + $wt + "/<name>\n\nUse absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified.")
     }
   }'
   exit 0
 fi
+
+# Destructive commands never reach the staged-secret scan below — there is nothing
+# staged to inspect, and the branch policy above is the whole check for them.
+[[ "$ACTION" == "destructive" ]] && exit 0
 
 # ─────────────────────────────────────────────
 # 2. SECRET LEAK CHECK
