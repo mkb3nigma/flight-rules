@@ -54,6 +54,19 @@ test — is adapted from the `diagnose` skill (now `diagnosing-bugs`) in
 The skill text here is original and considerably condensed; the loop's structure and
 several of its specific disciplines are his.
 
+A second review the same day folded in more of the upstream's thinking, 323 commits on
+from the original borrow: the feedback loop as the *deliverable* of step 1 (with its
+tighten-it pass and completion criteria), raising the *reproduction rate* rather than
+chasing a clean repro on non-deterministic bugs, generating 3–5 ranked hypotheses instead
+of one, one-variable-at-a-time probing, the measure-first branch for performance work,
+secret redaction before showing output, the "correct seam" rule for regression tests —
+including *"if no correct seam exists, that itself is the finding"* — and the post-mortem
+step. Wording remains original throughout.
+
+Not adopted, deliberately: the enumerated ten-way catalogue of loop constructions and the
+human-in-the-loop script asset (too long and too tool-coupled for this playbook's
+register), and the handoff to an architecture skill this playbook does not have.
+
 **This credit was missing until 2026-08-15.** It was recorded correctly in the source
 project when the skill was first written (AppliHawk commit `c307e69c`, 2026-06-11 —
 *"Borrowed from mattpocock/skills 'diagnose' concept"*) and was lost when the skill was
