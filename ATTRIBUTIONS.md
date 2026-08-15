@@ -42,6 +42,25 @@ nothing to track for updates, so this source has no [UPSTREAMS.md](UPSTREAMS.md)
 Principle 6 ("Judge Ideas on Their Merit") is original to this repo and MIT-licensed
 like the rest. It is called out only because both of its neighbours are not.
 
+## skills/diagnose/ — concept credit
+
+The diagnosis loop — reproduce → minimize → hypothesize → instrument → fix → verify →
+clean up, with tagged instrumentation so cleanup is greppable and a mandatory regression
+test — is adapted from the `diagnose` skill (now `diagnosing-bugs`) in
+**[mattpocock/skills](https://github.com/mattpocock/skills)** by
+**[@mattpocock](https://github.com/mattpocock)**, licensed under
+**[MIT](https://github.com/mattpocock/skills/blob/main/LICENSE)**.
+
+The skill text here is original and considerably condensed; the loop's structure and
+several of its specific disciplines are his.
+
+**This credit was missing until 2026-08-15.** It was recorded correctly in the source
+project when the skill was first written (AppliHawk commit `c307e69c`, 2026-06-11 —
+*"Borrowed from mattpocock/skills 'diagnose' concept"*) and was lost when the skill was
+distilled into this playbook. Noting it here rather than quietly backfilling: a playbook
+that sells provenance as a system should show what its own system missed. See the
+completeness sweep added to `/upstream-check` for the mechanism that would have caught it.
+
 ## skills/diagnose/ — step 4a — concept credit
 
 The reorientation tripwire (step 4a, and the matching bullet in principle 4) takes the
