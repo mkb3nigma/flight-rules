@@ -1,6 +1,6 @@
 ---
 name: pr-create
-description: Push the current feature branch and open a GitHub pull request with a pre-merge checklist in the body. Includes the stacked-PR rules that stop work being silently dropped.
+description: Push the current feature branch and open a GitHub pull request with a pre-merge checklist in the body. Covers native stacked PRs (gh stack) and why hand-rolled stacks drop work.
 ---
 
 # /pr-create — Create a GitHub Pull Request
@@ -25,52 +25,68 @@ Open a GitHub PR for the current feature branch. Project parameters:
 - PR title in conventional-commit format — derived from the branch name unless the
   user supplies one as arguments.
 - Never force-push after opening a PR.
-- **Stacked PRs — see below.** Default to not creating one.
+- **Never point `--base` at another open PR's head.** To split work across dependent PRs,
+  use GitHub's native stacks (`gh stack`) — see below.
 
-## Stacked PRs
+## Stacked PRs — use the real feature, never hand-roll one
 
-A *stacked* PR is one whose base is another open PR's head rather than
-`{INTEGRATION_BRANCH}`. It keeps the second review a clean diff instead of a blob, which
-is a real benefit — and it introduces a race that silently drops work.
+Splitting a large change into an ordered series of PRs, each reviewable on its own diff,
+is genuinely worth doing. There are two ways to get it, and only one of them is safe.
 
-**What goes wrong:** merging the parent makes GitHub retarget the child to the parent's
-base. That retarget is *asynchronous*. Merge the child before it lands and the child's
-commits go into the already-merged parent branch — which is then usually auto-deleted.
-GitHub reports the child as **MERGED**, truthfully, while its commits never reached
-`{INTEGRATION_BRANCH}`. Nothing in the UI flags this.
+**Use GitHub's native stacked pull requests.** Public preview since 2026-07-30, all
+repositories:
 
-**Default: don't stack.** Keep the second branch local and open its PR once the parent
-merges. Costs a delay, removes the failure mode entirely.
+```bash
+gh extension install github/gh-stack
+```
 
-**If you do stack, all four:**
+The platform owns the ordering, which is the whole point:
 
-1. **Open the child as a draft** (`gh pr create --draft`). GitHub refuses to merge a
-   draft, so the ordering is *enforced* rather than merely documented — the house style
-   is guardrails, not etiquette. Mark it ready only once the parent has merged and the
-   child's base has visibly flipped to `{INTEGRATION_BRANCH}`.
-2. **Put the marker in the TITLE**, not only the body:
-   `<conventional title> [stacked on #N — merge #N first]`. The title is what shows in
-   the PR list, notification emails, and above the merge button; a body note is one click
-   away from where the decision is actually made. Not hypothetical — a PR whose body
-   *opened* with "Stacked on #N, review #N first" was still merged out of order, because
-   nobody merging from the list opened it.
-3. **Open the body with an ordering block** — base branch, which PR merges first, what to
-   verify afterwards. The title says *that* it is stacked; the body says what to do.
-4. **Verify after merging, never assume.** `MERGED` is a claim about the merge, not about
-   the destination:
-   ```bash
-   git fetch origin && git log --oneline origin/{INTEGRATION_BRANCH} | grep <child-sha>
-   ```
-   Empty output means the work is stranded on a deleted branch. Recover by re-pushing the
-   branch from a local copy and opening a fresh PR against the correct base.
+- Stacks merge **bottom-up**, and a mid-stack PR **cannot** be merged in isolation — the
+  PRs below it always merge with it.
+- Merging lands the selected PR *and every unmerged PR below it* as one operation.
+- The remaining PRs are **automatically rebased** onto the stack base afterwards.
+- The merge box shows the status of the **whole stack**, not just the open PR.
+
+Known limits: **auto-merge is not supported** for stacked PRs, and merge-queue support
+arrived separately — check both before relying on them.
+
+**Never hand-roll a stack** by pointing `gh pr create --base` at another open PR's head.
+It looks identical in the UI and has none of the guarantees:
+
+> Merging the parent makes GitHub retarget the child — *asynchronously*. Merge the child
+> before that lands and its commits go into the already-merged parent branch, which is
+> then usually auto-deleted. GitHub reports the child as **MERGED**, truthfully, about the
+> wrong destination. The commits never reached `{INTEGRATION_BRANCH}` and nothing in the
+> UI says so.
+
+This is not hypothetical. It happened in this repo on 2026-08-15 with 22 seconds between
+the two merges, and the work survived only because the commit still existed in a local
+worktree. A body note reading *"Stacked on #N — review #N first"* was already the first
+thing in the child's description and changed nothing, because merging happens from the PR
+list and the merge button, and neither shows the body. Ordering that depends on a human
+reading prose is not ordering.
+
+**If `gh stack` isn't available** (preview not enabled, non-GitHub host), then don't stack
+at all: keep the second branch local and open its PR once the parent merges. Costs a
+delay, removes the failure mode entirely. Do not substitute discipline for the mechanism.
+
+**Either way, verify after merging.** `MERGED` is a claim about the merge, not about the
+destination:
+
+```bash
+git fetch origin && git log --oneline origin/{INTEGRATION_BRANCH} | grep <child-sha>
+```
+
+Empty output means the work is stranded on a deleted branch. Recover by re-pushing the
+branch from a local copy and opening a fresh PR against the correct base.
 
 ## Procedure
 
 1. Verify the current branch and pick the base per the routing rules; push with
-   `git push -u origin <branch>` if the branch isn't on the remote yet. If the chosen
-   base is another open PR's head, apply the **Stacked PRs** rules above — add
-   `--draft`, put `[stacked on #N — merge #N first]` in the title, and lead the body
-   with the ordering block.
+   `git push -u origin <branch>` if the branch isn't on the remote yet. If this change
+   depends on another open PR, do **not** set that PR's head as the base — use `gh stack`
+   (see **Stacked PRs** above) or wait for it to merge.
 2. Run `/pre-merge-check`; STOP on any ❌ failure.
 3. Summarize `git log <base>..HEAD` (one user-facing bullet per commit) and
    `git diff <base>...HEAD --stat` (files-changed summary), then create the PR:
@@ -80,13 +96,8 @@ gh pr create \
   --base <base> \
   --title "<title>" \
   --body "$(cat <<'EOF'
-<STACKED PRs ONLY — delete this block otherwise. Must be the first thing in the body:>
-> ⚠️ **Stacked on #N — merge #N first.** Base is `<parent-branch>`, so this diff shows
-> only the new work. Opened as a draft; it will be marked ready once #N merges and this
-> PR's base has flipped to `{INTEGRATION_BRANCH}`.
-> **After merging both:** confirm this PR's commits actually reached
-> `{INTEGRATION_BRANCH}` — a stacked PR can report MERGED having merged into the parent
-> branch instead.
+<STACK MEMBERS ONLY — delete this line otherwise:>
+> 📚 Layer <i> of a `gh stack`. Merges bottom-up with the layers below it.
 
 ## Summary
 <one user-facing bullet per commit, reworded from git log>
