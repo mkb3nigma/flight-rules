@@ -42,6 +42,25 @@ nothing to track for updates, so this source has no [UPSTREAMS.md](UPSTREAMS.md)
 Principle 6 ("Judge Ideas on Their Merit") is original to this repo and MIT-licensed
 like the rest. It is called out only because both of its neighbours are not.
 
+## skills/diagnose/ — step 4a — concept credit
+
+The reorientation tripwire (step 4a, and the matching bullet in principle 4) takes the
+*Orient* stage of the **OODA loop** — **John Boyd**'s decision cycle, developed in USAF
+briefings and the 1976 essay *Destruction and Creation*. Boyd's diagram makes Orientation
+the dominant node, feeding every other stage: your model filters what you are able to
+observe, so repeated failure inside a loop indicts the model rather than the effort. The
+step text is original; that insight is his.
+
+Deliberately partial. The famous half of OODA — **tempo**, "getting inside the opponent's
+decision loop" — assumes an adversary who is also orienting, and a bug is not reacting to
+you. Boyd's **implicit guidance** fast path (Orient wiring straight to Act, skipping
+Decide, when the situation is familiar) is the exact behaviour this skill exists to
+suppress: an assistant's dominant failure mode is acting quickly on a stale model. Only
+the Orient stage is imported.
+
+Boyd died in 1997 and the source is a fixed text, so there is nothing to track for
+updates and this source has no [UPSTREAMS.md](UPSTREAMS.md) row.
+
 ## skills/docs-lint/ — concept credit
 
 The lint operation is inspired by the *lint* step of **Andrej Karpathy's**
