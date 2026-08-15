@@ -45,6 +45,8 @@
 - Every code change ships with new or updated tests, and they pass before you call it done
 - Never let a partial check stand in for a full one — say what you actually ran, and
   what you didn't
+- A loop that isn't converging is evidence the frame is wrong, not that it needs another
+  turn — after repeated failure, re-examine the assumption every attempt shared
 
 ## 5. Suggest Better Ways
 

@@ -1,6 +1,6 @@
 ---
 name: diagnose
-description: Structured debugging loop — reproduce, minimize, hypothesize, instrument, fix, verify, clean up. No fix without a reproduction.
+description: Structured debugging loop — reproduce, minimize, hypothesize, instrument, reorient when stuck, fix, verify, clean up. No fix without a reproduction.
 ---
 
 # /diagnose — Structured Debugging Loop
@@ -13,7 +13,7 @@ additional or replacement steps and project-specific rules — extensions take
 precedence over the generic defaults below. If absent, use the defaults as-is.
 
 Debug a reported bug methodically: reproduce → minimize → hypothesize → instrument →
-fix → verify → clean up. Never jump straight to a fix.
+(reorient) → fix → verify → clean up. Never jump straight to a fix.
 
 ## Invocation
 
@@ -52,7 +52,33 @@ Name the observation that would disprove it.
 Confirm or kill the hypothesis with targeted instrumentation — don't guess from reading
 code alone. Temporary logs, breakpoints, assertions in the failing test. Tag every
 temporary line with `# DIAG` / `// DIAG` so cleanup is greppable. Disproved → back to
-step 3 with what you learned. Loop until confirmed.
+step 3 with what you learned. Loop until confirmed — but **count the disproved
+hypotheses**, and at three go to 4a before writing a fourth.
+
+### 4a. Reorient — mandatory after three disproved hypotheses
+Three failures is not a prompt for a fourth hypothesis. It is evidence that the frame is
+wrong, and a fourth guess drawn from the same frame inherits the same blind spot. Stop
+generating candidates and attack what all three shared:
+
+- **Is the reproduction reproducing the reported bug** — or a different one that happens
+  to look the same?
+- **Are you looking at the code that runs?** Right service, process, branch, container,
+  build, cache. A stale artifact has eaten many afternoons.
+- **Is a tool lying to you?** A mock that no longer matches reality, a swallowed
+  exception, a log level that drops the line you need, a harness that stubs the very
+  thing under test.
+- **Is the layer right?** If every hypothesis has been in application code, question what
+  you have been treating as trustworthy: framework, driver, clock, filesystem, network.
+- **What have you assumed since step 1 without ever checking?** Write the assumptions
+  down and verify one — cheapest first.
+
+Then restate step 3 from the new frame. Report what reorientation changed; "nothing"
+is a valid answer and is itself a finding worth recording.
+
+> Named for the *Orient* step of Boyd's OODA loop — the stage his diagram makes dominant
+> and popular retellings reduce to a waypoint. His claim is that orientation filters what
+> you are able to observe, so a wrong model does not merely slow the loop down: it makes
+> the loop's own output appear to confirm it.
 
 ### 5. Fix
 Only now write the fix — for the cause the instrumentation confirmed, not a symptom
@@ -69,4 +95,6 @@ contain the fix and the regression test, nothing else.
 ## Output
 
 Report: reproduction, minimized trigger, confirmed cause (with the evidence),
-the fix, and verification results. If any step was skipped, say which and why.
+the fix, and verification results. If a reorientation happened, say what frame you
+abandoned and what replaced it — that is the reusable lesson, more than the fix is.
+If any step was skipped, say which and why.
