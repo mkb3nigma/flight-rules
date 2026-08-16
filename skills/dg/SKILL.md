@@ -37,12 +37,29 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    gather relevant context first; empty → `git diff HEAD`, then `git diff --staged`,
    else stop and say so. Extract round count if present (default 5).
 
-2. **Independent pre-review (optional, best-effort)** — spawn one strong-model subagent
-   to review the subject cold: no personas, no access to their findings. It enumerates
-   correctness bugs, security issues, design weaknesses, and unstated assumptions with
-   severity (critical/important/minor) and confidence. On failure, continue without it.
-   If captured, brief both personas: *"An independent senior reviewer flagged the
-   following — agree, escalate, or dispute each point as you see fit."*
+2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
+   subject cold: no personas, no access to their findings. It enumerates correctness
+   bugs, security issues, design weaknesses, and unstated assumptions with severity
+   (critical/important/minor) and confidence. On failure, continue without it. If
+   captured, brief both personas: *"An independent senior reviewer flagged the following
+   — agree, escalate, or dispute each point as you see fit."*
+
+   **Prefer a reviewer from a different model family than the one running this skill,**
+   whenever the environment can reach one. The step is called *independent*, and a
+   same-family reviewer achieves context isolation only: it cannot see their findings,
+   but it shares their training, their priors, and their blind spots. Three voices blind
+   in the same direction cannot debate their way out of a shared blind spot, and the
+   verdict will read as thorough agreement. What this step buys is failure-mode
+   diversity, not an extra opinion.
+
+   The preference is symmetric and names no vendor: whichever model drives the personas,
+   the pre-reviewer should be a different one — the roles swap freely depending on which
+   assistant a project runs as its main. This file states only the preference; a project
+   wires the concrete command in its extensions.
+
+   Same-family fallback is correct, and stays the default when no second model is
+   reachable. A same-family pre-review still beats none — never skip the step for want
+   of a second model.
 
 3. **Spawn two persona agents** (or simulate both voices sequentially if subagents are
    unavailable): Dinesh and Gilfoyle each review the subject independently in round 1.
