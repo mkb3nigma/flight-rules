@@ -12,7 +12,7 @@ conf_get() {
   sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]]+)\"?.*$/\\1/p" \
     "$PROJECT_ROOT/.ai/flight-rules.conf" 2>/dev/null | tail -1
 }
-INTEGRATION_BRANCH="$(conf_get INTEGRATION_BRANCH)"; INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-dev}"   # {INTEGRATION_BRANCH}
+INTEGRATION_BRANCH="$(conf_get INTEGRATION_BRANCH)"; INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # {INTEGRATION_BRANCH}
 WORKTREE_DIR="$(conf_get WORKTREE_DIR)";             WORKTREE_DIR="${WORKTREE_DIR:-.ai/worktrees}"     # {WORKTREE_DIR}
 
 # Once a day PER PROJECT. The flag used to carry only the date, so the first
@@ -28,6 +28,17 @@ if [ -f "$LAST_RUN_FILE" ]; then
 fi
 
 touch "$LAST_RUN_FILE"
+
+# Is the enforcement actually installed? Silent when it is.
+DOCTOR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/doctor.sh"
+if [ -x "$DOCTOR" ]; then
+  PROBLEMS=$("$DOCTOR" --problems-only 2>/dev/null)
+  if [ -n "$PROBLEMS" ]; then
+    echo "🩺 flight-rules doctor — the enforcement is not fully installed here:"
+    echo "$PROBLEMS"
+    echo ""
+  fi
+fi
 
 WORKTREES_DIR="$PROJECT_ROOT/$WORKTREE_DIR"
 

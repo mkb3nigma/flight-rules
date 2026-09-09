@@ -18,7 +18,7 @@ jobs:
       - name: Syntax check every script
         run: |
           set -e
-          for f in hooks/agent/*.sh hooks/session-start-rules.sh hooks/git/*; do
+          for f in hooks/*.sh hooks/agent/*.sh hooks/git/* skills/*.sh; do
             case "$f" in *.md) continue ;; esac
             bash -n "$f" && echo "ok  $f"
           done
@@ -35,3 +35,7 @@ jobs:
         run: bash hooks/agent/pre-commit-check.test.sh
       - name: Merge gate
         run: bash hooks/git/merge-gate.test.sh
+      - name: Doctor
+        run: bash hooks/doctor.test.sh
+      - name: Skills catalogue is consistent
+        run: bash skills/catalogue.test.sh

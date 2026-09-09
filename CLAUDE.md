@@ -14,7 +14,7 @@ injects the principles; the rest you read once.
 | `{PROTECTED_BRANCHES}` / `{PR_ONLY_BRANCHES}` | `main` — no direct commits, no local merges; it moves only through a reviewed PR |
 | `{INTEGRATION_BRANCH}` | `main` (trunk-based; there is no `dev`) |
 | `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
-| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh` and `hooks/git/merge-gate.test.sh` — no arguments, no network |
+| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/doctor.test.sh`, `skills/catalogue.test.sh` — no arguments, no network |
 
 Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/main`,
 commit there, push, `gh pr create --base main`. Never commit on `main`; never merge

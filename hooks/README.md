@@ -88,6 +88,11 @@ Guards that fire on the assistant's own events, before git ever runs:
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
   rather than silently switching off.
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
+- **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
+  every hook's executable bit, `merge.ff`, the guard's parser, the conf's keys and
+  regexes, and that the guard is wired once — every one a state that has failed
+  silently before. `session-start.sh` runs it daily and prints only problems.
+  Tests: `doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project, lists
   worktrees whose branches are already merged so they get cleaned up. Reads
   `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
@@ -113,7 +118,7 @@ repository cannot execute code through it. `#` comments, blank lines, spaces aro
 | Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables the branch policy (secret scan stays on). |
 | PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. Default `^(dev\|staging)$`. |
-| Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Hooks default `dev`; skills default `main`. |
+| Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
