@@ -8,7 +8,11 @@
 #
 # Adapt the parameters below, commit into the repo, install via install.sh.
 
-INTEGRATION_BRANCH='dev'            # project parameter: {INTEGRATION_BRANCH}
+# {INTEGRATION_BRANCH}: .ai/flight-rules.conf when it has one (the working tree
+# is fine here — this hook reports, it gates nothing), else the value below.
+INTEGRATION_BRANCH=$(sed -n -E 's/^[[:space:]]*INTEGRATION_BRANCH[[:space:]]*=[[:space:]]*"?([^"[:space:]]+)"?.*$/\1/p' \
+  "$(git rev-parse --show-toplevel)/.ai/flight-rules.conf" 2>/dev/null | tail -1)
+INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-dev}"   # project parameter: {INTEGRATION_BRANCH}
 NOTE_PATH='.claude/post-merge-note.md'  # where the next-session note is written
 CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
                                            # files for this project (keeps memory/).
@@ -37,8 +41,15 @@ is_feature_merge() {
 
 # Parse merged branch from merge commit message
 MERGE_MSG=$(git log -1 --pretty=%s HEAD 2>/dev/null)
-MERGED_BRANCH=$(echo "$MERGE_MSG" | grep -oP "(?<=Merge branch ').*?(?='( into|$))" 2>/dev/null || echo "")
-[[ -z "$MERGED_BRANCH" ]] && MERGED_BRANCH=$(echo "$MERGE_MSG" | grep -oP "(?<=Merge ).*?(?= into)" 2>/dev/null || echo "unknown")
+# sed, not `grep -P`: macOS ships BSD grep without -P, and the first version fell
+# through to "unknown" on every merge there. Handles the three subject shapes git
+# and GitHub write: "Merge branch 'x'", "Merge branch 'x' into y", "Merge pull
+# request #N from owner/x", then the generic "Merge x into y".
+MERGED_BRANCH=$(printf '%s\n' "$MERGE_MSG" | sed -nE \
+  -e "s/^Merge branch '([^']+)'.*/\\1/p" \
+  -e 's|^Merge pull request #[0-9]+ from [^/]+/(.*)$|\1|p' \
+  -e 's/^Merge ([^ ]+) into .*/\1/p' | head -1)
+[[ -z "$MERGED_BRANCH" ]] && MERGED_BRANCH="unknown"
 
 # All branches already merged into the integration branch
 ALL_MERGED=$(git branch --merged "$INTEGRATION_BRANCH" 2>/dev/null \
