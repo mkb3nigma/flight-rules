@@ -41,15 +41,13 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 
    The pointer may also pin a model (`model: opus`) for expensive skills. Logic never
    goes in the pointer — same rule as the root pointer files.
-3. **Tiered reading** — mark rules by tier (essential / patterns / reference) so
-   assistants stop reading when the current tier suffices; context is a budget.
-4. **Two-layer rules** — generic rules live in a shared playbook repo (this one);
+3. **Two-layer rules** — generic rules live in a shared playbook repo (this one);
    the project's master-rules points at it and adds only project specifics. Project
    files extend and override; generic improvements flow upstream to the playbook.
-5. **Local extensions pattern** — a project extending a shared skill keeps the shared
+4. **Local extensions pattern** — a project extending a shared skill keeps the shared
    body verbatim and appends a clearly marked `## <Project> Extensions` section that
    is never synced upstream.
-6. **Hook logic lives in `.ai/hooks/`, not in a tool's config dir** — git hooks are
+5. **Hook logic lives in `.ai/hooks/`, not in a tool's config dir** — git hooks are
    already tool-agnostic (`git config core.hooksPath .ai/hooks`); assistant-event hook
    *scripts* (commit guards, session banners) go in `.ai/hooks/agent/`, and each
    tool's own config (e.g. `.claude/settings.json` or a `.claude/hooks/*` shim) is a

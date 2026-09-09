@@ -40,6 +40,14 @@ commit-only guard for weeks) and the rules repo cannot afford to run stale rules
 itself. If a change to a hook needs a matching change to what this repo runs, it
 happens in the same commit, because they are the same file.
 
+## How a rule gets in
+
+From an incident or a verified gap, never from taste. Every Forbidden and Required
+item in the workflow rule says how it is enforced — hook, skill, or advisory — and the
+commit adding one names the incident. At each plugin release, every advisory item is
+either given enforcement or deleted: a rule nobody enforces and nobody has broken is
+not a flight rule. Skills that check an item cite its number, so the two stay in step.
+
 ## When editing a hook
 
 - Run both suites before and after; add a case for every gap you close. A guard that

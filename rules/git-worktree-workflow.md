@@ -12,27 +12,33 @@ branch — feature work physically cannot dirty the main checkout.
 
 ## Rules
 
+Each item says how it is enforced — **hook**, **skill**, or **advisory**. Advisory
+items are reviewed at every plugin release and either given enforcement or deleted.
+
 ### 🚫 Forbidden
-1. Direct commits to any of `{PROTECTED_BRANCHES}`
-2. Multiple features in one branch — one purpose per branch
-3. Starting a new feature before merging (or parking) the current one
-4. Merging without tests passing
-5. Force-pushing protected branches
-6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add`
-7. Merging into a protected branch without explicit user instruction
-8. Merging into a **PR-only branch (default `main`) locally at all** — it moves only through a reviewed pull request. After the PR merges, sync locally with `git pull --ff-only origin main` (a fast-forward, never a local merge commit).
+1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
+2. Multiple features in one branch — one purpose per branch — skill (`pre-merge-check` 9, ⚠️)
+3. Starting a new feature before merging (or parking) the current one — advisory
+4. Merging without tests passing — hook on note-gated branches (the `pre-merge-check`
+   note); on PR-only branches the host's CI and review are the gate
+5. Force-pushing, deleting or rebasing a protected branch — hook
+6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add` — hook
+7. Merging into a **PR-only branch (default `main`) locally at all** — it moves only
+   through a reviewed pull request, opened and merged on the user's say-so. Sync
+   afterwards with `git pull --ff-only origin main` — hook
 
 ### ✅ Required
-1. All branches created as worktrees under `{WORKTREE_DIR}`
-2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`, `hotfix/`
+1. All branches created as worktrees under `{WORKTREE_DIR}` — hook (via Forbidden 6)
+2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`, `hotfix/` — skill (`feature-start` 3)
 3. Conventional commit messages using the same prefixes (`hotfix/` branches commit as
-   `fix:` — there is no `hotfix:` message prefix)
-4. Review the full diff after every commit (`git diff HEAD~1`)
-5. Commit after every logical unit of work — small commits, easy rollback
+   `fix:` — there is no `hotfix:` message prefix) — skill (`commit` 4, `pre-merge-check` 8)
+4. Review the full diff after every commit (`git diff HEAD~1`) — advisory
+5. Commit after every logical unit of work — small commits, easy rollback — skill (`pre-merge-check` 16, ⚠️)
 6. Symlink untracked env files from the main checkout into new worktrees
-   (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`
-7. Clean up after merging: `git worktree remove …` + `git branch -d …` — never leave stale worktrees
-8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main`, first reconcile any `main`-only commits back into it (fast-forward / clean merge if possible; **warn and stop** if not) so no branch is born missing a change that went straight to `main`. See the `feature-start` skill, step 4.
+   (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`.
+   Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 6)
+7. Clean up after merging: `git worktree remove …` + `git branch -d …` — reminded (`post-merge`, `session-start`)
+8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main`, first fast-forward any `main`-only commits into it; if that is not a fast-forward, **stop and ask** — skill (`feature-start` 4)
 
 ## The cwd-drift trap (learned the hard way)
 
@@ -58,7 +64,8 @@ stop and reconcile; one of the two versions holds work that would be lost.
 ## Merge flow
 
 ```
-feature/* → {INTEGRATION_BRANCH} → (staging) → main
+trunk-based:  feature/* ──PR──▶ main
+git-flow:     feature/* ──▶ dev ──▶ (staging) ──PR──▶ main
 ```
 
 - Before requesting a merge: run the project's pre-merge checklist (see the
