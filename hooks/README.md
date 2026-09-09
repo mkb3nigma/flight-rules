@@ -47,8 +47,11 @@ never reaches them; the conf file is the one channel every layer shares.
   modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
   lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
   runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates
-  merges, never ordinary commits. **Install both hooks**, or the gate is half built;
-  `install.sh` fails loudly if `commit-msg` is missing.
+  merges, never ordinary commits. A **back-merge** — the incoming commit is the tip of
+  a PR-only branch — passes without a note: it already went through a reviewed PR, and
+  reconciling `main` into the integration branch is what `feature-start` step 4 asks
+  for. **Install both hooks**, or the gate is half built; `install.sh` fails loudly if
+  `commit-msg` is missing.
   Tests: `merge-gate.test.sh` (no arguments, no network).
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) that the next AI session picks up.
@@ -64,17 +67,25 @@ never reaches them; the conf file is the one channel every layer shares.
 Guards that fire on the assistant's own events, before git ever runs:
 
 - **`pre-commit-check.sh`** — PreToolUse guard on the Bash tool. On a protected branch
-  it denies both `git commit` **and** the working-tree destroyers that would otherwise
-  slip past it — `git rm`, `git reset --hard`, `git clean -f`, `git checkout -- .`,
-  `git restore`. (Gating on `git commit` alone is porous: those commands do their damage
-  without any commit following, so the guard never sees them.) A merge in progress is
-  exempt, since resolving conflicts on the integration branch legitimately needs them.
-  Independently of branch, it denies commits with staged `.env` files, cloud/API key
-  patterns, private-key headers, or hardcoded credential literals.
+  it denies `git commit`, the working-tree destroyers that would otherwise slip past
+  it — `git rm`, `git reset --hard`, `git clean -f`, `git checkout -- .`, `git restore`
+  — **and** any force-push of a protected branch (`--force`, `-f`,
+  `--force-with-lease`, a `+refspec`), whichever branch you stand on. (Gating on
+  `git commit` alone is porous: those commands do their damage without any commit
+  following, so the guard never sees them.) `git -C <dir>` and `git -c k=v` are
+  normalised away before matching, and the *last* `cd` in a command decides which
+  repo it targets. A merge in progress is exempt from the commit and working-tree
+  checks, since resolving conflicts on the integration branch legitimately needs them.
+  Independently of branch, it denies commits with staged `.env` files, provider key
+  patterns (AWS, `sk-…` OpenAI/Anthropic, GitHub, Slack, Google), any PEM private-key
+  header, or hardcoded credential literals outside test files.
+  Needs `jq` or `python3`; with neither it **denies git commands with an install hint**
+  rather than silently switching itself off.
   Tests: `pre-commit-check.test.sh` (`./pre-commit-check.test.sh` — no arguments, no
   network, builds throwaway repos).
-- **`session-start.sh`** — SessionStart banner: once a day, lists worktrees whose
-  branches are already merged so they get cleaned up.
+- **`session-start.sh`** — SessionStart banner: once a day per project, lists
+  worktrees whose branches are already merged so they get cleaned up. Reads
+  `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
 
 ### Configuration
 

@@ -124,6 +124,37 @@ git -C "$D" merge --no-ff feature/legit -m m >/dev/null 2>&1
 say "$?" "0" "conf committed on the target still configures the gate"
 rm -rf "$D"
 
+echo "Back-merges — reconciling a PR-only branch into the integration branch needs no note:"
+# Regression: a non-ff `git merge main` on dev was blocked because main's tip had no
+# note — and nothing could legitimately stamp one. feature-start step 4 tells you to
+# do exactly this merge.
+D=$(mkrepo)
+echo hot > "$D/h"; git -C "$D" add -A; git -C "$D" commit -qm "fix: landed on main via PR"
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff main -m "reconcile main into dev" >/dev/null 2>&1
+say "$?" "0" "unstamped back-merge of main into dev is allowed"
+rm -rf "$D"
+
+# The exemption is for the PR-only branch's OWN tip, not for a feature branch that
+# happens to share history with it: an unstamped feature merge stays blocked.
+D=$(mkrepo)
+git -C "$D" checkout -q -b feature/q dev
+echo change > "$D/q"; git -C "$D" add -A; git -C "$D" commit -qm "feature: q"
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff feature/q -m "merge" >/dev/null 2>&1
+say "$?" "1" "unstamped feature merge is still blocked after the back-merge exemption"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+# The incoming branch cannot make itself "PR-only" through the conf it ships.
+D=$(mkrepo)
+git -C "$D" checkout -q -b feature/sneaky3 dev
+printf 'PR_ONLY_BRANCHES=^feature/sneaky3$\n' > "$D/.ai/flight-rules.conf"
+echo y > "$D/s3"; git -C "$D" add -A; git -C "$D" commit -qm "feature: sneaky3"
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff feature/sneaky3 -m m >/dev/null 2>&1
+say "$?" "1" "branch cannot declare itself PR-only to skip the note gate"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -66,6 +66,23 @@ MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
 [ -f "$MERGE_HEAD_FILE" ] || exit 0
 
 MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
+
+# A back-merge — the incoming commit is the tip of a PR-only branch (default main)
+# — needs no note. Everything on that branch arrived through a reviewed pull
+# request, and reconciling it into the integration branch is routine maintenance,
+# not a feature landing (post-merge makes the same distinction). Without this,
+# `git merge main` on dev was blocked for want of a note nobody could stamp.
+# PR_ONLY_BRANCHES is read from HEAD like everything else here, so the incoming
+# branch cannot declare itself PR-only to skip the gate.
+PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
+PR_ONLY_RE="${PR_ONLY_RE:-^main$}"
+while read -r ref sha; do
+    short="${ref#refs/remotes/*/}"; short="${short#refs/heads/}"
+    if [[ "$sha" == "$MERGE_SHA" && "$short" =~ $PR_ONLY_RE ]]; then
+        echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
+        exit 0
+    fi
+done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes)
 MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
 
 NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
