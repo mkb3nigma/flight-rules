@@ -65,6 +65,12 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     script header comments) for every name the diff renames or removes. ❌ if a doc
     still describes the old behaviour; ⚠️ if a behaviour change touched no doc and the
     PR does not say why.
+18. **Rules earn their place** — for every item the diff adds to or widens in a rules
+    file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
+    incident or verified gap it answers, what goes wrong without it, and how it is
+    enforced (hook / skill / advisory). ❌ if any of the three is missing; ⚠️ if the
+    diff was not put through adversarial review (`/dg`). Deletions and tightenings
+    are exempt — bloat does not come from that direction.
 
 ## Report
 

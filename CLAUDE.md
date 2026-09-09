@@ -42,11 +42,20 @@ happens in the same commit, because they are the same file.
 
 ## How a rule gets in
 
-From an incident or a verified gap, never from taste. Every Forbidden and Required
-item in the workflow rule says how it is enforced — hook, skill, or advisory — and the
-commit adding one names the incident. At each plugin release, every advisory item is
-either given enforcement or deleted: a rule nobody enforces and nobody has broken is
-not a flight rule. Skills that check an item cite its number, so the two stay in step.
+`rules/` is injected into sessions and copied into projects, so it is the easiest place
+in the repo to dump advice that costs every reader and helps none. A change there is
+checked harder than code. Each added or widened item must pass all four, in the PR:
+
+1. **Names the incident or the verified gap** it answers — a commit, PR, date, or a
+   probe that showed the hole. "Best practice" is not an incident.
+2. **Says what goes wrong without it**, concretely. If the honest answer is "nothing
+   much", it does not go in.
+3. **Says how it is enforced** — hook, skill (with the check number), or advisory. An
+   advisory item is reviewed at each release and either given enforcement or deleted.
+4. **Survives adversarial review** — `/dg` on the diff, verdict in the PR body.
+
+`pre-merge-check` item 18 asks for 1–3 on any diff under `rules/`. Deleting or
+tightening a rule needs none of this; that is the direction bloat does not come from.
 
 ## When editing a hook
 
