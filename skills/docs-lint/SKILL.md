@@ -1,16 +1,16 @@
 ---
 name: docs-lint
 description: Health-check the project's living docs — find contradictions, stale claims, orphaned references, and index/detail drift. Read-only report; fixes are a separate step.
+argument-hint: "[dir or file]"
 ---
 
 # /docs-lint — Living-Docs Health Check
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/docs-lint/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
+Read `.ai/skills/docs-lint/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below.
 
 > Adapted from the *lint* operation in Karpathy's
 > [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern:

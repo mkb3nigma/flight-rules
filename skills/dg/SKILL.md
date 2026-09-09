@@ -1,25 +1,21 @@
 ---
 name: dg
 description: Adversarial review — Dinesh defends, Gilfoyle tears it apart. Works on code, architecture, product decisions, monetisation strategy, and anything else worth debating.
+argument-hint: "[file | topic] [rounds]"
 ---
 
 # /dg — Adversarial Review
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/dg/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
+Read `.ai/skills/dg/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below.
 
 Two personas review whatever you put in front of them and argue about it. Dinesh
 defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 **Based on [dinesh-gilfoyle](https://github.com/v1r3n/dinesh-gilfoyle) by [@v1r3n](https://github.com/v1r3n).**
-
-> **Sync note (for AI assistants):** this is the shared playbook template. Projects may
-> keep a local copy with a `## <Project> Extensions` section at the bottom (e.g. saving
-> review output to a project directory). Extensions are local-only — never sync them here.
 
 ## Invocation
 
@@ -55,7 +51,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    The preference is symmetric and names no vendor: whichever model drives the personas,
    the pre-reviewer should be a different one — the roles swap freely depending on which
    assistant a project runs as its main. This file states only the preference; a project
-   wires the concrete command in its extensions.
+   wires the concrete command in its extensions, e.g. from Claude Code
+   `codex exec -q "<brief>: $(cat <subject>)"`; from Codex, `claude -p "…"`.
 
    Same-family fallback is correct, and stays the default when no second model is
    reachable. A same-family pre-review still beats none — never skip the step for want

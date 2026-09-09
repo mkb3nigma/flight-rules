@@ -14,7 +14,7 @@ derivation), then run `/upstream-check`.
 | [multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) | `rules/engineering-principles.md` (principles 1–4) | git repo | `2c606141936f1eeef17fa3043a72095b4765b9c2` | 2026-07-22 |
 | [karpathy LLM-wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) | `skills/docs-lint/` (concept only) | gist | revision as of 2026-07-22 | 2026-07-22 |
 | [devanshkaria88/depshield-mcp](https://github.com/devanshkaria88/depshield-mcp) | `rules/dependency-lockfile.md` ("before a new dependency" section, concept only) | git repo | `2ff4d13efed3d4383c121c9935528bdb17bad150` | 2026-07-22 |
-| [mattpocock/skills](https://github.com/mattpocock/skills) | `skills/diagnose/` (concept only) | git repo | `8b78b531ab965735c5dc74f6f7a219e1e37326df` | 2026-08-15 |
+| [mattpocock/skills](https://github.com/mattpocock/skills) | `skills/diagnose/` (structure and several disciplines — see ATTRIBUTIONS) | git repo | `8b78b531ab965735c5dc74f6f7a219e1e37326df` | 2026-08-15 |
 
 > **`mattpocock/skills` re-pinned after review.** The row was added pinned at
 > `694fa303` (the source's state on 2026-06-10, what the original borrow was reviewed

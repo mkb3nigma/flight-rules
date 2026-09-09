@@ -1,16 +1,16 @@
 ---
 name: diagnose
 description: Structured debugging loop for hard bugs and performance regressions — build a feedback loop, minimize, hypothesize, instrument, reorient when stuck, fix, verify, clean up. No fix without a reproduction.
+argument-hint: "<bug description, error, stack trace, or issue link>"
 ---
 
 # /diagnose — Structured Debugging Loop
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/diagnose/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
+Read `.ai/skills/diagnose/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below.
 
 Debug a reported bug methodically: reproduce → minimize → hypothesize → instrument →
 (reorient) → fix → verify → clean up → post-mortem. Never jump straight to a fix.
@@ -154,7 +154,9 @@ no correct seam exists, **that is itself a finding**: report it, because the arc
 is what is preventing the bug from being locked down.
 
 ### 7. Clean up
-`grep -rn "DIAG"` — remove every instrumentation line you added; delete throwaway
+`grep -rn DIAG` (the bare word — it must catch `# DIAG: why`, `#DIAG`, `<!-- DIAG -->`
+and `print("DIAG …")` alike; triage the odd `DIAGNOSTIC` hit by eye) — remove every
+instrumentation line you added; delete throwaway
 harnesses or move them somewhere clearly marked. The diff should contain the fix and the
 regression test, nothing else.
 

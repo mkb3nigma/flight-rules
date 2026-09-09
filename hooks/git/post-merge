@@ -12,7 +12,7 @@
 # is fine here — this hook reports, it gates nothing), else the value below.
 INTEGRATION_BRANCH=$(sed -n -E 's/^[[:space:]]*INTEGRATION_BRANCH[[:space:]]*=[[:space:]]*"?([^"[:space:]]+)"?.*$/\1/p' \
   "$(git rev-parse --show-toplevel)/.ai/flight-rules.conf" 2>/dev/null | tail -1)
-INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-dev}"   # project parameter: {INTEGRATION_BRANCH}
+INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # project parameter: {INTEGRATION_BRANCH}
 NOTE_PATH='.claude/post-merge-note.md'  # where the next-session note is written
 CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
                                            # files for this project (keeps memory/).

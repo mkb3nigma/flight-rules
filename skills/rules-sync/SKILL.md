@@ -7,10 +7,9 @@ description: Pull the latest playbook (flight-rules) and diff a project's local 
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/rules-sync/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
+Read `.ai/skills/rules-sync/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below.
 
 A project that adopts flight-rules keeps **local copies** of some rules/skills under
 `{LOCAL_RULES_DIRS}` (default: `.ai/rules/`, `.ai/skills/`), adapted with filled-in
@@ -41,7 +40,10 @@ the sync is reproducible.
 ## Step 2 — Map local copies to upstream files
 Match by path/basename:
 - `{LOCAL_RULES_DIRS}/<name>.md` ↔ `{PLAYBOOK_PATH}/rules/<name>.md`
-- `.ai/skills/<name>/SKILL.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md`
+- `.ai/skills/<name>/SKILL.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md` (copy-in)
+- `.ai/skills/<name>/EXTENSIONS.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md`
+  (the recommended model — the project holds only a delta, so there is nothing to
+  diff line-by-line; see Step 3b)
 
 Classify every local file:
 - **Mapped** — has an upstream counterpart → compare in Step 3.
@@ -62,6 +64,15 @@ For each pair, diff local vs upstream and sort every hunk into one bucket:
   edited. Show both sides.
 
 Treat pure line-rewrapping / whitespace as non-substantive (note it, don't dwell).
+
+## Step 3b — EXTENSIONS.md and the conf
+An extension is a delta, so it breaks silently when the skill under it moves. For each
+one, report ✖ if: a step it replaces or inserts after no longer exists upstream; a
+`{PLACEHOLDER}` it fills is no longer used, or is one of the five branch/path
+parameters (those live in the conf only — the hooks never read an extension); a rule it
+overrides has since become a hook.
+Then `.ai/flight-rules.conf`: the hooks ignore unknown keys, so a typo silently falls
+back to the default. ✖ any key outside the five; note any of the five that is absent.
 
 ## Step 4 — Report (do not auto-apply)
 Print a per-file summary:

@@ -1,29 +1,27 @@
 ---
 name: commit
 description: Create a git commit with conventional-format validation and a test-coverage warning. Branch protection and secrets scanning are enforced by the hook layer.
+argument-hint: "[commit message]"
 ---
 
 # /commit — Create a Guarded Git Commit
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/commit/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
-
-Branch and path parameters — `{PROTECTED_BRANCHES}`, `{PR_ONLY_BRANCHES}`,
-`{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}` — come from
-`.ai/flight-rules.conf`, the same file the hooks read, so the branch policy has one
-home. Anything not set there falls back to the defaults named in this skill.
+Read `.ai/skills/commit/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
+`{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
+come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
+restating one is invisible to enforcement, so the conf wins.
 
 ## Division of labour
 
 The hooks enforce the hard gates; this skill covers what a hook cannot judge.
 
-- **Hook-enforced** (see `hooks/README.md`): no commits on `{PROTECTED_BRANCHES}` and
-  no staged secrets (`hooks/agent/pre-commit-check.sh`); no unchecked merges into
-  protected branches (`hooks/git/` merge gate).
+- **Hook-enforced** (`hooks/README.md`): nothing that commits to, rewrites, discards
+  from or force-pushes a protected branch; no staged secrets; no local, squash or
+  unstamped merge into a gated branch.
 - **Skill-covered**: commit-message format, test-coverage warning, stray-debug-logging
   warning.
 
@@ -45,3 +43,7 @@ The hooks enforce the hard gates; this skill covers what a hook cannot judge.
 4. **Validate the message** — ask if missing; verify the conventional prefix.
 5. **Commit** — `git commit -m "<message>"`, appending the assistant's co-author
    trailer if the environment specifies one.
+6. **If the guard denies — stop.** Relay the block message verbatim; it names the
+   cause and the fix. Never retry with `--no-verify`, `-C`, another `cd`, a subshell,
+   an alias or a conf edit: a variant that gets past the guard is a bug report. If the
+   block looks wrong, say so and wait — the owner decides, not the blocked agent.

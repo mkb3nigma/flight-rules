@@ -1,21 +1,19 @@
 ---
 name: pr-create
 description: Push the current feature branch and open a GitHub pull request with a pre-merge checklist in the body. Covers native stacked PRs (gh stack) and why hand-rolled stacks drop work.
+argument-hint: "[PR title]"
 ---
 
 # /pr-create — Create a GitHub Pull Request
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/pr-create/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
-
-Branch and path parameters — `{PROTECTED_BRANCHES}`, `{PR_ONLY_BRANCHES}`,
-`{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}` — come from
-`.ai/flight-rules.conf`, the same file the hooks read, so the branch policy has one
-home. Anything not set there falls back to the defaults named in this skill.
+Read `.ai/skills/pr-create/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
+`{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
+come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
+restating one is invisible to enforcement, so the conf wins.
 
 Open a GitHub PR for the current feature branch. Project parameters:
 `{INTEGRATION_BRANCH}`, `{PROTECTED_BRANCHES}`, `{WORKTREE_DIR}`, `{TEST_COMMANDS}`
@@ -111,16 +109,7 @@ gh pr create \
 <files-changed summary from git diff --stat>
 
 ## Pre-merge checklist
-- [x] Test suite passing (`{TEST_COMMANDS}`)
-- [x] Lint / type checks clean
-- [x] No secrets in the diff
-- [x] No stray debug logging committed
-- [x] Conventional-commit format on all commits
-- [x] Single, coherent scope
-- [x] No merge-conflict markers
-- [x] Dependency audit clean
-- [x] No tracked env/secret files
-- [x] Tests updated alongside source changes
+<the /pre-merge-check table, pasted verbatim — a retyped summary drops rows>
 
 ## Warnings
 <any ⚠️ items from /pre-merge-check, else "none">
@@ -135,8 +124,11 @@ EOF
 )"
 ```
 
-Mark any checklist row ❌ if its check failed — a PR should not normally be opened
-with ❌ items unless the user explicitly overrides.
+Do not open a PR with ❌ rows unless the user overrides. The **Testing** rows ship
+unticked on purpose: tick a row only for what you actually exercised, and **delete** a
+row that does not apply (a UI row on a backend change). Never tick by default — a box
+is an attestation — and never leave an inapplicable row unticked, which GitHub's task
+counter reports as unfinished work.
 
 4. Show the PR URL. After merge, **verify the commits landed** — `git fetch origin` then
    `git log --oneline origin/{INTEGRATION_BRANCH}` should contain them (mandatory for a

@@ -7,15 +7,12 @@ description: Run the automated pre-merge checklist for the current feature branc
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/pre-merge-check/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
-
-Branch and path parameters — `{PROTECTED_BRANCHES}`, `{PR_ONLY_BRANCHES}`,
-`{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}` — come from
-`.ai/flight-rules.conf`, the same file the hooks read, so the branch policy has one
-home. Anything not set there falls back to the defaults named in this skill.
+Read `.ai/skills/pre-merge-check/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
+`{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
+come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
+restating one is invisible to enforcement, so the conf wins.
 
 Run every automated check before merging a feature branch into its destination
 (default: `{INTEGRATION_BRANCH}`). Prints a pass/fail report and stamps a git note when
@@ -42,9 +39,14 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     catch lint findings, so an ungated linter's error debt silently creeps back
     between cleanups. Gate only suites the project keeps at zero errors; report
     known-debt suites explicitly instead of failing on them.
-6. **Secrets scan** — grep the diff for cloud keys (`AKIA[A-Z0-9]{16}`), API-key
-   literals (`sk-[a-zA-Z0-9]{32,}`), private-key headers, and hardcoded
-   `password/secret/token/api_key = "<literal>"`. ❌ on any hit (redact values).
+6. **Secrets scan** — run the guard's own patterns over the added lines of
+   `git diff <dest>...HEAD`. Read them at run time from the first of
+   `${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh`, `.ai/hooks/agent/pre-commit-check.sh`,
+   `hooks/agent/pre-commit-check.sh` that exists (the `hit '…'` lines, the `.env` rule,
+   the credential-literal grep); if none does, ❌ "guard not found" — never report a
+   scan you could not run. Apply **no exemptions** here: the guard skips prose files
+   and honours `flight-rules: allow` at commit time; the branch-level scan is the
+   second look, so it reports those too, as ⚠️. ❌ on any other hit (redact values).
 7. **Debug-logging check** — new `console.log` / stray print/debug lines: ⚠️ warn.
 8. **Conventional commits** — every commit on the branch starts with an allowed prefix
    (`feature:` `fix:` `refactor:` `test:` `docs:` `chore:`; `hotfix/` branches use `fix:`).
@@ -59,6 +61,10 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
 14. **Migrations present if models/schema changed** — ⚠️ if not.
 15. **New TODO/FIXME/HACK** — ⚠️ list; resolve or track before merge.
 16. **Commit-count sanity** — ⚠️ above ~20 commits: consider splitting.
+17. **Docs match the change** — grep the docs (`README*`, `docs/`, `rules/`, `skills/`,
+    script header comments) for every name the diff renames or removes. ❌ if a doc
+    still describes the old behaviour; ⚠️ if a behaviour change touched no doc and the
+    PR does not say why.
 
 ## Report
 

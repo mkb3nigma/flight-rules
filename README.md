@@ -26,7 +26,7 @@ reconciled via `/rules-sync`) — so nobody maintains a drifting copy.
 flowchart TB
     subgraph sources["Upstream sources"]
         direction LR
-        S1["dinesh-gilfoyle"] ~~~ S2["karpathy-skills"] ~~~ S3["depshield-mcp"]
+        S1["dinesh-gilfoyle"] ~~~ S2["karpathy-skills"] ~~~ S3["depshield-mcp"] ~~~ S4["mattpocock-skills"] ~~~ S5["karpathy-llm-wiki"]
     end
     sources -- "/upstream-check" --> FR["flight-rules<br/>(single source of truth)"]
     FR -- "/rules-sync" --> P1["AppliHawk"]
@@ -43,13 +43,11 @@ hooks/     Enforcement templates — git merge-gate hooks + agent commit/secret 
 UPSTREAMS.md      Sources this playbook adapts from + last-synced refs (see /upstream-check)
 ```
 
-The skills say what the workflow is; the hooks make it non-optional. `hooks/git/`
-blocks local merges into PR-only branches and unstamped merges into note-gated ones,
-and `hooks/agent/` stops the assistant from committing, destroying the tree or
-force-pushing on a protected branch, or committing with secrets staged. The agent guard
-ships live with the Claude Code plugin; the git hooks are copied in and installed once
-per clone. Both read the project's branch policy from `.ai/flight-rules.conf` — see
-`hooks/README.md`.
+The skills say what the workflow is; the hooks make it non-optional: `hooks/git/`
+gates merges into protected branches, `hooks/agent/` stops the assistant committing,
+destroying or force-pushing a protected branch, or committing secrets. The agent guard
+ships with the plugin; the git hooks are copied in once per clone. Both read
+`.ai/flight-rules.conf` — see `hooks/README.md`.
 
 ## Rules
 
@@ -71,7 +69,7 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 | [`/dg`](skills/dg/SKILL.md) | Adversarial review — one persona defends, one tears it apart | Pressure-testing code, a design, or a decision |
 | [`/diagnose`](skills/diagnose/SKILL.md) | Structured debugging — reproduce, minimise, fix, verify | A bug you can't one-shot |
 | [`/feature-start`](skills/feature-start/SKILL.md) | Open a new branch as an isolated git worktree | Starting any unit of work |
-| [`/pre-merge-check`](skills/pre-merge-check/SKILL.md) | Automated pre-merge checklist; stamps a git note the merge-gate verifies | Before merging a branch |
+| [`/pre-merge-check`](skills/pre-merge-check/SKILL.md) | Automated pre-merge checklist — tests, secrets, docs-match-the-change, and more; stamps a git note the merge-gate verifies | Before merging a branch |
 | [`/pr-create`](skills/pr-create/SKILL.md) | Push the branch and open a GitHub PR with the checklist in the body | Ready to raise a PR |
 | [`/commit`](skills/commit/SKILL.md) | Guarded commit — protected-branch, secret-scan, and test-coverage checks | Every commit |
 | [`/docs-lint`](skills/docs-lint/SKILL.md) | Health-check living docs for drift, contradictions, and stale claims | Docs start to rot |
@@ -107,22 +105,24 @@ flavor stays in the project.** Two ways to consume, in order of preference:
 
 1. **Plugin + `EXTENSIONS.md` (recommended).** Install the plugin and keep the
    playbook's skills as the single registered copy. A project extends a skill by
-   creating `.ai/skills/<name>/EXTENSIONS.md` carrying only its delta: `{PLACEHOLDER}`
-   values, additional or replacement steps, and project-specific rules. Every skill
+   creating `.ai/skills/<name>/EXTENSIONS.md` carrying only its delta: additional or
+   replacement steps, project-specific rules, and `{PLACEHOLDER}` values other than
+   the branch/path ones (those live in `.ai/flight-rules.conf`, below). Every skill
    checks for that file before executing and gives it precedence — projects get
    playbook updates automatically while their flavor stays local, and nothing is
    registered twice.
 2. **Copy-in (legacy).** A project keeps a full local copy of a skill with a clearly
-   marked `## <Project> Extensions` section at the bottom (see the sync note pattern
-   inside `skills/dg/SKILL.md`), or overrides a rule in its own rules file. Copies
-   drift; reconcile with `/rules-sync`.
+   marked `## <Project> Extensions` section at the bottom, or overrides a rule in its
+   own rules file. Copies drift; reconcile with `/rules-sync`, which still understands
+   this layout.
 
 ## Parameters
 
 Skills refer to placeholders rather than hardcoding a project's setup. The branch
-policy has **one home, `.ai/flight-rules.conf`** — the file the hooks read — so the
-skills and the enforcement never disagree about which branches are protected. The rest
-lives in the skill's `EXTENSIONS.md`.
+policy has **one home, `.ai/flight-rules.conf`** — five keys, `PROTECTED_BRANCHES`,
+`PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`, `WORKTREE_DIR`, the
+file the hooks read — so the skills and the enforcement never disagree about which
+branches are protected. The rest lives in the skill's `EXTENSIONS.md`.
 
 | Placeholder | Meaning | Example | Home |
 |---|---|---|---|
@@ -134,14 +134,6 @@ lives in the skill's `EXTENSIONS.md`.
 | `{TEST_COMMANDS}` | the project's suites | `pytest` / `npm run test:run` | `EXTENSIONS.md` |
 | `{PLAYBOOK_PATH}`, `{LOCAL_RULES_DIRS}` | where `/rules-sync` finds the playbook and the project's local copies | `~/Projects/flight-rules`, `.ai/rules/` | `EXTENSIONS.md` |
 
-```ini
-# .ai/flight-rules.conf
-PROTECTED_BRANCHES=^(main|dev)$
-PR_ONLY_BRANCHES=^main$
-NOTE_GATED_BRANCHES=^dev$
-INTEGRATION_BRANCH=dev
-WORKTREE_DIR=.ai/worktrees
-```
 
 ## Design notes
 
