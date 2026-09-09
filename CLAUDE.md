@@ -50,9 +50,12 @@ checked harder than code. Each added or widened item must pass all four, in the 
    probe that showed the hole. "Best practice" is not an incident.
 2. **Says what goes wrong without it**, concretely. If the honest answer is "nothing
    much", it does not go in.
-3. **Says how it is enforced** — hook, skill (with the check number), or advisory. An
-   advisory item is reviewed at each release and either given enforcement or deleted.
-4. **Survives adversarial review** — `/dg` on the diff, verdict in the PR body.
+3. **Says how it is enforced** — a hook, or a skill with the check number. "Advisory"
+   is not an answer by itself: it needs the reason the item cannot be checked, and it
+   expires at the next release unless enforcement has arrived by then.
+4. **Survives adversarial review** — `/dg` on the diff, preferring a reviewer from a
+   different model family than the author (the skill says why), with the verdict in
+   the PR body and each finding's disposition, applied or declined with a reason.
 
 `pre-merge-check` item 18 asks for 1–3 on any diff under `rules/`. A deletion or
 tightening skips the four points but still names what it drops and where that is now

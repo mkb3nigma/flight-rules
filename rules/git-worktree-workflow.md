@@ -22,8 +22,8 @@ items are reviewed at every plugin release and either given enforcement or delet
 4. Merging without tests passing — skill (`pre-merge-check` 1–3 runs them; on note-gated
    branches `commit-msg` requires its stamp, which proves the skill ran, not that it
    passed honestly); on PR-only branches the host's CI and review are the gate
-5. Force-pushing, deleting or rebasing a protected branch — hook (agent guard; the
-   `pre-rebase` git hook covers PR-only branches only)
+5. Force-pushing or rebasing a protected branch, or deleting it on the remote — hook
+   (agent guard; the `pre-rebase` git hook covers PR-only branches only)
 6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add` — hook
 7. Merging into a **PR-only branch (default `main`) locally at all** — it moves only
    through a reviewed pull request. Sync afterwards with `git pull --ff-only origin main`
