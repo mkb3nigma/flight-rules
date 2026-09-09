@@ -157,10 +157,23 @@ push_targets() {
   printf '%s\n' "${words[@]+"${words[@]}"}"
 }
 
+# Workflow rule 6: branches are created as worktrees, never with `checkout -b` /
+# `switch -c`. A branch created in place puts feature work in the main checkout —
+# the drift the whole worktree workflow exists to prevent — so this is denied on
+# EVERY branch of the project, not just protected ones. `git worktree add … -b`
+# is the sanctioned form and contains neither verb.
+is_branch_create() {
+  [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+([^[:space:]]+[[:space:]]+)*-[bB]([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[cC]|--create|--force-create)([[:space:]]|$) ]] && return 0
+  return 1
+}
+
 if is_commit "$NORM"; then
   ACTION="commit"
 elif is_force_push "$NORM"; then
   ACTION="force-push"
+elif is_branch_create "$NORM"; then
+  ACTION="branch-create"
 elif is_destructive "$NORM"; then
   ACTION="destructive"
 else
@@ -249,9 +262,23 @@ GIT_DIR_PATH=$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)
 if [[ "$IN_THIS_PROJECT" == "0" ]]; then
   # Another repo — its branch policy is not ours to enforce
   :
-elif [[ -f "$GIT_DIR_PATH/MERGE_HEAD" && "$ACTION" != "force-push" ]]; then
+elif [[ -f "$GIT_DIR_PATH/MERGE_HEAD" && "$ACTION" != "force-push" && "$ACTION" != "branch-create" ]]; then
   # A merge is in progress; let it through
   :
+elif [[ "$ACTION" == "branch-create" ]]; then
+  deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
+
+A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
+
+Instead, from the repo root with absolute paths:
+  git fetch origin
+  git worktree add $WORKTREE_DIR/<name> -b <prefix>/<name> origin/<integration-branch>
+  cd $WORKTREE_DIR/<name>
+
+Prefixes: feature/ fix/ refactor/ test/ docs/ chore/ hotfix/. The /feature-start skill does all of this.
+
+If this project does not use the worktree workflow, the owner can set PROTECTED_BRANCHES=off in .ai/flight-rules.conf. That is the owner's call — do not add it yourself to get past this block; ask."
+  exit 0
 elif [[ "$IS_PROTECTED" == "1" ]]; then
   case "$ACTION" in
     commit)      VERB="You are on it. Never commit directly to a protected branch." ;;

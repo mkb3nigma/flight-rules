@@ -76,7 +76,10 @@ Guards that fire on the assistant's own events, before git ever runs:
   `checkout <rev> -- <path>`, `switch --discard-changes`, `rebase` (not its
   `--abort`/`--continue`), `stash drop|clear`. From any branch it denies a push that
   force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
-  `+refspec`, `--delete`, `origin :main`, `--mirror`). `git -C`/`-c` are normalised
+  `+refspec`, `--delete`, `origin :main`, `--mirror`). On **any** branch of the project
+  it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
+  created as worktrees (workflow rule 6), and the block shows the command.
+  `git -C`/`-c` are normalised
   away first, the *last* `cd` decides the target repo, and a merge in progress is
   exempt so conflicts can be resolved.
   Regardless of branch, a commit is denied with a staged `.env` (templates
