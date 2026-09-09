@@ -12,6 +12,11 @@ If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plu
 additional or replacement steps and project-specific rules — extensions take
 precedence over the generic defaults below. If absent, use the defaults as-is.
 
+Branch and path parameters — `{PROTECTED_BRANCHES}`, `{PR_ONLY_BRANCHES}`,
+`{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}` — come from
+`.ai/flight-rules.conf`, the same file the hooks read, so the branch policy has one
+home. Anything not set there falls back to the defaults named in this skill.
+
 Open a GitHub PR for the current feature branch. Project parameters:
 `{INTEGRATION_BRANCH}`, `{PROTECTED_BRANCHES}`, `{WORKTREE_DIR}`, `{TEST_COMMANDS}`
 (defaults: `main` / `main` / `.ai/worktrees/` / the project's test commands).
@@ -125,7 +130,7 @@ gh pr create \
 - [ ] Error cases exercised
 - [ ] (UI changes) responsive layout + keyboard navigation verified
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+<the assistant's attribution footer, if the environment specifies one — else omit>
 EOF
 )"
 ```

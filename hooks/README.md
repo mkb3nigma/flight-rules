@@ -26,10 +26,12 @@ PROTECTED_BRANCHES=off
 The secret scan keeps running when the branch policy is off — leaking a key is not a
 workflow preference.
 
-The **git hooks in `git/`** are still **templates to copy**: git finds them through
-`core.hooksPath`, which no plugin can set on your behalf. Copy them to `.ai/hooks/`,
-run `install.sh`, and edit their parameter variables in place — git runs them outside
-the assistant, so they see neither `settings.json` nor (yet) the conf file.
+The **git hooks in `git/`** are still **files to copy**: git finds them through
+`core.hooksPath`, which no plugin can set on your behalf. Copy them to `.ai/hooks/` and
+run `install.sh`. They need no editing — the merge gate reads `PR_ONLY_BRANCHES` and
+`NOTE_GATED_BRANCHES` from `.ai/flight-rules.conf`, and `post-merge` reads
+`INTEGRATION_BRANCH` from it. Git runs them outside the assistant, so `settings.json`
+never reaches them; the conf file is the one channel every layer shares.
 
 ## Git hooks (`git/`)
 
@@ -91,10 +93,13 @@ The file is parsed as **data** (matched with `sed`, never `source`d), so a clone
 repository cannot execute code through it. `#` comments, blank lines, spaces around
 `=`, and quoted values are all fine.
 
-| Setting | `.ai/flight-rules.conf` key | Environment variable | Controls |
-|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | Branches the guard defends. A POSIX ERE matched **case-insensitively** — anchor it with `^`/`$`. |
-| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | Path suggested in the block message. Default `.ai/worktrees`. |
+| Setting | `.ai/flight-rules.conf` key | Environment variable | Read by | Controls |
+|---|---|---|---|---|
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | `pre-commit-check.sh` | Branches the agent guard defends against commits, working-tree destroyers and force-pushes. A POSIX ERE matched **case-insensitively** — anchor it with `^`/`$`. `off` disables the branch policy (the secret scan stays on). |
+| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | `pre-merge-commit`, `commit-msg` | Branches that take no local merge at all — they move only through a reviewed PR. Default `^main$`. |
+| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Branches a merge into which needs a passing `pre-merge-check` note on the incoming commit. Default `^(dev\|staging)$`. |
+| Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where feature branches merge. Default `dev` in the hooks; the skills default to `main`. |
+| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | `pre-commit-check.sh`, `session-start.sh`, skills | Where feature worktrees live and the path the block message suggests. Default `.ai/worktrees`. |
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
@@ -108,9 +113,10 @@ repos gets each project's own policy.
 > the built-in default, never to the working tree. Practical consequence: **a conf
 > change only takes effect on the merge gate once it is committed on the target
 > branch.** `pre-commit-check.sh` still reads the working tree on purpose — it guards
-> an interactive session, where an uncommitted edit should apply immediately. The environment variables carry a
-`FLIGHT_RULES_` prefix because the environment is a shared namespace; the file keys do
-not, because the filename already scopes them.
+> an interactive session, where an uncommitted edit should apply immediately.
+
+The environment variables carry a `FLIGHT_RULES_` prefix because the environment is a
+shared namespace; the file keys do not, because the filename already scopes them.
 
 **Default protected set** — `main`, `master`, `dev`, `develop`, `development`,
 `staging`, `stage`, `qa`, `uat`, `prod`, `production`, and `release` (bare or as a
@@ -150,12 +156,17 @@ The hook does **not** read a `.env` file. If your project keeps settings there, 
 branch policy in `.ai/flight-rules.conf` instead — `.env` is for secrets and
 per-machine values, and this policy is neither.
 
-Settings come from the environment and never from a file inside the repository: a
-sourced config file would let any cloned repo execute code inside the hook.
+The conf file is read as data and never `source`d: a sourced config file would let any
+cloned repo execute code inside the hook.
 
 ### Wiring (Claude Code)
 
-Keep the scripts in `.ai/hooks/agent/` and point `.claude/settings.json` at them:
+**With the plugin installed, there is nothing to wire** — `hooks/hooks.json` registers
+`pre-commit-check.sh` and the rules-injecting SessionStart hook. Do **not** also point
+`settings.json` at a local copy, or the guard runs twice.
+
+**Without the plugin** (another assistant, or a project that vendors the scripts), keep
+them in `.ai/hooks/agent/` and point `.claude/settings.json` at them:
 
 ```json
 {
