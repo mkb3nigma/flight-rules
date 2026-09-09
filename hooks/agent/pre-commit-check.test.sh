@@ -333,8 +333,41 @@ check "rebase --abort is the way out"     allow main 'git rebase --abort'
 check "rebase --continue"                 allow main 'git rebase --continue'
 check "stash list / push are fine"        allow main 'git stash list && git stash push -m wip'
 check "switch to a branch"                allow main 'git switch feature/x'
-check "checkout -b (not a path restore)"  allow main 'git checkout -b feature/y'
 check "rebase on a feature branch"        allow feature/x 'git rebase main'
+
+echo "Workflow rule 6 — branches are created as worktrees, on any branch:"
+check "checkout -b on main"               deny  main      'git checkout -b feature/y'
+check "checkout -b on a feature branch"   deny  feature/x 'git checkout -b feature/y'
+check "checkout -B"                       deny  main      'git checkout -B feature/y'
+check "checkout -q -b (option before)"    deny  main      'git checkout -q -b feature/y'
+check "switch -c"                         deny  main      'git switch -c feature/y'
+check "switch -C"                         deny  main      'git switch -C feature/y'
+check "switch --create"                   deny  main      'git switch --create feature/y'
+check "switch --force-create"             deny  main      'git switch --force-create feature/y'
+check "cd && checkout -b"                 deny  main      'cd . && git checkout -b feature/y'
+check "worktree add -b is the right way"  allow main      'git worktree add .ai/worktrees/y -b feature/y origin/main'
+check "checkout <existing branch>"        allow main      'git checkout feature/x'
+check "switch <existing branch>"          allow main      'git switch feature/x'
+check "checkout -b with the guard off"    allow main      'git checkout -b feature/y' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=off
+check "branch <name> (no switch) is not gated" allow main 'git branch feature/y'
+D=$(make_repo main)
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
+if grep -q 'git worktree add .ai/worktrees/<name> -b' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ block message shows the worktree command\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ block message lacks the worktree command\n'
+fi
+rm -rf "$D"
+# Another repo's branches are not ours to police (same scoping as the branch policy).
+D=$(make_repo main); O=$(make_repo main)
+OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
+if grep -q '"deny"' <<<"$OUT"; then
+  FAIL=$((FAIL+1)); printf '  ❌ checkout -b in a sibling repo was denied\n'
+else
+  PASS=$((PASS+1)); printf '  ✅ checkout -b in a sibling repo is not our business\n'
+fi
+rm -rf "$D" "$O"
 
 echo "Deleting or overwriting a protected branch on the remote:"
 check "push --delete origin main"         deny  feature/x 'git push --delete origin main'
