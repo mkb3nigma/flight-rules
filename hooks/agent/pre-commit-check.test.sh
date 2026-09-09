@@ -184,6 +184,17 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ secret scan was disabled by PROTECTED_BRANCHES=off\n'
 fi
 rm -rf "$D"
+# The block message must name the opt-out, or a project that never wanted the
+# worktree workflow has no way to discover it short of reading hooks/README.md.
+D=$(make_repo main)
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" \
+      bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+if grep -q 'PROTECTED_BRANCHES=off' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ block message names PROTECTED_BRANCHES=off\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ block message does not name PROTECTED_BRANCHES=off\n'
+fi
+rm -rf "$D"
 
 echo "Precedence — environment beats the conf file:"
 D=$(make_repo dev)
@@ -194,6 +205,129 @@ if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
   PASS=$((PASS+1)); printf '  ✅ env overrides conf\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ env did not override conf\n'
+fi
+rm -rf "$D"
+
+echo "Global git options must not hide the verb from the guard:"
+# Regression: the commit check was a substring match for "git commit", so anything
+# between `git` and `commit` — `-C <dir>`, `-c key=val` — bypassed the branch policy.
+check "git -C <dir> commit"              deny  main 'git -C . commit -m x'
+check "git -c key=val commit"            deny  main 'git -c user.name=t commit -m x'
+check "git -C <dir> -c key=val commit"   deny  main 'git -C . -c user.name=t commit -m x'
+check "git -c … commit on feature"       allow feature/x 'git -c user.name=t commit -m x'
+
+echo "Force-push to a protected branch is blocked, wherever you stand:"
+check "push --force origin main (from feature)" deny  feature/x 'git push --force origin main'
+check "push -f origin main (from feature)"      deny  feature/x 'git push -f origin main'
+check "push --force-with-lease origin main"     deny  feature/x 'git push --force-with-lease origin main'
+check "push +feature:main refspec"              deny  feature/x 'git push origin +feature/x:main'
+check "push -f with no refspec, on main"        deny  main      'git push -f'
+check "push -f origin, on main"                 deny  main      'git push -f origin'
+check "push --force to a feature branch"        allow feature/x 'git push --force origin feature/x'
+check "plain push of main is not a force-push"  allow feature/x 'git push origin main'
+check "push -u (not a force flag)"              allow feature/x 'git push -u origin feature/x'
+
+echo "Target directory — the last cd wins, and quotes are tolerated:"
+# Regression: only the FIRST `cd` was honoured, so `cd /tmp && cd <repo> && git rm`
+# resolved the branch from /tmp (no repo, no branch) and was allowed on main.
+check "last cd wins"                     deny  main 'cd /tmp && cd . && git rm f.txt'
+check "double-quoted cd path"            deny  main 'cd "." && git rm f.txt'
+check "single-quoted cd path"            deny  main "cd '.' && git rm f.txt"
+
+echo "Secret scan — staged content on a feature branch:"
+# secret_check <desc> <expect> <file path> <content>
+secret_check() {
+  local desc="$1" expect="$2" path="$3" content="$4"
+  local dir out got
+  dir=$(make_repo feature/x)
+  mkdir -p "$dir/$(dirname "$path")"
+  printf '%s\n' "$content" > "$dir/$path"
+  git -C "$dir" add "$path" >/dev/null 2>&1
+  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
+        <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
+  fi
+  rm -rf "$dir"
+}
+# Regression: every pattern was anchored `^\+[^+].*`, demanding a character between
+# the diff's "+" and the secret — a column-zero assignment was never matched.
+secret_check "password at column zero"        deny  src/config.py 'password = "hunter2hunter2"'
+secret_check "AWS key at column zero"         deny  src/config.py 'AKIAIOSFODNN7EXAMPLE'
+secret_check "indented password (control)"    deny  src/config.py '    password = "hunter2hunter2"'
+secret_check "PASSWORD (case-insensitive)"    deny  src/config.py 'PASSWORD = "hunter2hunter2"'
+secret_check "API_KEY"                        deny  src/config.py 'API_KEY = "abcdefghijklmnop"'
+secret_check "token"                          deny  src/config.py 'token = "abcdefghijklmnop"'
+secret_check "YAML password:"                 deny  config.yml   'password: "hunter2hunter2"'
+secret_check "JSON \"password\":"             deny  config.json  '{"password": "hunter2hunter2"}'
+secret_check "sk-ant-… key"                   deny  src/a.py 'k = "sk-ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123-AA"'
+secret_check "sk-proj-… key"                  deny  src/a.py 'k = "sk-proj-Abc123Abc123Abc123Abc123Abc123Abc123"'
+secret_check "legacy sk-… key"                deny  src/a.py 'k = "sk-Abc123Abc123Abc123Abc123Abc123Abc123Abc123Abc12"'
+secret_check "GitHub ghp_ token"              deny  src/a.py 'k = "ghp_Abc123Abc123Abc123Abc123Abc123Abc123"'
+secret_check "GitHub fine-grained PAT"        deny  src/a.py 'k = "github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz"'
+secret_check "Slack xoxb token"               deny  src/a.py 'k = "xoxb-123456789012-abcdefghijkl"'
+secret_check "Google AIza key"                deny  src/a.py 'k = "AIzaSyAbc123Abc123Abc123Abc123Abc123Abc12"'
+secret_check "OPENSSH private key"            deny  id_ed25519 '-----BEGIN OPENSSH PRIVATE KEY-----'
+secret_check "EC private key"                 deny  key.pem    '-----BEGIN EC PRIVATE KEY-----'
+secret_check "RSA private key (control)"      deny  key.pem    '-----BEGIN RSA PRIVATE KEY-----'
+secret_check ".env staged"                    deny  .env       'X=1'
+secret_check ".env.example is fine"           allow .env.example 'X='
+secret_check "placeholder <your-password>"    allow src/config.py 'password = "<your-password-here>"'
+secret_check "placeholder REDACTED"           allow src/config.py 'password = "REDACTED_VALUE"'
+secret_check "env-var reference"              allow src/config.py 'password = "${DB_PASSWORD}"'
+secret_check "short literal"                  allow src/config.py 'password = "short"'
+secret_check "ordinary source"                allow src/app.py 'x = compute(y)'
+# Test fixtures may hold literal passwords — every common naming convention.
+secret_check "tests/ dir excluded"            allow tests/test_a.py 'password = "hunter2hunter2"'
+secret_check "__tests__/ dir excluded"        allow src/__tests__/a.ts 'password = "hunter2hunter2"'
+secret_check "test_*.py excluded"             allow test_auth.py 'password = "hunter2hunter2"'
+secret_check "*_test.go excluded"             allow auth_test.go 'password = "hunter2hunter2"'
+secret_check "*.test.ts excluded"             allow src/auth.test.ts 'password = "hunter2hunter2"'
+secret_check "*.spec.js excluded"             allow src/auth.spec.js 'password = "hunter2hunter2"'
+secret_check "conftest.py excluded"           allow conftest.py 'password = "hunter2hunter2"'
+# …but a provider key is a leak wherever it sits.
+secret_check "AWS key in a test file"         deny  tests/test_a.py 'AKIAIOSFODNN7EXAMPLE'
+
+echo "Missing JSON parser must fail loud, not silent:"
+# Regression: with jq absent the command parsed as "" and the hook exited 0 —
+# the guard switched itself off without a word.
+bare_path() {  # a PATH holding the tools the hook needs, minus whatever is named
+  local b; b=$(mktemp -d)
+  local t; for t in bash sh git sed grep tail cat env printf; do
+    command -v "$t" >/dev/null 2>&1 && ln -s "$(command -v "$t")" "$b/$t"
+  done
+  for t in "$@"; do command -v "$t" >/dev/null 2>&1 && ln -s "$(command -v "$t")" "$b/$t"; done
+  printf '%s' "$b"
+}
+D=$(make_repo main); P=$(bare_path)
+OUT=$(cd "$D" && PATH="$P" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
+if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q 'jq' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ no jq, no python3: git command denied with an install hint\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ no jq, no python3: git command was not denied\n'
+fi
+OUT=$(cd "$D" && PATH="$P" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<'{"tool_input":{"command":"ls -la"}}' 2>/dev/null)
+if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  FAIL=$((FAIL+1)); printf '  ❌ no parser: a non-git command was denied\n'
+else
+  PASS=$((PASS+1)); printf '  ✅ no parser: a non-git command still passes\n'
+fi
+rm -rf "$P"
+if command -v python3 >/dev/null 2>&1; then
+  P=$(bare_path python3)
+  OUT=$(cd "$D" && PATH="$P" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
+  if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q 'protected branch' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ python3 fallback parses and denies normally\n'
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ python3 fallback did not produce a normal deny\n'
+  fi
+  rm -rf "$P"
 fi
 rm -rf "$D"
 
