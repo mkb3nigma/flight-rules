@@ -4,5 +4,5 @@ description: Push the current feature branch and open a GitHub pull request with
 argument-hint: "[PR title]"
 ---
 
-Read and follow `skills/pr-create/SKILL.md` (this repository is the playbook; the file is
-the skill itself, not a copy). Arguments: $ARGUMENTS
+Read and follow `skills/pr-create/SKILL.md` (path relative to the repository root; this repository
+is the playbook, so the file is the skill itself, not a copy). Arguments: $ARGUMENTS

@@ -115,18 +115,20 @@ gh pr create \
 <any ⚠️ items from /pre-merge-check, else "none">
 
 ## Testing
-- [x] Happy path exercised
-- [x] Error cases exercised
-- [x] (UI changes) responsive layout + keyboard navigation verified
+- [ ] Happy path exercised
+- [ ] Error cases exercised
+- [ ] (UI changes) responsive layout + keyboard navigation verified
 
 <the assistant's attribution footer, if the environment specifies one — else omit>
 EOF
 )"
 ```
 
-Do not open a PR with ❌ rows unless the user overrides. In **Testing**, tick what you
-exercised and **delete** rows that do not apply — an unticked box reads as unfinished
-work in GitHub's task counter.
+Do not open a PR with ❌ rows unless the user overrides. The **Testing** rows ship
+unticked on purpose: tick a row only for what you actually exercised, and **delete** a
+row that does not apply (a UI row on a backend change). Never tick by default — a box
+is an attestation — and never leave an inapplicable row unticked, which GitHub's task
+counter reports as unfinished work.
 
 4. Show the PR URL. After merge, **verify the commits landed** — `git fetch origin` then
    `git log --oneline origin/{INTEGRATION_BRANCH}` should contain them (mandatory for a

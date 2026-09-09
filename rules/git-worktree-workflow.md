@@ -70,7 +70,10 @@ feature/* → {INTEGRATION_BRANCH} → (staging) → main
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
 Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
 
-- The merge gate, three git hooks (`install.sh` installs all or none):
+- The merge gate, three git hooks plus `post-merge` (`install.sh` refuses to install
+  unless all four are present, then runs `git config core.hooksPath <dir>` and
+  `git config merge.ff false` — the second matters: a fast-forward creates no merge
+  commit, so without it no gate hook ever fires):
   `pre-merge-commit` blocks any local merge into a **PR-only** branch
   (`{PR_ONLY_BRANCHES}`, default `main`); `commit-msg` requires a passing
   `pre-merge-check` note to merge into a **note-gated** branch

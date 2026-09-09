@@ -4,5 +4,5 @@ description: Adversarial review — Dinesh defends, Gilfoyle tears it apart. Wor
 argument-hint: "[file | topic] [rounds]"
 ---
 
-Read and follow `skills/dg/SKILL.md` (this repository is the playbook; the file is
-the skill itself, not a copy). Arguments: $ARGUMENTS
+Read and follow `skills/dg/SKILL.md` (path relative to the repository root; this repository
+is the playbook, so the file is the skill itself, not a copy). Arguments: $ARGUMENTS

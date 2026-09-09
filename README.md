@@ -105,8 +105,9 @@ flavor stays in the project.** Two ways to consume, in order of preference:
 
 1. **Plugin + `EXTENSIONS.md` (recommended).** Install the plugin and keep the
    playbook's skills as the single registered copy. A project extends a skill by
-   creating `.ai/skills/<name>/EXTENSIONS.md` carrying only its delta: `{PLACEHOLDER}`
-   values, additional or replacement steps, and project-specific rules. Every skill
+   creating `.ai/skills/<name>/EXTENSIONS.md` carrying only its delta: additional or
+   replacement steps, project-specific rules, and `{PLACEHOLDER}` values other than
+   the branch/path ones (those live in `.ai/flight-rules.conf`, below). Every skill
    checks for that file before executing and gives it precedence — projects get
    playbook updates automatically while their flavor stays local, and nothing is
    registered twice.
@@ -118,9 +119,10 @@ flavor stays in the project.** Two ways to consume, in order of preference:
 ## Parameters
 
 Skills refer to placeholders rather than hardcoding a project's setup. The branch
-policy has **one home, `.ai/flight-rules.conf`** — the file the hooks read — so the
-skills and the enforcement never disagree about which branches are protected. The rest
-lives in the skill's `EXTENSIONS.md`.
+policy has **one home, `.ai/flight-rules.conf`** — five keys, `PROTECTED_BRANCHES`,
+`PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`, `WORKTREE_DIR`, the
+file the hooks read — so the skills and the enforcement never disagree about which
+branches are protected. The rest lives in the skill's `EXTENSIONS.md`.
 
 | Placeholder | Meaning | Example | Home |
 |---|---|---|---|

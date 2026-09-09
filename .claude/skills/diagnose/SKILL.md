@@ -4,5 +4,5 @@ description: Structured debugging loop for hard bugs and performance regressions
 argument-hint: "<bug description, error, stack trace, or issue link>"
 ---
 
-Read and follow `skills/diagnose/SKILL.md` (this repository is the playbook; the file is
-the skill itself, not a copy). Arguments: $ARGUMENTS
+Read and follow `skills/diagnose/SKILL.md` (path relative to the repository root; this repository
+is the playbook, so the file is the skill itself, not a copy). Arguments: $ARGUMENTS

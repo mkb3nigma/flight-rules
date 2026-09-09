@@ -39,9 +39,14 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     catch lint findings, so an ungated linter's error debt silently creeps back
     between cleanups. Gate only suites the project keeps at zero errors; report
     known-debt suites explicitly instead of failing on them.
-6. **Secrets scan** — run the guard's own patterns (read `hooks/agent/pre-commit-check.sh`
-   at run time; not restated here, because the copy is what drifted) over the added
-   lines of `git diff <dest>...HEAD`. ❌ on any hit (redact values).
+6. **Secrets scan** — run the guard's own patterns over the added lines of
+   `git diff <dest>...HEAD`. Read them at run time from the first of
+   `${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh`, `.ai/hooks/agent/pre-commit-check.sh`,
+   `hooks/agent/pre-commit-check.sh` that exists (the `hit '…'` lines, the `.env` rule,
+   the credential-literal grep); if none does, ❌ "guard not found" — never report a
+   scan you could not run. Apply **no exemptions** here: the guard skips prose files
+   and honours `flight-rules: allow` at commit time; the branch-level scan is the
+   second look, so it reports those too, as ⚠️. ❌ on any other hit (redact values).
 7. **Debug-logging check** — new `console.log` / stray print/debug lines: ⚠️ warn.
 8. **Conventional commits** — every commit on the branch starts with an allowed prefix
    (`feature:` `fix:` `refactor:` `test:` `docs:` `chore:`; `hotfix/` branches use `fix:`).

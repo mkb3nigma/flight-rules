@@ -154,7 +154,9 @@ no correct seam exists, **that is itself a finding**: report it, because the arc
 is what is preventing the bug from being locked down.
 
 ### 7. Clean up
-`grep -rnE '(#|//) DIAG( |$)'` — remove every instrumentation line you added; delete throwaway
+`grep -rn DIAG` (the bare word — it must catch `# DIAG: why`, `#DIAG`, `<!-- DIAG -->`
+and `print("DIAG …")` alike; triage the odd `DIAGNOSTIC` hit by eye) — remove every
+instrumentation line you added; delete throwaway
 harnesses or move them somewhere clearly marked. The diff should contain the fix and the
 regression test, nothing else.
 

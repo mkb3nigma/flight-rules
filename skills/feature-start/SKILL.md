@@ -44,14 +44,23 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      ```bash
      git log --oneline origin/{INTEGRATION_BRANCH}..origin/main
      ```
-     If non-empty, fast-forward the integration branch on the remote BEFORE
-     branching — without touching any local checkout:
+     If non-empty, check the reverse range too:
      ```bash
-     git push origin origin/main:refs/heads/{INTEGRATION_BRANCH} && git fetch origin
+     git log --oneline origin/main..origin/{INTEGRATION_BRANCH}
      ```
-     A refused push means the branches diverged: that reconcile is a real merge into
-     a protected branch, which is the user's call. STOP, show both `git log` ranges,
-     ask. Never `git merge` here yourself.
+     - Reverse range **empty** → the integration branch is strictly behind; a
+       fast-forward is safe. Print the commits that will move, then update the remote
+       branch without touching any local checkout:
+       ```bash
+       git push origin origin/main:refs/heads/{INTEGRATION_BRANCH} && git fetch origin
+       ```
+       This is a plain (never forced) push of already-reviewed commits; the guard
+       allows it for that reason. If the push is still rejected, the likely causes are
+       a stale `origin/*` (fetch and re-check), host branch protection, or missing
+       permission — say which you think it is and ask; do not guess "diverged".
+     - Reverse range **non-empty** → the branches have diverged and reconciling them
+       is a real merge into a protected branch, which is the user's call. STOP, show
+       both ranges, ask. Never `git merge` here yourself.
    - **No remote** (`git remote` is empty): branch from the local
      `{INTEGRATION_BRANCH}`, skip fetch and reconcile, say so.
 5. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):

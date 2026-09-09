@@ -55,7 +55,8 @@ one channel git hooks, agent hooks and skills all share.
   Tests: `merge-gate.test.sh` (no arguments, no network).
 - **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
   `main` rewrites it with no merge commit, so nothing else fires.
-  **Install all three**, or the gate is half built; `install.sh` insists.
+  **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
+  unless all four bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) that the next AI session picks up.
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
@@ -81,7 +82,8 @@ Guards that fire on the assistant's own events, before git ever runs:
   Regardless of branch, a commit is denied with a staged `.env` (templates
   `.env.example|sample|template|dist` and `.env.md` exempt), a provider key (AWS,
   `sk-…`, GitHub, Slack, Google), any PEM private-key header, or a credential literal
-  outside test and prose files (`docs/`, `locales/`, `*.md` — keys are still caught
+  outside test and prose files (`docs/`, `locales/`, `i18n/`, `translations/`,
+  `*.md|rst|txt` — keys are still caught
   there). A line marked `flight-rules: allow` is a reviewed exception.
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
   rather than silently switching off.

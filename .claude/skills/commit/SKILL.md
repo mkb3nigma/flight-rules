@@ -4,5 +4,5 @@ description: Create a git commit with conventional-format validation and a test-
 argument-hint: "[commit message]"
 ---
 
-Read and follow `skills/commit/SKILL.md` (this repository is the playbook; the file is
-the skill itself, not a copy). Arguments: $ARGUMENTS
+Read and follow `skills/commit/SKILL.md` (path relative to the repository root; this repository
+is the playbook, so the file is the skill itself, not a copy). Arguments: $ARGUMENTS
