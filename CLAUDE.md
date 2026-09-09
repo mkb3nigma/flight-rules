@@ -20,6 +20,12 @@ Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <pre
 commit there, push, `gh pr create --base main`. Never commit on `main`; never merge
 into it locally. Sync with `git pull --ff-only origin main`.
 
+## The skills run here too
+
+`.claude/skills/<name>/SKILL.md` are three-line pointers at `skills/<name>/SKILL.md`,
+so `/pre-merge-check`, `/pr-create`, `/commit` and the rest work in this repo without
+the plugin (which would register the guard twice). Use them on your own changes.
+
 ## Enforcement runs from `hooks/`, not from a copy
 
 The hooks this repo ships are the hooks it runs — `.claude/settings.json` points at
