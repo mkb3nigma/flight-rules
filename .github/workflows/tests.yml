@@ -1,0 +1,28 @@
+# The two hook suites, on both platforms the hooks run on. macOS matters: it ships
+# BSD grep/sed and bash 3.2, and a `grep -P` that worked on Linux was silently
+# broken there for weeks.
+name: hook tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check every script
+        run: |
+          set -e
+          for f in hooks/agent/*.sh hooks/session-start-rules.sh hooks/git/*; do
+            case "$f" in *.md) continue ;; esac
+            bash -n "$f" && echo "ok  $f"
+          done
+      - name: Agent guard
+        run: bash hooks/agent/pre-commit-check.test.sh
+      - name: Merge gate
+        run: bash hooks/git/merge-gate.test.sh
