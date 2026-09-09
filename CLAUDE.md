@@ -54,8 +54,11 @@ checked harder than code. Each added or widened item must pass all four, in the 
    advisory item is reviewed at each release and either given enforcement or deleted.
 4. **Survives adversarial review** — `/dg` on the diff, verdict in the PR body.
 
-`pre-merge-check` item 18 asks for 1–3 on any diff under `rules/`. Deleting or
-tightening a rule needs none of this; that is the direction bloat does not come from.
+`pre-merge-check` item 18 asks for 1–3 on any diff under `rules/`. A deletion or
+tightening skips the four points but still names what it drops and where that is now
+covered — a widening framed as a "fold" is how coverage quietly disappears. The same
+questions are put to every bullet of `engineering-principles.md` at each release: it
+is injected into every session, so it is where an unearned line costs the most.
 
 ## When editing a hook
 

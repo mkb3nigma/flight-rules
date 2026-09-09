@@ -19,21 +19,28 @@ items are reviewed at every plugin release and either given enforcement or delet
 1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
 2. Multiple features in one branch — one purpose per branch — skill (`pre-merge-check` 9, ⚠️)
 3. Starting a new feature before merging (or parking) the current one — advisory
-4. Merging without tests passing — hook on note-gated branches (the `pre-merge-check`
-   note); on PR-only branches the host's CI and review are the gate
-5. Force-pushing, deleting or rebasing a protected branch — hook
+4. Merging without tests passing — skill (`pre-merge-check` 1–3 runs them; on note-gated
+   branches `commit-msg` requires its stamp, which proves the skill ran, not that it
+   passed honestly); on PR-only branches the host's CI and review are the gate
+5. Force-pushing, deleting or rebasing a protected branch — hook (agent guard; the
+   `pre-rebase` git hook covers PR-only branches only)
 6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add` — hook
 7. Merging into a **PR-only branch (default `main`) locally at all** — it moves only
-   through a reviewed pull request, opened and merged on the user's say-so. Sync
-   afterwards with `git pull --ff-only origin main` — hook
+   through a reviewed pull request. Sync afterwards with `git pull --ff-only origin main`
+   — hook
+8. Merging into any other protected branch **without the user's instruction** — the
+   `pre-merge-check` stamp is the agent's own, not the user's say-so — advisory
+   (`pre-merge-check` ends by saying so)
 
 ### ✅ Required
-1. All branches created as worktrees under `{WORKTREE_DIR}` — hook (via Forbidden 6)
+1. All branches created as worktrees under `{WORKTREE_DIR}` — hook for "as worktrees"
+   (Forbidden 6); the location is advisory
 2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`, `hotfix/` — skill (`feature-start` 3)
 3. Conventional commit messages using the same prefixes (`hotfix/` branches commit as
    `fix:` — there is no `hotfix:` message prefix) — skill (`commit` 4, `pre-merge-check` 8)
 4. Review the full diff after every commit (`git diff HEAD~1`) — advisory
-5. Commit after every logical unit of work — small commits, easy rollback — skill (`pre-merge-check` 16, ⚠️)
+5. Commit after every logical unit of work — small commits, easy rollback — advisory
+   (`pre-merge-check` 16 only warns at the other extreme, ~20+)
 6. Symlink untracked env files from the main checkout into new worktrees
    (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`.
    Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 6)
@@ -64,8 +71,8 @@ stop and reconcile; one of the two versions holds work that would be lost.
 ## Merge flow
 
 ```
-trunk-based:  feature/* ──PR──▶ main
-git-flow:     feature/* ──▶ dev ──▶ (staging) ──PR──▶ main
+trunk-based ({INTEGRATION_BRANCH} = main):  feature/* ──PR──▶ main
+git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR──▶ main
 ```
 
 - Before requesting a merge: run the project's pre-merge checklist (see the

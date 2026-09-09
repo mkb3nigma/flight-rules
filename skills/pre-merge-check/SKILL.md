@@ -69,8 +69,8 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
     incident or verified gap it answers, what goes wrong without it, and how it is
     enforced (hook / skill / advisory). ❌ if any of the three is missing; ⚠️ if the
-    diff was not put through adversarial review (`/dg`). Deletions and tightenings
-    are exempt — bloat does not come from that direction.
+    diff was not put through adversarial review (`/dg`). A deletion or tightening
+    skips those but must say what it drops and where that is now covered.
 
 ## Report
 

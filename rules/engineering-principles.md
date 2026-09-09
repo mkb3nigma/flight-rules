@@ -47,11 +47,11 @@
   described it — in the same change. Delete what no longer applies; never leave a
   second explanation beside the old one. Docs should shrink as often as they grow
 - Done means you can show three things: the command you ran, its last line of output,
-  and the commit it ran on. A claim without them is a guess; a partial check reported
-  as a full one is worse
-- A hook block is information, not an obstacle: read the reason, fix the cause, re-run.
-  Never edit the hook or its config, use `--no-verify`, or a command variant to get
-  past it. If the block is wrong, stop and say so — the owner decides
+  and the commit or working-tree state it ran on. A claim without them is a guess; a
+  partial check reported as a full one is worse
+- A hook block is information, not an obstacle: read the reason, do what it says,
+  re-run. Never edit the hook or its config, add `--no-verify`, or reshape the command
+  in order to slip past it. If the block is wrong, stop and say so — the owner decides
 - A loop that isn't converging is evidence the frame is wrong, not that it needs another
   turn — after repeated failure, re-examine the assumption every attempt shared
 
