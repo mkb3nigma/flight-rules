@@ -126,9 +126,10 @@ is_force_push() {
 }
 # The branches a `git push` names. `git push --force origin main` from a feature
 # branch still rewrites main, so the target is checked as well as the current
-# branch. A refspec `+src:dst` pushes to dst. When two or more non-flag words
-# follow `push`, the first is the remote and is skipped; a lone word is the remote
-# and the target is the current branch.
+# branch. A refspec `+src:dst` pushes to dst. The first non-flag word after `push`
+# is the remote and is skipped — so a deploy remote named `production` is not
+# mistaken for the branch. With no explicit ref, the target is the current branch,
+# which the caller checks anyway.
 push_targets() {
   local rest w words=()
   rest=$(printf '%s' "$1" | sed -E "s/.*${B}git[[:space:]]+push//")
@@ -137,7 +138,7 @@ push_targets() {
     w="${w#+}"; w="${w##*:}"; w="${w#refs/heads/}"
     words+=("$w")
   done
-  [[ ${#words[@]} -ge 2 ]] && unset 'words[0]'
+  [[ ${#words[@]} -ge 1 ]] && unset 'words[0]'
   printf '%s\n' "${words[@]+"${words[@]}"}"
 }
 

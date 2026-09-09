@@ -226,6 +226,8 @@ check "push -f origin, on main"                 deny  main      'git push -f ori
 check "push --force to a feature branch"        allow feature/x 'git push --force origin feature/x'
 check "plain push of main is not a force-push"  allow feature/x 'git push origin main'
 check "push -u (not a force flag)"              allow feature/x 'git push -u origin feature/x'
+check "push -f to a deploy remote named production" allow feature/x 'git push -f production'
+check "push -f production feature/x"            allow feature/x 'git push -f production feature/x'
 
 echo "Target directory — the last cd wins, and quotes are tolerated:"
 # Regression: only the FIRST `cd` was honoured, so `cd /tmp && cd <repo> && git rm`
