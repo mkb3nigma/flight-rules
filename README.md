@@ -44,10 +44,12 @@ UPSTREAMS.md      Sources this playbook adapts from + last-synced refs (see /ups
 ```
 
 The skills say what the workflow is; the hooks make it non-optional. `hooks/git/`
-blocks merges into protected branches without a stamped passing pre-merge check, and
-`hooks/agent/` stops the assistant from committing on a protected branch or with
-secrets staged. They are copy-into-project templates (each project sets its own
-branch names) — see `hooks/README.md`.
+blocks local merges into PR-only branches and unstamped merges into note-gated ones,
+and `hooks/agent/` stops the assistant from committing, destroying the tree or
+force-pushing on a protected branch, or committing with secrets staged. The agent guard
+ships live with the Claude Code plugin; the git hooks are copied in and installed once
+per clone. Both read the project's branch policy from `.ai/flight-rules.conf` — see
+`hooks/README.md`.
 
 ## Rules
 
@@ -117,16 +119,29 @@ flavor stays in the project.** Two ways to consume, in order of preference:
 
 ## Parameters
 
-Skills refer to placeholders rather than hardcoding a project's setup:
+Skills refer to placeholders rather than hardcoding a project's setup. The branch
+policy has **one home, `.ai/flight-rules.conf`** — the file the hooks read — so the
+skills and the enforcement never disagree about which branches are protected. The rest
+lives in the skill's `EXTENSIONS.md`.
 
-| Placeholder | Meaning | Example |
-|---|---|---|
-| `{PROTECTED_BRANCHES}` | branches that never take direct commits | `main`, `staging`, `dev` |
-| `{INTEGRATION_BRANCH}` | where feature branches merge | `dev` |
-| `{WORKTREE_DIR}` | where feature worktrees live | `.ai/worktrees/` |
-| `{TEST_COMMANDS}` | the project's suites | `pytest` / `npm run test:run` |
+| Placeholder | Meaning | Example | Home |
+|---|---|---|---|
+| `{PROTECTED_BRANCHES}` | branches that never take direct commits (regex) | `^(main\|staging\|dev)$` | conf |
+| `{PR_ONLY_BRANCHES}` | branches that move only through a reviewed PR — no local merges | `^main$` | conf |
+| `{NOTE_GATED_BRANCHES}` | branches a merge into which needs a passing pre-merge-check note | `^(dev\|staging)$` | conf |
+| `{INTEGRATION_BRANCH}` | where feature branches merge | `dev` | conf |
+| `{WORKTREE_DIR}` | where feature worktrees live | `.ai/worktrees` | conf |
+| `{TEST_COMMANDS}` | the project's suites | `pytest` / `npm run test:run` | `EXTENSIONS.md` |
+| `{PLAYBOOK_PATH}`, `{LOCAL_RULES_DIRS}` | where `/rules-sync` finds the playbook and the project's local copies | `~/Projects/flight-rules`, `.ai/rules/` | `EXTENSIONS.md` |
 
-A project defines these once in its own rules file; skills read them from there.
+```ini
+# .ai/flight-rules.conf
+PROTECTED_BRANCHES=^(main|dev)$
+PR_ONLY_BRANCHES=^main$
+NOTE_GATED_BRANCHES=^dev$
+INTEGRATION_BRANCH=dev
+WORKTREE_DIR=.ai/worktrees
+```
 
 ## Design notes
 

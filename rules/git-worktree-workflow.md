@@ -25,7 +25,8 @@ branch — feature work physically cannot dirty the main checkout.
 ### ✅ Required
 1. All branches created as worktrees under `{WORKTREE_DIR}`
 2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`, `hotfix/`
-3. Conventional commit messages using the same prefixes
+3. Conventional commit messages using the same prefixes (`hotfix/` branches commit as
+   `fix:` — there is no `hotfix:` message prefix)
 4. Review the full diff after every commit (`git diff HEAD~1`)
 5. Commit after every logical unit of work — small commits, easy rollback
 6. Symlink untracked env files from the main checkout into new worktrees
@@ -69,16 +70,23 @@ feature/* → {INTEGRATION_BRANCH} → (staging) → main
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
 Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
 
-- `pre-merge-commit` — two mechanisms:
-  - **PR-only branches** (`{PR_ONLY_BRANCHES}`, default `main`): any local merge is
-    blocked outright. The hook fires only when git creates a merge commit — a
-    `--ff-only` pull does not fire it — so its firing on a PR-only branch is itself the
-    violation. Robust; needs no `MERGE_HEAD`.
-  - **Note-gated branches** (`{NOTE_GATED_BRANCHES}`, e.g. `dev`/`staging`): require a
-    passing `refs/notes/pre-merge-check` note on the incoming commit. ⚠️ **Known bug
-    (tracked):** modern git (verified on 2.55) writes `MERGE_HEAD` *after* this hook
-    runs, so the note lookup is skipped and this mechanism is currently a **no-op**.
-    Repair = move the note check to `commit-msg` (where `MERGE_HEAD` exists).
+- The merge gate — two hooks, two mechanisms; **install both** or it is half built:
+  - `pre-merge-commit` — **PR-only branches** (`{PR_ONLY_BRANCHES}`, default `main`):
+    any local merge is blocked outright. The hook fires only when git creates a merge
+    commit — a `--ff-only` pull does not fire it — so its firing on a PR-only branch is
+    itself the violation. Robust; needs no `MERGE_HEAD`.
+  - `commit-msg` — **Note-gated branches** (`{NOTE_GATED_BRANCHES}`, e.g.
+    `dev`/`staging`): require a passing `refs/notes/pre-merge-check` note on the
+    incoming commit. It lives in `commit-msg` because modern git writes `MERGE_HEAD`
+    *after* `pre-merge-commit` runs; the check used to sit there and was a silent
+    no-op. A back-merge of a PR-only branch (reconciling `main` into `dev`) needs no
+    note — it already went through a reviewed PR.
+  - Both read their branch sets from `.ai/flight-rules.conf` **as committed on the
+    merge target**, never from the working tree, so an incoming branch cannot relax
+    the rule that judges it.
 - `git config core.hooksPath <hooks-dir>` + `git config merge.ff false` (so real merges
-  always fire the hook; `--ff-only` still bypasses it for legitimate `main` syncs)
-- A session-start / prompt hook that blocks commits while on a protected branch
+  always fire the hook; `--ff-only` still bypasses it for legitimate `main` syncs) —
+  `hooks/git/install.sh` does both.
+- `hooks/agent/pre-commit-check.sh` — the assistant-side guard: blocks commits,
+  working-tree destroyers and force-pushes on a protected branch, and staged secrets
+  anywhere. Ships live with the Claude Code plugin; see `hooks/README.md`.

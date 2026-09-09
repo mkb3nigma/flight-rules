@@ -27,7 +27,8 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 2. **Skills are plain Markdown** — invocation, numbered process, output format. Any
    assistant that reads Markdown can execute them; Claude Code additionally loads them
    as slash commands (directly or via a plugin). Project-local registration is a thin
-   pointer file per skill in `.claude/commands/` — frontmatter plus one line:
+   pointer file per skill — `.claude/skills/<name>/SKILL.md` today (`.claude/commands/`
+   still works but is the legacy location) — frontmatter plus one line:
 
    ```markdown
    ---
