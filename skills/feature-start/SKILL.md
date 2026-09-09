@@ -1,6 +1,7 @@
 ---
 name: feature-start
 description: Create a new feature branch as a git worktree following the playbook's strict branching rules.
+argument-hint: "<prefix/branch-name>"
 ---
 
 # /feature-start — Create a Feature Branch Worktree
@@ -8,14 +9,17 @@ description: Create a new feature branch as a git worktree following the playboo
 ## Project extensions
 
 Before executing, check the consuming project for `.ai/skills/feature-start/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
+If present, read it first: it supplies additional or replacement steps, project-specific
+rules, and any `{PLACEHOLDER}` values not covered by the conf file below — extensions
+take precedence over the generic defaults in this file. If absent, use the defaults
+as-is.
 
 Branch and path parameters — `{PROTECTED_BRANCHES}`, `{PR_ONLY_BRANCHES}`,
 `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}` — come from
-`.ai/flight-rules.conf`, the same file the hooks read, so the branch policy has one
-home. Anything not set there falls back to the defaults named in this skill.
+`.ai/flight-rules.conf` and **only** from there: it is what the hooks enforce, so a
+value restated in EXTENSIONS.md would be one the enforcement never sees. If both set
+one, the conf wins and the extension should be corrected. Anything not set in the conf
+falls back to the defaults named in this skill.
 
 Create a new branch as a git worktree per `rules/git-worktree-workflow.md`.
 Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`
@@ -46,14 +50,18 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      ```bash
      git log --oneline origin/{INTEGRATION_BRANCH}..origin/main
      ```
-     If non-empty, bring it back BEFORE branching:
+     If non-empty, fast-forward the integration branch on the remote BEFORE
+     branching — without touching any local checkout:
      ```bash
-     git checkout {INTEGRATION_BRANCH} && git merge --ff-only origin/main \
-       && git push origin {INTEGRATION_BRANCH}
+     git push origin origin/main:refs/heads/{INTEGRATION_BRANCH} && git fetch origin
      ```
-     (a clean non-fast-forward merge is fine too). If it will **not** merge cleanly,
-     STOP and **warn** — do not branch off a divergent base; the reconcile needs a
-     human decision.
+     A push is refused when it is not a fast-forward. That refusal means the branches
+     have diverged and reconciling them is a real merge into a protected branch, which
+     the workflow rule reserves for an explicit user decision. STOP, show both
+     `git log` ranges, and ask. Never run `git merge` here yourself.
+   - **No remote?** (`git remote` prints nothing): branch from the local
+     `{INTEGRATION_BRANCH}`, skip the fetch and the reconcile, and say so in the
+     confirmation.
 5. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
    ```bash
    git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> origin/{INTEGRATION_BRANCH}

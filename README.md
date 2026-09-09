@@ -26,7 +26,7 @@ reconciled via `/rules-sync`) — so nobody maintains a drifting copy.
 flowchart TB
     subgraph sources["Upstream sources"]
         direction LR
-        S1["dinesh-gilfoyle"] ~~~ S2["karpathy-skills"] ~~~ S3["depshield-mcp"]
+        S1["dinesh-gilfoyle"] ~~~ S2["karpathy-skills"] ~~~ S3["depshield-mcp"] ~~~ S4["mattpocock-skills"] ~~~ S5["karpathy-llm-wiki"]
     end
     sources -- "/upstream-check" --> FR["flight-rules<br/>(single source of truth)"]
     FR -- "/rules-sync" --> P1["AppliHawk"]
@@ -71,7 +71,7 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 | [`/dg`](skills/dg/SKILL.md) | Adversarial review — one persona defends, one tears it apart | Pressure-testing code, a design, or a decision |
 | [`/diagnose`](skills/diagnose/SKILL.md) | Structured debugging — reproduce, minimise, fix, verify | A bug you can't one-shot |
 | [`/feature-start`](skills/feature-start/SKILL.md) | Open a new branch as an isolated git worktree | Starting any unit of work |
-| [`/pre-merge-check`](skills/pre-merge-check/SKILL.md) | Automated pre-merge checklist; stamps a git note the merge-gate verifies | Before merging a branch |
+| [`/pre-merge-check`](skills/pre-merge-check/SKILL.md) | Automated pre-merge checklist — tests, secrets, docs-match-the-change, and more; stamps a git note the merge-gate verifies | Before merging a branch |
 | [`/pr-create`](skills/pr-create/SKILL.md) | Push the branch and open a GitHub PR with the checklist in the body | Ready to raise a PR |
 | [`/commit`](skills/commit/SKILL.md) | Guarded commit — protected-branch, secret-scan, and test-coverage checks | Every commit |
 | [`/docs-lint`](skills/docs-lint/SKILL.md) | Health-check living docs for drift, contradictions, and stale claims | Docs start to rot |
@@ -113,9 +113,9 @@ flavor stays in the project.** Two ways to consume, in order of preference:
    playbook updates automatically while their flavor stays local, and nothing is
    registered twice.
 2. **Copy-in (legacy).** A project keeps a full local copy of a skill with a clearly
-   marked `## <Project> Extensions` section at the bottom (see the sync note pattern
-   inside `skills/dg/SKILL.md`), or overrides a rule in its own rules file. Copies
-   drift; reconcile with `/rules-sync`.
+   marked `## <Project> Extensions` section at the bottom, or overrides a rule in its
+   own rules file. Copies drift; reconcile with `/rules-sync`, which still understands
+   this layout.
 
 ## Parameters
 

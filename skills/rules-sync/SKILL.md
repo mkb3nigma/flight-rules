@@ -41,7 +41,10 @@ the sync is reproducible.
 ## Step 2 — Map local copies to upstream files
 Match by path/basename:
 - `{LOCAL_RULES_DIRS}/<name>.md` ↔ `{PLAYBOOK_PATH}/rules/<name>.md`
-- `.ai/skills/<name>/SKILL.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md`
+- `.ai/skills/<name>/SKILL.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md` (copy-in)
+- `.ai/skills/<name>/EXTENSIONS.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md`
+  (the recommended model — the project holds only a delta, so there is nothing to
+  diff line-by-line; see Step 3b)
 
 Classify every local file:
 - **Mapped** — has an upstream counterpart → compare in Step 3.
@@ -62,6 +65,25 @@ For each pair, diff local vs upstream and sort every hunk into one bucket:
   edited. Show both sides.
 
 Treat pure line-rewrapping / whitespace as non-substantive (note it, don't dwell).
+
+## Step 3b — Check each EXTENSIONS.md against its upstream skill
+An extension is a delta, so it can break silently when the skill it extends moves
+under it. For each one, check that:
+- every **step number or step name** it replaces or inserts after still exists
+  upstream and still means the same thing;
+- every `{PLACEHOLDER}` it fills is still used by the skill — and is **not** one of the
+  five branch/path parameters, which belong in `.ai/flight-rules.conf` only (an
+  extension restating `{PROTECTED_BRANCHES}` is a value the hooks never see: report it
+  as a conflict, fix is to delete it from the extension);
+- any rule it overrides has not since been folded into a hook, in which case the
+  override is dead.
+Report as ⬆ / ✖ like Step 3.
+
+## Step 3c — Check `.ai/flight-rules.conf`
+The hooks read this file as data and **ignore any key they do not know**, so a typo
+(`PROTECTED_BRANCH=`) silently falls back to the default. Report any key outside
+`PROTECTED_BRANCHES`, `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`,
+`WORKTREE_DIR` as ✖, and any of the five that is absent as "(default in effect)".
 
 ## Step 4 — Report (do not auto-apply)
 Print a per-file summary:

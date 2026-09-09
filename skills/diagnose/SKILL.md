@@ -1,6 +1,7 @@
 ---
 name: diagnose
 description: Structured debugging loop for hard bugs and performance regressions — build a feedback loop, minimize, hypothesize, instrument, reorient when stuck, fix, verify, clean up. No fix without a reproduction.
+argument-hint: "<bug description, error, stack trace, or issue link>"
 ---
 
 # /diagnose — Structured Debugging Loop
@@ -154,7 +155,7 @@ no correct seam exists, **that is itself a finding**: report it, because the arc
 is what is preventing the bug from being locked down.
 
 ### 7. Clean up
-`grep -rn "DIAG"` — remove every instrumentation line you added; delete throwaway
+`grep -rnE '(#|//) DIAG( |$)'` — remove every instrumentation line you added; delete throwaway
 harnesses or move them somewhere clearly marked. The diff should contain the fix and the
 regression test, nothing else.
 
