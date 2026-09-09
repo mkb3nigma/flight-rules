@@ -18,7 +18,7 @@ branch — feature work physically cannot dirty the main checkout.
 3. Starting a new feature before merging (or parking) the current one
 4. Merging without tests passing
 5. Force-pushing protected branches
-6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add` (hook-enforced)
+6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add`
 7. Merging into a protected branch without explicit user instruction
 8. Merging into a **PR-only branch (default `main`) locally at all** — it moves only through a reviewed pull request. After the PR merges, sync locally with `git pull --ff-only origin main` (a fast-forward, never a local merge commit).
 
