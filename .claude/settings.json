@@ -5,7 +5,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'R=$(git rev-parse --show-toplevel); CLAUDE_PLUGIN_ROOT=\"$R\" bash \"$R/hooks/session-start-rules.sh\"; exec bash \"$R/hooks/agent/session-start.sh\"'"
+            "command": "bash -c 'R=$(git rev-parse --show-toplevel); CLAUDE_PLUGIN_ROOT=\"$R\" exec bash \"$R/hooks/session-start-rules.sh\"'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'exec bash \"$(git rev-parse --show-toplevel)/hooks/agent/session-start.sh\"'"
           }
         ]
       }

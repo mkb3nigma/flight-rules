@@ -110,9 +110,19 @@ is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit([[:space:]]|$) ]]; }
 # and stay allowed.
 is_destructive() {
   [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)([[:space:]]|$) ]] && return 0
-  [[ "$1" =~ ${B}git[[:space:]]+reset[[:space:]]+.*--hard ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+reset[[:space:]]+.*--(hard|merge) ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+clean[[:space:]]+.*-[a-zA-Z]*f ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+(--|\.)([[:space:]]|$) ]] && return 0
+  # `git checkout <rev> -- <path>` overwrites the path from <rev>; `git switch
+  # --discard-changes`/`-f` throws local edits away; `git rebase` rewrites the
+  # branch in place (its --abort/--quit/--continue are the way OUT of one and stay
+  # allowed); `git stash drop|clear` deletes the only copy of stashed work.
+  [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+[^[:space:]-][^[:space:]]*[[:space:]]+--([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+.*(--discard-changes|--force|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$) ]] && return 0
+  if [[ "$1" =~ ${B}git[[:space:]]+rebase([[:space:]]|$) ]]; then
+    [[ "$1" =~ ${B}git[[:space:]]+rebase[[:space:]]+.*--(abort|quit|continue|skip)([[:space:]]|$) ]] || return 0
+  fi
+  [[ "$1" =~ ${B}git[[:space:]]+stash[[:space:]]+(drop|clear)([[:space:]]|$) ]] && return 0
   return 1
 }
 
@@ -122,7 +132,12 @@ is_force_push() {
   [[ "$1" =~ ${B}git[[:space:]]+push([[:space:]]|$) ]] || return 1
   [[ "$1" =~ [[:space:]](-[a-zA-Z]*f[a-zA-Z]*|--force|--force-with-lease(=[^[:space:]]*)?)([[:space:]]|$) ]] && return 0
   # A leading "+" on a refspec (`+src:dst`) forces that one ref without any flag.
-  [[ "$1" =~ [[:space:]]\+[^[:space:]]*:[^[:space:]]+ ]]
+  [[ "$1" =~ [[:space:]]\+[^[:space:]]*:[^[:space:]]+ ]] && return 0
+  # Deleting a branch on the remote is the most destructive push of all: `--delete`,
+  # `-d`, an empty-source refspec (`origin :main`), or `--mirror` (which deletes
+  # everything the remote has that you do not).
+  [[ "$1" =~ [[:space:]](--delete|-d|--mirror)([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ [[:space:]]:[^[:space:]]+ ]]
 }
 # The branches a `git push` names. `git push --force origin main` from a feature
 # branch still rewrites main, so the target is checked as well as the current
@@ -209,6 +224,8 @@ if [[ "$GUARD_OFF" == "0" ]]; then
     while IFS= read -r t; do
       [[ -n "$t" && "$t" =~ $PROTECTED_RE ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="$t"; }
     done <<<"$(push_targets "$NORM")"
+    # `--mirror` names no branch and touches all of them, protected ones included.
+    [[ "$NORM" =~ [[:space:]]--mirror([[:space:]]|$) ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="every branch (--mirror)"; }
   fi
 fi
 shopt -u nocasematch
@@ -238,8 +255,8 @@ elif [[ -f "$GIT_DIR_PATH/MERGE_HEAD" && "$ACTION" != "force-push" ]]; then
 elif [[ "$IS_PROTECTED" == "1" ]]; then
   case "$ACTION" in
     commit)      VERB="You are on it. Never commit directly to a protected branch." ;;
-    destructive) VERB="You are on it. This command would modify or discard files in its working tree." ;;
-    force-push)  VERB="This command would force-push it, rewriting history that others have already built on." ;;
+    destructive) VERB="You are on it. This command would rewrite it or discard work in its working tree." ;;
+    force-push)  VERB="This command would force-push, delete or overwrite it on the remote, destroying history others have built on." ;;
   esac
   # The message names the opt-out so a project that never wanted the worktree
   # workflow can find the way out without reading hooks/README.md — but it is
@@ -267,7 +284,10 @@ fi
 # 2. SECRET LEAK CHECK
 # ─────────────────────────────────────────────
 STAGED_DIFF=$("${GIT[@]}" diff --cached 2>/dev/null)
-STAGED_FILES=$("${GIT[@]}" diff --cached --name-only 2>/dev/null)
+# core.quotePath=false: by default git prints a non-ASCII name as "c\303\266nfig.py"
+# in quotes, and feeding that back to `git diff -- <path>` matches nothing — so the
+# file was silently never scanned for credential literals.
+STAGED_FILES=$("${GIT[@]}" -c core.quotePath=false diff --cached --name-only 2>/dev/null)
 FINDINGS=""
 
 # Added lines only, leading "+" stripped. Each file's `+++ b/path` header is dropped
@@ -278,8 +298,9 @@ added_lines() { grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//'; }
 ADDED=$(printf '%s\n' "$STAGED_DIFF" | added_lines)
 hit() { printf '%s\n' "$ADDED" | grep -qE "$1"; }
 
-# .env file staged (matches .env, .env.local, path/.env — but not .env.example)
-if printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -qv '\.env\.example'; then
+# .env file staged (matches .env, .env.local, path/.env — but not the documented
+# templates: .env.example/.sample/.template/.dist, or a docs page named .env.md)
+if printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -qvE '\.env\.(example|sample|template|dist|md)$'; then
   FINDINGS="$FINDINGS\n  • .env file is staged for commit"
 fi
 
@@ -312,18 +333,25 @@ fi
 # naming conventions: tests/ and __tests__/ dirs, pytest's test_*.py, Go/Python
 # *_test.*, Jest/Vitest *.test.* and *.spec.*, conftest.py.
 TEST_FILE_RE='(^|/)(tests?|__tests__|spec|fixtures)/|(^|/)test_[^/]*\.py$|_test\.(py|go|ts|tsx|js|jsx)$|\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$|conftest\.py$'
+# Prose and UI strings are not credentials either: a docs page's `secret = "your-…"`
+# or a locale file's "Password must be 8 characters" is the commonest false block.
+# Provider-key patterns above still scan these files — a real key is a leak anywhere.
+PROSE_FILE_RE='(^|/)(docs?|locales?|i18n|translations?)/|\.(md|rst|txt)$'
 NON_TEST=()
-while IFS= read -r f; do
-  [[ -n "$f" ]] && NON_TEST+=("$f")
-done <<<"$(printf '%s\n' "$STAGED_FILES" | grep -Ev "$TEST_FILE_RE")"
+while IFS= read -r -d '' f; do
+  [[ -n "$f" && ! "$f" =~ $TEST_FILE_RE && ! "$f" =~ $PROSE_FILE_RE ]] && NON_TEST+=("$f")
+done < <("${GIT[@]}" diff --cached --name-only -z 2>/dev/null)
 if [[ ${#NON_TEST[@]} -gt 0 ]]; then
   NON_TEST_ADDED=$("${GIT[@]}" diff --cached -- "${NON_TEST[@]}" 2>/dev/null | added_lines)
   # Case-insensitive (PASSWORD, ApiKey), `=` or `:` (YAML/JSON), quoted key tolerated
-  # ("password": "…"). Obvious placeholders are let through so an example in docs
-  # does not block a commit: <angle-bracket>, REDACTED, CHANGEME, EXAMPLE, xxxxxxxx.
+  # ("password": "…"). Obvious placeholders are let through so an example does not
+  # block a commit: <angle-bracket>, REDACTED, CHANGEME, EXAMPLE, your-…, …-here,
+  # xxxxxxxx. A line carrying `flight-rules: allow` is a reviewed, deliberate
+  # exception — it is greppable, so it is also auditable.
   if printf '%s\n' "$NON_TEST_ADDED" \
       | grep -iE '(password|passwd|secret|token|api_?key)["'"'"']?[[:space:]]*[=:][[:space:]]*["'"'"'][^"'"'"'$\{]{8,}' \
-      | grep -qviE '<[^>]*>|redacted|changeme|example|placeholder|x{8,}|\*{8,}'; then
+      | grep -v 'flight-rules: allow' \
+      | grep -qviE '<[^>]*>|redacted|changeme|example|placeholder|your[-_ ]|[-_ ]here["'"'"']|x{8,}|\*{8,}'; then
     FINDINGS="$FINDINGS\n  • Possible hardcoded credential (password/secret/token/api_key assigned to a string literal)"
   fi
 fi

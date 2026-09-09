@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# commit-msg hook — the note gate (merge-gate mechanism 2).
+# commit-msg hook — the note gate (merge-gate mechanism 2), plus the squash guard.
 #
 # Lives here rather than in pre-merge-commit because modern git (verified on
 # 2.55) writes MERGE_HEAD *after* pre-merge-commit runs. The note lookup there
@@ -9,12 +9,15 @@
 #
 # For a NON-merge commit MERGE_HEAD is absent and this hook exits 0 immediately:
 # it gates merges only, never ordinary commits. PR-only branches (default `main`)
-# are handled by pre-merge-commit and blocked before reaching this hook.
+# are handled by pre-merge-commit and blocked before reaching this hook — except
+# for a squash merge, which creates no merge commit and so never fires
+# pre-merge-commit; that case is caught here (see below).
 #
 # Configuration — first match wins:
 #   1. Environment              FLIGHT_RULES_NOTE_GATED_BRANCHES='^(dev|staging)$'
+#                               FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
 #   2. .ai/flight-rules.conf **as committed on the merge target** (see below)
-#   3. The default below
+#   3. The defaults below
 # Parsed as data, never sourced, so a cloned repo cannot execute code here.
 #
 # ⚠️ The conf is read from `HEAD:.ai/flight-rules.conf` — the merge TARGET's committed
@@ -39,6 +42,7 @@
 set -euo pipefail
 
 DEFAULT_NOTE_GATED='^(dev|staging)$'
+DEFAULT_PR_ONLY='^main$'
 CONF_PATH='.ai/flight-rules.conf'   # repo-relative
 
 read_conf_at_head() {
@@ -54,49 +58,21 @@ read_conf_at_head() {
 
 PROTECTED_RE="${FLIGHT_RULES_NOTE_GATED_BRANCHES:-$(read_conf_at_head NOTE_GATED_BRANCHES "$CONF_PATH")}"
 PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_NOTE_GATED}"
+PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
+PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 
 CURRENT_BRANCH=$(git branch --show-current)
-[[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] || exit 0
 
-# MERGE_HEAD present ⇒ a merge is in progress. Absent ⇒ ordinary commit, nothing to
-# gate. Ask git for the git-dir rather than assuming ./.git — the path differs
-# between the main worktree and supplementary worktrees.
+# Ask git for the git-dir rather than assuming ./.git — the path differs between
+# the main worktree and supplementary worktrees.
 GIT_DIR=$(git rev-parse --git-dir)
-MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
-[ -f "$MERGE_HEAD_FILE" ] || exit 0
-
-MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
-
-# A back-merge — the incoming commit is the tip of a PR-only branch (default main)
-# — needs no note. Everything on that branch arrived through a reviewed pull
-# request, and reconciling it into the integration branch is routine maintenance,
-# not a feature landing (post-merge makes the same distinction). Without this,
-# `git merge main` on dev was blocked for want of a note nobody could stamp.
-# PR_ONLY_BRANCHES is read from HEAD like everything else here, so the incoming
-# branch cannot declare itself PR-only to skip the gate.
-PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
-PR_ONLY_RE="${PR_ONLY_RE:-^main$}"
-while read -r ref sha; do
-    short="${ref#refs/remotes/*/}"; short="${short#refs/heads/}"
-    if [[ "$sha" == "$MERGE_SHA" && "$short" =~ $PR_ONLY_RE ]]; then
-        echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
-        exit 0
-    fi
-done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes)
-MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
-
-NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
-
-if echo "$NOTE" | grep -q "^passed:"; then
-    echo "✅ Pre-merge check verified for $MERGE_BRANCH → $CURRENT_BRANCH"
-    exit 0
-fi
 
 # --- Box drawing --------------------------------------------------------------
 # A blocked merge scrolls past in a wall of terminal output; the box makes it
-# impossible to miss. Duplicated verbatim in pre-merge-commit: git hooks are
-# copied into projects individually and must stay self-contained, so a shared
-# library would be one more file to keep in sync for eight lines of formatting.
+# impossible to miss. Duplicated verbatim in pre-merge-commit and pre-rebase: git
+# hooks are copied into projects individually and must stay self-contained, so a
+# shared library would be one more file to keep in sync for eight lines of
+# formatting.
 #
 # `adj` is the number of EXTRA display columns the row's content occupies beyond
 # its character count — bash's ${#s} counts characters, and an emoji is one
@@ -113,6 +89,72 @@ box_row() {
     [ "$pad" -lt 0 ] && pad=0
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
+
+# --- Squash guard for PR-only branches ----------------------------------------
+# `git merge --squash --ff feature` on main stages the result and writes
+# SQUASH_MSG but creates no merge commit, so pre-merge-commit never fires and the
+# following `git commit` would land the whole feature on a PR-only branch as one
+# ordinary commit. That commit is the one to refuse.
+if [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE && -f "$GIT_DIR/SQUASH_MSG" ]]; then
+    echo ""
+    box_top
+    box_row "⛔  $CURRENT_BRANCH IS PR-ONLY — SQUASH MERGE BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "A squash merge is still a local merge into $CURRENT_BRANCH."
+    box_row "It moves only through a reviewed pull request."
+    box_row ""
+    box_row "Undo:   git reset --merge   (drops the squashed changes)"
+    box_row "Then open a PR from the feature branch instead."
+    box_row ""
+    box_bot
+    echo ""
+    exit 1
+fi
+
+# --- Note gate for note-gated branches ----------------------------------------
+[[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] || exit 0
+
+# MERGE_HEAD present ⇒ a merge is in progress. Absent ⇒ ordinary commit, nothing to
+# gate.
+MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
+[ -f "$MERGE_HEAD_FILE" ] || exit 0
+
+MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
+
+# A back-merge — the incoming commit is the tip of a PR-only branch (default main)
+# — needs no note. Everything on that branch arrived through a reviewed pull
+# request, and reconciling it into the integration branch is routine maintenance,
+# not a feature landing (post-merge makes the same distinction). Without this,
+# `git merge main` on dev was blocked for want of a note nobody could stamp.
+#
+# Only `refs/heads/<x>` and `refs/remotes/origin/<x>` count — a stale
+# `upstream/main` or a fork's remote is not evidence of review. And because a local
+# branch can be pointed anywhere (`git branch -f main feature/x`), when origin has
+# the branch the commit must actually be on it. PR_ONLY_BRANCHES is read from HEAD
+# like everything else here, so the incoming branch cannot declare itself PR-only.
+while read -r ref sha; do
+    case "$ref" in
+        refs/heads/*)          short="${ref#refs/heads/}" ;;
+        refs/remotes/origin/*) short="${ref#refs/remotes/origin/}" ;;
+        *)                     continue ;;
+    esac
+    [[ "$sha" == "$MERGE_SHA" && "$short" =~ $PR_ONLY_RE ]] || continue
+    if origin_sha=$(git rev-parse -q --verify "refs/remotes/origin/$short" 2>/dev/null); then
+        git merge-base --is-ancestor "$MERGE_SHA" "$origin_sha" 2>/dev/null || continue
+    fi
+    echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
+    exit 0
+done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin)
+
+MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
+
+NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
+
+if echo "$NOTE" | grep -q "^passed:"; then
+    echo "✅ Pre-merge check verified for $MERGE_BRANCH → $CURRENT_BRANCH"
+    exit 0
+fi
 
 echo ""
 box_top

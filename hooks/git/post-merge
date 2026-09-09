@@ -79,7 +79,10 @@ done < <(git worktree list --porcelain 2>/dev/null)
 # session"; leave off if you keep long-running sessions across merges.
 CLEARED_COUNT=0
 if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
-  ENCODED_PATH=$(echo "$REPO_ROOT" | sed 's|/|-|g')
+  # Claude Code encodes the project path by replacing "/" AND "." with "-"
+  # (observed: /x/.ai/worktrees/y → -x--ai-worktrees-y). A root the encoding does
+  # not match simply finds no directory and deletes nothing — it fails safe.
+  ENCODED_PATH=$(printf '%s' "$REPO_ROOT" | tr '/.' '--')
   CLAUDE_PROJECT_DIR="$HOME/.claude/projects/$ENCODED_PATH"
   if [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
     while IFS= read -r f; do

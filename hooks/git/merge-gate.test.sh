@@ -14,7 +14,7 @@ mkrepo() {
   git -C "$d" init -q -b main
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.ai/hooks"
-  cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$d/.ai/hooks/"
+  cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$d/.ai/hooks/"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath "$d/.ai/hooks"
   git -C "$d" config merge.ff false
@@ -154,6 +154,81 @@ git -C "$D" checkout -q dev
 git -C "$D" merge --no-ff feature/sneaky3 -m m >/dev/null 2>&1
 say "$?" "1" "branch cannot declare itself PR-only to skip the note gate"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+echo "Back-merge exemption cannot be forged (post-merge review):"
+# mkrepo_with_origin: a bare origin holding main, so refs/remotes/origin/main exists.
+mkrepo_with_origin() {
+  local d o; d=$(mkrepo); o=$(mktemp -d)
+  git init -q --bare "$o"; git -C "$d" remote add origin "$o"
+  git -C "$d" push -q origin main dev 2>/dev/null
+  printf '%s' "$d"
+}
+# A) local main forced onto the feature tip: origin/main does not contain it → still gated.
+D=$(mkrepo_with_origin)
+git -C "$D" checkout -q -b feature/forge dev
+echo y > "$D/fg"; git -C "$D" add -A; git -C "$D" commit -qm "feature: forge"
+git -C "$D" branch -f main feature/forge
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff feature/forge -m m >/dev/null 2>&1
+say "$?" "1" "local main pointed at a feature tip does not exempt it"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+# B) a stale third-party remote ref named main is not consulted.
+D=$(mkrepo)
+git -C "$D" checkout -q -b feature/stale dev
+echo y > "$D/st"; git -C "$D" add -A; git -C "$D" commit -qm "feature: stale"
+git -C "$D" update-ref refs/remotes/upstream/main HEAD
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff feature/stale -m m >/dev/null 2>&1
+say "$?" "1" "upstream/main at the feature tip does not exempt it"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+# C) the legitimate case with an origin still passes: main advanced and pushed.
+D=$(mkrepo_with_origin)
+echo hot > "$D/h"; git -C "$D" add -A; git -C "$D" commit -qm "fix: on main"
+git -C "$D" push -q origin main 2>/dev/null
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff main -m "reconcile" >/dev/null 2>&1
+say "$?" "0" "back-merge of a main that origin has is allowed"
+rm -rf "$D"
+
+# D) main advanced locally but NOT pushed: not yet reviewed, so not exempt.
+D=$(mkrepo_with_origin)
+echo hot > "$D/h2"; git -C "$D" add -A; git -C "$D" commit -qm "fix: unpushed on main"
+git -C "$D" checkout -q dev
+git -C "$D" merge --no-ff main -m "reconcile" >/dev/null 2>&1
+say "$?" "1" "back-merge of unpushed main commits is still gated"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+echo "Squash and rebase cannot slip a change onto a PR-only branch:"
+D=$(mkrepo)
+git -C "$D" checkout -q -b feature/sq main
+echo y > "$D/sq"; git -C "$D" add -A; git -C "$D" commit -qm "feature: sq"
+git -C "$D" checkout -q main
+git -C "$D" merge --squash --ff feature/sq >/dev/null 2>&1
+git -C "$D" commit -qm "squashed" >/dev/null 2>&1
+say "$?" "1" "commit completing a squash merge into main is blocked"
+rm -rf "$D"
+
+D=$(mkrepo)
+git -C "$D" checkout -q -b feature/rb main
+echo y > "$D/rb"; git -C "$D" add -A; git -C "$D" commit -qm "feature: rb"
+git -C "$D" checkout -q main
+echo z > "$D/mz"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main"
+git -C "$D" rebase feature/rb >/dev/null 2>&1
+say "$?" "1" "rebasing main is blocked"
+git -C "$D" rebase --abort 2>/dev/null
+git -C "$D" checkout -q feature/rb
+git -C "$D" rebase main >/dev/null 2>&1
+say "$?" "0" "rebasing a feature onto main is allowed"
+rm -rf "$D"
+
+D=$(mkrepo)
+git -C "$D" checkout -q dev
+echo y > "$D/sqd"; git -C "$D" add -A
+git -C "$D" commit -qm "chore: ordinary commit on dev" >/dev/null 2>&1
+say "$?" "0" "squash guard does not touch ordinary commits on a non-PR-only branch"
+rm -rf "$D"
 
 echo
 echo "$PASS passed, $FAIL failed"
