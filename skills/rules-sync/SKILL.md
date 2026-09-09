@@ -7,10 +7,9 @@ description: Pull the latest playbook (flight-rules) and diff a project's local 
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/rules-sync/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
+Read `.ai/skills/rules-sync/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below.
 
 A project that adopts flight-rules keeps **local copies** of some rules/skills under
 `{LOCAL_RULES_DIRS}` (default: `.ai/rules/`, `.ai/skills/`), adapted with filled-in
@@ -66,24 +65,14 @@ For each pair, diff local vs upstream and sort every hunk into one bucket:
 
 Treat pure line-rewrapping / whitespace as non-substantive (note it, don't dwell).
 
-## Step 3b — Check each EXTENSIONS.md against its upstream skill
-An extension is a delta, so it can break silently when the skill it extends moves
-under it. For each one, check that:
-- every **step number or step name** it replaces or inserts after still exists
-  upstream and still means the same thing;
-- every `{PLACEHOLDER}` it fills is still used by the skill — and is **not** one of the
-  five branch/path parameters, which belong in `.ai/flight-rules.conf` only (an
-  extension restating `{PROTECTED_BRANCHES}` is a value the hooks never see: report it
-  as a conflict, fix is to delete it from the extension);
-- any rule it overrides has not since been folded into a hook, in which case the
-  override is dead.
-Report as ⬆ / ✖ like Step 3.
-
-## Step 3c — Check `.ai/flight-rules.conf`
-The hooks read this file as data and **ignore any key they do not know**, so a typo
-(`PROTECTED_BRANCH=`) silently falls back to the default. Report any key outside
-`PROTECTED_BRANCHES`, `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`,
-`WORKTREE_DIR` as ✖, and any of the five that is absent as "(default in effect)".
+## Step 3b — EXTENSIONS.md and the conf
+An extension is a delta, so it breaks silently when the skill under it moves. For each
+one, report ✖ if: a step it replaces or inserts after no longer exists upstream; a
+`{PLACEHOLDER}` it fills is no longer used, or is one of the five branch/path
+parameters (those live in the conf only — the hooks never read an extension); a rule it
+overrides has since become a hook.
+Then `.ai/flight-rules.conf`: the hooks ignore unknown keys, so a typo silently falls
+back to the default. ✖ any key outside the five; note any of the five that is absent.
 
 ## Step 4 — Report (do not auto-apply)
 Print a per-file summary:

@@ -70,27 +70,14 @@ feature/* → {INTEGRATION_BRANCH} → (staging) → main
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
 Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
 
-- The merge gate — three hooks; **install all three** (`install.sh` insists) or it is
-  half built:
-  - `pre-merge-commit` — **PR-only branches** (`{PR_ONLY_BRANCHES}`, default `main`):
-    any local merge is blocked outright. The hook fires only when git creates a merge
-    commit — a `--ff-only` pull does not fire it — so its firing on a PR-only branch is
-    itself the violation. Robust; needs no `MERGE_HEAD`.
-  - `commit-msg` — **Note-gated branches** (`{NOTE_GATED_BRANCHES}`, e.g.
-    `dev`/`staging`): require a passing `refs/notes/pre-merge-check` note on the
-    incoming commit. It lives in `commit-msg` because modern git writes `MERGE_HEAD`
-    *after* `pre-merge-commit` runs; the check used to sit there and was a silent
-    no-op. A back-merge of a PR-only branch (reconciling `main` into `dev`) needs no
-    note — it already went through a reviewed PR.
-  - `pre-rebase` — refuses to rebase a PR-only branch, the one rewrite neither of
-    the other two can see. `commit-msg` likewise refuses the commit that would
-    complete a squash merge into one.
-  - All three read their branch sets from `.ai/flight-rules.conf` **as committed on the
-    merge target**, never from the working tree, so an incoming branch cannot relax
-    the rule that judges it.
-- `git config core.hooksPath <hooks-dir>` + `git config merge.ff false` (so real merges
-  always fire the hook; `--ff-only` still bypasses it for legitimate `main` syncs) —
-  `hooks/git/install.sh` does both.
-- `hooks/agent/pre-commit-check.sh` — the assistant-side guard: blocks commits,
-  working-tree destroyers and force-pushes on a protected branch, and staged secrets
-  anywhere. Ships live with the Claude Code plugin; see `hooks/README.md`.
+- The merge gate, three git hooks (`install.sh` installs all or none):
+  `pre-merge-commit` blocks any local merge into a **PR-only** branch
+  (`{PR_ONLY_BRANCHES}`, default `main`); `commit-msg` requires a passing
+  `pre-merge-check` note to merge into a **note-gated** branch
+  (`{NOTE_GATED_BRANCHES}`), exempting back-merges of `main`, and refuses squash
+  merges into a PR-only branch; `pre-rebase` refuses to rebase one. All read
+  `.ai/flight-rules.conf` **as committed on the merge target**, so an incoming branch
+  cannot relax the rule judging it.
+- `hooks/agent/pre-commit-check.sh`, the assistant-side guard — commits, tree
+  destroyers, rebases and force-pushes on a protected branch; staged secrets anywhere.
+  Ships with the Claude Code plugin. Details: `hooks/README.md`.

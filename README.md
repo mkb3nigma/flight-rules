@@ -43,13 +43,11 @@ hooks/     Enforcement templates — git merge-gate hooks + agent commit/secret 
 UPSTREAMS.md      Sources this playbook adapts from + last-synced refs (see /upstream-check)
 ```
 
-The skills say what the workflow is; the hooks make it non-optional. `hooks/git/`
-blocks local merges into PR-only branches and unstamped merges into note-gated ones,
-and `hooks/agent/` stops the assistant from committing, destroying the tree or
-force-pushing on a protected branch, or committing with secrets staged. The agent guard
-ships live with the Claude Code plugin; the git hooks are copied in and installed once
-per clone. Both read the project's branch policy from `.ai/flight-rules.conf` — see
-`hooks/README.md`.
+The skills say what the workflow is; the hooks make it non-optional: `hooks/git/`
+gates merges into protected branches, `hooks/agent/` stops the assistant committing,
+destroying or force-pushing a protected branch, or committing secrets. The agent guard
+ships with the plugin; the git hooks are copied in once per clone. Both read
+`.ai/flight-rules.conf` — see `hooks/README.md`.
 
 ## Rules
 
@@ -134,14 +132,6 @@ lives in the skill's `EXTENSIONS.md`.
 | `{TEST_COMMANDS}` | the project's suites | `pytest` / `npm run test:run` | `EXTENSIONS.md` |
 | `{PLAYBOOK_PATH}`, `{LOCAL_RULES_DIRS}` | where `/rules-sync` finds the playbook and the project's local copies | `~/Projects/flight-rules`, `.ai/rules/` | `EXTENSIONS.md` |
 
-```ini
-# .ai/flight-rules.conf
-PROTECTED_BRANCHES=^(main|dev)$
-PR_ONLY_BRANCHES=^main$
-NOTE_GATED_BRANCHES=^dev$
-INTEGRATION_BRANCH=dev
-WORKTREE_DIR=.ai/worktrees
-```
 
 ## Design notes
 

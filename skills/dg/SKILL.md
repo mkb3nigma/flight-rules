@@ -8,10 +8,9 @@ argument-hint: "[file | topic] [rounds]"
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/dg/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
+Read `.ai/skills/dg/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below.
 
 Two personas review whatever you put in front of them and argue about it. Dinesh
 defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
@@ -52,15 +51,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    The preference is symmetric and names no vendor: whichever model drives the personas,
    the pre-reviewer should be a different one — the roles swap freely depending on which
    assistant a project runs as its main. This file states only the preference; a project
-   wires the concrete command in its extensions, for example:
-
-   ```markdown
-   <!-- .ai/skills/dg/EXTENSIONS.md -->
-   Pre-review command (from Claude Code): `codex exec --model gpt-5.4 -q "Review for
-   correctness, security and design weaknesses; rate each finding critical/important/
-   minor with confidence: $(cat <subject>)"` — or `gemini -p "…"`. From Codex, the
-   reverse: `claude -p "…"`.
-   ```
+   wires the concrete command in its extensions, e.g. from Claude Code
+   `codex exec -q "<brief>: $(cat <subject>)"`; from Codex, `claude -p "…"`.
 
    Same-family fallback is correct, and stays the default when no second model is
    reachable. A same-family pre-review still beats none — never skip the step for want

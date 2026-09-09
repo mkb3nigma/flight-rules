@@ -27,11 +27,9 @@ The secret scan keeps running when the branch policy is off — leaking a key is
 workflow preference.
 
 The **git hooks in `git/`** are still **files to copy**: git finds them through
-`core.hooksPath`, which no plugin can set on your behalf. Copy them to `.ai/hooks/` and
-run `install.sh`. They need no editing — the merge gate reads `PR_ONLY_BRANCHES` and
-`NOTE_GATED_BRANCHES` from `.ai/flight-rules.conf`, and `post-merge` reads
-`INTEGRATION_BRANCH` from it. Git runs them outside the assistant, so `settings.json`
-never reaches them; the conf file is the one channel every layer shares.
+`core.hooksPath`, which no plugin can set for you. Copy them to `.ai/hooks/` and run
+`install.sh`. No editing — they read their branches from `.ai/flight-rules.conf`, the
+one channel git hooks, agent hooks and skills all share.
 
 ## Git hooks (`git/`)
 
@@ -50,17 +48,14 @@ never reaches them; the conf file is the one channel every layer shares.
   merges, never ordinary commits. A **back-merge** — the incoming commit is the tip of
   a PR-only branch — passes without a note: it already went through a reviewed PR, and
   reconciling `main` into the integration branch is what `feature-start` step 4 asks
-  for. Only `refs/heads/<x>` and `origin/<x>` count, and when origin has the branch
-  the commit must be on it — a local `main` pointed at a feature tip, or a stale
-  `upstream/main`, exempts nothing. The same hook also refuses the commit that would
-  **complete a squash merge** into a PR-only branch (`SQUASH_MSG` present), since a
-  squash creates no merge commit and `pre-merge-commit` never sees it.
-  **Install both hooks**, or the gate is half built; `install.sh` fails loudly if
-  `commit-msg` is missing.
+  for. Only local branches and `origin/*` count, and the commit must be on `origin/<x>`
+  when origin has it — a forced local `main` or a stale `upstream/main` exempts nothing.
+  The same hook refuses the commit that would complete a **squash merge** into a
+  PR-only branch, which creates no merge commit and so never fires `pre-merge-commit`.
   Tests: `merge-gate.test.sh` (no arguments, no network).
-- **`pre-rebase`** — refuses to rebase a PR-only branch. `git rebase feature` while
-  on `main` rewrites `main` with no merge commit, so neither merge-gate hook fires;
-  this is git's one hook for that moment. Rebase the feature onto `main` instead.
+- **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
+  `main` rewrites it with no merge commit, so nothing else fires.
+  **Install all three**, or the gate is half built; `install.sh` insists.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) that the next AI session picks up.
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
@@ -75,41 +70,31 @@ never reaches them; the conf file is the one channel every layer shares.
 Guards that fire on the assistant's own events, before git ever runs:
 
 - **`pre-commit-check.sh`** — PreToolUse guard on the Bash tool. On a protected branch
-  it denies `git commit`, the working-tree destroyers that would otherwise slip past
-  it — `git rm`, `git reset --hard`, `git clean -f`, `git checkout -- .`, `git restore`
-  — **and** any force-push of a protected branch (`--force`, `-f`,
-  `--force-with-lease`, a `+refspec`), whichever branch you stand on. (Gating on
-  `git commit` alone is porous: those commands do their damage without any commit
-  following, so the guard never sees them.) `git -C <dir>` and `git -c k=v` are
-  normalised away before matching, and the *last* `cd` in a command decides which
-  repo it targets. A merge in progress is exempt from the commit and working-tree
-  checks, since resolving conflicts on the integration branch legitimately needs them.
-  Also denied on a protected branch: `git checkout <rev> -- <path>`, `git switch
-  --discard-changes`/`-f`, `git reset --merge`, `git rebase` (its `--abort`/
-  `--continue` stay allowed), `git stash drop|clear`; and from any branch, a push
-  that deletes or overwrites a protected branch (`--delete`, `-d`, `origin :main`,
-  `--mirror`).
-  Independently of branch, it denies commits with staged `.env` files (the templates
-  `.env.example/.sample/.template/.dist` and a docs page `.env.md` are exempt),
-  provider key patterns (AWS, `sk-…` OpenAI/Anthropic, GitHub, Slack, Google), any
-  PEM private-key header, or hardcoded credential literals. The literal check skips
-  test files and prose (`docs/`, `locales/`, `i18n/`, `*.md`) — provider keys are
-  still caught there — and lets a line through when it carries `flight-rules: allow`,
-  a greppable, reviewable exception. Non-ASCII filenames are scanned like any other.
-  Needs `jq` or `python3`; with neither it **denies git commands with an install hint**
-  rather than silently switching itself off.
-  Tests: `pre-commit-check.test.sh` (`./pre-commit-check.test.sh` — no arguments, no
-  network, builds throwaway repos).
+  it denies `git commit` and everything that rewrites or discards the tree without one:
+  `rm`, `restore`, `reset --hard|--merge`, `clean -f`, `checkout -- .` and
+  `checkout <rev> -- <path>`, `switch --discard-changes`, `rebase` (not its
+  `--abort`/`--continue`), `stash drop|clear`. From any branch it denies a push that
+  force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
+  `+refspec`, `--delete`, `origin :main`, `--mirror`). `git -C`/`-c` are normalised
+  away first, the *last* `cd` decides the target repo, and a merge in progress is
+  exempt so conflicts can be resolved.
+  Regardless of branch, a commit is denied with a staged `.env` (templates
+  `.env.example|sample|template|dist` and `.env.md` exempt), a provider key (AWS,
+  `sk-…`, GitHub, Slack, Google), any PEM private-key header, or a credential literal
+  outside test and prose files (`docs/`, `locales/`, `*.md` — keys are still caught
+  there). A line marked `flight-rules: allow` is a reviewed exception.
+  Needs `jq` or `python3`; with neither it denies git commands with an install hint
+  rather than silently switching off.
+  Tests: `pre-commit-check.test.sh` (no arguments, no network).
 - **`session-start.sh`** — SessionStart banner: once a day per project, lists
   worktrees whose branches are already merged so they get cleaned up. Reads
   `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
 
 ### Configuration
 
-`pre-commit-check.sh` is configured per project **without forking it**. The primary
-home is `.ai/flight-rules.conf` — beside the rules, not inside any one tool's settings
-— so a git hook, a Claude Code hook and another assistant's adapter all read one list
-instead of each restating it:
+Every hook is configured per project **without forking it**, from
+`.ai/flight-rules.conf` — beside the rules, not inside any one tool's settings, so
+every layer reads one list:
 
 ```ini
 # .ai/flight-rules.conf
@@ -121,13 +106,13 @@ The file is parsed as **data** (matched with `sed`, never `source`d), so a clone
 repository cannot execute code through it. `#` comments, blank lines, spaces around
 `=`, and quoted values are all fine.
 
-| Setting | `.ai/flight-rules.conf` key | Environment variable | Read by | Controls |
+| Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | `pre-commit-check.sh` | Branches the agent guard defends against commits, working-tree destroyers and force-pushes. A POSIX ERE matched **case-insensitively** — anchor it with `^`/`$`. `off` disables the branch policy (the secret scan stays on). |
-| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | `pre-merge-commit`, `commit-msg` | Branches that take no local merge at all — they move only through a reviewed PR. Default `^main$`. |
-| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Branches a merge into which needs a passing `pre-merge-check` note on the incoming commit. Default `^(dev\|staging)$`. |
-| Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where feature branches merge. Default `dev` in the hooks; the skills default to `main`. |
-| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | `pre-commit-check.sh`, `session-start.sh`, skills | Where feature worktrees live and the path the block message suggests. Default `.ai/worktrees`. |
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables the branch policy (secret scan stays on). |
+| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. |
+| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. Default `^(dev\|staging)$`. |
+| Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Hooks default `dev`; skills default `main`. |
+| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
@@ -189,12 +174,9 @@ cloned repo execute code inside the hook.
 
 ### Wiring (Claude Code)
 
-**With the plugin installed, there is nothing to wire** — `hooks/hooks.json` registers
-`pre-commit-check.sh` and the rules-injecting SessionStart hook. Do **not** also point
-`settings.json` at a local copy, or the guard runs twice.
-
-**Without the plugin** (another assistant, or a project that vendors the scripts), keep
-them in `.ai/hooks/agent/` and point `.claude/settings.json` at them:
+**With the plugin, nothing to wire** — `hooks/hooks.json` registers both agent hooks;
+pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep the
+scripts in `.ai/hooks/agent/` and point `.claude/settings.json` at them:
 
 ```json
 {
@@ -230,10 +212,8 @@ This is deliberate, because the failures worth preventing are the accidental one
 - a `git rm` issued with a relative path after a `cd` silently failed
 - an assistant taking a shortcut past a block it does not understand
 
-Two forms the agent guard knowingly does not see, for the same reason: a git
-**alias** (`git ci`) is invisible to a text matcher, and `$(which git) rm` puts a
-`)` where the word boundary is checked. Neither happens by accident; both are the
-kind of deliberate act this guard is not built to stop.
+Known blind spots, by the same logic: a git alias (`git ci`) and `$(which git) rm`.
+Neither happens by accident.
 
 **The design rule follows: close the paths reachable by accident; do not contort the
 design to stop someone acting deliberately.** A guard that catches the careless case

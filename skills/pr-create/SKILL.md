@@ -8,18 +8,12 @@ argument-hint: "[PR title]"
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/pr-create/EXTENSIONS.md`.
-If present, read it first: it supplies additional or replacement steps, project-specific
-rules, and any `{PLACEHOLDER}` values not covered by the conf file below — extensions
-take precedence over the generic defaults in this file. If absent, use the defaults
-as-is.
-
-Branch and path parameters — `{PROTECTED_BRANCHES}`, `{PR_ONLY_BRANCHES}`,
-`{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}` — come from
-`.ai/flight-rules.conf` and **only** from there: it is what the hooks enforce, so a
-value restated in EXTENSIONS.md would be one the enforcement never sees. If both set
-one, the conf wins and the extension should be corrected. Anything not set in the conf
-falls back to the defaults named in this skill.
+Read `.ai/skills/pr-create/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
+`{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
+come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
+restating one is invisible to enforcement, so the conf wins.
 
 Open a GitHub PR for the current feature branch. Project parameters:
 `{INTEGRATION_BRANCH}`, `{PROTECTED_BRANCHES}`, `{WORKTREE_DIR}`, `{TEST_COMMANDS}`
@@ -115,8 +109,7 @@ gh pr create \
 <files-changed summary from git diff --stat>
 
 ## Pre-merge checklist
-<paste the numbered ✅/⚠️/❌ table from /pre-merge-check VERBATIM — never retype it as
-a bullet list; a hand-written summary drops rows and drifts from the checks>
+<the /pre-merge-check table, pasted verbatim — a retyped summary drops rows>
 
 ## Warnings
 <any ⚠️ items from /pre-merge-check, else "none">
@@ -131,10 +124,9 @@ EOF
 )"
 ```
 
-A PR should not normally be opened with ❌ rows in the table unless the user
-explicitly overrides. In **Testing**, tick only what you actually exercised and
-**delete** rows that do not apply — GitHub counts every unticked box as an unfinished
-task, and a PR showing "11 of 12" reads as stuck when it is merely missing a UI.
+Do not open a PR with ❌ rows unless the user overrides. In **Testing**, tick what you
+exercised and **delete** rows that do not apply — an unticked box reads as unfinished
+work in GitHub's task counter.
 
 4. Show the PR URL. After merge, **verify the commits landed** — `git fetch origin` then
    `git log --oneline origin/{INTEGRATION_BRANCH}` should contain them (mandatory for a

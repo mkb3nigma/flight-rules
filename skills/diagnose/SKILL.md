@@ -8,10 +8,9 @@ argument-hint: "<bug description, error, stack trace, or issue link>"
 
 ## Project extensions
 
-Before executing, check the consuming project for `.ai/skills/diagnose/EXTENSIONS.md`.
-If present, read it first: it supplies the project's `{PLACEHOLDER}` values, plus any
-additional or replacement steps and project-specific rules — extensions take
-precedence over the generic defaults below. If absent, use the defaults as-is.
+Read `.ai/skills/diagnose/EXTENSIONS.md` first if the project has one: extra or
+replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
+defaults below.
 
 Debug a reported bug methodically: reproduce → minimize → hypothesize → instrument →
 (reorient) → fix → verify → clean up → post-mortem. Never jump straight to a fix.

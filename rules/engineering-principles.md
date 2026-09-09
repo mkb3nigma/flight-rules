@@ -43,12 +43,10 @@
 - Decide what "working" means before starting; if the goal is vague ("make it work"),
   pin it down first
 - Every code change ships with new or updated tests, and they pass before you call it done
-- Every change to behaviour, an interface, a command, a config key or a workflow ships
-  with the docs that describe it, in the same change — README, rules, skill text, the
-  header comment of a script. A doc that describes the old behaviour is a bug you just
-  introduced, and the pre-merge check looks for it
-- Never let a partial check stand in for a full one — say what you actually ran, and
-  what you didn't
+- When behaviour, an interface or a workflow changes, **edit** the sentence that
+  described it — in the same change. Delete what no longer applies; never leave a
+  second explanation beside the old one. Docs should shrink as often as they grow
+- Never let a partial check stand in for a full one — say what you ran and what you didn't
 - A loop that isn't converging is evidence the frame is wrong, not that it needs another
   turn — after repeated failure, re-examine the assumption every attempt shared
 
@@ -56,8 +54,7 @@
 
 **Silence about a known-better approach is a disservice, not politeness.**
 
-- Say it even when it wasn't asked for, especially when the fix is structural: a
-  lockfile beats another round of ad-hoc version bumps
+- Say it even when it wasn't asked for, especially when the fix is structural
 - Present it alongside the requested work, not instead of it — the user decides whether
   to take the detour (§3: refactors still need sign-off)
 - Scale the pitch to the stakes: a sentence for small ideas, a short trade-off
