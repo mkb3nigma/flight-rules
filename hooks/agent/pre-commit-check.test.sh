@@ -116,6 +116,15 @@ check "custom REPLACES, not extends"     allow main 'git rm f.txt' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^integration$'
 check "custom: worktree dir in message"  deny  main 'git rm f.txt' \
       FLIGHT_RULES_WORKTREE_DIR='.worktrees'
+D=$(make_repo main)
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR='.worktrees' \
+      bash "$HOOK" <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
+if grep -q 'git worktree add .worktrees/' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ custom worktree dir appears in the suggested command\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ custom worktree dir missing from the block message\n'
+fi
+rm -rf "$D"
 
 echo "Config file (.ai/flight-rules.conf) — the tool-agnostic home:"
 # conf_check <desc> <expect> <branch> <command> <conf-contents>
@@ -292,6 +301,48 @@ secret_check "*.spec.js excluded"             allow src/auth.spec.js 'password =
 secret_check "conftest.py excluded"           allow conftest.py 'password = "hunter2hunter2"'
 # …but a provider key is a leak wherever it sits.
 secret_check "AWS key in a test file"         deny  tests/test_a.py 'AKIAIOSFODNN7EXAMPLE'
+# Post-merge review: names git quotes, documented .env templates, prose files, the
+# allow trailer, and the extra placeholder words.
+secret_check "non-ASCII filename is scanned"  deny  'src/cönfig.py' 'password = "hunter2hunter2"'
+secret_check "filename with spaces scanned"   deny  'src/my config.py' 'password = "hunter2hunter2"'
+secret_check ".env.sample is a template"      allow .env.sample   'DB_PASSWORD='
+secret_check ".env.template is a template"    allow .env.template 'DB_PASSWORD='
+secret_check ".env.dist is a template"        allow .env.dist     'DB_PASSWORD='
+secret_check "docs/.env.md is a docs page"    allow docs/.env.md  '# The .env file'
+secret_check ".env.local is still a leak"     deny  .env.local    'DB_PASSWORD=hunter2'
+secret_check "docs prose example"             allow docs/setup.md 'secret = "your-secret-here-please"'
+secret_check "locale string"                  allow locales/en.json '{"password": "Password must be 8 characters"}'
+secret_check "README example"                 allow README.md 'api_key = "abcdefghijklmnop"'
+secret_check "placeholder your-…"             allow src/config.py 'password = "your-password-goes"'
+secret_check "placeholder …-here"             allow src/config.py 'password = "put-real-value-here"'
+secret_check "flight-rules: allow trailer"    allow src/config.py 'password = "hunter2hunter2"  # flight-rules: allow'
+secret_check "provider key in docs still caught" deny docs/setup.md 'key: AKIAIOSFODNN7EXAMPLE'
+secret_check "provider key in locale still caught" deny locales/en.json '{"k": "sk-ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123"}'
+
+echo "More ways to rewrite or discard a protected branch (post-merge review):"
+check "checkout <rev> -- <path>"          deny  main 'git checkout HEAD -- f.txt'
+check "checkout <branch> -- <path>"       deny  main 'git checkout other -- f.txt'
+check "switch --discard-changes"          deny  main 'git switch --discard-changes main'
+check "switch -f"                         deny  main 'git switch -f main'
+check "reset --merge"                     deny  main 'git reset --merge'
+check "rebase onto a feature"             deny  main 'git rebase feature/x'
+check "rebase -i"                         deny  main 'git rebase -i HEAD~3'
+check "stash drop"                        deny  main 'git stash drop'
+check "stash clear"                       deny  main 'git stash clear'
+check "rebase --abort is the way out"     allow main 'git rebase --abort'
+check "rebase --continue"                 allow main 'git rebase --continue'
+check "stash list / push are fine"        allow main 'git stash list && git stash push -m wip'
+check "switch to a branch"                allow main 'git switch feature/x'
+check "checkout -b (not a path restore)"  allow main 'git checkout -b feature/y'
+check "rebase on a feature branch"        allow feature/x 'git rebase main'
+
+echo "Deleting or overwriting a protected branch on the remote:"
+check "push --delete origin main"         deny  feature/x 'git push --delete origin main'
+check "push -d origin main"               deny  feature/x 'git push -d origin main'
+check "push origin :main (empty source)"  deny  feature/x 'git push origin :main'
+check "push --mirror"                     deny  feature/x 'git push --mirror origin'
+check "push --delete a feature branch"    allow feature/x 'git push --delete origin feature/old'
+check "push origin main:main (no force)"  allow feature/x 'git push origin main:main'
 
 echo "Missing JSON parser must fail loud, not silent:"
 # Regression: with jq absent the command parsed as "" and the hook exited 0 —

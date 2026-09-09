@@ -50,9 +50,17 @@ never reaches them; the conf file is the one channel every layer shares.
   merges, never ordinary commits. A **back-merge** — the incoming commit is the tip of
   a PR-only branch — passes without a note: it already went through a reviewed PR, and
   reconciling `main` into the integration branch is what `feature-start` step 4 asks
-  for. **Install both hooks**, or the gate is half built; `install.sh` fails loudly if
+  for. Only `refs/heads/<x>` and `origin/<x>` count, and when origin has the branch
+  the commit must be on it — a local `main` pointed at a feature tip, or a stale
+  `upstream/main`, exempts nothing. The same hook also refuses the commit that would
+  **complete a squash merge** into a PR-only branch (`SQUASH_MSG` present), since a
+  squash creates no merge commit and `pre-merge-commit` never sees it.
+  **Install both hooks**, or the gate is half built; `install.sh` fails loudly if
   `commit-msg` is missing.
   Tests: `merge-gate.test.sh` (no arguments, no network).
+- **`pre-rebase`** — refuses to rebase a PR-only branch. `git rebase feature` while
+  on `main` rewrites `main` with no merge commit, so neither merge-gate hook fires;
+  this is git's one hook for that moment. Rebase the feature onto `main` instead.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) that the next AI session picks up.
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
@@ -76,9 +84,18 @@ Guards that fire on the assistant's own events, before git ever runs:
   normalised away before matching, and the *last* `cd` in a command decides which
   repo it targets. A merge in progress is exempt from the commit and working-tree
   checks, since resolving conflicts on the integration branch legitimately needs them.
-  Independently of branch, it denies commits with staged `.env` files, provider key
-  patterns (AWS, `sk-…` OpenAI/Anthropic, GitHub, Slack, Google), any PEM private-key
-  header, or hardcoded credential literals outside test files.
+  Also denied on a protected branch: `git checkout <rev> -- <path>`, `git switch
+  --discard-changes`/`-f`, `git reset --merge`, `git rebase` (its `--abort`/
+  `--continue` stay allowed), `git stash drop|clear`; and from any branch, a push
+  that deletes or overwrites a protected branch (`--delete`, `-d`, `origin :main`,
+  `--mirror`).
+  Independently of branch, it denies commits with staged `.env` files (the templates
+  `.env.example/.sample/.template/.dist` and a docs page `.env.md` are exempt),
+  provider key patterns (AWS, `sk-…` OpenAI/Anthropic, GitHub, Slack, Google), any
+  PEM private-key header, or hardcoded credential literals. The literal check skips
+  test files and prose (`docs/`, `locales/`, `i18n/`, `*.md`) — provider keys are
+  still caught there — and lets a line through when it carries `flight-rules: allow`,
+  a greppable, reviewable exception. Non-ASCII filenames are scanned like any other.
   Needs `jq` or `python3`; with neither it **denies git commands with an install hint**
   rather than silently switching itself off.
   Tests: `pre-commit-check.test.sh` (`./pre-commit-check.test.sh` — no arguments, no
@@ -212,6 +229,11 @@ This is deliberate, because the failures worth preventing are the accidental one
 - merging a branch whose checks were never run
 - a `git rm` issued with a relative path after a `cd` silently failed
 - an assistant taking a shortcut past a block it does not understand
+
+Two forms the agent guard knowingly does not see, for the same reason: a git
+**alias** (`git ci`) is invisible to a text matcher, and `$(which git) rm` puts a
+`)` where the word boundary is checked. Neither happens by accident; both are the
+kind of deliberate act this guard is not built to stop.
 
 **The design rule follows: close the paths reachable by accident; do not contort the
 design to stop someone acting deliberately.** A guard that catches the careless case

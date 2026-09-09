@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# pre-rebase hook — refuse to rebase a PR-only branch.
+#
+# `git rebase feature` while on main rewrites main in place: no merge commit is
+# created, so neither pre-merge-commit nor commit-msg ever fires, and the branch
+# that is supposed to move only through reviewed pull requests has just been
+# rewritten locally. git offers exactly one hook for this moment; this is it.
+#
+# Arguments from git: $1 = the upstream being rebased onto, $2 = the branch being
+# rebased (absent when it is the current branch).
+#
+# Configuration — first match wins:
+#   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
+#   2. .ai/flight-rules.conf **as committed on HEAD** (read as data, never sourced)
+#   3. The default below
+#
+# Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
+# install.sh once per clone.
+#
+# Bypass (breaks the rules — emergencies only):  git rebase --no-verify
+
+set -euo pipefail
+
+DEFAULT_PR_ONLY='^main$'
+CONF_PATH='.ai/flight-rules.conf'   # repo-relative
+
+read_conf_at_head() {
+  local key="$1" path="$2" content
+  content=$(git show "HEAD:$path" 2>/dev/null) || return 0
+  printf '%s\n' "$content" \
+    | sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" \
+    | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
+
+PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
+PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
+
+BRANCH="${2:-$(git branch --show-current)}"
+[[ "$BRANCH" =~ $PR_ONLY_RE ]] || exit 0
+
+# --- Box drawing (duplicated verbatim in pre-merge-commit and commit-msg) ------
+BOX_W=68
+_rule() { local c="$1" n=$BOX_W out=''; while [ $n -gt 0 ]; do out="$out$c"; n=$((n-1)); done; printf '%s' "$out"; }
+box_top() { printf '╔%s╗\n' "$(_rule ═)"; }
+box_sep() { printf '╠%s╣\n' "$(_rule ═)"; }
+box_bot() { printf '╚%s╝\n' "$(_rule ═)"; }
+box_row() {
+    local s="${1:-}" adj="${2:-0}" pad
+    pad=$(( BOX_W - ${#s} - 2 - adj ))
+    [ "$pad" -lt 0 ] && pad=0
+    printf '║ %s%*s ║\n' "$s" "$pad" ''
+}
+
+echo ""
+box_top
+box_row "⛔  $BRANCH IS PR-ONLY — REBASE BLOCKED" 1
+box_sep
+box_row ""
+box_row "Rebasing rewrites $BRANCH in place. It moves only through"
+box_row "a reviewed pull request; rebase the feature branch instead:"
+box_row ""
+box_row "  git checkout <feature> && git rebase $BRANCH"
+box_row ""
+box_row "Emergency bypass (discouraged):  git rebase --no-verify"
+box_row ""
+box_bot
+echo ""
+exit 1

@@ -70,7 +70,8 @@ feature/* → {INTEGRATION_BRANCH} → (staging) → main
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
 Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
 
-- The merge gate — two hooks, two mechanisms; **install both** or it is half built:
+- The merge gate — three hooks; **install all three** (`install.sh` insists) or it is
+  half built:
   - `pre-merge-commit` — **PR-only branches** (`{PR_ONLY_BRANCHES}`, default `main`):
     any local merge is blocked outright. The hook fires only when git creates a merge
     commit — a `--ff-only` pull does not fire it — so its firing on a PR-only branch is
@@ -81,7 +82,10 @@ Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once
     *after* `pre-merge-commit` runs; the check used to sit there and was a silent
     no-op. A back-merge of a PR-only branch (reconciling `main` into `dev`) needs no
     note — it already went through a reviewed PR.
-  - Both read their branch sets from `.ai/flight-rules.conf` **as committed on the
+  - `pre-rebase` — refuses to rebase a PR-only branch, the one rewrite neither of
+    the other two can see. `commit-msg` likewise refuses the commit that would
+    complete a squash merge into one.
+  - All three read their branch sets from `.ai/flight-rules.conf` **as committed on the
     merge target**, never from the working tree, so an incoming branch cannot relax
     the rule that judges it.
 - `git config core.hooksPath <hooks-dir>` + `git config merge.ff false` (so real merges

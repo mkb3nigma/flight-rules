@@ -22,6 +22,15 @@ jobs:
             case "$f" in *.md) continue ;; esac
             bash -n "$f" && echo "ok  $f"
           done
+      - name: Git hooks are executable
+        # A hook tracked as 644 is silently ignored by git ("hook was ignored
+        # because it's not set as executable") — the note gate shipped that way.
+        run: |
+          set -e
+          for f in hooks/git/*; do
+            case "$f" in *.*) continue ;; esac
+            [ -x "$f" ] && echo "ok  $f" || { echo "NOT EXECUTABLE: $f"; exit 1; }
+          done
       - name: Agent guard
         run: bash hooks/agent/pre-commit-check.test.sh
       - name: Merge gate
