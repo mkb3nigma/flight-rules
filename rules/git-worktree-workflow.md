@@ -25,9 +25,11 @@ items are reviewed at every plugin release and either given enforcement or delet
 5. Force-pushing or rebasing a protected branch, or deleting it on the remote — hook
    (agent guard; the `pre-rebase` git hook covers PR-only branches only)
 6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add` — hook
-7. Merging into a **PR-only branch (default `main`) locally at all** — it moves only
-   through a reviewed pull request. Sync afterwards with `git pull --ff-only origin main`
-   — hook
+7. Moving a **PR-only branch (default `main`) onto anything not already on its remote**
+   — merging locally, committing directly, cherry-picking, reverting, `branch -f`,
+   `update-ref`, `reset --hard`. It moves only through a reviewed pull request. Sync
+   with `git pull --ff-only origin main` — hook (`reference-transaction`, which judges
+   where the ref landed rather than which command moved it)
 8. Merging into any other protected branch **without the user's instruction** — the
    `pre-merge-check` stamp is the agent's own, not the user's say-so — advisory
    (`pre-merge-check` ends by saying so)

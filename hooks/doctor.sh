@@ -32,7 +32,7 @@ else
     bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
   else
     ok "core.hooksPath=$HOOKS_PATH"
-    for h in pre-merge-commit commit-msg pre-rebase post-merge; do
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
         bad "$h missing from $HOOKS_PATH — the gate is half built"
       elif [[ ! -x "$HOOKS_DIR/$h" ]]; then
