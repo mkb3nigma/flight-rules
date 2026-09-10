@@ -37,8 +37,10 @@ one channel git hooks, agent hooks and skills all share.
   (`PR_ONLY_BRANCHES`, default `main`) are blocked from any local merge; they move
   only through a reviewed pull request. The hook fires only when git creates a merge
   commit (a `--ff-only` pull does not), so its firing on a PR-only branch *is* the
-  violation — robust, and needs no `MERGE_HEAD`. Sync with
-  `git pull --ff-only origin main`.
+  violation, and it needs no `MERGE_HEAD`. It only sees merges git completes in one
+  step: a **conflicted** merge stops before the merge commit and never reaches this
+  hook, which is why `reference-transaction` below is the actual guarantee and this
+  is the early, specific message. Sync with `git pull --ff-only origin main`.
 - **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`,
   default `dev`/`staging`) require a passing `pre-merge-check` note on the incoming
   commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
@@ -55,8 +57,25 @@ one channel git hooks, agent hooks and skills all share.
   Tests: `merge-gate.test.sh` (no arguments, no network).
 - **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
   `main` rewrites it with no merge commit, so nothing else fires.
+- **`reference-transaction`** — the backstop, and the only hook that sees every write
+  path. One rule: **a PR-only branch may only move to a commit already on
+  `origin/<branch>`.** It asks where the ref landed, not which command moved it, so
+  the enumeration cannot fall behind. It exists because the command-shaped guards kept
+  losing (all verified on git 2.55, 2026-09-10):
+  `git cherry-pick` and `git revert` run **neither** `pre-commit` nor `commit-msg` —
+  they are sequencer operations and fire only `prepare-commit-msg`; `git branch -f`
+  and `git update-ref` create no commit, so no commit hook fires at all; and a
+  **conflicted** `git merge` never reaches `pre-merge-commit`, because git stops at the
+  conflict and the finishing `git commit` is an ordinary commit. Every one of those
+  reached `main` unguarded before this hook.
+  `git pull --ff-only`, all feature work, `fetch`, and branch creation are unaffected.
+  Unlike the agent guard it reads its config from the **upstream's** committed state,
+  so editing the working-tree conf — the bypass the agent guard's own block message
+  advertises — does not lift it. A repo with no upstream is not gated: there is no
+  reviewed state to compare against, and a fresh `git init` must stay usable.
+  Tests: `ref-gate.test.sh` (no arguments, no network).
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
-  unless all four bare-named hooks are present.
+  unless all five bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) that the next AI session picks up.
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored

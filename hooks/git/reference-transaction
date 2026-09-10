@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# reference-transaction hook — the ref gate for PR-only branches.
+#
+# ONE RULE:  a PR-only branch may only move to a commit that is already on its
+# upstream (refs/remotes/origin/<branch>).
+#
+# Why this hook and not another. Every other guard in this repo asks "what command
+# is this?" and then has to enumerate the commands that write to a branch. That set
+# is open-ended and the enumeration kept losing:
+#
+#   - `git cherry-pick` and `git revert` run NEITHER pre-commit NOR commit-msg
+#     (verified 2026-09-10, git 2.55: they are sequencer operations and fire only
+#     prepare-commit-msg), so a pre-commit check does not see them at all.
+#   - `git branch -f` and `git update-ref` create no commit, so no commit hook fires.
+#   - A CONFLICTED `git merge` never reaches pre-merge-commit: git stops at the
+#     conflict, and the finishing `git commit` is an ordinary commit.
+#
+# reference-transaction fires for all of them, because all of them end in a ref
+# moving. It asks where the ref LANDED, not what put it there — so a git subcommand
+# nobody thought of cannot walk around it.
+#
+# What stays allowed: `git pull --ff-only origin main` and any other move onto a
+# commit already reviewed on the remote; every operation on a non-PR-only branch;
+# fetch, status, log, worktree add, and all feature work.
+#
+# Configuration — first match wins:
+#   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
+#   2. .ai/flight-rules.conf **as committed on the upstream**, then on HEAD
+#   3. The default below
+# Parsed as data, never sourced.
+#
+# ⚠️ The conf is read from the upstream's committed state first, not the working
+#    tree. The agent guard deliberately reads the working tree (it must react to a
+#    conf the owner just edited), which means editing the conf is a way past IT.
+#    This hook is the backstop for that: a working-tree edit — or a branch that
+#    ships `PR_ONLY_BRANCHES=^nothing$` and then merges itself — does not change
+#    what the reviewed upstream says.
+#
+# Bypass: none. `--no-verify` does not apply to reference-transaction, which is the
+# point. To move a PR-only branch to something not on the remote, the owner turns
+# the policy off in the conf AND pushes that change through review.
+
+set -uo pipefail
+
+DEFAULT_PR_ONLY='^main$'
+CONF_PATH='.ai/flight-rules.conf'
+ZERO='0000000000000000000000000000000000000000'
+
+# Only the "prepared" phase can still refuse the transaction. "committed" and
+# "aborted" are notifications; exiting non-zero there does nothing but noise.
+[ "${1:-}" = "prepared" ] || exit 0
+
+read_conf_from() {   # <committish> <key>
+    local ref="$1" key="$2" content
+    content=$(git show "${ref}:${CONF_PATH}" 2>/dev/null) || return 0
+    printf '%s\n' "$content" \
+        | sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" \
+        | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+        | tail -1
+}
+
+BOX_W=68
+_rule() { local c="$1" n=$BOX_W out=''; while [ $n -gt 0 ]; do out="$out$c"; n=$((n-1)); done; printf '%s' "$out"; }
+box_top() { printf '╔%s╗\n' "$(_rule ═)"; }
+box_sep() { printf '╠%s╣\n' "$(_rule ═)"; }
+box_bot() { printf '╚%s╝\n' "$(_rule ═)"; }
+box_row() {
+    local s="${1:-}" adj="${2:-0}" pad
+    pad=$(( BOX_W - ${#s} - 2 - adj ))
+    [ "$pad" -lt 0 ] && pad=0
+    printf '║ %s%*s ║\n' "$s" "$pad" ''
+}
+
+while read -r _old new ref; do
+    case "$ref" in
+        refs/heads/*) short="${ref#refs/heads/}" ;;
+        *) continue ;;                      # remote-tracking refs, tags, HEAD, AUTO_MERGE
+    esac
+
+    upstream="refs/remotes/origin/$short"
+
+    # Config comes from the reviewed upstream where there is one; HEAD otherwise.
+    PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-}"
+    if [ -z "$PR_ONLY_RE" ]; then
+        PR_ONLY_RE=$(read_conf_from "$upstream" PR_ONLY_BRANCHES)
+        [ -z "$PR_ONLY_RE" ] && PR_ONLY_RE=$(read_conf_from HEAD PR_ONLY_BRANCHES)
+        PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
+    fi
+    [ "$PR_ONLY_RE" = "off" ] && continue
+
+    printf '%s' "$short" | grep -qE "$PR_ONLY_RE" || continue
+
+    # A ref that does not exist yet is being CREATED (clone, `git branch <new>`),
+    # not moved. `_old` cannot be used to detect this: `git update-ref <ref> <sha>`
+    # with no old value reports all-zeros for a ref that plainly exists, which would
+    # turn the creation exemption into a bypass for the exact command it must catch.
+    git rev-parse -q --verify "$ref" >/dev/null 2>&1 || continue
+
+    # Deleting a local branch is not moving it onto unreviewed work. `git push
+    # --delete` (the destructive one) is the agent guard's job and does not reach here.
+    [ "$new" = "$ZERO" ] && continue
+
+    # No upstream to compare against — a repo with no remote, or one not fetched
+    # yet. There is no reviewed state to enforce, so stay out of the way rather
+    # than making a fresh `git init` repo unusable on its own default branch.
+    git rev-parse -q --verify "$upstream" >/dev/null 2>&1 || continue
+
+    # THE RULE.
+    git merge-base --is-ancestor "$new" "$upstream" 2>/dev/null && continue
+
+    {
+        echo ""
+        box_top
+        box_row "❌  PROTECTED BRANCH — $short" 1
+        box_sep
+        box_row ""
+        box_row "This would move \"$short\" to a commit that is not on"
+        box_row "origin/$short. That branch moves only through a"
+        box_row "reviewed pull request."
+        box_row ""
+        box_row "Whatever the command was — commit, merge, cherry-pick,"
+        box_row "revert, rebase, branch -f, update-ref, reset --hard —"
+        box_row "the ref landing off-upstream is the violation."
+        box_row ""
+        box_row "Do this instead:"
+        box_row "  git worktree add .ai/worktrees/<name> -b <prefix>/<name>"
+        box_row "  # commit there, push, open a PR"
+        box_row ""
+        box_row "To sync this branch:"
+        box_row "  git pull --ff-only origin $short"
+        box_row ""
+        box_row "If this project does not gate $short, its owner changes"
+        box_row "PR_ONLY_BRANCHES in .ai/flight-rules.conf and pushes"
+        box_row "that through review. Editing your working tree copy"
+        box_row "will not lift this: the rule is read from the remote."
+        box_row ""
+        box_bot
+        echo ""
+    } >&2
+    exit 1
+done
+
+exit 0

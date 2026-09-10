@@ -11,11 +11,12 @@ HOOKS_DIR="$REPO_ROOT/.ai/hooks"   # adjust if the project keeps hooks elsewhere
 # commit-msg carries the note gate. Without it, pre-merge-commit blocks PR-only
 # branches but nothing enforces the pre-merge-check note — a half-built gate that
 # still looks installed. Fail loudly rather than degrade silently.
-for required in pre-merge-commit post-merge commit-msg pre-rebase; do
+for required in pre-merge-commit post-merge commit-msg pre-rebase reference-transaction; do
     if [ ! -f "$HOOKS_DIR/$required" ]; then
         echo "❌ $HOOKS_DIR/$required is missing — copy it in before installing."
         [ "$required" = "commit-msg" ] && echo "   Without it the note gate never runs and merges go unchecked."
         [ "$required" = "pre-rebase" ] && echo "   Without it a PR-only branch can be rewritten with a local rebase."
+        [ "$required" = "reference-transaction" ] && echo "   Without it cherry-pick, revert, branch -f, update-ref and a CONFLICTED merge all reach a PR-only branch unguarded."
         exit 1
     fi
     chmod +x "$HOOKS_DIR/$required"
