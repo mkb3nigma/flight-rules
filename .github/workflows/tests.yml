@@ -39,5 +39,7 @@ jobs:
         run: bash hooks/git/ref-gate.test.sh
       - name: Doctor
         run: bash hooks/doctor.test.sh
+      - name: Wiring
+        run: bash hooks/wiring.test.sh
       - name: Skills catalogue is consistent
         run: bash skills/catalogue.test.sh

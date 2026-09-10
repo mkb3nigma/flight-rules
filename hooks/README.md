@@ -208,15 +208,24 @@ cloned repo execute code inside the hook.
 
 ### Wiring (Claude Code)
 
-**With the plugin, nothing to wire** — `hooks/hooks.json` registers both agent hooks;
-pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep the
-scripts in `.ai/hooks/agent/` and point `.claude/settings.json` at them:
+**With the plugin, nothing to wire** — `hooks/hooks.json` registers all three agent
+hooks; pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep
+the scripts in `.ai/hooks/` and point `.claude/settings.json` at them:
+
+There are **three**, and each path used to ship a different two. Until 2026-09-10 the
+plugin registered the principles injector and the guard but not `session-start.sh`, so
+plugin users got no install health check; the snippet below registered
+`session-start.sh` and the guard but not the injector, so hand-wired users got **no
+rules injected at all** — half of what this playbook does. Register all three.
 
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command",
-      "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\"'" }] }],
+    "SessionStart": [{ "hooks": [
+      { "type": "command",
+        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/session-start-rules.sh\"'" },
+      { "type": "command",
+        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\"'" }] }],
     "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command",
       "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/pre-commit-check.sh\"'" }] }]
   }
