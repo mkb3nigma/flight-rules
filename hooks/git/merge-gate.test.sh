@@ -230,6 +230,83 @@ git -C "$D" commit -qm "chore: ordinary commit on dev" >/dev/null 2>&1
 say "$?" "0" "squash guard does not touch ordinary commits on a non-PR-only branch"
 rm -rf "$D"
 
+
+echo "post-merge must never offer a protected branch for deletion:"
+# Regression 2026-09-10: the merged-branch filter was the literal `main|staging` plus
+# the integration branch, so a project calling its branches anything else had them
+# listed as "safe to delete" in the note the next session is told to act on.
+PM=$(mktemp -d)
+git init -q -b trunk "$PM"
+git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t
+git -C "$PM" config merge.ff false
+mkdir -p "$PM/.ai"
+cat > "$PM/.ai/flight-rules.conf" <<'CONF'
+PROTECTED_BRANCHES=^(trunk|qa|release-2)$
+PR_ONLY_BRANCHES=^trunk$
+INTEGRATION_BRANCH=trunk
+CONF
+echo base > "$PM/f.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: base"
+for b in qa release-2 feature/real; do
+  git -C "$PM" checkout -qb "$b" 2>/dev/null
+  echo "$b" > "$PM/${b//\//_}.txt"; git -C "$PM" add -A
+  git -C "$PM" commit -qm "chore: on $b"
+done
+git -C "$PM" checkout -q trunk
+mkdir -p "$PM/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PM/.ai/hooks/"; chmod +x "$PM"/.ai/hooks/*; git -C "$PM" config core.hooksPath "$PM/.ai/hooks"
+for b in qa release-2 feature/real; do
+  git -C "$PM" merge --no-verify --no-edit "$b" >/dev/null 2>&1
+done
+NOTE="$PM/.claude/post-merge-note.md"
+for prot in qa release-2 trunk; do
+  if grep -q "git branch -d $prot\$" "$NOTE" 2>/dev/null; then
+    FAIL=$((FAIL+1)); printf '  ❌ offered protected branch "%s" for deletion\n' "$prot"
+  else
+    PASS=$((PASS+1)); printf '  ✅ protected branch "%s" is not offered for deletion\n' "$prot"
+  fi
+done
+if grep -q 'git branch -d feature/real' "$NOTE" 2>/dev/null; then
+  PASS=$((PASS+1)); printf '  ✅ a real feature branch is still offered\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ the note no longer offers merged feature branches\n'
+fi
+rm -rf "$PM"
+
+echo "The note gate covers protected branches this project actually has:"
+# With no NOTE_GATED_BRANCHES the gated set is "protected but not PR-only", so a
+# project using its own names gets the gate without configuring one. The old default
+# was the literal ^(dev|staging)$ and silently gated nothing here.
+NG=$(mktemp -d)
+git init -q -b trunk "$NG"
+git -C "$NG" config user.email t@t.t; git -C "$NG" config user.name t
+git -C "$NG" config merge.ff false
+mkdir -p "$NG/.ai"
+cat > "$NG/.ai/flight-rules.conf" <<'CONF'
+PROTECTED_BRANCHES=^(trunk|qa)$
+PR_ONLY_BRANCHES=^trunk$
+INTEGRATION_BRANCH=trunk
+CONF
+echo base > "$NG/f.txt"; git -C "$NG" add -A; git -C "$NG" commit -qm "chore: base"
+git -C "$NG" checkout -qb qa 2>/dev/null; git -C "$NG" checkout -q trunk
+git -C "$NG" checkout -qb feature/w 2>/dev/null
+echo w > "$NG/w.txt"; git -C "$NG" add -A; git -C "$NG" commit -qm "feature: w"
+git -C "$NG" checkout -q qa
+mkdir -p "$NG/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$NG/.ai/hooks/"; chmod +x "$NG"/.ai/hooks/*; git -C "$NG" config core.hooksPath "$NG/.ai/hooks"
+OUT=$(git -C "$NG" merge --no-edit feature/w 2>&1)
+if grep -q 'PRE-MERGE CHECK REQUIRED' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ "qa" is note-gated without being named in the conf\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ "qa" took an unstamped merge\n'
+fi
+git -C "$NG" merge --abort 2>/dev/null
+# ...and a branch that is neither protected nor PR-only is still ungated.
+git -C "$NG" checkout -qb scratch 2>/dev/null
+OUT=$(git -C "$NG" merge --no-edit feature/w 2>&1)
+if grep -q 'PRE-MERGE CHECK REQUIRED' <<<"$OUT"; then
+  FAIL=$((FAIL+1)); printf '  ❌ an unprotected branch was gated\n'
+else
+  PASS=$((PASS+1)); printf '  ✅ an unprotected branch is not gated\n'
+fi
+rm -rf "$NG"
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
