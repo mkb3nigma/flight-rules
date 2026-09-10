@@ -26,9 +26,10 @@ by **multica-ai**, licensed under
 **[MIT](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/LICENSE)** —
 itself derived from **Andrej Karpathy's** public observations on LLM coding pitfalls.
 
-Modifications in this repo: restructured into the current six-principle format,
+Modifications in this repo: restructured into the current seven-principle format,
 reworded bullets, and merged or dropped the ones that restructuring made redundant.
-Principles 5 and 6 do not come from this source — see below.
+Principle 5 does not come from this source — see below. Principles 6 and 7 are original
+to this repo and need no credit.
 
 ## rules/engineering-principles.md — principle 5 — concept credit
 
