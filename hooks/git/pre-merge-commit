@@ -5,7 +5,11 @@
 #     only through a reviewed pull request. pre-merge-commit fires only when git
 #     is about to create a merge commit; a fast-forward (e.g. `git pull --ff-only`)
 #     does NOT fire it. So the hook firing on a PR-only branch IS the violation.
-#     This needs no MERGE_HEAD and is robust. Sync the branch locally with:
+#     This needs no MERGE_HEAD. It is NOT the whole guarantee: a conflicted merge
+#     stops before the merge commit and never reaches this hook, so the finishing
+#     `git commit` arrives here as an ordinary commit. reference-transaction is the
+#     backstop that closes it; this hook stays for the early, specific message.
+#     Sync the branch locally with:
 #         git checkout <branch> && git pull --ff-only origin <branch>
 #
 #  2. NOTE-GATED branches (e.g. dev/staging) — moved to the **commit-msg** hook.

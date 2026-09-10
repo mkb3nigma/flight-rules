@@ -13,7 +13,8 @@ mkrepo() {
   git -C "$d" init -q -b main
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.ai/hooks"
-  cp "$H/git/pre-merge-commit" "$H/git/commit-msg" "$H/git/pre-rebase" "$H/git/post-merge" "$d/.ai/hooks/"
+  cp "$H/git/pre-merge-commit" "$H/git/commit-msg" "$H/git/pre-rebase" "$H/git/post-merge" \
+     "$H/git/reference-transaction" "$d/.ai/hooks/"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath .ai/hooks
   git -C "$d" config merge.ff false
@@ -49,6 +50,18 @@ rm -rf "$D"
 
 D=$(mkrepo); rm "$D/.ai/hooks/pre-rebase"
 say "$(rc "$D")" "1" "pre-rebase missing → problem"
+rm -rf "$D"
+
+# Without this one, cherry-pick / revert / branch -f / update-ref and a CONFLICTED
+# merge all reach a PR-only branch unguarded — and every other hook still reports
+# healthy, which is the exact "looks installed" failure doctor.sh exists to catch.
+D=$(mkrepo); rm "$D/.ai/hooks/reference-transaction"
+say "$(rc "$D")" "1" "reference-transaction missing → problem"
+say "$(has "$D" "reference-transaction missing")" "0" "…names the hook"
+rm -rf "$D"
+
+D=$(mkrepo); chmod -x "$D/.ai/hooks/reference-transaction"
+say "$(rc "$D")" "1" "reference-transaction without +x → problem"
 rm -rf "$D"
 
 D=$(mkrepo); git -C "$D" config --unset merge.ff
