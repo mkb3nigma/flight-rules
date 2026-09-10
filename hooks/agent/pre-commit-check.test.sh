@@ -485,6 +485,36 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ the block is wrong for a deletion\n'
 fi
 rm -rf "$D"
+
+echo "Target parsing is per simple command, not per command STRING:"
+# Both directions were live and both are reproduced here (2026-09-10).
+#
+# FALSE NEGATIVE — a bypass. The parser found the git verb with a greedy `.*`, so it
+# saw only the LAST occurrence and a protected target in an earlier command escaped.
+check "delete main, then delete a feature"  deny  feature/x 'git branch -d main && git branch -d feature/x'
+check "delete main, then any git command"   deny  feature/x 'git branch -D main && git branch --list'
+check "force-push main, then a feature"     deny  feature/x 'git push --force origin main && git push --force origin feature/x'
+check "force-push main, then an echo"       deny  feature/x 'git push --force origin main && echo done'
+check "delete main on the first line"       deny  feature/x 'git branch -D main
+git status'
+check "delete main inside a subshell"       deny  feature/x '(git branch -D main) && git status'
+check "delete main after a pipe"            deny  feature/x 'git status | cat; git branch -D main'
+#
+# FALSE POSITIVE — the parser read past the end of the command it matched, so a word
+# in a LATER command became a "target". This blocked ordinary post-merge cleanup.
+check "delete a feature, then echo main"    allow main 'git branch -d feature/old
+echo "=== main now ==="'
+check "delete a feature, then log main"     allow main 'git branch -d feature/old && git log --oneline main -1'
+check "delete a feature, ; then the word"   allow main 'git branch -d feature/old ; echo main'
+check "push a feature, then echo main"      allow main 'git push --force origin feature/x && echo main'
+check "worktree remove, then delete branch" allow main 'git worktree remove .ai/worktrees/x && git branch -d fix/x'
+#
+# The single-command cases must keep working — a bare command is one segment with
+# nothing after it, and an earlier draft of the segment splitter dropped exactly that.
+check "delete main alone"                   deny  feature/x 'git branch -d main'
+check "force-push main alone"               deny  feature/x 'git push --force origin main'
+check "delete a feature alone"              allow main      'git branch -d feature/old'
+check "push a feature alone"                allow main      'git push --force origin feature/x'
 echo "Missing JSON parser must fail loud, not silent:"
 # Regression: with jq absent the command parsed as "" and the hook exited 0 —
 # the guard switched itself off without a word.

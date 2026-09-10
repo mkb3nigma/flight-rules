@@ -97,7 +97,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
   `+refspec`, `--delete`, `origin :main`, `--mirror`); a push that names some other
   ref is judged on that ref, not on the branch you happen to stand on, so post-merge
-  cleanup from the protected branch is not blocked. On **any** branch of the project
+  cleanup from the protected branch is not blocked. It also denies `git branch -d`/`-D`
+  of a protected branch — local deletion, which `post-merge` was found recommending.
+  **Targets are read per simple command**, not per command string: a greedy match found
+  only the last `git push`/`git branch` in a compound, so a protected target in an
+  earlier one escaped (`git branch -d main && git branch -d feature/x` was allowed), and reading
+  past the end of that command turned a later word into a target (a following
+  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On **any** branch of the project
   it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
   created as worktrees (workflow rule 6), and the block shows the command. "The
   project" is its main checkout *and every worktree of it* — they share one

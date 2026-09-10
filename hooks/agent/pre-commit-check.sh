@@ -139,6 +139,27 @@ is_force_push() {
   [[ "$1" =~ [[:space:]](--delete|-d|--mirror)([[:space:]]|$) ]] && return 0
   [[ "$1" =~ [[:space:]]:[^[:space:]]+ ]]
 }
+# One simple command per line. Every target parser below runs per SEGMENT, because a
+# parser that looks at the whole string gets both directions wrong (both reproduced
+# 2026-09-10, both were live):
+#
+#   - `.*git[[:space:]]+push` is GREEDY, so it found only the LAST occurrence. That
+#     made `git branch -d main && git branch -d feature/x` read as a feature-branch
+#     deletion, and `git push --force origin main && git push --force origin feature/x`
+#     read as a feature push. The protected target in the earlier command escaped
+#     entirely — a bypass, not a nuisance.
+#   - Reading to the end of the string swallowed the following commands, so a later
+#     word became a "target": `git branch -d feature/x` followed by `echo "=== main"`
+#     was refused as a deletion of main.
+#
+# `&` and `(` `)` split too: a background job or a subshell is its own command.
+# The trailing newline is load-bearing: `while read` returns non-zero on a final line
+# without one, so the loop body never runs for it — and a bare `git branch -d main`,
+# the whole point of the check, is a single segment with nothing after it.
+command_segments() {
+  printf '%s\n' "$1" | sed -E 's/&&/;/g; s/\|\|/;/g' | tr '\n;&|()' '\n\n\n\n\n\n'
+}
+
 # The branches a `git push` names. `git push --force origin main` from a feature
 # branch still rewrites main, so the target is checked as well as the current
 # branch. A refspec `+src:dst` pushes to dst. The first non-flag word after `push`
@@ -146,15 +167,19 @@ is_force_push() {
 # mistaken for the branch. Empty output means the push named no ref, so the target
 # is the current branch and the caller falls back to checking that.
 push_targets() {
-  local rest w words=()
-  rest=$(printf '%s' "$1" | sed -E "s/.*${B}git[[:space:]]+push//")
-  for w in $rest; do
-    case "$w" in -*|'&&'|'||'|';'|'|') continue ;; esac
-    w="${w#+}"; w="${w##*:}"; w="${w#refs/heads/}"
-    words+=("$w")
-  done
-  [[ ${#words[@]} -ge 1 ]] && unset 'words[0]'
-  printf '%s\n' "${words[@]+"${words[@]}"}"
+  local seg rest w words
+  while IFS= read -r seg; do
+    [[ "$seg" =~ ${B}git[[:space:]]+push([[:space:]]|$) ]] || continue
+    rest=$(printf '%s' "$seg" | sed -E "s/.*${B}git[[:space:]]+push//")
+    words=()
+    for w in $rest; do
+      case "$w" in -*) continue ;; esac
+      w="${w#+}"; w="${w##*:}"; w="${w#refs/heads/}"
+      words+=("$w")
+    done
+    [[ ${#words[@]} -ge 1 ]] && unset 'words[0]'
+    printf '%s\n' "${words[@]+"${words[@]}"}"
+  done < <(command_segments "$1")
 }
 
 # The repository a directory belongs to, as an absolute, symlink-resolved path.
@@ -190,15 +215,19 @@ is_branch_create() {
 # `-r`/`--remotes` deletes remote-TRACKING refs, which is a local cache and not a
 # branch, so it is left alone.
 branch_delete_targets() {
-  [[ "$1" =~ ${B}git[[:space:]]+branch([[:space:]]|$) ]] || return 0
-  [[ "$1" =~ [[:space:]](-r|--remotes)([[:space:]]|$) ]] && return 0
-  [[ "$1" =~ [[:space:]](-[dD]|--delete)([[:space:]]|$) ]] || return 0
-  local rest w
-  rest=$(printf '%s' "$1" | sed -E "s/.*${B}git[[:space:]]+branch//")
-  for w in $rest; do
-    case "$w" in -*|'&&'|'||'|';'|'|') continue ;; esac
-    printf '%s\n' "${w#refs/heads/}"
-  done
+  local seg rest w
+  while IFS= read -r seg; do
+    [[ "$seg" =~ ${B}git[[:space:]]+branch([[:space:]]|$) ]] || continue
+    # Per segment, so a `-r` or a `-d` belonging to a DIFFERENT command in the same
+    # compound cannot change how this one is read.
+    [[ "$seg" =~ [[:space:]](-r|--remotes)([[:space:]]|$) ]] && continue
+    [[ "$seg" =~ [[:space:]](-[dD]|--delete)([[:space:]]|$) ]] || continue
+    rest=$(printf '%s' "$seg" | sed -E "s/.*${B}git[[:space:]]+branch//")
+    for w in $rest; do
+      case "$w" in -*) continue ;; esac
+      printf '%s\n' "${w#refs/heads/}"
+    done
+  done < <(command_segments "$1")
 }
 is_branch_delete() { [[ -n "$(branch_delete_targets "$1")" ]]; }
 
