@@ -8,11 +8,22 @@
 #
 # Adapt the parameters below, commit into the repo, install via install.sh.
 
-# {INTEGRATION_BRANCH}: .ai/flight-rules.conf when it has one (the working tree
-# is fine here — this hook reports, it gates nothing), else the value below.
-INTEGRATION_BRANCH=$(sed -n -E 's/^[[:space:]]*INTEGRATION_BRANCH[[:space:]]*=[[:space:]]*"?([^"[:space:]]+)"?.*$/\1/p' \
-  "$(git rev-parse --show-toplevel)/.ai/flight-rules.conf" 2>/dev/null | tail -1)
+# Parameters from .ai/flight-rules.conf when it has them (the working tree is fine
+# here — this hook reports, it gates nothing), else the values below.
+_conf() {
+  sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]]+)\"?.*$/\1/p" \
+    "$(git rev-parse --show-toplevel)/.ai/flight-rules.conf" 2>/dev/null | tail -1
+}
+INTEGRATION_BRANCH=$(_conf INTEGRATION_BRANCH)
 INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # project parameter: {INTEGRATION_BRANCH}
+# {PROTECTED_BRANCHES}: which branches must never be offered for deletion. This used
+# to be the literal list `main|staging`, which meant a project calling its branches
+# anything else — trunk, qa, release-2 — had them listed as "safe to delete" in the
+# note the next session is told to act on, with no layer objecting. The names a
+# project uses are its own; the conf is where they are declared.
+PROTECTED_RE=$(_conf PROTECTED_BRANCHES)
+PROTECTED_RE="${PROTECTED_RE:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
+[ "$PROTECTED_RE" = "off" ] && PROTECTED_RE='^$'
 NOTE_PATH='.claude/post-merge-note.md'  # where the next-session note is written
 CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
                                            # files for this project (keeps memory/).
@@ -53,9 +64,11 @@ MERGED_BRANCH=$(printf '%s\n' "$MERGE_MSG" | sed -nE \
 
 # All branches already merged into the integration branch
 ALL_MERGED=$(git branch --merged "$INTEGRATION_BRANCH" 2>/dev/null \
-  | grep -vE "^\*|^\s*(main|staging|$INTEGRATION_BRANCH)$" \
+  | grep -v '^\*' \
   | sed 's/^[[:space:]]*//' \
-  | grep -v '^$')
+  | grep -v '^$' \
+  | grep -vxF "$INTEGRATION_BRANCH" \
+  | grep -vE "$PROTECTED_RE")
 
 JUST_MERGED="$MERGED_BRANCH"
 PREVIOUSLY_MERGED=$(echo "$ALL_MERGED" | grep -vF "$JUST_MERGED" || true)

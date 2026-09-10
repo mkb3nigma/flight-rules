@@ -83,6 +83,22 @@ else
       *) ok "$key=$val" ;;
     esac
   done < "$CONF"
+  # NOTE_GATED_BRANCHES is the one key with no default names — unset, the gated set
+  # is "protected but not PR-only". That is the right default, and it is invisible:
+  # an owner cannot tell from the conf whether their second protected branch needs a
+  # stamp. Silence about a rule that IS in force is the "looks installed" failure
+  # this script exists to catch, so say what the derivation came to.
+  if ! grep -qE '^[[:space:]]*NOTE_GATED_BRANCHES[[:space:]]*=' "$CONF"; then
+    _prot=$(sed -n -E 's/^[[:space:]]*PROTECTED_BRANCHES[[:space:]]*=[[:space:]]*"?([^"]*)"?[[:space:]]*$/\1/p' "$CONF" | tail -1)
+    _pronly=$(sed -n -E 's/^[[:space:]]*PR_ONLY_BRANCHES[[:space:]]*=[[:space:]]*"?([^"]*)"?[[:space:]]*$/\1/p' "$CONF" | tail -1)
+    if [[ -z "$_prot" || "$_prot" == "off" ]]; then
+      ok "NOTE_GATED_BRANCHES unset — nothing is note-gated (no protected set)"
+    elif [[ "$_prot" == "$_pronly" ]]; then
+      ok "NOTE_GATED_BRANCHES unset — nothing is note-gated (every protected branch is PR-only)"
+    else
+      ok "NOTE_GATED_BRANCHES unset — derived: protected ($_prot) minus PR-only ($_pronly) needs a pre-merge-check note"
+    fi
+  fi
 fi
 
 # ── 4. The guard is wired once, not twice ─────────────────────────────────────

@@ -445,6 +445,46 @@ check "bare force-push from main"         deny  main 'git push --force'
 check "bare force-push with -f"           deny  main 'git push -f'
 check "force-push to main from main"      deny  main 'git push --force origin main'
 check "--mirror from main names no ref"   deny  main 'git push --mirror origin'
+
+echo "Deleting a protected branch locally is not cleanup:"
+# Regression 2026-09-10: post-merge listed protected branches under "safe to delete"
+# in the note the next session is told to act on, and every layer allowed the command.
+# Forbidden 5 was deliberately scoped to the remote (a local ref is recoverable) —
+# that reasoning stops holding once the tooling recommends the command.
+check "branch -d a protected branch"     deny  feature/x 'git branch -d main'
+check "branch -D a protected branch"     deny  feature/x 'git branch -D main'
+check "branch --delete a protected"      deny  feature/x 'git branch --delete main'
+check "branch -D with a custom set"      deny  feature/x 'git branch -D trunk' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk|qa)$'
+check "branch -d qa with a custom set"   deny  feature/x 'git branch -d qa' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk|qa)$'
+check "delete several, one protected"    deny  feature/x 'git branch -d feature/old main'
+check "branch -d from the protected one" deny  main      'git branch -d main'
+# ...without breaking the cleanup step the workflow actually prescribes
+check "branch -d a feature branch"       allow main      'git branch -d feature/old'
+check "branch -D a feature branch"       allow main      'git branch -D feature/old'
+check "branch -d two feature branches"   allow main      'git branch -d feature/a feature/b'
+check "listing branches"                 allow main      'git branch'
+check "listing merged branches"          allow main      'git branch --merged main'
+check "creating a branch (not a delete)" allow main      'git branch feature/new'
+check "renaming is not deleting"         allow main      'git branch -m old new'
+# `-r` deletes remote-TRACKING refs — a local cache, not a branch.
+check "branch -dr origin/main (cache)"   allow main      'git branch -dr origin/main'
+check "branch -d -r origin/main"         allow main      'git branch -d -r origin/main'
+check "guard off lets deletion through"  allow feature/x 'git branch -D main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=off
+# The block must name the branch it saved, not the one you are standing on.
+D=$(make_repo feature/x)
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<'{"tool_input":{"command":"git branch -D main"}}' 2>/dev/null)
+if grep -qE 'protected branch [\\"]*main' <<<"$OUT" \
+   && grep -q 'Leave it alone' <<<"$OUT" \
+   && ! grep -q 'Create a feature worktree instead' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ the block names the deleted branch, and does not tell you to make a worktree\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ the block is wrong for a deletion\n'
+fi
+rm -rf "$D"
 echo "Missing JSON parser must fail loud, not silent:"
 # Regression: with jq absent the command parsed as "" and the hook exited 0 —
 # the guard switched itself off without a word.

@@ -41,7 +41,14 @@
 
 set -euo pipefail
 
-DEFAULT_NOTE_GATED='^(dev|staging)$'
+# NOTE_GATED_BRANCHES has no default branch NAMES. It used to default to
+# `^(dev|staging)$`, which silently decided that a project's second protected branch
+# was called one of those two: a project using `trunk`/`qa`, or protecting a
+# long-lived feature branch, got no note gate at all and nothing said so. The set is
+# derivable — a branch that is protected but does NOT move only through a PR is
+# exactly the one where a local merge is allowed and should carry a stamp — so it is
+# derived rather than named. An explicit NOTE_GATED_BRANCHES still wins.
+DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
 DEFAULT_PR_ONLY='^main$'
 CONF_PATH='.ai/flight-rules.conf'   # repo-relative
 
@@ -56,10 +63,11 @@ read_conf_at_head() {
     | tail -1
 }
 
-PROTECTED_RE="${FLIGHT_RULES_NOTE_GATED_BRANCHES:-$(read_conf_at_head NOTE_GATED_BRANCHES "$CONF_PATH")}"
-PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_NOTE_GATED}"
+NOTE_GATED_RE="${FLIGHT_RULES_NOTE_GATED_BRANCHES:-$(read_conf_at_head NOTE_GATED_BRANCHES "$CONF_PATH")}"
 PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
+PROTECTED_RE_CONF="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf_at_head PROTECTED_BRANCHES "$CONF_PATH")}"
+PROTECTED_RE_CONF="${PROTECTED_RE_CONF:-$DEFAULT_PROTECTED}"
 
 CURRENT_BRANCH=$(git branch --show-current)
 
@@ -113,7 +121,18 @@ if [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE && -f "$GIT_DIR/SQUASH_MSG" ]]; then
 fi
 
 # --- Note gate for note-gated branches ----------------------------------------
-[[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] || exit 0
+# Explicit configuration wins. With none, the gated set is "protected but not
+# PR-only": a PR-only branch takes no local merge at all (the ref gate refuses it),
+# so the branches left needing a stamp are exactly the other protected ones —
+# whatever this project calls them.
+if [ -n "$NOTE_GATED_RE" ]; then
+    [ "$NOTE_GATED_RE" = "off" ] && exit 0
+    [[ "$CURRENT_BRANCH" =~ $NOTE_GATED_RE ]] || exit 0
+else
+    [ "$PROTECTED_RE_CONF" = "off" ] && exit 0
+    [[ "$CURRENT_BRANCH" =~ $PROTECTED_RE_CONF ]] || exit 0
+    [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]] && exit 0
+fi
 
 # MERGE_HEAD present ⇒ a merge is in progress. Absent ⇒ ordinary commit, nothing to
 # gate.
