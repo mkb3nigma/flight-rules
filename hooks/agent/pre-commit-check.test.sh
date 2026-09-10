@@ -44,6 +44,27 @@ check() {
   rm -rf "$dir"
 }
 
+# check_wt <description> <expect> <main-checkout branch> <worktree branch> <command>
+# The same assertion, but run from a worktree at .ai/worktrees/x — where the
+# workflow says all work happens, and where the branch policy used to switch
+# itself off because a worktree's toplevel is never CLAUDE_PROJECT_DIR.
+check_wt() {
+  local desc="$1" expect="$2" branch="$3" wt_branch="$4" cmd="$5"
+  local dir out got
+  dir=$(make_repo "$branch")
+  git -C "$dir" worktree add -q "$dir/.ai/worktrees/x" -b "$wt_branch" >/dev/null 2>&1
+  out=$(cd "$dir/.ai/worktrees/x" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
+  fi
+  git -C "$dir" worktree remove --force "$dir/.ai/worktrees/x" >/dev/null 2>&1
+  rm -rf "$dir"
+}
+
 echo "Protected branch — destructive commands must be blocked:"
 check "git rm on dev"                    deny  dev  'git rm .ai/rules/x.md'
 check "git rm with -C on dev"            deny  dev  "git -C . rm f.txt"
@@ -377,6 +398,53 @@ check "push --mirror"                     deny  feature/x 'git push --mirror ori
 check "push --delete a feature branch"    allow feature/x 'git push --delete origin feature/old'
 check "push origin main:main (no force)"  allow feature/x 'git push origin main:main'
 
+
+echo "The branch policy applies inside this project's own worktrees:"
+# Regression: the project-scoping compared `--show-toplevel` against
+# CLAUDE_PROJECT_DIR, and a worktree's toplevel is $WORKTREE_DIR/<name> by
+# construction — so the whole policy below switched itself off inside every
+# worktree, which is where the workflow says all work happens. Probed 2026-09-10:
+# force-push to main, remote deletion of main and `checkout -b` were all allowed
+# from a worktree while being denied from the main checkout.
+check_wt "force-push to main from a worktree"   deny  scratch feature/x 'git push --force origin main'
+check_wt "remote-delete main from a worktree"   deny  scratch feature/x 'git push --delete origin main'
+check_wt "empty-source push from a worktree"    deny  scratch feature/x 'git push origin :main'
+check_wt "--mirror from a worktree"             deny  scratch feature/x 'git push --mirror origin'
+check_wt "checkout -b from a worktree"          deny  scratch feature/x 'git checkout -b feature/y'
+# A worktree checked out ON the protected branch: commits and destructive
+# commands there are the plain case, and were allowed too.
+check_wt "commit on main from a worktree"       deny  scratch main 'git commit -m x'
+check_wt "reset --hard on main from a worktree" deny  scratch main 'git reset --hard HEAD~1'
+# What the scoping is actually for must still hold: ordinary feature work in a
+# worktree is allowed, and a sibling repo is still none of our business.
+check_wt "commit on a feature branch in a worktree" allow scratch feature/x 'git commit -m x'
+check_wt "push a feature branch from a worktree"    allow scratch feature/x 'git push --force origin feature/x'
+
+D=$(make_repo main); O=$(make_repo main)
+git -C "$O" worktree add -q "$O/.ai/worktrees/x" -b feature/x >/dev/null 2>&1
+OUT=$(cd "$O/.ai/worktrees/x" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<'{"tool_input":{"command":"git push --force origin main"}}' 2>/dev/null)
+if grep -q '"deny"' <<<"$OUT"; then
+  FAIL=$((FAIL+1)); printf '  ❌ a sibling repo'"'"'s worktree was policed as ours\n'
+else
+  PASS=$((PASS+1)); printf '  ✅ a sibling repo'"'"'s worktree is still not ours to police\n'
+fi
+git -C "$O" worktree remove --force "$O/.ai/worktrees/x" >/dev/null 2>&1
+rm -rf "$D" "$O"
+
+echo "A push names its target; the branch you stand on is only the fallback:"
+# Regression: IS_PROTECTED was set from CURRENT_BRANCH for every action, so
+# deleting a merged feature branch's remote ref — post-merge cleanup, which the
+# workflow has you do FROM main — was blocked. Blocked a real cleanup 2026-09-10.
+check "delete a feature ref from main"    allow main 'git push --delete origin docs/rules-draft'
+check "delete a feature ref with -d"      allow main 'git push -d origin feature/old'
+check "force-push a feature ref from main" allow main 'git push --force origin feature/old'
+check "empty-source push of a feature ref" allow main 'git push origin :feature/old'
+# The fallback still stands when the push names no ref of its own.
+check "bare force-push from main"         deny  main 'git push --force'
+check "bare force-push with -f"           deny  main 'git push -f'
+check "force-push to main from main"      deny  main 'git push --force origin main'
+check "--mirror from main names no ref"   deny  main 'git push --mirror origin'
 echo "Missing JSON parser must fail loud, not silent:"
 # Regression: with jq absent the command parsed as "" and the hook exited 0 —
 # the guard switched itself off without a word.

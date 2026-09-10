@@ -76,9 +76,14 @@ Guards that fire on the assistant's own events, before git ever runs:
   `checkout <rev> -- <path>`, `switch --discard-changes`, `rebase` (not its
   `--abort`/`--continue`), `stash drop|clear`. From any branch it denies a push that
   force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
-  `+refspec`, `--delete`, `origin :main`, `--mirror`). On **any** branch of the project
+  `+refspec`, `--delete`, `origin :main`, `--mirror`); a push that names some other
+  ref is judged on that ref, not on the branch you happen to stand on, so post-merge
+  cleanup from the protected branch is not blocked. On **any** branch of the project
   it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
-  created as worktrees (workflow rule 6), and the block shows the command.
+  created as worktrees (workflow rule 6), and the block shows the command. "The
+  project" is its main checkout *and every worktree of it* — they share one
+  `--git-common-dir`, which is how a worktree is told from an unrelated repo whose
+  branches are none of this project's business.
   `git -C`/`-c` are normalised
   away first, the *last* `cd` decides the target repo, and a merge in progress is
   exempt so conflicts can be resolved.
