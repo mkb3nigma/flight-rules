@@ -41,9 +41,9 @@ one channel git hooks, agent hooks and skills all share.
   step: a **conflicted** merge stops before the merge commit and never reaches this
   hook, which is why `reference-transaction` below is the actual guarantee and this
   is the early, specific message. Sync with `git pull --ff-only origin main`.
-- **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`,
-  default `dev`/`staging`) require a passing `pre-merge-check` note on the incoming
-  commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
+- **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`; unset,
+  the set is *protected but not PR-only*) require a passing `pre-merge-check` note on the
+  incoming commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
   modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
   lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
   runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates
