@@ -65,10 +65,19 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     script header comments) for every name the diff renames or removes. ❌ if a doc
     still describes the old behaviour; ⚠️ if a behaviour change touched no doc and the
     PR does not say why.
+18. **Rules earn their place** — for every item the diff adds to or widens in a rules
+    file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
+    incident or verified gap it answers, what goes wrong without it, and how it is
+    enforced — hook, or skill with check number; "advisory" only with the reason it
+    cannot be checked and the release it expires at. ❌ if any of the three is
+    missing; ⚠️ if the diff was not put through adversarial review (`/dg`) with the
+    verdict and each finding's disposition in the PR body. A deletion or tightening
+    skips those but must say what it drops and where that is now covered.
 
 ## Report
 
-Numbered ✅/⚠️/❌ summary table, then:
+Numbered ✅/⚠️/❌ summary table — every ✅ that ran something names the command and its
+last line of output, so "passed" is evidence, not a claim — then:
 - Any ❌ → `Result: NOT READY` — do NOT stamp.
 - Clean → `Result: ✅ READY TO MERGE` and stamp:
   ```bash
