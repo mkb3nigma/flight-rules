@@ -99,8 +99,17 @@ NORM=$(printf '%s' "$COMMAND" | sed -E 's/git([[:space:]]+-(C|c)[[:space:]]+[^[:
 # so anything that cannot continue a command word counts as a boundary. Excluding
 # alnum/_/-/. keeps `mygit`, `legit` and `git-foo` from matching.
 B='(^|[^[:alnum:]_.-])'
+# The token that ENDS a git command is not always whitespace. A subshell closes with
+# `)`, a brace group / `if` body / loop body ends with `;`, a background job with `&`,
+# and a pipeline with `|`. Every matcher below used `${E}` as its trailing
+# boundary, so each one silently stopped matching in those shapes: on 2026-09-10,
+# `git rebase`, `git push --mirror`, `git switch -f`, `git stash drop|clear`,
+# `git checkout --` and `git restore` were all denied bare and ALLOWED inside `( … )`
+# or `{ …; }` on a protected branch. Found by crossing every wrapper with every core
+# rather than testing each once.
+E='([[:space:];)&|]|$)'
 
-is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit([[:space:]]|$) ]]; }
+is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
 
 # Does this command destroy work in the tree without going through a commit?
 # Gating only on `git commit` leaves the branch policy bypassable: `git rm`,
@@ -109,34 +118,34 @@ is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit([[:space:]]|$) ]]; }
 # follows. `git clean -n` and a bare `git checkout <branch>` are not destructive
 # and stay allowed.
 is_destructive() {
-  [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)${E} ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+reset[[:space:]]+.*--(hard|merge) ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+clean[[:space:]]+.*-[a-zA-Z]*f ]] && return 0
-  [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+(--|\.)([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+(--|\.)${E} ]] && return 0
   # `git checkout <rev> -- <path>` overwrites the path from <rev>; `git switch
   # --discard-changes`/`-f` throws local edits away; `git rebase` rewrites the
   # branch in place (its --abort/--quit/--continue are the way OUT of one and stay
   # allowed); `git stash drop|clear` deletes the only copy of stashed work.
-  [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+[^[:space:]-][^[:space:]]*[[:space:]]+--([[:space:]]|$) ]] && return 0
-  [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+.*(--discard-changes|--force|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$) ]] && return 0
-  if [[ "$1" =~ ${B}git[[:space:]]+rebase([[:space:]]|$) ]]; then
-    [[ "$1" =~ ${B}git[[:space:]]+rebase[[:space:]]+.*--(abort|quit|continue|skip)([[:space:]]|$) ]] || return 0
+  [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+[^[:space:]-][^[:space:]]*[[:space:]]+--${E} ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+.*(--discard-changes|--force|-[a-zA-Z]*f[a-zA-Z]*)${E} ]] && return 0
+  if [[ "$1" =~ ${B}git[[:space:]]+rebase${E} ]]; then
+    [[ "$1" =~ ${B}git[[:space:]]+rebase[[:space:]]+.*--(abort|quit|continue|skip)${E} ]] || return 0
   fi
-  [[ "$1" =~ ${B}git[[:space:]]+stash[[:space:]]+(drop|clear)([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+stash[[:space:]]+(drop|clear)${E} ]] && return 0
   return 1
 }
 
 # A force-push rewrites the branch on the remote for everyone. The workflow rule
 # ("never force-push a protected branch") was advisory until this matcher existed.
 is_force_push() {
-  [[ "$1" =~ ${B}git[[:space:]]+push([[:space:]]|$) ]] || return 1
-  [[ "$1" =~ [[:space:]](-[a-zA-Z]*f[a-zA-Z]*|--force|--force-with-lease(=[^[:space:]]*)?)([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+push${E} ]] || return 1
+  [[ "$1" =~ [[:space:]](-[a-zA-Z]*f[a-zA-Z]*|--force|--force-with-lease(=[^[:space:]]*)?)${E} ]] && return 0
   # A leading "+" on a refspec (`+src:dst`) forces that one ref without any flag.
   [[ "$1" =~ [[:space:]]\+[^[:space:]]*:[^[:space:]]+ ]] && return 0
   # Deleting a branch on the remote is the most destructive push of all: `--delete`,
   # `-d`, an empty-source refspec (`origin :main`), or `--mirror` (which deletes
   # everything the remote has that you do not).
-  [[ "$1" =~ [[:space:]](--delete|-d|--mirror)([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ [[:space:]](--delete|-d|--mirror)${E} ]] && return 0
   [[ "$1" =~ [[:space:]]:[^[:space:]]+ ]]
 }
 # One simple command per line. Every target parser below runs per SEGMENT, because a
@@ -169,7 +178,7 @@ command_segments() {
 push_targets() {
   local seg rest w words
   while IFS= read -r seg; do
-    [[ "$seg" =~ ${B}git[[:space:]]+push([[:space:]]|$) ]] || continue
+    [[ "$seg" =~ ${B}git[[:space:]]+push${E} ]] || continue
     rest=$(printf '%s' "$seg" | sed -E "s/.*${B}git[[:space:]]+push//")
     words=()
     for w in $rest; do
@@ -202,8 +211,8 @@ common_repo_dir() {
 # EVERY branch of the project, not just protected ones. `git worktree add … -b`
 # is the sanctioned form and contains neither verb.
 is_branch_create() {
-  [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+([^[:space:]]+[[:space:]]+)*-[bB]([[:space:]]|$) ]] && return 0
-  [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[cC]|--create|--force-create)([[:space:]]|$) ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+([^[:space:]]+[[:space:]]+)*-[bB]${E} ]] && return 0
+  [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[cC]|--create|--force-create)${E} ]] && return 0
   return 1
 }
 
@@ -217,11 +226,11 @@ is_branch_create() {
 branch_delete_targets() {
   local seg rest w
   while IFS= read -r seg; do
-    [[ "$seg" =~ ${B}git[[:space:]]+branch([[:space:]]|$) ]] || continue
+    [[ "$seg" =~ ${B}git[[:space:]]+branch${E} ]] || continue
     # Per segment, so a `-r` or a `-d` belonging to a DIFFERENT command in the same
     # compound cannot change how this one is read.
-    [[ "$seg" =~ [[:space:]](-r|--remotes)([[:space:]]|$) ]] && continue
-    [[ "$seg" =~ [[:space:]](-[dD]|--delete)([[:space:]]|$) ]] || continue
+    [[ "$seg" =~ [[:space:]](-r|--remotes)${E} ]] && continue
+    [[ "$seg" =~ [[:space:]](-[dD]|--delete)${E} ]] || continue
     rest=$(printf '%s' "$seg" | sed -E "s/.*${B}git[[:space:]]+branch//")
     for w in $rest; do
       case "$w" in -*) continue ;; esac
@@ -321,7 +330,7 @@ if [[ "$GUARD_OFF" == "0" ]]; then
       [[ -n "$t" && "$t" =~ $PROTECTED_RE ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="$t"; }
     done <<<"$PUSH_TARGETS"
     # `--mirror` names no branch and touches all of them, protected ones included.
-    [[ "$NORM" =~ [[:space:]]--mirror([[:space:]]|$) ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="every branch (--mirror)"; }
+    [[ "$NORM" =~ [[:space:]]--mirror${E} ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="every branch (--mirror)"; }
   fi
 fi
 shopt -u nocasematch
