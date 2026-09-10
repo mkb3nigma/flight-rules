@@ -54,6 +54,16 @@ one channel git hooks, agent hooks and skills all share.
   when origin has it — a forced local `main` or a stale `upstream/main` exempts nothing.
   The same hook refuses the commit that would complete a **squash merge** into a
   PR-only branch, which creates no merge commit and so never fires `pre-merge-commit`.
+  **A passing note is not consent.** The agent writes that note itself, so a stamped
+  merge nobody asked for used to land with a green `✅ Pre-merge check verified` —
+  measured 2026-09-10, no warning of any kind. The merge is now refused unless it says
+  who wanted it: `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`. An agent *can* set that
+  variable itself — nothing inside its own tool calls distinguishes "the user asked"
+  from "the agent decided" — so this does not claim proof. It makes the unbidden merge
+  a deliberate, named act rather than a silent one, and writes the outcome into the
+  merge commit as a `Merge-authorisation:` trailer, which survives and is greppable.
+  `MERGE_NEEDS_INSTRUCTION=off` drops the check; that is recorded in the trailer too,
+  so history still distinguishes the two.
   Tests: `merge-gate.test.sh` (no arguments, no network).
 - **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
   `main` rewrites it with no merge commit, so nothing else fires.
@@ -145,6 +155,7 @@ repository cannot execute code through it. `#` comments, blank lines, spaces aro
 | Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables the branch policy (secret scan stays on). |
 | PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. |
+| Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
 

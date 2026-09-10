@@ -35,14 +35,17 @@ say "$?" "1" "unstamped merge into dev is blocked"
 git -C "$D" merge --abort 2>/dev/null
 rm -rf "$D"
 
-# 2. Stamped merge into dev must be ALLOWED.
+# 2. Stamped AND authorised merge into dev must be ALLOWED.
+# The authorisation half arrived 2026-09-10. Before it, this case read "stamped merge
+# into dev is allowed" and passed with no authorisation at all — which was the hole:
+# the agent stamps its own note, so that was a green tick on a merge nobody asked for.
 D=$(mkrepo)
 git -C "$D" checkout -q -b feature/x dev
 echo change > "$D/f2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: x"
 git -C "$D" notes --ref=pre-merge-check add -f -m "passed: 2026-08-01T00:00:00Z branch:feature/x" HEAD
 git -C "$D" checkout -q dev
-git -C "$D" merge --no-ff feature/x -m "merge" >/dev/null 2>&1
-say "$?" "0" "stamped merge into dev is allowed"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-ff feature/x -m "merge" >/dev/null 2>&1
+say "$?" "0" "stamped AND authorised merge into dev is allowed"
 rm -rf "$D"
 
 # 3. An ordinary (non-merge) commit on dev must not be gated.
@@ -307,6 +310,89 @@ else
   PASS=$((PASS+1)); printf '  ✅ an unprotected branch is not gated\n'
 fi
 rm -rf "$NG"
+
+echo "A stamped merge still has to say who asked for it:"
+# Measured 2026-09-10: with only the note gate, an agent stamped its own note, merged
+# into a protected branch nobody had asked about, and the hook printed "✅ Pre-merge
+# check verified". The advisory produced no warning of any kind — a green tick where
+# the norm was violated. The note proves a check ran, not that a merge was wanted.
+mkauth() {  # $1 = extra conf line; echoes the repo dir, on dev, feature/x stamped
+  local d; d=$(mkrepo)
+  { printf 'PROTECTED_BRANCHES=^(main|dev)$\nPR_ONLY_BRANCHES=^main$\nINTEGRATION_BRANCH=dev\n'
+    [ -n "${1:-}" ] && printf '%s\n' "$1"; } > "$d/.ai/flight-rules.conf"
+  git -C "$d" add -A >/dev/null 2>&1; git -C "$d" commit -qm "chore: conf" >/dev/null 2>&1
+  # dev is branched before the conf commit in mkrepo, and the hook reads the conf
+  # from HEAD of the MERGE TARGET — so dev must actually carry it.
+  git -C "$d" branch -f dev main >/dev/null 2>&1
+  git -C "$d" checkout -q dev 2>/dev/null
+  git -C "$d" checkout -qb feature/x 2>/dev/null
+  echo x > "$d/x.txt"; git -C "$d" add -A >/dev/null 2>&1
+  git -C "$d" commit -qm "feature: x" >/dev/null 2>&1
+  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-09-10T00:00:00Z branch:feature/x" HEAD >/dev/null 2>&1
+  git -C "$d" checkout -q dev 2>/dev/null
+  printf '%s' "$d"
+}
+
+D=$(mkauth)
+BEFORE=$(git -C "$D" rev-parse dev)
+OUT=$(git -C "$D" merge --no-edit feature/x 2>&1)
+grep -q 'WHO ASKED FOR THIS MERGE' <<<"$OUT"
+say "$?" "0" "a stamped but unauthorised merge is blocked"
+grep -q 'FLIGHT_RULES_MERGE_AUTHORISED=1' <<<"$OUT"
+say "$?" "0" "…and the block names the way to proceed"
+[ "$(git -C "$D" rev-parse dev)" = "$BEFORE" ]
+say "$?" "0" "…and dev did not move"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+D=$(mkauth)
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: explicit'
+say "$?" "0" "an authorised merge lands and records it in the commit"
+rm -rf "$D"
+
+D=$(mkauth)
+FLIGHT_RULES_MERGE_AUTHORISED=0 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+[ "$(git -C "$D" log -1 --pretty=%s)" != "Merge branch 'feature/x' into dev" ]
+say "$?" "0" "…=0 does not count as authorisation"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+
+D=$(mkauth "MERGE_NEEDS_INSTRUCTION=off")
+git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: not required'
+say "$?" "0" "the project opt-out works, and history records that it was used"
+rm -rf "$D"
+
+# The trailer must not stack if the message is rewritten.
+D=$(mkauth)
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" commit -q --amend --no-edit >/dev/null 2>&1
+N=$(git -C "$D" log -1 --pretty=%B | grep -c '^Merge-authorisation:')
+say "$N" "1" "the trailer is not duplicated by an amend"
+rm -rf "$D"
+
+# What must NOT change.
+D=$(mkauth)
+git -C "$D" checkout -q main 2>/dev/null
+echo m > "$D/m.txt"; git -C "$D" add -A >/dev/null 2>&1; git -C "$D" commit -qm "chore: on main" >/dev/null 2>&1
+git -C "$D" checkout -q dev 2>/dev/null
+OUT=$(git -C "$D" merge --no-edit main 2>&1)
+grep -q 'Back-merge' <<<"$OUT"
+say "$?" "0" "a back-merge of a PR-only branch still needs no authorisation"
+rm -rf "$D"
+
+D=$(mkauth)
+echo z > "$D/z.txt"; git -C "$D" add -A >/dev/null 2>&1
+git -C "$D" commit -qm "chore: ordinary" >/dev/null 2>&1
+git -C "$D" log -1 --pretty=%B | grep -q 'Merge-authorisation'
+say "$?" "1" "an ordinary commit on a protected branch gets no trailer"
+rm -rf "$D"
+
+D=$(mkauth)
+git -C "$D" checkout -qb scratch 2>/dev/null
+git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+git -C "$D" log -1 --pretty=%B | grep -q 'Merge-authorisation'
+say "$?" "1" "merging into an unprotected branch is not gated at all"
+rm -rf "$D"
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
