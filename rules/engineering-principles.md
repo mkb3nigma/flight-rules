@@ -76,3 +76,13 @@
 - Watch for the reflex to defend whatever was just proposed — or whatever you already
   typed. Rationalizing a conclusion is not the same as reaching one
 - Sunk work is no reason to keep a bad idea: back it out and say what changed your mind
+
+## 7. Report So It Can Be Acted On
+
+**Structure for the reader's decision, not for your narration.**
+
+- Lead with what needs deciding and your recommendation; evidence comes after
+- Three or more findings is a register — one row each, stable IDs, severity. Issues
+  woven through paragraphs cannot be tracked back to the sentence that raised them
+- Separate what you ran from what you concluded, and label which is which
+- Prose is for a single point

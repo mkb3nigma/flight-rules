@@ -89,9 +89,19 @@ a findings table: `| # | Finding | Dimension | Severity | Tag | Notes |`.
 
 ## Output Format
 
+Every stage reports as a register, not as prose (`engineering-principles.md` §7) — the
+pre-review included, which is otherwise the one stage with no prescribed shape and the
+place a long verdict turns back into paragraphs.
+
 ```markdown
 ## Review: <subject>
 > Pre-review: ✅ included | ⚠️ unavailable — skipped
+
+## Decisions waiting
+| # | Decision | Recommendation |
+
+### Pre-review findings
+| ID | Finding | Severity | Verified? |
 
 ### Round N — Dinesh / Gilfoyle
 **BANTER:** …
@@ -104,6 +114,10 @@ a findings table: `| # | Finding | Dimension | Severity | Tag | Notes |`.
 ### Pre-review-only (neither persona raised independently)
 ### Recommended Actions
 ```
+
+**Verified?** distinguishes a finding the reviewer reproduced by running something from
+one it reasoned to. A reader deciding what to fix first needs that column more than any
+other, and a reviewer who cannot fill it has said something weaker than it sounds.
 
 ## Review Domains
 
