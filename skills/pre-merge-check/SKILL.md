@@ -67,12 +67,17 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     PR does not say why.
 18. **Rules earn their place** — for every item the diff adds to or widens in a rules
     file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
-    incident or verified gap it answers, what goes wrong without it, and how it is
-    enforced — hook, or skill with check number; "advisory" only with the reason it
-    cannot be checked and the release it expires at. ❌ if any of the three is
-    missing; ⚠️ if the diff was not put through adversarial review (`/dg`) with the
-    verdict and each finding's disposition in the PR body. A deletion or tightening
-    skips those but must say what it drops and where that is now covered.
+    warrant, what goes wrong without it, and how it is enforced. The warrant is an
+    event (commit/PR/sha/date/probe — a private-repo sha and date counts), an
+    `UPSTREAMS.md`-pinned source the item was adapted from, or the failure description
+    itself declared as testimony. Enforcement is a hook, or a skill with check number;
+    "advisory" only with the reason it cannot be checked and the release it expires at.
+    ❌ if any of the three is missing; ⚠️ if the diff was not put through adversarial
+    review (`/dg`) with the verdict and each finding's disposition in the PR body. A
+    deletion or tightening skips those but must say what it drops and where that is now
+    covered. **Folds from an upstream are additions**: `/upstream-check` step 4 folds by
+    hand into `rules/` as well as `skills/`, and an adopted paragraph costs a reader
+    exactly what an authored one does. Its warrant is the pin.
 
 ## Report
 

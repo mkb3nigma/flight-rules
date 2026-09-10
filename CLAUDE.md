@@ -46,8 +46,19 @@ happens in the same commit, because they are the same file.
 in the repo to dump advice that costs every reader and helps none. A change there is
 checked harder than code. Each added or widened item must pass all four, in the PR:
 
-1. **Names the incident or the verified gap** it answers — a commit, PR, date, or a
-   probe that showed the hole. "Best practice" is not an incident.
+1. **Names the warrant** — the reason to believe the failure in point 2 is real rather
+   than plausible. One of:
+   **(a) an event** — a commit, PR, sha, date, or a probe that showed the hole. It does
+   not have to be public: a private-repo sha and date is a citation (`ATTRIBUTIONS.md`
+   already carries one).
+   **(b) an upstream** this playbook adapts from, with an `UPSTREAMS.md` row pinned at
+   the ref actually reviewed. This is the strongest warrant in the corpus, because a
+   reader can check it without trusting the author — which an incident from the
+   author's own session never is.
+   **(c) the failure description itself**, where neither exists — a rule learned
+   somewhere that produced no artifact. Say so explicitly, so a reader knows the
+   evidence is testimony and can weigh it as such.
+   Never sufficient: a benefit with no failure attached, or "best practice".
 2. **Says what goes wrong without it**, concretely. If the honest answer is "nothing
    much", it does not go in.
 3. **Says how it is enforced** — a hook, or a skill with the check number. "Advisory"
@@ -65,8 +76,9 @@ is injected into every session, so it is where an unearned line costs the most.
 
 ## When editing a hook
 
-- Run both suites before and after; add a case for every gap you close. A guard that
-  silently stops matching is worse than none — the tests exist to make that loud.
+- Run every suite in `{TEST_COMMANDS}` before and after; add a case for every gap you
+  close. A guard that silently stops matching is worse than none — the tests exist to
+  make that loud.
 - Verify against the running hook, not by reading the regex. Several past gaps were
   invisible on paper (column-zero secrets, `git -C … commit`, macOS `grep -P`).
 - macOS ships BSD `grep`, `sed` and bash 3.2. CI runs the suites on both macOS and
