@@ -76,8 +76,9 @@ is injected into every session, so it is where an unearned line costs the most.
 
 ## When editing a hook
 
-- Run both suites before and after; add a case for every gap you close. A guard that
-  silently stops matching is worse than none — the tests exist to make that loud.
+- Run every suite in `{TEST_COMMANDS}` before and after; add a case for every gap you
+  close. A guard that silently stops matching is worse than none — the tests exist to
+  make that loud.
 - Verify against the running hook, not by reading the regex. Several past gaps were
   invisible on paper (column-zero secrets, `git -C … commit`, macOS `grep -P`).
 - macOS ships BSD `grep`, `sed` and bash 3.2. CI runs the suites on both macOS and
