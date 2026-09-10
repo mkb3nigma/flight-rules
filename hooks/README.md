@@ -41,9 +41,9 @@ one channel git hooks, agent hooks and skills all share.
   step: a **conflicted** merge stops before the merge commit and never reaches this
   hook, which is why `reference-transaction` below is the actual guarantee and this
   is the early, specific message. Sync with `git pull --ff-only origin main`.
-- **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`,
-  default `dev`/`staging`) require a passing `pre-merge-check` note on the incoming
-  commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
+- **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`; unset,
+  the set is *protected but not PR-only*) require a passing `pre-merge-check` note on the
+  incoming commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
   modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
   lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
   runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates
@@ -107,7 +107,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
   `+refspec`, `--delete`, `origin :main`, `--mirror`); a push that names some other
   ref is judged on that ref, not on the branch you happen to stand on, so post-merge
-  cleanup from the protected branch is not blocked. On **any** branch of the project
+  cleanup from the protected branch is not blocked. It also denies `git branch -d`/`-D`
+  of a protected branch — local deletion, which `post-merge` was found recommending.
+  **Targets are read per simple command**, not per command string: a greedy match found
+  only the last `git push`/`git branch` in a compound, so a protected target in an
+  earlier one escaped (`git branch -d main && git branch -d feature/x` was allowed), and reading
+  past the end of that command turned a later word into a target (a following
+  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On **any** branch of the project
   it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
   created as worktrees (workflow rule 6), and the block shows the command. "The
   project" is its main checkout *and every worktree of it* — they share one
@@ -219,15 +225,24 @@ cloned repo execute code inside the hook.
 
 ### Wiring (Claude Code)
 
-**With the plugin, nothing to wire** — `hooks/hooks.json` registers both agent hooks;
-pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep the
-scripts in `.ai/hooks/agent/` and point `.claude/settings.json` at them:
+**With the plugin, nothing to wire** — `hooks/hooks.json` registers all three agent
+hooks; pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep
+the scripts in `.ai/hooks/` and point `.claude/settings.json` at them:
+
+There are **three**, and each path used to ship a different two. Until 2026-09-10 the
+plugin registered the principles injector and the guard but not `session-start.sh`, so
+plugin users got no install health check; the snippet below registered
+`session-start.sh` and the guard but not the injector, so hand-wired users got **no
+rules injected at all** — half of what this playbook does. Register all three.
 
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command",
-      "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\"'" }] }],
+    "SessionStart": [{ "hooks": [
+      { "type": "command",
+        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/session-start-rules.sh\"'" },
+      { "type": "command",
+        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\"'" }] }],
     "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command",
       "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/pre-commit-check.sh\"'" }] }]
   }
