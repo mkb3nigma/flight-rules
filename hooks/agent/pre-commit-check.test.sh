@@ -515,6 +515,125 @@ check "delete main alone"                   deny  feature/x 'git branch -d main'
 check "force-push main alone"               deny  feature/x 'git push --force origin main'
 check "delete a feature alone"              allow main      'git branch -d feature/old'
 check "push a feature alone"                allow main      'git push --force origin feature/x'
+
+echo "Shape coverage — every wrapper crossed with every dangerous core:"
+# The cases above test each wrapper against ONE core and each core against ONE wrapper.
+# Every guard bug found on 2026-09-10 lived in a combination neither axis covered:
+#   - `git branch -d main && git branch -d feature/x` — a bypass; the parser's greedy
+#     match saw only the last command (#30).
+#   - `git branch -d feature/old` + a following `echo "=== main now ==="` — a false
+#     positive that blocked real cleanup (#30).
+#   - a bare `git branch -d main` broke and no case noticed, because every case covering
+#     it was written single-line, which is the shape the bug hid in (#30, caught by hand).
+# So the cross product is generated rather than enumerated. The invariant is simple:
+# WRAPPING OR COMPOSING A COMMAND MUST NOT CHANGE THE VERDICT ON ITS DANGEROUS PART.
+#
+# The repos are built once and reused: the guard is a pure decision over (cwd, command),
+# and 150+ fresh clones would dominate the suite's runtime for no extra coverage.
+GEN_MAIN=$(make_repo main)
+GEN_FEAT=$(make_repo feature/x)
+
+gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
+  local expect="$1" where="$2" wname="$3" cmd="$4" dir out got
+  [ "$where" = main ] && dir="$GEN_MAIN" || dir="$GEN_FEAT"
+  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [ "$got" = "$expect" ]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    printf '  ❌ [%s] %s\n     %s\n     expected %s, got %s\n' "$where" "$wname" "$cmd" "$expect" "$got"
+  fi
+}
+
+# Wrapper names and their printf templates, index-aligned. %s is the core.
+WRAP_NAME=( bare subshell brace-group cd-prefix and-echo semi-echo echo-and
+            pipe if-then cmd-subst newline-after-main for-loop )
+WRAP_FMT=(  '%s'
+            '(%s)'
+            '{ %s; }'
+            'cd . && %s'
+            '%s && echo done'
+            '%s ; echo done'
+            'echo start && %s'
+            '%s | cat'
+            'if true; then %s; fi'
+            'out=$(%s)'
+            '%s
+echo "=== main now ==="'
+            'for i in 1; do %s; done' )
+
+# Denied on a protected branch, whatever shape they arrive in.
+DANGER_MAIN=( 'git commit -m x'
+              'git rm f.txt'
+              'git reset --hard HEAD~1'
+              'git clean -fd'
+              'git restore f.txt'
+              'git stash drop'
+              'git stash clear'
+              'git rebase'
+              'git switch -f'
+              'git checkout --' )
+
+# Denied from ANY branch, because they name the protected branch themselves.
+DANGER_ANY=( 'git branch -D main'
+             'git push --force origin main'
+             'git push --mirror'
+             'git checkout -b feature/y' )
+
+# Allowed everywhere — these must survive every wrapper, including the one whose
+# suffix contains the word "main".
+SAFE=( 'git status --short'
+       'git log --oneline -5'
+       'echo hello'
+       'git branch --list' )
+
+i=0
+while [ $i -lt ${#WRAP_NAME[@]} ]; do
+  fmt="${WRAP_FMT[$i]}"; wname="${WRAP_NAME[$i]}"
+  for core in "${DANGER_MAIN[@]}"; do
+    gen_check deny  main "$wname" "$(printf "$fmt" "$core")"
+  done
+  for core in "${DANGER_ANY[@]}"; do
+    gen_check deny  feat "$wname" "$(printf "$fmt" "$core")"
+  done
+  for core in "${SAFE[@]}"; do
+    gen_check allow main "$wname" "$(printf "$fmt" "$core")"
+  done
+  i=$((i+1))
+done
+printf '  ✅ %s wrapper × core combinations\n' "$(( ${#WRAP_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + ${#SAFE[@]}) ))"
+
+echo "Composition — a dangerous command is not laundered by a harmless neighbour:"
+# Order matters in both directions: the greedy parser saw only the LAST git verb, so a
+# protected target in the FIRST command escaped entirely.
+for pair in "git branch --list|git branch -D main" \
+            "git branch -D main|git branch --list" \
+            "git status|git push --force origin main" \
+            "git push --force origin main|git status" \
+            "git push --force origin feature/x|git push --force origin main" \
+            "git push --force origin main|git push --force origin feature/x" \
+            "git branch -d feature/old|git branch -D main" \
+            "git branch -D main|git branch -d feature/old"; do
+  a="${pair%%|*}"; b="${pair##*|}"
+  gen_check deny feat "composed" "$a && $b"
+  gen_check deny feat "composed-semi" "$a ; $b"
+done
+printf '  ✅ 16 composed pairs, both orders\n'
+
+echo "Composition — two harmless commands stay harmless:"
+for pair in "git status|echo main" \
+            "git branch -d feature/old|echo \"=== main now ===\"" \
+            "git branch -d feature/old|git log --oneline main -1" \
+            "git push --force origin feature/x|echo main" \
+            "git worktree remove .ai/worktrees/x|git branch -d fix/x"; do
+  a="${pair%%|*}"; b="${pair##*|}"
+  gen_check allow main "harmless-pair" "$a && $b"
+done
+printf '  ✅ 5 harmless pairs\n'
+
+rm -rf "$GEN_MAIN" "$GEN_FEAT"
 echo "Missing JSON parser must fail loud, not silent:"
 # Regression: with jq absent the command parsed as "" and the hook exited 0 —
 # the guard switched itself off without a word.

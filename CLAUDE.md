@@ -81,6 +81,11 @@ is injected into every session, so it is where an unearned line costs the most.
   make that loud.
 - Verify against the running hook, not by reading the regex. Several past gaps were
   invisible on paper (column-zero secrets, `git -C … commit`, macOS `grep -P`).
+- Cross the shapes, do not sample them. A case per matcher and a case per shell wrapper
+  leaves the combinations untested, and that is where the bugs have actually been: on
+  2026-09-10 six matchers were denied bare and allowed inside `( … )`, and a bypass and
+  a false positive both lived in compound commands. `pre-commit-check.test.sh` generates
+  the wrapper × core product for this reason — add to those lists, not a one-off case.
 - macOS ships BSD `grep`, `sed` and bash 3.2. CI runs the suites on both macOS and
   Ubuntu; do not use `grep -P`, `mapfile`, or `sed -i` without a suffix.
 - Bump `.claude-plugin/plugin.json` when hook behaviour changes.
