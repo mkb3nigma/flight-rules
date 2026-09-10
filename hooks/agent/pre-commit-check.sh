@@ -143,8 +143,8 @@ is_force_push() {
 # branch still rewrites main, so the target is checked as well as the current
 # branch. A refspec `+src:dst` pushes to dst. The first non-flag word after `push`
 # is the remote and is skipped — so a deploy remote named `production` is not
-# mistaken for the branch. With no explicit ref, the target is the current branch,
-# which the caller checks anyway.
+# mistaken for the branch. Empty output means the push named no ref, so the target
+# is the current branch and the caller falls back to checking that.
 push_targets() {
   local rest w words=()
   rest=$(printf '%s' "$1" | sed -E "s/.*${B}git[[:space:]]+push//")
@@ -155,6 +155,20 @@ push_targets() {
   done
   [[ ${#words[@]} -ge 1 ]] && unset 'words[0]'
   printf '%s\n' "${words[@]+"${words[@]}"}"
+}
+
+# The repository a directory belongs to, as an absolute, symlink-resolved path.
+# Every worktree of a repo reports the same `--git-common-dir` (the main
+# checkout's .git), which is what makes a worktree recognisable as this project
+# rather than a foreign one. The path can come back relative to the directory
+# asked about, so it is resolved from there; `pwd -P` settles /tmp vs macOS's
+# /private/tmp. Empty output means "not a git repo", and the caller treats an
+# unanswerable comparison as "not this project".
+common_repo_dir() {
+  local dir="$1" d
+  d=$(cd "$dir" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)
+  [ -z "$d" ] && return 0
+  (cd "$dir" 2>/dev/null && cd "$d" 2>/dev/null && pwd -P)
 }
 
 # Workflow rule 6: branches are created as worktrees, never with `checkout -b` /
@@ -232,11 +246,20 @@ IS_PROTECTED=0
 BLOCKED_BRANCH="$CURRENT_BRANCH"
 shopt -s nocasematch
 if [[ "$GUARD_OFF" == "0" ]]; then
-  [[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] && IS_PROTECTED=1
+  # For a push, what matters is the ref being written, not the branch you happen
+  # to stand on: deleting a merged feature branch's remote ref is a normal step of
+  # post-merge cleanup, which the workflow has you do FROM the protected branch.
+  # So the current branch counts only when the push names no ref of its own —
+  # the case where the current branch IS the target. Every other action (commit,
+  # destructive) acts on the checkout, where the current branch is the subject.
+  PUSH_TARGETS=$(push_targets "$NORM")
+  if [[ "$ACTION" != "force-push" || -z "${PUSH_TARGETS//[[:space:]]/}" ]]; then
+    [[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] && IS_PROTECTED=1
+  fi
   if [[ "$ACTION" == "force-push" ]]; then
     while IFS= read -r t; do
       [[ -n "$t" && "$t" =~ $PROTECTED_RE ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="$t"; }
-    done <<<"$(push_targets "$NORM")"
+    done <<<"$PUSH_TARGETS"
     # `--mirror` names no branch and touches all of them, protected ones included.
     [[ "$NORM" =~ [[:space:]]--mirror([[:space:]]|$) ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="every branch (--mirror)"; }
   fi
@@ -247,11 +270,20 @@ shopt -u nocasematch
 # guard applies the project's branch rules to every repo the session touches —
 # including a sibling repo whose normal working branch IS main. (The secret scan
 # below stays global on purpose: secrets are bad in any repo.)
+#
+# The comparison is between REPOSITORIES, not working trees. A worktree's toplevel
+# is never the project dir ($WORKTREE_DIR/<name> by construction), so comparing
+# toplevels switched the whole branch policy off inside the very worktrees the
+# workflow tells you to work in — every rule below went unenforced there for the
+# life of this hook. `--git-common-dir` is the shared repo: identical from the main
+# checkout and from every worktree of it, different for a genuine sibling repo.
 IN_THIS_PROJECT=1
 if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
   TARGET_ROOT=$("${GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
   if [[ -n "$TARGET_ROOT" && "$TARGET_ROOT" != "$CLAUDE_PROJECT_DIR" ]]; then
-    IN_THIS_PROJECT=0
+    TARGET_REPO=$(common_repo_dir "$TARGET_ROOT")
+    PROJECT_REPO=$(common_repo_dir "$CLAUDE_PROJECT_DIR")
+    [[ -z "$TARGET_REPO" || "$TARGET_REPO" != "$PROJECT_REPO" ]] && IN_THIS_PROJECT=0
   fi
 fi
 
