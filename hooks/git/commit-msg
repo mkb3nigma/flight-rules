@@ -171,7 +171,65 @@ MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE
 NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
 
 if echo "$NOTE" | grep -q "^passed:"; then
+    # The note proves a check ran. It does NOT prove anyone asked for this merge:
+    # the agent writes the note itself, so a stamped merge that nobody requested
+    # used to print a green tick and land silently (measured 2026-09-10 — the
+    # advisory produced no warning of any kind, only "✅ Pre-merge check verified").
+    #
+    # Nothing inside an assistant's own tool calls can distinguish "the user asked"
+    # from "the agent decided" — any token the hook demands, the agent can supply.
+    # So this does not claim proof. It makes the unbidden merge a deliberate, named
+    # act instead of a silent one, and writes which path was taken into the merge
+    # commit, where it survives and can be grepped.
+    NEEDS_INSTRUCTION=$(read_conf_at_head MERGE_NEEDS_INSTRUCTION "$CONF_PATH")
+    NEEDS_INSTRUCTION="${NEEDS_INSTRUCTION:-on}"
+    AUTHORISED="${FLIGHT_RULES_MERGE_AUTHORISED:-}"
+    [ "$AUTHORISED" = "0" ] && AUTHORISED=""
+
+    if [ "$NEEDS_INSTRUCTION" = "off" ]; then
+        TRAILER="Merge-authorisation: not required (MERGE_NEEDS_INSTRUCTION=off)"
+    elif [ -n "$AUTHORISED" ]; then
+        TRAILER="Merge-authorisation: explicit (FLIGHT_RULES_MERGE_AUTHORISED)"
+    else
+        echo ""
+        box_top
+        box_row "❌  WHO ASKED FOR THIS MERGE?" 1
+        box_sep
+        box_row ""
+        box_row "Merging: $MERGE_BRANCH"
+        box_row "Into:    $CURRENT_BRANCH  (protected)"
+        box_row ""
+        box_row "The pre-merge-check note passed — but the agent writes"
+        box_row "that note itself, so it shows a check ran, not that"
+        box_row "anyone wanted this branch merged."
+        box_row ""
+        box_row "If the user asked for it, say so and merge:"
+        box_row "  FLIGHT_RULES_MERGE_AUTHORISED=1 git merge $MERGE_BRANCH"
+        box_row ""
+        box_row "If they did not: stop, and ask. Setting that variable"
+        box_row "to get unblocked is the whole thing this prevents,"
+        box_row "and it is recorded in the merge commit either way."
+        box_row ""
+        box_row "If this project does not want the check, its owner"
+        box_row "sets MERGE_NEEDS_INSTRUCTION=off in"
+        box_row "  .ai/flight-rules.conf"
+        box_row "That is the owner's call — do not set it yourself."
+        box_row ""
+        box_row "Undo this half-finished merge:   git merge --abort"
+        box_row ""
+        box_bot
+        echo ""
+        exit 1
+    fi
+
+    # Record it in the commit message: a note can be rewritten and is easy to miss,
+    # the message travels with the merge forever. Appended only if absent, so an
+    # amend or a rerun does not stack duplicates.
+    if [ -n "${1:-}" ] && [ -f "$1" ] && ! grep -q '^Merge-authorisation:' "$1"; then
+        printf '\n%s\n' "$TRAILER" >> "$1"
+    fi
     echo "✅ Pre-merge check verified for $MERGE_BRANCH → $CURRENT_BRANCH"
+    echo "   ${TRAILER}"
     exit 0
 fi
 

@@ -91,4 +91,6 @@ last line of output, so "passed" is evidence, not a claim — then:
 
 Always end with: this command does not merge or push; warnings are non-blocking but
 must be acknowledged; run `/dg` for adversarial review of code changes; merging needs
-explicit user confirmation.
+explicit user confirmation — and on a protected branch that is now enforced rather than
+asked for, so a merge the user did not request is refused (`commit-msg`; the stamp this
+skill writes proves a check ran, not that anyone wanted the merge).

@@ -57,7 +57,7 @@ else bad "neither jq nor python3 on PATH — the agent guard will deny every git
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 CONF=".ai/flight-rules.conf"
-KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR'
+KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
 else
@@ -80,6 +80,9 @@ else
         elif [[ "$val" != ^* ]]; then
           warn "$key='$val' is unanchored — 'main' also matches 'maintenance'; use ^main\$"
         else ok "$key=$val"; fi ;;
+      MERGE_NEEDS_INSTRUCTION)
+        [[ "$val" == "off" ]] && warn "$key=off — a merge into a protected branch no longer needs the user's say-so (recorded in each merge commit's Merge-authorisation trailer)" \
+                              || ok "$key=$val" ;;
       *) ok "$key=$val" ;;
     esac
   done < "$CONF"

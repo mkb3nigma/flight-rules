@@ -32,8 +32,13 @@ items are reviewed at every plugin release and either given enforcement or delet
    with `git pull --ff-only origin main` — hook (`reference-transaction`, which judges
    where the ref landed rather than which command moved it)
 8. Merging into any other protected branch **without the user's instruction** — the
-   `pre-merge-check` stamp is the agent's own, not the user's say-so — advisory
-   (`pre-merge-check` ends by saying so)
+   `pre-merge-check` stamp is the agent's own, so it shows a check ran, not that anyone
+   wanted the merge. Refused unless the merge says so:
+   `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`, which is recorded in the merge commit
+   as a `Merge-authorisation:` trailer. Setting that variable when the user did not ask
+   is the thing this forbids — the hook cannot tell, the trailer makes it auditable.
+   A project that does not want the check sets `MERGE_NEEDS_INSTRUCTION=off`; that is
+   recorded in the trailer too — hook (`commit-msg`)
 
 ### ✅ Required
 1. All branches created as worktrees under `{WORKTREE_DIR}` — hook for "as worktrees"

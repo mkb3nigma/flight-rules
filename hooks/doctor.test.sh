@@ -64,6 +64,10 @@ D=$(mkrepo); chmod -x "$D/.ai/hooks/reference-transaction"
 say "$(rc "$D")" "1" "reference-transaction without +x → problem"
 rm -rf "$D"
 
+D=$(mkrepo); printf 'MERGE_NEEDS_INSTRUCTION=off\n' >> "$D/.ai/flight-rules.conf"
+say "$(has "$D" "no longer needs the user")" "0" "MERGE_NEEDS_INSTRUCTION=off is surfaced, not silent"
+rm -rf "$D"
+
 D=$(mkrepo); git -C "$D" config --unset merge.ff
 say "$(rc "$D")" "1" "merge.ff unset → problem"
 say "$(has "$D" "fast-forward merge creates no commit")" "0" "…explains why"
