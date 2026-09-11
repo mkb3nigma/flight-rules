@@ -51,6 +51,82 @@ else
   echo "  ⚠️  jq absent — skipping the JSON assertions"
 fi
 
+echo "Every registered hook actually RUNS, in the environment each path provides:"
+# This suite used to assert registration by grepping hooks.json and the README snippet
+# for a filename. It passed 15/15 while the README's without-plugin snippet injected NO
+# RULES AT ALL — session-start-rules.sh read ${CLAUDE_PLUGIN_ROOT} under `set -u`, and
+# only the plugin sets that. A filename was present in both files; one of them did not
+# work. Found 2026-09-11, in the suite written to stop exactly that divergence.
+#
+# So each path is now EXERCISED, not matched. The distinction matters because the two
+# paths differ in more than their text: the plugin sets CLAUDE_PLUGIN_ROOT, and the
+# hand-wired snippet does not.
+LAB=$(cd "$(mktemp -d)" && pwd -P)
+trap 'rm -rf "$LAB"' EXIT
+git init -q "$LAB/proj"
+( cd "$LAB/proj" && git config user.email t@t.t && git config user.name t \
+  && echo x > f.txt && git add -A && git commit -qm base ) >/dev/null 2>&1
+
+# Output goes to a FILE, not to stdout. An earlier draft returned it via `$(run_hook …)`,
+# which runs the function in a subshell — so its FAIL increment was discarded and its ❌
+# line was captured as data instead of printed. The suite then reported 23 passed, 0
+# failed against a hook that aborts on an unbound variable. A test harness that loses
+# failures is the thing this file exists to prevent.
+HOOK_OUT="$LAB/hook.out"
+run_hook() {   # <label> <env-shape: plugin|handwired> <script>  -> 0 ok, 1 failed
+  local label="$1" shape="$2" script="$3" rc
+  if [ "$shape" = plugin ]; then
+    ( cd "$LAB/proj" && CLAUDE_PLUGIN_ROOT="$ROOT" CLAUDE_PROJECT_DIR="$LAB/proj" \
+      bash "$script" </dev/null ) > "$HOOK_OUT" 2>&1; rc=$?
+  else
+    ( cd "$LAB/proj" && env -u CLAUDE_PLUGIN_ROOT CLAUDE_PROJECT_DIR="$LAB/proj" \
+      bash "$script" </dev/null ) > "$HOOK_OUT" 2>&1; rc=$?
+  fi
+  if [ $rc -ne 0 ] || grep -qi 'unbound variable\|command not found\|No such file' "$HOOK_OUT"; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s exits %s: %s\n' "$label" "$rc" "$(head -1 "$HOOK_OUT")"
+    return 1
+  fi
+  return 0
+}
+
+for shape in plugin handwired; do
+  run_hook "session-start-rules.sh ($shape)" "$shape" "$ROOT/hooks/session-start-rules.sh" && {
+    if grep -q 'Engineering Principles' "$HOOK_OUT"; then
+      PASS=$((PASS+1)); printf '  ✅ session-start-rules.sh injects the principles (%s)\n' "$shape"
+    else
+      FAIL=$((FAIL+1)); printf '  ❌ session-start-rules.sh ran but injected nothing (%s)\n' "$shape"
+    fi
+  }
+  run_hook "agent/session-start.sh ($shape)" "$shape" "$ROOT/hooks/agent/session-start.sh" && {
+    PASS=$((PASS+1)); printf '  ✅ agent/session-start.sh runs clean (%s)\n' "$shape"
+  }
+done
+
+# The guard is a decision function; exercise it rather than checking it exists.
+for shape in plugin handwired; do
+  if [ "$shape" = plugin ]; then
+    OUT=$(cd "$LAB/proj" && CLAUDE_PLUGIN_ROOT="$ROOT" CLAUDE_PROJECT_DIR="$LAB/proj" \
+          bash "$ROOT/hooks/agent/pre-commit-check.sh" \
+          <<<'{"tool_input":{"command":"git commit -m x"}}' 2>&1)
+  else
+    OUT=$(cd "$LAB/proj" && env -u CLAUDE_PLUGIN_ROOT CLAUDE_PROJECT_DIR="$LAB/proj" \
+          bash "$ROOT/hooks/agent/pre-commit-check.sh" \
+          <<<'{"tool_input":{"command":"git commit -m x"}}' 2>&1)
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ pre-commit-check.sh denies a commit on master (%s)\n' "$shape"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ pre-commit-check.sh did not fire (%s): %s\n' "$shape" "$(head -1 <<<"$OUT")"
+  fi
+done
+
+echo "The path this repo itself runs is wired too:"
+# hooks.json and the README snippet were both checked; .claude/settings.json — the file
+# this repo actually runs on — was not, and is where a drop would hurt most here.
+for h in $AGENT_HOOKS; do
+  grep -qF "$h" "$ROOT/.claude/settings.json"; say "$?" ".claude/settings.json wires $h"
+done
+
 echo "Every agent hook is executable (git records the mode; a non-exec hook is silent):"
 for h in $AGENT_HOOKS; do
   [ -x "$ROOT/hooks/$h" ]; say "$?" "hooks/$h is executable"

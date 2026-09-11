@@ -14,7 +14,14 @@
 # (preferred) or python3, and no-op cleanly if neither is available.
 set -euo pipefail
 
-RULES="${CLAUDE_PLUGIN_ROOT}/rules/engineering-principles.md"
+# CLAUDE_PLUGIN_ROOT is set by the plugin loader and by nothing else. Under `set -u`
+# this line used to abort the hook with "unbound variable" on every hand-wired install
+# — so the path documented in hooks/README.md injected NO rules at all, which is the
+# exact failure that README section exists to warn about. Fall back to the script's own
+# location, which is correct for every install shape: the plugin directory, .ai/hooks/,
+# or hooks/ in the playbook repo itself.
+RULES_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+RULES="$RULES_ROOT/rules/engineering-principles.md"
 [ -r "$RULES" ] || exit 0
 
 HEADER="The flight-rules plugin is active. These engineering principles govern how you work in this session — follow them:"
