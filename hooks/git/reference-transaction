@@ -55,7 +55,7 @@ read_conf_from() {   # <committish> <key>
     content=$(git show "${ref}:${CONF_PATH}" 2>/dev/null) || return 0
     printf '%s\n' "$content" \
         | sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" \
-        | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+        | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
         | tail -1
 }
 
@@ -87,6 +87,18 @@ while read -r _old new ref; do
         PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
     fi
     [ "$PR_ONLY_RE" = "off" ] && continue
+
+    # PROTECTED_BRANCHES=off is the opt-out the README, the agent guard's own block
+    # message and doctor.sh all name. It used to disable only the agent guard, so a
+    # project that took the documented opt-out still had git refusing every move here,
+    # citing PR_ONLY_BRANCHES — a key its owner never set. PR-only is a subset of
+    # protected: if nothing is protected, nothing is PR-only.
+    PROT_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-}"
+    if [ -z "$PROT_RE" ]; then
+        PROT_RE=$(read_conf_from "$upstream" PROTECTED_BRANCHES)
+        [ -z "$PROT_RE" ] && PROT_RE=$(read_conf_from HEAD PROTECTED_BRANCHES)
+    fi
+    [ "$PROT_RE" = "off" ] && continue
 
     printf '%s' "$short" | grep -qE "$PR_ONLY_RE" || continue
 

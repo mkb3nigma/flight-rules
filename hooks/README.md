@@ -167,12 +167,21 @@ WORKTREE_DIR=.worktrees
 
 The file is parsed as **data** (matched with `sed`, never `source`d), so a cloned
 repository cannot execute code through it. `#` comments, blank lines, spaces around
-`=`, and quoted values are all fine.
+`=`, and quoted values are all fine — including a comment **after** a value
+(`PROTECTED_BRANCHES=^main$   # trunk-based`). An inline comment must be preceded by
+whitespace, so a `#` inside a value (`^feature#1$`) is kept.
+
+That last part was a documented claim before it was a true one. Until 2026-09-11 the
+three hook parsers captured to end-of-line, so a trailing comment became part of the
+regex, the value matched nothing, and the layer reading it stopped enforcing in silence
+— while `doctor.sh`, which *did* strip comments, printed ✅ for the same line. One
+trailing comment on `PR_ONLY_BRANCHES` let a direct commit land on a PR-only `main`
+with all five git hooks installed.
 
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables the branch policy (secret scan stays on). |
-| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. |
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables the branch policy — no protected branches in the guard, and the ref gate stands down with it (the secret scan stays on). |
+| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured here too — the ref gate and the local merge gate stand down, while `PROTECTED_BRANCHES` still applies. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |

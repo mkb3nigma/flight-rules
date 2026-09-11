@@ -179,6 +179,16 @@ conf_case() { # <desc> <conf|env:VAL> <expect: blocked|allowed>
         FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
     fi
 }
+# Same defect, other layer: a commented value stopped gating.
+conf_case "trailing comment still gates"  "PR_ONLY_BRANCHES=^main\$   # via PR only"  blocked
+conf_case "comment, single space"         "PR_ONLY_BRANCHES=^main\$ # x"              blocked
+# PROTECTED_BRANCHES=off is the opt-out the docs and the guard's own block message name.
+# It disabled only the agent guard, so a project that took the documented opt-out still
+# had git refusing every move — citing a key the owner never set.
+conf_case "PROTECTED_BRANCHES=off opts out here too" "PROTECTED_BRANCHES=off"  allowed
+conf_case "…even with PR_ONLY left at its default"   "PROTECTED_BRANCHES=off
+PR_ONLY_BRANCHES=^main\$"                                                      allowed
+
 conf_case "PR_ONLY_BRANCHES=off disables the gate" "PR_ONLY_BRANCHES=off"      allowed
 conf_case "a conf naming another branch"           "PR_ONLY_BRANCHES=^nope\$"  allowed
 conf_case "env override wins"                      "env:^nothing\$"            allowed

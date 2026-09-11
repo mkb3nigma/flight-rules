@@ -165,6 +165,26 @@ conf_check() {
   rm -rf "$dir"
 }
 
+# An inline comment on a value is ordinary config-file writing, not evasion. Until
+# 2026-09-11 the three `(.*)` parsers kept it, so the value became a regex that matches
+# nothing and the layer reading it silently stopped enforcing — while doctor.sh, which
+# DOES strip comments, printed ✅ for the same line. Four parsers, three behaviours.
+conf_check "trailing comment on the value"   deny  main 'git rm f' \
+      'PROTECTED_BRANCHES=^main$   # trunk-based, no dev'
+conf_check "comment with a single space"     deny  main 'git rm f' \
+      'PROTECTED_BRANCHES=^main$ # why'
+conf_check "comment after a quoted value"    deny  main 'git rm f' \
+      'PROTECTED_BRANCHES="^main$"  # quoted and commented'
+conf_check "comment on a custom set"         deny  integration 'git rm f' \
+      'PROTECTED_BRANCHES=^integration$  # our trunk'
+conf_check "…and that set still excludes others" allow main 'git rm f' \
+      'PROTECTED_BRANCHES=^integration$  # our trunk'
+# A `#` that is NOT preceded by whitespace belongs to the value.
+conf_check "hash inside the value is kept"   deny  'feature#1' 'git rm f' \
+      'PROTECTED_BRANCHES=^feature#1$'
+conf_check "off with a trailing comment"     allow main 'git rm f' \
+      'PROTECTED_BRANCHES=off   # this project works on main'
+
 conf_check "conf protects a custom branch"  deny  integration 'git rm f' \
   'PROTECTED_BRANCHES=^integration$'
 conf_check "conf narrows: dev now allowed"  allow dev 'git rm f' \

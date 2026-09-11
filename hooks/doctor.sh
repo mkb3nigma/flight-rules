@@ -73,8 +73,16 @@ else
     case "$key" in
       PROTECTED_BRANCHES|PR_ONLY_BRANCHES|NOTE_GATED_BRANCHES)
         if [[ "$val" == "off" || "$val" == "none" ]]; then
-          [[ "$key" == PROTECTED_BRANCHES ]] && warn "$key=off — the branch policy is disabled in the agent guard (secret scan still on)" \
-                                              || bad "$key=$val — only PROTECTED_BRANCHES understands off/none; this hook will treat it as a regex"
+          # All three are honoured, by three different layers: the agent guard reads
+          # PROTECTED_BRANCHES, reference-transaction reads PROTECTED_BRANCHES and
+          # PR_ONLY_BRANCHES, commit-msg reads NOTE_GATED_BRANCHES. Calling the latter
+          # two errors was false, and it made this script report a problem every day
+          # about a correctly configured project.
+          case "$key" in
+            PROTECTED_BRANCHES)  warn "$key=$val — the branch policy is off: no protected branches in the agent guard, and the ref gate stands down too (the secret scan stays on)" ;;
+            PR_ONLY_BRANCHES)    warn "$key=$val — no branch is PR-only: the ref gate and the local merge gate stand down (PROTECTED_BRANCHES still applies)" ;;
+            NOTE_GATED_BRANCHES) warn "$key=$val — no branch requires a pre-merge-check note" ;;
+          esac
         elif ( [[ "x" =~ $val ]] ) 2>/dev/null; [[ $? -eq 2 ]]; then
           bad "$key='$val' is not a valid regex — bash rejects it and the hook fails closed or open depending on the path"
         elif [[ "$val" != ^* ]]; then
