@@ -568,21 +568,53 @@ gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
 }
 
 # Wrapper names and their printf templates, index-aligned. %s is the core.
-WRAP_NAME=( bare subshell brace-group cd-prefix and-echo semi-echo echo-and
-            pipe if-then cmd-subst newline-after-main for-loop )
+# Trimmed 2026-09-11. `brace-group`, `if-then`, `cmd-subst` and `for-loop` all asserted
+# the same property as `subshell` — that a command terminated by `)` or `;` is still
+# matched — which was 4 x 18 cases for one assertion. `semi-echo` duplicated `and-echo`.
+# The budget went to PREFIX_FMT below, an axis that had no coverage at all and where two
+# criticals were living.
+# `brace-group` is NOT redundant with `subshell`: subshell asserts `)` as the command
+# terminator, brace-group asserts `;`. They are different characters in `E`. A mutant
+# hook with `;` deleted from E passes a suite without brace-group and fails 18 cases with
+# it — proven, not assumed. `if-then`, `for-loop`, `cmd-subst` and `semi-echo` caught
+# nothing the survivors do not.
+WRAP_NAME=( bare subshell brace-group cd-prefix and-echo echo-and pipe newline-after-main )
 WRAP_FMT=(  '%s'
             '(%s)'
             '{ %s; }'
             'cd . && %s'
             '%s && echo done'
-            '%s ; echo done'
             'echo start && %s'
             '%s | cat'
-            'if true; then %s; fi'
-            'out=$(%s)'
             '%s
-echo "=== main now ==="'
-            'for i in 1; do %s; done' )
+echo "=== main now ==="' )
+
+# The GIT-INVOCATION PREFIX axis. Everything between the word `git` and its verb.
+# `NORM` normalised away only `-C <dir>` and `-c key=val`, so every other global option
+# carried the verb past every matcher: `git --no-pager commit` on a protected branch was
+# ALLOWED, as were `--no-pager` forms of push --force, branch -D, checkout -b and
+# reset --hard. Measured 2026-09-11.
+#
+# The unresolvable-target forms are here too. `cd "$(git rev-parse --show-toplevel)"`
+# and `cd "$VAR"` leave `git -C "$WORK_DIR"` unable to resolve a repo, which emptied
+# both the branch AND the staged diff — so the SECRET SCAN was skipped as well. The
+# repo's own docs and the guard's own deny message tell an agent to write commands in
+# exactly those shapes.
+# Index-aligned. Includes the two spellings of a value-taking option, and three flags
+# that are NOT in any list in the hook — they are there to prove the generic
+# dash-leading rule works rather than a hand-written enumeration.
+PREFIX_NAME=( no-pager P-flag git-dir-eq git-dir-space literal-pathspecs
+              no-optional-locks bare no-advice no-lazy-fetch attr-source )
+PREFIX_FMT=(  'git --no-pager %s'
+              'git -P %s'
+              'git --git-dir=.git %s'
+              'git --git-dir .git %s'
+              'git --literal-pathspecs %s'
+              'git --no-optional-locks %s'
+              'git --bare %s'
+              'git --no-advice %s'
+              'git --no-lazy-fetch %s'
+              'git --attr-source=HEAD %s' )
 
 # Denied on a protected branch, whatever shape they arrive in.
 DANGER_MAIN=( 'git commit -m x'
@@ -608,6 +640,23 @@ SAFE=( 'git status --short'
        'git log --oneline -5'
        'echo hello'
        'git branch --list' )
+
+j=0
+while [ $j -lt ${#PREFIX_NAME[@]} ]; do
+  pfmt="${PREFIX_FMT[$j]}"; pname="${PREFIX_NAME[$j]}"
+  for core in "${DANGER_MAIN[@]}"; do
+    gen_check deny  main "prefix:$pname" "$(printf "$pfmt" "${core#git }")"
+  done
+  for core in "${DANGER_ANY[@]}"; do
+    gen_check deny  feat "prefix:$pname" "$(printf "$pfmt" "${core#git }")"
+  done
+  for core in "${SAFE[@]}"; do
+    case "$core" in git\ *) gen_check allow main "prefix:$pname" "$(printf "$pfmt" "${core#git }")" ;; esac
+  done
+  j=$((j+1))
+done
+printf '  ✅ %s git-invocation-prefix combinations\n' \
+  "$(( ${#PREFIX_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + 3) ))"
 
 i=0
 while [ $i -lt ${#WRAP_NAME[@]} ]; do
@@ -654,6 +703,55 @@ done
 printf '  ✅ 5 harmless pairs\n'
 
 rm -rf "$GEN_MAIN" "$GEN_FEAT"
+echo "An unresolvable cd target: the SECRET half is fixed, the branch half is not:"
+# `cd "$(git rev-parse --show-toplevel)"` and `cd "$VAR"` arrive unexpanded, so
+# `git -C "$WORK_DIR"` resolves no repo. Two different halves, two different answers,
+# both deliberate:
+#
+#   - The staged-secret scan now falls back to the shell's cwd. A leaked key is
+#     backstopped by nothing, so scanning nothing was the wrong answer.
+#   - Branch policy still resolves to nothing and therefore allows. Failing closed would
+#     mean judging the cwd's branch for a command aimed elsewhere — and `cd "$W" && git
+#     commit` run from a main checkout, aimed at a feature worktree, is the single most
+#     common shape in this project's own transcripts. It would deny all of them. The
+#     branch half is backstopped by the ref gate; this is F6's accepted limit, recorded
+#     in hooks/README.md, not an oversight.
+check "cd \$(...) then commit is allowed"  allow main 'cd "$(git rev-parse --show-toplevel)" && git commit -m x'
+check "cd \$VAR then commit is allowed"    allow main 'cd "$REPO_ROOT" && git commit -m x'
+check "…while a resolvable cd still denies" deny main "cd . && git commit -m x"
+
+echo "A staged secret is caught even when the target repo cannot be resolved:"
+# `git -C "$WORK_DIR"` failing emptied STAGED_DIFF as well as the branch, so the secret
+# scan silently had nothing to look at. The branch half is backstopped by the ref gate;
+# this half is backstopped by nothing.
+for pfx in 'cd "$(git rev-parse --show-toplevel)" && ' 'cd "$REPO_ROOT" && ' 'git --no-pager ' ''; do
+  D=$(make_repo feature/x)
+  printf 'AKIAIOSFODNN7EXAMPLE\n' > "$D/leak.txt"
+  git -C "$D" add leak.txt >/dev/null 2>&1
+  case "$pfx" in
+    'git --no-pager ') cmd="git --no-pager commit -m x" ;;
+    '')                cmd="git commit -m x" ;;
+    *)                 cmd="${pfx}git commit -m x" ;;
+  esac
+  OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+  if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ staged AWS key caught: %s\n' "$cmd"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ staged AWS key MISSED: %s\n' "$cmd"
+  fi
+  rm -rf "$D"
+done
+
+echo "A bare +refspec is a force push:"
+# The bare +refspec is deliberately NOT matched — see is_force_push. These pin that
+# decision, and the ordinary commands it protects.
+check "bare +refspec is not matched"  allow feature/x 'git push origin +main'
+check "the colon form still is"       deny  feature/x 'git push origin +feature/x:main'
+check "chmod +x then push"            allow main      'chmod +x hooks/agent/foo.sh && git push'
+check "push then tail -n +2"          allow main      'git push origin main 2>&1 | tail -n +2'
+check "a date +FORMAT beside a push"  allow main      'git push origin feature/x && date -u +%Y-%m-%dT%H:%M:%SZ'
+
 echo "Missing JSON parser must fail loud, not silent:"
 # Regression: with jq absent the command parsed as "" and the hook exited 0 —
 # the guard switched itself off without a word.

@@ -92,7 +92,22 @@ fi
 # verb. Normalise them away once so every matcher below sees `git <verb>`. The
 # first version matched the literal substring "git commit", so `git -C /x commit`
 # and `git -c user.name=x commit` walked straight past the branch guard.
-NORM=$(printf '%s' "$COMMAND" | sed -E 's/git([[:space:]]+-(C|c)[[:space:]]+[^[:space:]]+)+/git/g')
+# Everything git accepts BETWEEN the word `git` and its verb is normalised away, so a
+# matcher only ever has to recognise `git <verb>`. This used to strip `-C <dir>` and
+# `-c key=val` only, and every other global option carried the verb straight past every
+# matcher: measured 2026-09-11, `git --no-pager commit` on a protected branch was ALLOWED.
+#
+# The first draft of the fix enumerated the flags. A reviewer broke it in five characters
+# with `git --no-advice commit`, which the list did not have — and the list also carried
+# `--super-prefix`, removed from git in 2.46. Enumerating a documented set is the same
+# losing game the ref gate was built to leave, so the last alternative is generic: ANY
+# dash-leading token before the verb. The named ones are listed only because they take a
+# VALUE, which must be consumed with them (`--git-dir /x commit` would otherwise leave
+# `/x` sitting where the verb should be).
+#
+# Nothing AFTER the verb is touched: `git log -p` and `git push --force` are untouched,
+# because the run must begin immediately after `git`.
+NORM=$(printf '%s' "$COMMAND" | sed -E 's/git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path|super-prefix|config-env|attr-source)([=][^[:space:]]*|[[:space:]]+[^[:space:]]+)|-[^[:space:]]+))+/git/g')
 
 # $B is what may precede the `git` word. It is a NEGATED class rather than a list
 # of separators: the first version enumerated space/;/&/| and so missed `(git rm)`
@@ -143,6 +158,12 @@ is_force_push() {
   [[ "$1" =~ ${B}git[[:space:]]+push${E} ]] || return 1
   [[ "$1" =~ [[:space:]](-[a-zA-Z]*f[a-zA-Z]*|--force|--force-with-lease(=[^[:space:]]*)?)${E} ]] && return 0
   # A leading "+" on a refspec (`+src:dst`) forces that one ref without any flag.
+  # The BARE form (`git push origin +main`) is deliberately NOT matched. Trying it cost
+  # more than the hole: ` +token` appears in 37% of the real pushes in this project's
+  # transcripts — `chmod +x … && git push`, `tail -n +2`, and every `git notes add -m
+  # "passed: $(date -u +%Y-%m-%dT%H:%M:%SZ)"` stamp — and one pair of quotes
+  # (`origin "+main"`) walks through it anyway. Typing `+` to force is deliberate, not a
+  # slip, and this guard closes accidents.
   [[ "$1" =~ [[:space:]]\+[^[:space:]]*:[^[:space:]]+ ]] && return 0
   # Deleting a branch on the remote is the most destructive push of all: `--delete`,
   # `-d`, an empty-source refspec (`origin :main`), or `--mirror` (which deletes
@@ -275,6 +296,19 @@ elif [[ "$COMMAND" =~ git[[:space:]]+-C[[:space:]]+([^[:space:]]+) ]]; then
 fi
 GIT=(git)
 [[ -n "$WORK_DIR" ]] && GIT=(git -C "$WORK_DIR")
+
+# A `cd "$(git rev-parse --show-toplevel)"` or `cd "$VAR"` reaches here unexpanded, so
+# `git -C "$WORK_DIR"` resolves nothing — and that emptied the STAGED DIFF as well as the
+# branch, silently skipping the secret scan. The branch half is backstopped by the ref
+# gate and by being a guard, not a boundary; a leaked key is backstopped by nothing. So
+# the scan falls back to the shell's own cwd, which is the repo being committed to in
+# every realistic version of this. Deliberately NOT applied to the branch policy: falling
+# back there would judge the wrong repo and deny legitimate work in the other direction.
+SCAN_GIT=("${GIT[@]}")
+SCAN_FELL_BACK=0
+if ! "${GIT[@]}" rev-parse --git-dir >/dev/null 2>&1; then
+  SCAN_GIT=(git); SCAN_FELL_BACK=1
+fi
 CURRENT_BRANCH=$("${GIT[@]}" branch --show-current 2>/dev/null)
 
 # Now that the target repo is known, resolve config from it: environment first,
@@ -423,11 +457,11 @@ fi
 # ─────────────────────────────────────────────
 # 2. SECRET LEAK CHECK
 # ─────────────────────────────────────────────
-STAGED_DIFF=$("${GIT[@]}" diff --cached 2>/dev/null)
+STAGED_DIFF=$("${SCAN_GIT[@]}" diff --cached 2>/dev/null)
 # core.quotePath=false: by default git prints a non-ASCII name as "c\303\266nfig.py"
 # in quotes, and feeding that back to `git diff -- <path>` matches nothing — so the
 # file was silently never scanned for credential literals.
-STAGED_FILES=$("${GIT[@]}" -c core.quotePath=false diff --cached --name-only 2>/dev/null)
+STAGED_FILES=$("${SCAN_GIT[@]}" -c core.quotePath=false diff --cached --name-only 2>/dev/null)
 FINDINGS=""
 
 # Added lines only, leading "+" stripped. Each file's `+++ b/path` header is dropped
@@ -480,9 +514,9 @@ PROSE_FILE_RE='(^|/)(docs?|locales?|i18n|translations?)/|\.(md|rst|txt)$'
 NON_TEST=()
 while IFS= read -r -d '' f; do
   [[ -n "$f" && ! "$f" =~ $TEST_FILE_RE && ! "$f" =~ $PROSE_FILE_RE ]] && NON_TEST+=("$f")
-done < <("${GIT[@]}" diff --cached --name-only -z 2>/dev/null)
+done < <("${SCAN_GIT[@]}" diff --cached --name-only -z 2>/dev/null)
 if [[ ${#NON_TEST[@]} -gt 0 ]]; then
-  NON_TEST_ADDED=$("${GIT[@]}" diff --cached -- "${NON_TEST[@]}" 2>/dev/null | added_lines)
+  NON_TEST_ADDED=$("${SCAN_GIT[@]}" diff --cached -- "${NON_TEST[@]}" 2>/dev/null | added_lines)
   # Case-insensitive (PASSWORD, ApiKey), `=` or `:` (YAML/JSON), quoted key tolerated
   # ("password": "…"). Obvious placeholders are let through so an example does not
   # block a commit: <angle-bracket>, REDACTED, CHANGEME, EXAMPLE, your-…, …-here,
@@ -497,7 +531,14 @@ if [[ ${#NON_TEST[@]} -gt 0 ]]; then
 fi
 
 if [ -n "$FINDINGS" ]; then
-  deny "🔐 BLOCKED: Possible secret detected in staged files:
+SCAN_NOTE=""
+# If the command named a target this hook could not resolve, say which repo was actually
+# scanned. Without it the agent is told "a staged secret" with no file and no repo, for a
+# commit aimed somewhere else, and has no way to act on it.
+[[ "$SCAN_FELL_BACK" == "1" ]] && SCAN_NOTE="⚠️  The target repo in this command could not be resolved, so the scan below is of the CURRENT directory ($(pwd)), which may not be the repo you are committing to.
+
+"
+  deny "${SCAN_NOTE}🔐 BLOCKED: Possible secret detected in staged files:
 $(echo -e "$FINDINGS")
 
 Remove these before committing. If this is a false positive, unstage and re-check."
