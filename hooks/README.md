@@ -191,7 +191,7 @@ Resolution order is **environment → `.ai/flight-rules.conf` → built-in defau
 the conf file is read from the repo the command targets, so a session spanning several
 repos gets each project's own policy.
 
-> ⚠️ **The two git hooks read the conf from `HEAD`, not the working tree.** During a
+> ⚠️ **The gate hooks read the conf from a state an incoming branch cannot edit — `reference-transaction` from the upstream, `pre-merge-commit`/`commit-msg`/`pre-rebase` from `HEAD`, not the working tree.** During a
 > merge git updates the working tree *before* the hooks run, so a working-tree read
 > would let the incoming branch configure the gate that judges it — a branch shipping
 > `NOTE_GATED_BRANCHES=^nothing$` would wave itself through. They read

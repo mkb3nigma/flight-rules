@@ -68,11 +68,11 @@ Treat pure line-rewrapping / whitespace as non-substantive (note it, don't dwell
 ## Step 3b — EXTENSIONS.md and the conf
 An extension is a delta, so it breaks silently when the skill under it moves. For each
 one, report ✖ if: a step it replaces or inserts after no longer exists upstream; a
-`{PLACEHOLDER}` it fills is no longer used, or is one of the five branch/path
+`{PLACEHOLDER}` it fills is no longer used, or is one of the six branch/path
 parameters (those live in the conf only — the hooks never read an extension); a rule it
 overrides has since become a hook.
 Then `.ai/flight-rules.conf`: the hooks ignore unknown keys, so a typo silently falls
-back to the default. ✖ any key outside the five; note any of the five that is absent.
+back to the default. ✖ any key outside the six that `hooks/doctor.sh` lists in `KNOWN` — read it rather than hard-coding a count. An absent key is NOT an error: every one has a default, and `NOTE_GATED_BRANCHES` is deliberately absent in the playbook itself.
 
 ## Step 4 — Report (do not auto-apply)
 Print a per-file summary:
