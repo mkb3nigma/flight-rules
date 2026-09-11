@@ -67,9 +67,17 @@ one channel git hooks, agent hooks and skills all share.
   Tests: `merge-gate.test.sh` (no arguments, no network).
 - **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
   `main` rewrites it with no merge commit, so nothing else fires.
-- **`reference-transaction`** — the backstop, and the only hook that sees every write
-  path. One rule: **a PR-only branch may only move to a commit already on
-  `origin/<branch>`.** It asks where the ref landed, not which command moved it, so
+- **`reference-transaction`** — the backstop for everything that moves a REF, and the
+  only hook that sees every one of those. One rule: **a PR-only branch may only move to
+  a commit already on `origin/<branch>`.**
+  Read the scope precisely: it fires when a ref moves. `git rm`, `git clean -fd`,
+  `git restore`, `git checkout -- .` and `git stash drop` destroy work and move no ref,
+  so **this hook never sees them** — the agent guard is the only thing between an agent
+  and that class. Verified 2026-09-11 on a repo with the full gate installed: a commit on
+  `main` was blocked and the ref held, while `git rm`, `git clean -fd` and
+  `git stash drop` all succeeded and destroyed their target. An earlier wording here
+  ("the only hook that sees every write path") read as though it covered them; it does
+  not, and a change was built on that misreading before the error was caught. It asks where the ref landed, not which command moved it, so
   the enumeration cannot fall behind. It exists because the command-shaped guards kept
   losing (all verified on git 2.55, 2026-09-10):
   `git cherry-pick` and `git revert` run **neither** `pre-commit` nor `commit-msg` —
@@ -284,6 +292,35 @@ Neither happens by accident.
 design to stop someone acting deliberately.** A guard that catches the careless case
 and is honest about the willful one is more useful than one that poses as a security
 boundary and isn't.
+
+### The agent guard over-blocks prose. That is the accepted trade.
+
+It matches a git verb anywhere in the command string, so writing *about* a git command
+can read as running one — `echo "never git rm on main" >> notes.md` is refused. In a
+repo whose product is documentation about git, that is not rare.
+
+Measured 2026-09-11 against 405 commands taken from real sessions:
+
+| Standing on | Denied | False positives |
+|---|---|---|
+| a feature branch | 6 / 405 | **0** — all six correct (`checkout -b`, force-push to `main`) |
+| a protected branch | 25 / 405 (6.2%) | 15, all prose; none contained a destructive git command |
+
+The exposure is confined to a protected branch, which the worktree workflow keeps you off
+except for sync, cleanup and docs.
+
+**Fixing it was attempted and rejected.** Matching only in "command position" requires
+knowing what is inside quotes, which a regex cannot tell: the attempt allowed
+`git commit -am "feat: add -h shorthand"` — an unwrapped commit on `main` — because a
+quoted `-h` disarmed every matcher, and three more bypasses besides. Each failed *open*.
+A pure-bash shell lexer would fix those particular cases and leave the shape: a hand-made
+approximation of shell parsing whose gaps resolve to "allow".
+
+So the guard stays strict. A false positive costs a turn. A false negative costs a file
+with nothing behind it — per the scope note above, the ref gate does not catch that class.
+Anyone revisiting this needs a rule the attempt lacked: **every uncertainty resolves
+toward deny** — an unrecognised construct keeps the strict behaviour rather than skipping
+the check.
 
 That rule settles real trade-offs. When the merge gate turned out to read its config
 from the working tree — letting an incoming branch relax the rule judging it — the
