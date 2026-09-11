@@ -16,6 +16,7 @@
 - When a request has several reasonable readings, say so — ask if you can; if you're
   running unattended, name the reading you chose and why, then proceed
 - Name confusion instead of proceeding past it
+- Store and compute datetimes in UTC — a stored time with no zone is a bug
 
 ## 2. Simplicity First
 
