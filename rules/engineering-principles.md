@@ -43,13 +43,14 @@
 
 - Decide what "working" means before starting; if the goal is vague ("make it work"),
   pin it down first
-- Every code change ships with new or updated tests, and they pass before you call it done
+- Every code change ships with new or updated tests; run them against the unfixed code
+  and watch them fail, or passing proves nothing
 - When behaviour, an interface or a workflow changes, **edit** the sentence that
   described it — in the same change. Delete what no longer applies; never leave a
   second explanation beside the old one. Docs should shrink as often as they grow
-- Done means you can show three things: the command you ran, its last line of output,
-  and the commit or working-tree state it ran on. A claim without them is a guess; a
-  partial check reported as a full one is worse
+- Done means you can show three things: the command you ran, its exit status and last
+  line of output, and the commit or working-tree state it ran on. A claim without
+  them is a guess; a partial check reported as a full one is worse
 - A hook block is information, not an obstacle: read the reason, do what it says,
   re-run. Never edit the hook or its config, add `--no-verify`, or reshape the command
   in order to slip past it. If the block is wrong, stop and say so — the owner decides
