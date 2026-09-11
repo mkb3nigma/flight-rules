@@ -247,6 +247,10 @@ cloned repo execute code inside the hook.
 
 ### Wiring (Claude Code)
 
+`hooks/wiring.test.sh` checks both paths by RUNNING every registered hook in each
+environment — with `CLAUDE_PLUGIN_ROOT` set and with it unset — rather than by matching
+filenames. It used to match, and passed 15/15 while the snippet below injected nothing.
+
 **With the plugin, nothing to wire** — `hooks/hooks.json` registers all three agent
 hooks; pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep
 the scripts in `.ai/hooks/` and point `.claude/settings.json` at them:

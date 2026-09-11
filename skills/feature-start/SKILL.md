@@ -91,5 +91,28 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 ```bash
 git worktree remove {WORKTREE_DIR}/<slug>
 git branch -d <branch>
-git branch --merged {INTEGRATION_BRANCH} | grep -vE '^\*|{PROTECTED_BRANCHES}' | xargs -r git branch -d
 ```
+
+To find others already merged, **list them and delete by name** — one command per
+branch, never piped into `xargs`:
+
+```bash
+git for-each-ref --format='%(refname:short)' --merged {INTEGRATION_BRANCH} refs/heads/
+# then, for each one you actually want gone:
+git branch -d <branch>
+```
+
+The previous version of this was a single pipeline —
+`git branch --merged | grep -vE '^\*|{PROTECTED_BRANCHES}' | xargs -r git branch -d` —
+and it **deleted protected branches**. Three reasons at once, and each is worth knowing
+because they recur: `{PROTECTED_BRANCHES}` is an anchored regex (`^main$`) while
+`git branch --merged` indents every name by two spaces, so the filter matched nothing;
+a branch checked out in another worktree is marked `+`, not `*`, so it passed the first
+filter too; and in a project that never substituted the placeholder the pattern is the
+literal `{PROTECTED_BRANCHES}`, which matches nothing at all. Reproduced 2026-09-11:
+`Deleted branch dev`, `Deleted branch release/1.0`.
+
+`xargs` is the part that made it unrecoverable. The branch names never appear in the
+command string, so the agent guard — which denies `git branch -d main` — had nothing to
+read and allowed the pipeline. Naming each branch is not a style preference: it is what
+lets the guard adjudicate.
