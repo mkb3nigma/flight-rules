@@ -78,6 +78,12 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     covered. **Folds from an upstream are additions**: `/upstream-check` step 4 folds by
     hand into `rules/` as well as `skills/`, and an adopted paragraph costs a reader
     exactly what an authored one does. Its warrant is the pin.
+19. **Datetimes stored without a zone** — grep the diff's added lines. ❌ on a
+    timestamp or datetime column declared without a timezone, or on `datetime.now()`
+    / `date.today()` with no tz argument. ⚠️ on `new Date(…)`, `time.time()` or a
+    locale date parse — right for a reader, wrong for storage, so say which this one
+    is. Converting a stored UTC instant for a reader is never a hit, whoever the
+    reader is: a screen, an email, a report, a scheduled job.
 
 ## Report
 
