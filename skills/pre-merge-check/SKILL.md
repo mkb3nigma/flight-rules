@@ -16,7 +16,7 @@ restating one is invisible to enforcement, so the conf wins.
 
 Run every automated check before merging a feature branch into its destination
 (default: `{INTEGRATION_BRANCH}`). Prints a pass/fail report and stamps a git note when
-clean so a `pre-merge-commit` hook can allow the merge. Does NOT merge, push, or run AI
+clean so the `commit-msg` hook can allow the merge. Does NOT merge, push, or run AI
 review (use `/dg` for that).
 
 Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATION_BRANCH}`;

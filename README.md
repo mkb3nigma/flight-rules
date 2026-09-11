@@ -119,7 +119,7 @@ flavor stays in the project.** Two ways to consume, in order of preference:
 ## Parameters
 
 Skills refer to placeholders rather than hardcoding a project's setup. The branch
-policy has **one home, `.ai/flight-rules.conf`** — five keys, `PROTECTED_BRANCHES`,
+policy has **one home, `.ai/flight-rules.conf`** — six keys, `PROTECTED_BRANCHES`,
 `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`, `WORKTREE_DIR`, the
 file the hooks read — so the skills and the enforcement never disagree about which
 branches are protected. The rest lives in the skill's `EXTENSIONS.md`.

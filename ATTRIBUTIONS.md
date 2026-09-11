@@ -41,7 +41,7 @@ theirs. If the post resurfaces, credit the author and add the permalink here. Th
 nothing to track for updates, so this source has no [UPSTREAMS.md](UPSTREAMS.md) row.
 
 Principle 6 ("Judge Ideas on Their Merit") is original to this repo and MIT-licensed
-like the rest. It is called out only because both of its neighbours are not.
+like the rest. It is called out only because its neighbours are not: principle 5 is credited below, and principle 7 is original to this repo.
 
 ## skills/diagnose/ — concept credit
 

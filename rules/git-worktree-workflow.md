@@ -1,8 +1,11 @@
 # Git Worktree Workflow
 
 Branch discipline for AI-assisted development. Parameterized: a project defines
-`{PROTECTED_BRANCHES}` (e.g. `main`, `staging`, `dev`), `{INTEGRATION_BRANCH}` (where
-feature work merges), and `{WORKTREE_DIR}` (e.g. `.ai/worktrees/`).
+`{PROTECTED_BRANCHES}` (e.g. `main`, `staging`, `dev`), `{PR_ONLY_BRANCHES}` (moves only
+through a reviewed PR), `{NOTE_GATED_BRANCHES}` (a local merge needs a passing
+`pre-merge-check` note — unset, this is *protected but not PR-only*),
+`{INTEGRATION_BRANCH}` (where feature work merges), and `{WORKTREE_DIR}`
+(e.g. `.ai/worktrees/`). All five live in `.ai/flight-rules.conf`.
 
 ## Why worktrees
 
@@ -12,8 +15,10 @@ branch — feature work physically cannot dirty the main checkout.
 
 ## Rules
 
-Each item says how it is enforced — **hook**, **skill**, or **advisory**. Advisory
-items are reviewed at every plugin release and either given enforcement or deleted.
+Each item says how it is enforced — **hook**, **skill**, **advisory**, or **reminded**
+(no gate, but `post-merge` and `session-start.sh` put it in front of the next session).
+Advisory items are reviewed at every plugin release and either given enforcement or
+deleted.
 
 ### 🚫 Forbidden
 1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
@@ -85,24 +90,33 @@ git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR
 
 - Before requesting a merge: run the project's pre-merge checklist (see the
   `pre-merge-check` skill) and an adversarial review (see `dg`) for code changes.
-- Bad merge on a protected branch: `git revert -m 1 <merge-sha>` — don't rewrite history.
+- Bad merge on a protected branch: revert it, don't rewrite history — but do it the way
+  the branch allows. On a **PR-only** branch `git revert` is refused by
+  `reference-transaction` (Forbidden 7 lists reverting), so make the revert on a branch
+  and open a PR: `git worktree add {WORKTREE_DIR}/revert-x -b fix/revert-x origin/main`,
+  then `git revert -m 1 <merge-sha>` there. On any other protected branch,
+  `git revert -m 1 <merge-sha>` in place is fine.
 
 ## Enforcement (optional but recommended)
 
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
 Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
 
-- The merge gate, three git hooks plus `post-merge` (`install.sh` refuses to install
-  unless all four are present, then runs `git config core.hooksPath <dir>` and
+- The merge gate, **five git hooks** (`install.sh` refuses to install unless all five
+  are present, then runs `git config core.hooksPath <dir>` and
   `git config merge.ff false` — the second matters: a fast-forward creates no merge
   commit, so without it no gate hook ever fires):
-  `pre-merge-commit` blocks any local merge into a **PR-only** branch
-  (`{PR_ONLY_BRANCHES}`, default `main`); `commit-msg` requires a passing
-  `pre-merge-check` note to merge into a **note-gated** branch
-  (`{NOTE_GATED_BRANCHES}`), exempting back-merges of `main`, and refuses squash
-  merges into a PR-only branch; `pre-rebase` refuses to rebase one. All read
-  `.ai/flight-rules.conf` **as committed on the merge target**, so an incoming branch
-  cannot relax the rule judging it.
+  `reference-transaction` is the backstop and the one Forbidden 7 rests on — a PR-only
+  branch may only move to a commit already on its upstream, whatever command moved it;
+  `pre-merge-commit` blocks a local merge into a **PR-only** branch
+  (`{PR_ONLY_BRANCHES}`, default `main`) and gives the early, specific message;
+  `commit-msg` requires a passing `pre-merge-check` note to merge into a **note-gated**
+  branch (`{NOTE_GATED_BRANCHES}`), exempting back-merges of `main`, refuses squash
+  merges into a PR-only branch, and refuses a merge that does not say who asked for it;
+  `pre-rebase` refuses to rebase one; `post-merge` writes the cleanup note.
+  They read `.ai/flight-rules.conf` from a state the incoming branch cannot edit —
+  `reference-transaction` from the **upstream**, the rest **as committed on the merge
+  target** — so a branch cannot relax the rule judging it.
 - `hooks/agent/pre-commit-check.sh`, the assistant-side guard — commits, tree
   destroyers, rebases and force-pushes on a protected branch; staged secrets anywhere.
   Ships with the Claude Code plugin. Details: `hooks/README.md`.

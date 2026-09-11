@@ -8,10 +8,12 @@ every assistant reaches them through a small pointer file.
 
 ```
 .ai/
+├── flight-rules.conf        # Branch policy — the one file every hook and skill reads
 ├── master-rules.md          # The project's rules (tech stack, patterns, workflow)
 ├── rules/                   # Focused rule files (security, testing, …)
 ├── skills/                  # Reusable AI workflows (plain Markdown, tool-agnostic)
-└── hooks/                   # Git hooks (core.hooksPath) + agent/ hook scripts
+│   └── <name>/EXTENSIONS.md # This project's deltas to a shared skill
+└── hooks/                   # Git hooks (core.hooksPath); agent/ only when hand-wired
 
 Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 ├── CLAUDE.md                        # Claude Code
@@ -32,6 +34,7 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 
    ```markdown
    ---
+   name: <name>
    description: One-line summary shown in the command picker.
    argument-hint: "<what to pass>"
    ---
@@ -39,18 +42,32 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    Read and follow `.ai/skills/<name>/SKILL.md`. Arguments: $ARGUMENTS
    ```
 
+   `name:` is not optional — it is what the assistant matches on, and this playbook's
+   own `skills/catalogue.test.sh` rejects a pointer without it. The template used to
+   omit it, so the rule telling projects how to write a pointer prescribed a shape the
+   playbook's own consistency check fails.
+
    The pointer may also pin a model (`model: opus`) for expensive skills. Logic never
    goes in the pointer — same rule as the root pointer files.
 3. **Two-layer rules** — generic rules live in a shared playbook repo (this one);
    the project's master-rules points at it and adds only project specifics. Project
    files extend and override; generic improvements flow upstream to the playbook.
-4. **Local extensions pattern** — a project extending a shared skill keeps the shared
-   body verbatim and appends a clearly marked `## <Project> Extensions` section that
-   is never synced upstream.
-5. **Hook logic lives in `.ai/hooks/`, not in a tool's config dir** — git hooks are
-   already tool-agnostic (`git config core.hooksPath .ai/hooks`); assistant-event hook
-   *scripts* (commit guards, session banners) go in `.ai/hooks/agent/`, and each
-   tool's own config (e.g. `.claude/settings.json` or a `.claude/hooks/*` shim) is a
-   thin pointer that just `exec`s them. Caveat: the scripts consume each tool's hook
-   I/O protocol (Claude Code: JSON on stdin, structured deny output), so a second
-   tool needs a small adapter — but the guard logic stays in one place.
+4. **Local extensions pattern** — a project extending a shared skill writes its deltas
+   in a separate `.ai/skills/<name>/EXTENSIONS.md`, which every SKILL.md reads first.
+   The shared body is never copied, so it can be updated in place and the project's
+   delta is the only thing to review on a sync. (Keeping a full local copy with an
+   appended `## <Project> Extensions` section is the **legacy** pattern — it works, and
+   it is how forks silently drift from the source.)
+5. **Hook logic lives outside any one tool's config dir** — git hooks are already
+   tool-agnostic (`git config core.hooksPath <dir>`), and each tool's own config
+   (e.g. `.claude/settings.json`) should be a thin pointer that just `exec`s the
+   scripts. Caveat: the scripts consume each tool's hook I/O protocol (Claude Code:
+   JSON on stdin, structured deny output), so a second tool needs a small adapter —
+   but the guard logic stays in one place.
+   Where the scripts physically live depends on how the playbook was installed, and
+   this is worth stating because an earlier version of this rule mandated
+   `.ai/hooks/agent/` unconditionally: **with the plugin the agent hooks are already
+   live from the plugin directory, and a local copy makes the guard run twice.** The
+   git hooks are still copy-in — no plugin can set `core.hooksPath`. A project that
+   hand-wires everything does use `.ai/hooks/`; one that uses the plugin copies only
+   `hooks/git/`.
