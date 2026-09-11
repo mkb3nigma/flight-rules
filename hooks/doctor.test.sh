@@ -68,6 +68,23 @@ D=$(mkrepo); printf 'MERGE_NEEDS_INSTRUCTION=off\n' >> "$D/.ai/flight-rules.conf
 say "$(has "$D" "no longer needs the user")" "0" "MERGE_NEEDS_INSTRUCTION=off is surfaced, not silent"
 rm -rf "$D"
 
+# doctor strips inline comments; the hooks did not. It validated a value that was never
+# the one in force, and reported ✅ on a repo whose enforcement was off.
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=^main$   # trunk-based\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "PROTECTED_BRANCHES=^main\$")" "0" "a commented value is reported as the hooks see it"
+rm -rf "$D"
+
+# PR_ONLY_BRANCHES=off and NOTE_GATED_BRANCHES=off are both honoured — by
+# reference-transaction and commit-msg respectively. Calling them errors was false, and
+# it made doctor nag daily about a correctly configured repo.
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=^main$\nPR_ONLY_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "PR_ONLY_BRANCHES=off is not an error"
+rm -rf "$D"
+
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=^main$\nNOTE_GATED_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "NOTE_GATED_BRANCHES=off is not an error"
+rm -rf "$D"
+
 D=$(mkrepo); git -C "$D" config --unset merge.ff
 say "$(rc "$D")" "1" "merge.ff unset → problem"
 say "$(has "$D" "fast-forward merge creates no commit")" "0" "…explains why"
@@ -89,11 +106,15 @@ rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "PROTECTED_BRANCHES=off is allowed"
-say "$(has "$D" "branch policy is disabled")" "0" "…with a warning"
+say "$(has "$D" "the branch policy is off")" "0" "…with a warning naming both layers"
 rm -rf "$D"
 
+# This case asserted that `off` on a git-hook key is an error, on the belief that only
+# PROTECTED_BRANCHES understands it. That was wrong: reference-transaction honours
+# PR_ONLY_BRANCHES=off and commit-msg honours NOTE_GATED_BRANCHES=off. The old assertion
+# made doctor report a problem every day about a correctly configured project.
 D=$(mkrepo); printf 'PR_ONLY_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
-say "$(rc "$D")" "1" "off on a git-hook key → problem (they do not understand it)"
+say "$(rc "$D")" "0" "off on a git-hook key is honoured, not an error"
 rm -rf "$D"
 
 D=$(mkrepo); rm "$D/.ai/flight-rules.conf"
