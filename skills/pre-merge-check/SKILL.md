@@ -57,7 +57,9 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     ⚠️ + explicit note for pre-existing findings on the destination.
 12. **No untracked env/secret files** staged or appearing.
 13. **Tests accompany source changes** — source files changed without a test change:
-    ⚠️ list them.
+    ⚠️ list them. For a fix, ⚠️ unless the PR shows the new test run against the
+    UNFIXED code and failing — a test written after the fix, or against a helper the
+    fix introduced, cannot fail on the old code and so evidences nothing.
 14. **Migrations present if models/schema changed** — ⚠️ if not.
 15. **New TODO/FIXME/HACK** — ⚠️ list; resolve or track before merge.
 16. **Commit-count sanity** — ⚠️ above ~20 commits: consider splitting.
@@ -87,8 +89,10 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
 
 ## Report
 
-Numbered ✅/⚠️/❌ summary table — every ✅ that ran something names the command and its
-last line of output, so "passed" is evidence, not a claim — then:
+Numbered ✅/⚠️/❌ summary table — every ✅ that ran something names the command, its exit
+status and its last line of output, so "passed" is evidence, not a claim. The two can
+disagree: a runner printing "402 passed" above a summary line while exiting 1 reads
+green to a human and red to CI — then:
 - Any ❌ → `Result: NOT READY` — do NOT stamp.
 - Clean → `Result: ✅ READY TO MERGE` and stamp:
   ```bash
