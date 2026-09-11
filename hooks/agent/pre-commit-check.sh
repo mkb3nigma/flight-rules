@@ -19,7 +19,9 @@
 # Put the policy in .ai/flight-rules.conf. It sits beside the rules in the
 # tool-agnostic .ai/ directory, so a git hook, a Claude Code hook and any other
 # assistant's adapter read one list instead of each restating it in its own settings
-# file — the same reason this script lives in .ai/hooks/ rather than .claude/.
+# file — the same reason the policy sits in .ai/ rather than inside one tool's
+# settings. (Where this SCRIPT lives varies: the plugin directory with the plugin,
+# .ai/hooks/agent/ hand-wired, hooks/agent/ in the playbook repo itself.)
 # The environment is for a one-off, or a policy meant for one tool only.
 #
 # It is parsed as DATA — matched with sed, never sourced — so a hostile repository

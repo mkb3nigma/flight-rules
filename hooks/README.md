@@ -293,6 +293,46 @@ design to stop someone acting deliberately.** A guard that catches the careless 
 and is honest about the willful one is more useful than one that poses as a security
 boundary and isn't.
 
+### With the plugin alone, a protected branch is only half guarded
+
+`core.hooksPath` cannot be set by a plugin — git offers no mechanism — so the **git**
+hooks need one `install.sh` run per clone. Until that happens a project has the agent
+guard and nothing else, and the agent guard does not match every way a ref moves.
+Measured 2026-09-11 on a plugin-installed project that had not run `install.sh`, on a
+protected PR-only `main`:
+
+| Command | Verdict |
+|---|---|
+| `git commit`, `git rm` | blocked (agent guard) |
+| `git merge`, `git cherry-pick`, `git revert` | **allowed** |
+| `git branch -f main …`, `git update-ref refs/heads/main …` | **allowed** |
+
+`git merge feature/x` was confirmed moving `main` with no layer objecting. `doctor.sh`
+reports this at session start — naming `core.hooksPath` and `merge.ff` with the commands
+to fix both — so the state is loud, not silent. **Run `install.sh`.** With the git hooks
+present, `reference-transaction` refuses every one of those.
+
+**Teaching the agent guard to cover them was tried and abandoned**, and the attempt is
+recorded so it is not tried a fourth time. Adding matchers for those five commands
+produced, in one afternoon: a no-op `git rebase --abort` prefix that disarmed the whole
+new matcher (`main` moved, merge landed); `git branch -M <name>` renaming the protected
+branch out of existence; `git update-ref --stdin`, whose refs are not in the command
+string at all; quoted target names; and `git merge X && git branch -f main Y` escaping
+because the dispatch is a first-match chain, so targets are read only from the first
+matcher that fires. The suite reported 553 passed, 0 failed throughout.
+
+The lesson is a layering one, and it is the same error twice in opposite directions. The
+guard was once *relaxed* on the belief that the ref gate backstopped it — it does not
+cover the destructive class, which moves no ref. It was then *tightened* on the belief
+that it could do the ref gate's job — it cannot, because matching command strings is
+open-ended and each new matcher brings its own bypass. **The agent guard is an early,
+specific message. The git hooks are the enforcement.** A gap in the guard is closed by
+installing the git hooks, not by adding a matcher.
+
+There is also a cost to trying: a guard that blocks legitimate work teaches the next
+agent to route around blocks, and the block message names the opt-out. A ruleset
+restrictive enough to be safe against every shape is one nobody follows.
+
 ### The agent guard over-blocks prose. That is the accepted trade.
 
 It matches a git verb anywhere in the command string, so writing *about* a git command
