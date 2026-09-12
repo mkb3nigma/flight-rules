@@ -225,7 +225,7 @@ fi
 
 echo "Degrade safely where there is nothing to enforce:"
 BASE=$(mktemp -d "$TMPROOT/n.XXXXXX"); D="$BASE/repo"; mkdir -p "$D" "$BASE/hooks"
-git init -q -b main "$D"
+git init -q -b main "$D" || die "git init failed in $D"
 git -C "$D" config user.email t@t.t; git -C "$D" config user.name t
 echo x > "$D/f.txt"; git -C "$D" add -A; git -C "$D" commit -qm "chore: base"
 cp "$HOOK_SRC" "$BASE/hooks/reference-transaction"; chmod +x "$BASE/hooks/reference-transaction"

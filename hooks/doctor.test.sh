@@ -7,18 +7,35 @@ DOCTOR="$H/doctor.sh"
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
+# A fixture that cannot be built is not a test failure, it is an aborted run — so it
+# stops the suite rather than being counted. The builders below run inside command
+# substitutions, where a FAIL increment would be discarded with the subshell; `$$` is
+# the parent's pid even there, so the signal reaches the trap. Measured 2026-09-12:
+# with every fixture repo broken this suite still scored 11 of 36.
+MAINPID=$$
+trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
+die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+
 # A repo with the hooks copied in and installed the documented way.
 mkrepo() {
   local d; d=$(cd "$(mktemp -d)" && pwd -P)
-  git -C "$d" init -q -b main
+  git -C "$d" init -q -b main || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.ai/hooks"
+  # A cp that fails leaves doctor reporting a missing hook, which several cases here
+  # expect for other reasons — the 2026-09-11 shape where a suite silently tested the
+  # wrong copy. So it is checked, not assumed.
   cp "$H/git/pre-merge-commit" "$H/git/commit-msg" "$H/git/pre-rebase" "$H/git/post-merge" \
-     "$H/git/reference-transaction" "$d/.ai/hooks/"
+     "$H/git/reference-transaction" "$d/.ai/hooks/" || die "could not copy the git hooks from $H/git"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath .ai/hooks
   git -C "$d" config merge.ff false
   printf 'PROTECTED_BRANCHES=^main$\n' > "$d/.ai/flight-rules.conf"
+  # What every assertion assumes: a repo, and five hooks that are there to be broken.
+  [ -d "$d/.git" ] || die "no .git in the fixture at $d"
+  for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction; do
+    [ -x "$d/.ai/hooks/$_h" ] || die "$_h missing or not executable in the fixture"
+  done
   printf '%s' "$d"
 }
 # run <dir> → prints "<exit> <output>"; HOME is redirected so the plugin check is deterministic.

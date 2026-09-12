@@ -61,11 +61,22 @@ echo "Every registered hook actually RUNS, in the environment each path provides
 # So each path is now EXERCISED, not matched. The distinction matters because the two
 # paths differ in more than their text: the plugin sets CLAUDE_PLUGIN_ROOT, and the
 # hand-wired snippet does not.
+# A fixture that cannot be built is not a test failure, it is an aborted run — so it
+# stops the suite rather than being counted. make_repo runs inside a command
+# substitution, where a FAIL increment would be discarded with the subshell; `$$` is the
+# parent's pid even there, so the signal reaches the trap. Measured 2026-09-12: with the
+# fixture's `git init` broken this suite still scored 15 of 24.
+MAINPID=$$
+trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
+die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+
 LAB=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$LAB"' EXIT
-git init -q "$LAB/proj"
+git init -q "$LAB/proj" || die "git init failed in $LAB/proj"
 ( cd "$LAB/proj" && git config user.email t@t.t && git config user.name t \
-  && echo x > f.txt && git add -A && git commit -qm base ) >/dev/null 2>&1
+  && echo x > f.txt && git add -A && git commit -qm base ) >/dev/null 2>&1 \
+  || die "could not build the project fixture in $LAB/proj"
+git -C "$LAB/proj" rev-parse --verify -q HEAD >/dev/null || die "no commit in the fixture"
 
 # Output goes to a FILE, not to stdout. An earlier draft returned it via `$(run_hook …)`,
 # which runs the function in a subshell — so its FAIL increment was discarded and its ❌

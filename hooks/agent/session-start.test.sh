@@ -9,12 +9,21 @@ HOOK="$H/session-start.sh"
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
+# A fixture that cannot be built is not a test failure, it is an aborted run — so it
+# stops the suite rather than being counted. The builders below run inside command
+# substitutions, where a FAIL increment would be discarded with the subshell; `$$` is
+# the parent's pid even there, so the signal reaches the trap. Measured 2026-09-12:
+# with every fixture repo broken this suite still scored 6 of 16.
+MAINPID=$$
+trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
+die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+
 # A project with an integration branch, a worktree dir, and the enforcement installed
 # far enough to keep doctor quiet — session-start runs doctor first, and its findings
 # are doctor.test.sh's business, not this suite's. They would drown every assertion here.
 mkrepo() {
   local d; d=$(cd "$(mktemp -d)" && pwd -P)
-  git -C "$d" init -q -b trunk
+  git -C "$d" init -q -b trunk || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   git -C "$d" config merge.ff false
   mkdir -p "$d/.ai/hooks" "$d/.ai/worktrees"
@@ -28,12 +37,16 @@ mkrepo() {
   printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash .ai/hooks/agent/pre-commit-check.sh"}]}]}}' \
     > "$d/.claude/settings.json"
   mkdir -p "$d/.ai/hooks/agent"; cp "$H/pre-commit-check.sh" "$d/.ai/hooks/agent/"
-  echo base > "$d/f.txt"; git -C "$d" add -A; git -C "$d" commit -qm "chore: base"
+  echo base > "$d/f.txt"; git -C "$d" add -A
+  git -C "$d" commit -qm "chore: base" >/dev/null || die "the base commit failed in $d"
+  # What every assertion assumes: trunk exists, and there is a worktree dir to scan.
+  git -C "$d" rev-parse --verify -q trunk >/dev/null || die "no trunk in the fixture"
+  [ -d "$d/.ai/worktrees" ] || die "no worktree directory in the fixture"
   printf '%s' "$d"
 }
 # branch <dir> <name> [merge]  — create a branch with a commit; merge it if asked.
 branch() {
-  git -C "$1" checkout -qb "$2" 2>/dev/null
+  git -C "$1" checkout -qb "$2" 2>/dev/null || die "could not create branch $2 in $1"
   echo "$2" > "$1/${2//\//_}.txt"; git -C "$1" add -A
   git -C "$1" commit -qm "chore: on $2"
   git -C "$1" checkout -q trunk

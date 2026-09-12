@@ -11,19 +11,33 @@ set -uo pipefail
 HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pre-commit-check.sh"
 PASS=0; FAIL=0
 
+# A fixture that cannot be built is not a test failure, it is an aborted run — so it
+# stops the suite rather than being counted. make_repo runs inside a command
+# substitution, where a FAIL increment would be discarded with the subshell; `$$` is the
+# parent's pid even there, so the signal reaches the trap. Measured 2026-09-12: with the
+# fixture's `git init` broken this suite still scored 267 of 574.
+MAINPID=$$
+trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
+die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+
 # A repo on $1, with the hook scoped to it via CLAUDE_PROJECT_DIR.
 make_repo() {
   local branch="$1" dir
   # Resolve symlinks: on macOS mktemp hands back /var/... while git reports the
   # real /private/var/..., and the hook's project-scoping compares the two.
   dir=$(cd "$(mktemp -d)" && pwd -P)
-  git -C "$dir" init -q
+  git -C "$dir" init -q || die "git init failed in $dir"
   git -C "$dir" config user.email t@t.t
   git -C "$dir" config user.name t
   echo x > "$dir/f.txt"
   git -C "$dir" add -A >/dev/null 2>&1
-  git -C "$dir" commit -qm init >/dev/null 2>&1
-  git -C "$dir" branch -M "$branch" >/dev/null 2>&1
+  git -C "$dir" commit -qm init >/dev/null 2>&1 || die "the init commit failed in $dir"
+  git -C "$dir" branch -M "$branch" >/dev/null 2>&1 || die "could not rename the branch to $branch"
+  # The branch IS the fixture here: every verdict below depends on which one is checked
+  # out. A rename that failed leaves the repo on the default branch and the case tests
+  # the wrong policy.
+  [ "$(git -C "$dir" branch --show-current)" = "$branch" ] \
+    || die "fixture is on $(git -C "$dir" branch --show-current), not $branch"
   printf '%s' "$dir"
 }
 
