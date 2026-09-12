@@ -301,6 +301,15 @@ This is deliberate, because the failures worth preventing are the accidental one
 Known blind spots, by the same logic: a git alias (`git ci`) and `$(which git) rm`.
 Neither happens by accident.
 
+A third, confirmed by test: **`git merge --squash` lands on a note-gated branch without
+a `pre-merge-check` note.** The note gate reads `MERGE_HEAD`, and a squash writes
+`SQUASH_MSG` instead, so the commit-msg hook sees an ordinary commit and lets it
+through. `--squash` is a deliberate choice of merge strategy, typed by someone who knows
+what it does — it is not the habit-and-wrong-tab failure this layer exists to catch, and
+gating it would mean treating every commit on the branch as a possible merge. On a
+PR-only branch this does not arise: `reference-transaction` refuses the ref move whatever
+produced it.
+
 **The design rule follows: close the paths reachable by accident; do not contort the
 design to stop someone acting deliberately.** A guard that catches the careless case
 and is honest about the willful one is more useful than one that poses as a security
