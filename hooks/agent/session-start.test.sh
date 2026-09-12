@@ -90,6 +90,24 @@ say "$(grep -c 'fix/axb' <<<"$OUT")" "1" "the merged fix/axb is reported"
 say "$(grep -c 'fix/a\.b' <<<"$OUT")" "0" "fix/a.b is not matched by the merged fix/axb"
 rm -rf "$D"
 
+echo "A tag sharing a branch name does not hide the branch:"
+# Regression 2026-09-12 (adversarial review): `%(refname:short)` abbreviates against ALL
+# refs. With a tag named `trunk`, every branch merged into it comes back as
+# `heads/<name>`, the whole-line match never fires, and the reminder silently stops
+# reporting — the failure mode with no symptom. A bare `--merged trunk` resolves to the
+# tag as well, so the merged set is computed against the wrong commit.
+D=$(mkrepo)
+branch "$D" fix/merged merge
+# the tag has to shadow the branch being MATCHED for `short` to mangle it, and one on
+# the integration branch for the `--merged` argument to resolve to the wrong object.
+git -C "$D" tag fix/merged
+git -C "$D" tag trunk
+git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
+OUT=$(run "$D")
+say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "a merged worktree is still reported when tags shadow the branch names"
+say "$(grep -c 'heads/' <<<"$OUT")" "0" "no \`heads/\` prefix appears in the reminder"
+rm -rf "$D"
+
 echo "Nothing to say, nothing said:"
 D=$(mkrepo)
 branch "$D" fix/open

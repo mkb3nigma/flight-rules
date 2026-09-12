@@ -97,7 +97,7 @@ To find others already merged, **list them and delete by name** — one command 
 branch, never piped into `xargs`:
 
 ```bash
-git for-each-ref --format='%(refname:short)' --merged {INTEGRATION_BRANCH} refs/heads/
+git for-each-ref --format='%(refname:lstrip=2)' --merged refs/heads/{INTEGRATION_BRANCH} refs/heads/
 # then, for each one you actually want gone:
 git branch -d <branch>
 ```
