@@ -27,6 +27,16 @@ make_repo() {
   printf '%s' "$dir"
 }
 
+# What the exit-status guards below do and do not prove. The guard signals a block by
+# printing JSON and exiting 0; an allow is silence and exit 0. So a non-zero exit means
+# the hook DIED, and is reported as a harness failure rather than counted as an allow.
+# Two limits, accepted rather than papered over:
+#   - an allow is still the absence of a deny. A hook that exits 0 having decided
+#     nothing passes every allow case, and there is no signal that would tell them
+#     apart while allow stays silent by contract.
+#   - if the guard ever moves to exit-status signalling (non-zero = block), these
+#     guards would read a legitimate block as a crash. They are pinned to the current
+#     JSON contract deliberately; change both together.
 # check <description> <expect: deny|allow> <branch> <command> [env assignments...]
 check() {
   local desc="$1" expect="$2" branch="$3" cmd="$4"; shift 4

@@ -9,9 +9,9 @@ HOOK="$H/session-start.sh"
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
-# A project with an integration branch, a worktree dir, and the hooks NOT installed
-# (doctor's findings are its own suite's business; here they would drown the output,
-# so core.hooksPath and merge.ff are set to keep doctor quiet).
+# A project with an integration branch, a worktree dir, and the enforcement installed
+# far enough to keep doctor quiet — session-start runs doctor first, and its findings
+# are doctor.test.sh's business, not this suite's. They would drown every assertion here.
 mkrepo() {
   local d; d=$(cd "$(mktemp -d)" && pwd -P)
   git -C "$d" init -q -b trunk
@@ -46,7 +46,13 @@ branch() {
 run() {
   local out rc
   out=$( (cd "$1" && HOME="$1/fakehome" bash "$HOOK" 2>/dev/null) ); rc=$?
-  [ $rc -ne 0 ] && printf 'HARNESS: the hook exited %s — nothing was tested\n' "$rc"
+  # The real output is DISCARDED on a non-zero exit, not appended to: a hook that
+  # printed the expected line and then died would otherwise satisfy every presence
+  # assertion. Nothing a crashed run said is evidence of anything.
+  if [ $rc -ne 0 ]; then
+    printf 'HARNESS: the hook exited %s — nothing below was tested\n' "$rc"
+    return
+  fi
   printf '%s' "$out"
 }
 
@@ -116,7 +122,11 @@ say "$(run "$D" | grep -c .)" "0" "no merged worktrees → no output at all"
 rm -rf "$D"
 
 D=$(mkrepo)
-say "$(run "$D" | grep -c .)" "0" "no worktree directory → no output"
+say "$(run "$D" | grep -c .)" "0" "an empty worktree directory → no output"
+rm -rf "$D"
+
+D=$(mkrepo); rmdir "$D/.ai/worktrees"
+say "$(run "$D" | grep -c .)" "0" "no worktree directory at all → no output"
 rm -rf "$D"
 
 echo "Once a day, per project:"
