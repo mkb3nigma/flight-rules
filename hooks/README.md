@@ -145,9 +145,12 @@ Guards that fire on the assistant's own events, before git ever runs:
   rather than silently switching off.
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
 - **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
-  every hook's executable bit, `merge.ff`, the guard's parser, the conf's keys and
-  regexes, and that the guard is wired once — every one a state that has failed
-  silently before. `session-start.sh` runs it daily and prints only problems.
+  every hook's executable bit *and* that each one still contains the string that makes
+  it that hook (a present, executable stub enforces nothing), `merge.ff`, the guard's
+  parser, the conf's keys and regexes, that every script `.claude/settings.json` wires
+  exists, and that the guard is wired once and actually enabled — every one a state
+  that has failed silently before. `session-start.sh` runs it daily and prints only
+  problems.
   Tests: `doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project, lists
   worktrees whose branches are already merged so they get cleaned up. Reads

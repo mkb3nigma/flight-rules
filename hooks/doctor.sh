@@ -22,6 +22,22 @@ bad()  { FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$1"; }
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { bad "not inside a git repository"; exit 1; }
 cd "$ROOT" || exit 1
 
+# A hook that is present, executable and EMPTY passes every other check here while
+# enforcing nothing. doctor already content-checks the agent guard (for a pre-conf copy);
+# these are the same idea for the five git hooks — one string each that a real copy must
+# contain. It is a grep, so a determined edit defeats it; it catches the stub, the
+# truncated copy and the wrong-file-name, which is what actually happens.
+hook_marker() {
+  case "$1" in
+    pre-merge-commit)       printf 'PR_ONLY' ;;
+    commit-msg)             printf 'pre-merge-check' ;;
+    pre-rebase)             printf 'PR_ONLY' ;;
+    post-merge)             printf 'post-merge-note' ;;
+    reference-transaction)  printf 'is-ancestor' ;;
+    *)                      printf 'flight-rules' ;;
+  esac
+}
+
 # ── 1. Git hooks: path set, directory present, every bare-named hook executable ──
 HOOKS_PATH=$(git config core.hooksPath 2>/dev/null || true)
 if [[ -z "$HOOKS_PATH" ]]; then
@@ -37,6 +53,8 @@ else
         bad "$h missing from $HOOKS_PATH — the gate is half built"
       elif [[ ! -x "$HOOKS_DIR/$h" ]]; then
         bad "$h is not executable — git ignores it silently (chmod +x, and commit the mode)"
+      elif ! grep -q "$(hook_marker "$h")" "$HOOKS_DIR/$h"; then
+        bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything"
       else
         ok "$h installed and executable"
       fi
@@ -114,9 +132,23 @@ fi
 
 # ── 4. The guard is wired once, not twice ─────────────────────────────────────
 PLUGIN_ON=0
-grep -qs '"flight-rules@' "$HOME/.claude/settings.json" 2>/dev/null && PLUGIN_ON=1
+# `"flight-rules@x": false` contains the name too. Match the VALUE, or a disabled plugin
+# reports as a wired guard.
+grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' "$HOME/.claude/settings.json" 2>/dev/null && PLUGIN_ON=1
 LOCAL_WIRED=0
 grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=1
+# Wiring a path is not the same as wiring a FILE. Every script named in the settings is
+# checked for existence — a dangling path satisfies the grep above just as well as a real
+# one, and the hook then silently never runs.
+if [[ -f .claude/settings.json ]]; then
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] && continue
+    [[ -f "$ROOT/$rel" ]] || bad ".claude/settings.json wires $rel, which does not exist — that hook never runs"
+    # A ${CLAUDE_PLUGIN_ROOT}-prefixed path lives in the installed plugin, not here; it is
+    # captured with its prefix so it can be dropped rather than reported as missing.
+  done < <(grep -oE '(\$\{?CLAUDE_PLUGIN_ROOT\}?/)?(\.ai/)?hooks/[A-Za-z0-9_/-]*\.sh' .claude/settings.json \
+           | grep -v CLAUDE_PLUGIN_ROOT | sort -u)
+fi
 if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
   warn "the flight-rules plugin is enabled AND .claude/settings.json wires a pre-commit-check.sh — the guard runs twice (drop the local wiring)"
 elif [[ $PLUGIN_ON -eq 1 ]]; then ok "agent guard via the plugin"
