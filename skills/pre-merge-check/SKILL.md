@@ -40,13 +40,35 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     between cleanups. Gate only suites the project keeps at zero errors; report
     known-debt suites explicitly instead of failing on them.
 6. **Secrets scan** — run the guard's own patterns over the added lines of
-   `git diff <dest>...HEAD`. Read them at run time from the first of
-   `${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh`, `.ai/hooks/agent/pre-commit-check.sh`,
-   `hooks/agent/pre-commit-check.sh` that exists (the `hit '…'` lines, the `.env` rule,
-   the credential-literal grep); if none does, ❌ "guard not found" — never report a
-   scan you could not run. Apply **no exemptions** here: the guard skips prose files
-   and honours `flight-rules: allow` at commit time; the branch-level scan is the
-   second look, so it reports those too, as ⚠️. ❌ on any other hit (redact values).
+   `git diff <dest>...HEAD`. Prefer the guard's live source: the first of
+   `${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh`,
+   `~/.claude/plugins/cache/*/flight-rules/*/hooks/agent/pre-commit-check.sh` (highest
+   version), `.ai/hooks/agent/pre-commit-check.sh`, `hooks/agent/pre-commit-check.sh`
+   that exists — the `hit '…'` lines, the `.env` rule, the credential-literal grep.
+   **If none exists, scan with the list below rather than skipping the check** — in a
+   plugin install `CLAUDE_PLUGIN_ROOT` is not exported to your shell and none of the
+   repo paths are there, which is the ordinary case, not a broken one. Either way,
+   state which source you used: `patterns: <path>` or `patterns: built-in fallback`.
+   Never report a scan you did not run.
+
+   ```
+   AKIA[A-Z0-9]{16}                                             # AWS access key
+   (^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}                      # OpenAI/Anthropic style
+   gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}       # GitHub token
+   xox[baprs]-[A-Za-z0-9-]{10,}                                 # Slack token
+   AIza[0-9A-Za-z_-]{35}                                        # Google API key
+   BEGIN [A-Z ]*PRIVATE KEY                                     # any PEM private key
+   ```
+   Plus a staged `.env` (`(^|/)\.env(\.|$)`, excluding
+   `.env.example/.sample/.template/.dist/.md`), and a credential literal:
+   `(password|passwd|secret|token|api_?key)["']?[[:space:]]*[=:][[:space:]]*["'][^"'$\{]{8,}`
+   — let through `<angle-bracket>`, `REDACTED`, `CHANGEME`, `EXAMPLE`, `placeholder`,
+   `your-…`, `…-here`, `xxxxxxxx`. `catalogue.test.sh` fails if this list and the
+   guard's drift apart, so it is a copy that cannot go stale silently.
+
+   Apply **no exemptions** here: the guard skips prose files and honours
+   `flight-rules: allow` at commit time; the branch-level scan is the second look, so
+   it reports those too, as ⚠️. ❌ on any other hit (redact values).
 7. **Debug-logging check** — new `console.log` / stray print/debug lines: ⚠️ warn.
 8. **Conventional commits** — every commit on the branch starts with an allowed prefix
    (`feature:` `fix:` `refactor:` `test:` `docs:` `chore:`; `hotfix/` branches use `fix:`).

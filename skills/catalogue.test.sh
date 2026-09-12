@@ -44,6 +44,30 @@ for s in $SKILLS; do grep -q "^$s\$" <<<"$LISTED" || bad "README table is missin
 for l in $LISTED; do grep -q "^$l\$" <<<"$SKILLS" || bad "README table lists /$l, which does not ship"; done
 [ "$SKILLS" = "$LISTED" ] && ok "README table matches"
 
+# /pre-merge-check carries a copy of the guard's secret patterns, because a plugin
+# consumer's shell has no CLAUDE_PLUGIN_ROOT and no repo copy of the guard to read them
+# from. A copy that drifts is worse than none: the skill would report a clean scan it
+# ran with last year's patterns. This is the check that makes the copy safe to keep.
+echo "/pre-merge-check's fallback patterns match the guard's:"
+GUARD=hooks/agent/pre-commit-check.sh
+SKILL=skills/pre-merge-check/SKILL.md
+GUARD_PATS=$(sed -n -E "s/^if hit '(.*)'; then\$/\1/p" "$GUARD")
+[ -n "$GUARD_PATS" ] || bad "$GUARD: no \`hit '…'\` patterns found — this test is reading the wrong thing"
+N=0
+while IFS= read -r pat; do
+  [ -n "$pat" ] || continue
+  N=$((N+1))
+  grep -qF -- "$pat" "$SKILL" || bad "$SKILL is missing the guard's pattern: $pat"
+done <<EOF
+$GUARD_PATS
+EOF
+# …and nothing in the skill's list that the guard no longer has.
+while IFS= read -r pat; do
+  [ -n "$pat" ] || continue
+  grep -qF -- "$pat" "$GUARD" || bad "$SKILL lists a pattern the guard does not have: $pat"
+done < <(awk '/^   ```$/{n++; next} n==1' "$SKILL" | sed -n -E 's/^   ([^ #][^#]*[^ #])[[:space:]]+#.*/\1/p')
+[ "$FAIL" -eq 0 ] && ok "$N guard patterns, all present in the skill and none extra"
+
 echo "Plugin description names every skill that has a slash command in it:"
 for s in $(grep -oE '/[a-z-]+' .claude-plugin/plugin.json | tr -d / | sort -u); do
   grep -q "^$s\$" <<<"$SKILLS" || bad "plugin.json mentions /$s, which does not ship"
