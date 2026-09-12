@@ -9,17 +9,32 @@ H="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"   # hooks/git dir under 
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
+# A fixture that cannot be built is not a test failure, it is an aborted run — so it
+# stops the suite rather than being counted. mkrepo and friends run inside command
+# substitutions, where a FAIL increment would be discarded with the subshell; `$$` is
+# the parent's pid even there, so the signal reaches the trap. Measured 2026-09-12:
+# with every fixture repo broken this suite still scored 18 of 44.
+MAINPID=$$
+trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
+die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+
 mkrepo() {
   local d; d=$(cd "$(mktemp -d)" && pwd -P)
-  git -C "$d" init -q -b main
+  git -C "$d" init -q -b main || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.ai/hooks"
-  cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$d/.ai/hooks/"
+  cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$d/.ai/hooks/" \
+    || die "could not copy the hooks under test from $H"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath "$d/.ai/hooks"
   git -C "$d" config merge.ff false
-  echo base > "$d/f"; git -C "$d" add -A; git -C "$d" commit -qm "base"
-  git -C "$d" branch dev
+  echo base > "$d/f"; git -C "$d" add -A
+  git -C "$d" commit -qm "base" >/dev/null || die "the base commit failed in $d"
+  git -C "$d" branch dev || die "could not create dev in $d"
+  # What every assertion assumes: both branches, and hooks that are actually wired.
+  git -C "$d" rev-parse --verify -q main >/dev/null || die "no main in the fixture"
+  git -C "$d" rev-parse --verify -q dev  >/dev/null || die "no dev in the fixture"
+  [ -x "$d/.ai/hooks/pre-merge-commit" ] || die "pre-merge-commit not executable in the fixture"
   printf '%s' "$d"
 }
 
@@ -162,7 +177,7 @@ echo "Back-merge exemption cannot be forged (post-merge review):"
 # mkrepo_with_origin: a bare origin holding main, so refs/remotes/origin/main exists.
 mkrepo_with_origin() {
   local d o; d=$(mkrepo); o=$(mktemp -d)
-  git init -q --bare "$o"; git -C "$d" remote add origin "$o"
+  git init -q --bare "$o" || die "git init failed (git init -q --bare "$o")"; git -C "$d" remote add origin "$o"
   git -C "$d" push -q origin main dev 2>/dev/null
   printf '%s' "$d"
 }
@@ -239,7 +254,7 @@ echo "post-merge must never offer a protected branch for deletion:"
 # the integration branch, so a project calling its branches anything else had them
 # listed as "safe to delete" in the note the next session is told to act on.
 PM=$(mktemp -d)
-git init -q -b trunk "$PM"
+git init -q -b trunk "$PM" || die "git init failed (git init -q -b trunk "$PM")"
 git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t
 git -C "$PM" config merge.ff false
 mkdir -p "$PM/.ai"
@@ -286,7 +301,7 @@ echo "post-merge: the cleanup note is a command you can paste:"
 # temp root where a leftover from an earlier run makes `worktree add` fail — silenced
 # by 2>&1, that turned this whole case green against the unfixed hook.
 WTB=$(mktemp -d); WT="$WTB/repo"
-git init -q -b trunk "$WT"
+git init -q -b trunk "$WT" || die "git init failed (git init -q -b trunk "$WT")"
 git -C "$WT" config user.email t@t.t; git -C "$WT" config user.name t
 git -C "$WT" config merge.ff false
 mkdir -p "$WT/.ai"
@@ -343,7 +358,7 @@ echo "post-merge: a tag sharing a branch name does not rename the branch:"
 # so the note offered `git branch -d heads/trunk`. A bare `--merged trunk` resolves to
 # the tag as well, so the merged set is computed against the wrong commit.
 AM=$(mktemp -d); AMR="$AM/repo"
-git init -q -b trunk "$AMR"
+git init -q -b trunk "$AMR" || die "git init failed (git init -q -b trunk "$AMR")"
 git -C "$AMR" config user.email t@t.t; git -C "$AMR" config user.name t
 git -C "$AMR" config merge.ff false
 mkdir -p "$AMR/.ai"
@@ -382,7 +397,7 @@ echo "post-merge: the emitted commands quote what they interpolate:"
 # `&`, `$`, `|` and parentheses are legal in a refname, and the note is advertised as a
 # command you can paste. `git branch -d fix/a&b` backgrounds a DIFFERENT branch's deletion.
 QB=$(mktemp -d); QR="$QB/repo"
-git init -q -b trunk "$QR"
+git init -q -b trunk "$QR" || die "git init failed (git init -q -b trunk "$QR")"
 git -C "$QR" config user.email t@t.t; git -C "$QR" config user.name t
 git -C "$QR" config merge.ff false
 mkdir -p "$QR/.ai"
@@ -408,7 +423,7 @@ echo "The note gate covers protected branches this project actually has:"
 # project using its own names gets the gate without configuring one. The old default
 # was the literal ^(dev|staging)$ and silently gated nothing here.
 NG=$(mktemp -d)
-git init -q -b trunk "$NG"
+git init -q -b trunk "$NG" || die "git init failed (git init -q -b trunk "$NG")"
 git -C "$NG" config user.email t@t.t; git -C "$NG" config user.name t
 git -C "$NG" config merge.ff false
 mkdir -p "$NG/.ai"
