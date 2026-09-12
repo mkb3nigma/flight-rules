@@ -155,6 +155,9 @@ Guards that fire on the assistant's own events, before git ever runs:
 - **`session-start.sh`** — SessionStart banner: once a day per project, lists
   worktrees whose branches are already merged so they get cleaned up. Reads
   `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
+  A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
+  reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.
+  Tests: `session-start.test.sh`.
 
 ### Configuration
 

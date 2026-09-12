@@ -54,8 +54,13 @@ for WORKTREE_PATH in "$WORKTREES_DIR"/*/; do
   BRANCH=$(git -C "$WORKTREE_PATH" branch --show-current 2>/dev/null)
   [ -z "$BRANCH" ] && continue
 
-  MERGED=$(git branch --merged "$INTEGRATION_BRANCH" 2>/dev/null | grep -w "$BRANCH")
-  if [ -n "$MERGED" ]; then
+  # for-each-ref + an exact whole-line match, not `git branch --merged | grep -w`.
+  # grep -w counts `-` as a word boundary, so with fix/a merged a worktree on
+  # fix/a-x was reported merged — and the reminder's whole job is to say which
+  # worktrees are safe to remove. -F matters too: a branch named fix/a.b is a
+  # BRE that matches fix/axb. for-each-ref also emits undecorated names.
+  if git for-each-ref --format='%(refname:short)' --merged "$INTEGRATION_BRANCH" refs/heads 2>/dev/null \
+       | grep -qxF "$BRANCH"; then
     WORKTREE_NAME=$(basename "$WORKTREE_PATH")
     STALE="$STALE\n  Branch: $BRANCH  →  $WORKTREE_DIR/$WORKTREE_NAME"
   fi

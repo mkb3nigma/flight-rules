@@ -33,6 +33,8 @@ jobs:
           done
       - name: Agent guard
         run: bash hooks/agent/pre-commit-check.test.sh
+      - name: Session-start reminder
+        run: bash hooks/agent/session-start.test.sh
       - name: Merge gate
         run: bash hooks/git/merge-gate.test.sh
       - name: Ref gate
