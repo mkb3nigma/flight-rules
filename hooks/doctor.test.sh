@@ -85,6 +85,43 @@ D=$(mkrepo); printf 'PROTECTED_BRANCHES=^main$\nNOTE_GATED_BRANCHES=off\n' > "$D
 say "$(rc "$D")" "0" "NOTE_GATED_BRANCHES=off is not an error"
 rm -rf "$D"
 
+# Three "looks installed but isn't" states doctor could not see (D4, 2026-09-11). Each
+# one leaves every existing check green while the enforcement does nothing.
+
+# 1. The hooks are present, executable, and empty. doctor already content-checks the
+#    AGENT guard for a pre-conf copy; the five git hooks had no equivalent, and
+#    CLAUDE.md calls a drifted hook copy the failure this repo cannot afford.
+D=$(mkrepo)
+for f in "$D"/.ai/hooks/*; do printf '#!/bin/sh\nexit 0\n' > "$f"; done
+chmod +x "$D"/.ai/hooks/*
+say "$(rc "$D")" "1" "hooks replaced by no-op stubs → problem"
+say "$(has "$D" "does not look like")" "0" "…and says which"
+rm -rf "$D"
+
+# 2. settings.json wires a script that is not there. doctor grepped the file for the
+#    string `pre-commit-check.sh`, which a dangling path satisfies just as well.
+D=$(mkrepo); mkdir -p "$D/.claude"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "PreToolUse": [ { "matcher": "Bash", "hooks": [ { "type": "command",
+  "command": "bash \"$(git rev-parse --show-toplevel)/hooks/agent/pre-commit-check.sh\"" } ] } ] } }
+JSON
+say "$(rc "$D")" "1" "settings.json points at a missing script → problem"
+say "$(has "$D" "does not exist")" "0" "…and names the path"
+rm -rf "$D"
+
+# 2b. …but a ${CLAUDE_PLUGIN_ROOT} path points into the installed plugin, not into this
+#     repo, so it must not be reported as missing.
+D=$(mkrepo); mkdir -p "$D/.claude"
+printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash \\"${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh\\""}]}]}}' > "$D/.claude/settings.json"
+say "$(rc "$D")" "0" "a plugin-rooted path is not reported as missing"
+rm -rf "$D"
+
+# 3. The plugin is listed and switched OFF. The check was a grep for the name.
+D=$(mkrepo); mkdir -p "$D/fakehome/.claude"
+printf '{"enabledPlugins":{"flight-rules@mkb3nigma": false}}\n' > "$D/fakehome/.claude/settings.json"
+say "$(has "$D" "no agent guard wired")" "0" "a disabled plugin does not count as wired"
+rm -rf "$D"
+
 D=$(mkrepo); git -C "$D" config --unset merge.ff
 say "$(rc "$D")" "1" "merge.ff unset → problem"
 say "$(has "$D" "fast-forward merge creates no commit")" "0" "…explains why"
@@ -137,7 +174,9 @@ rm -rf "$D"
 
 echo "--problems-only is silent on a healthy repo:"
 D=$(mkrepo); rm "$D/.ai/flight-rules.conf"; printf 'PROTECTED_BRANCHES=^main$\n' > "$D/.ai/flight-rules.conf"
-mkdir -p "$D/.claude"; printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash hooks/agent/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
+mkdir -p "$D/.claude" "$D/hooks/agent"; printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash hooks/agent/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
+# The wired script has to be THERE: a healthy repo is one where the path resolves.
+cp "$H/agent/pre-commit-check.sh" "$D/hooks/agent/pre-commit-check.sh"
 OUT=$(cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1)
 say "$(printf '%s' "$OUT" | grep -c .)" "0" "no output when nothing is wrong"
 rm -rf "$D"
