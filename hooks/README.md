@@ -142,7 +142,10 @@ Guards that fire on the assistant's own events, before git ever runs:
   `*.md|rst|txt` — keys are still caught
   there). A line marked `flight-rules: allow` is a reviewed exception.
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
-  rather than silently switching off.
+  rather than silently switching off. Nothing else is required: the compound-command
+  split is pure bash, because when it shelled out to `tr` a PATH without `tr` made
+  `git push --force origin main` and `git branch -D main` ALLOWED from a feature
+  branch, silently — the ref they name is read by splitting the command.
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
 - **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
   every hook's executable bit *and* that each one still contains the string that makes

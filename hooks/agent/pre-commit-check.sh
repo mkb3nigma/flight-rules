@@ -188,8 +188,23 @@ is_force_push() {
 # The trailing newline is load-bearing: `while read` returns non-zero on a final line
 # without one, so the loop body never runs for it — and a bare `git branch -d main`,
 # the whole point of the check, is a single segment with nothing after it.
+# Pure bash, no `tr`, no `sed`. It used to pipe through both, and `tr` in particular is
+# load-bearing in a way nothing announced: push_targets and branch_delete_targets are
+# built on this, and without `tr` the split returned NOTHING — so `git branch -D main`
+# was not even classified as a branch deletion, and `git push --force origin main` from
+# a feature branch resolved its target to "none named" and fell back to the branch you
+# stand on. Measured 2026-09-12 on a PATH without `tr`: both ALLOWED, silently. A guard
+# whose verdict depends on an unstated dependency is a guard that fails open.
+# `set -f` because unquoted expansion is how the split is done, and a segment
+# containing `*` would otherwise be replaced by matching filenames.
 command_segments() {
-  printf '%s\n' "$1" | sed -E 's/&&/;/g; s/\|\|/;/g' | tr '\n;&|()' '\n\n\n\n\n\n'
+  local s="$1" w oldopts
+  s=${s//&&/;}; s=${s//||/;}
+  oldopts=$-
+  set -f
+  local IFS=$';&|()\n'
+  for w in $s; do printf '%s\n' "$w"; done
+  case "$oldopts" in *f*) ;; *) set +f ;; esac
 }
 
 # The branches a `git push` names. `git push --force origin main` from a feature

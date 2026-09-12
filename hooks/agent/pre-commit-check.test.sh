@@ -844,6 +844,28 @@ else
   PASS=$((PASS+1)); printf '  ✅ no parser: a non-git command still passes\n'
 fi
 rm -rf "$P"
+# The ref a push or a branch deletion NAMES is read by splitting the command, and that
+# split used to shell out to `tr`. bare_path has never included it, so this case also
+# pins the dependency: without `tr` the split returned nothing, the target read as "none
+# named", and the verdict fell back to the branch you stand on — measured 2026-09-12,
+# `git push --force origin main` from a feature branch was ALLOWED, silently.
+# `bare_path jq`, not `bare_path`: with neither jq nor python3 the guard denies on the
+# input-parse path instead, and the assertion below would pass without ever reaching the
+# code it is about. Checked — it did, against the unfixed guard.
+P=$(bare_path jq); FB=$(make_repo feature/x)
+for c in 'git push --force origin main' 'git push origin :main' 'git branch -D main'; do
+  OUT=$(cd "$FB" && PATH="$P" CLAUDE_PROJECT_DIR="$FB" bash "$HOOK" \
+        <<<"$(printf '{"tool_input":{"command":"%s"}}' "$c")" 2>/dev/null); RC=$?
+  if [[ $RC -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ harness: the hook exited %s on a bare PATH\n' "$RC"
+  elif grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ no tr on PATH: %s is still denied\n' "$c"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ no tr on PATH: %s was ALLOWED — the target was never parsed\n' "$c"
+  fi
+done
+rm -rf "$P" "$FB"
+
 if command -v python3 >/dev/null 2>&1; then
   P=$(bare_path python3)
   OUT=$(cd "$D" && PATH="$P" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
