@@ -274,6 +274,68 @@ else
 fi
 rm -rf "$PM"
 
+echo "post-merge: the cleanup note is a command you can paste:"
+# Regression 2026-09-12: `git branch --merged` decorates its output — `*` for the
+# current branch, `+` for one checked out in ANOTHER worktree — and the hook stripped
+# only `*`. Following this repo's own worktree-per-change workflow therefore produced
+# `git branch -d + fix/x` — error: branch '+' not found. The protected-branch test
+# above could not see it: it anchors on `git branch -d trunk$`, and the decorated line
+# does not end there. (A `+`-decorated INTEGRATION branch cannot arise: the hook exits
+# unless the current branch is the integration branch, and git allows one checkout.)
+# Its own base dir: the extra worktrees go beside the repo, not into the shared
+# temp root where a leftover from an earlier run makes `worktree add` fail — silenced
+# by 2>&1, that turned this whole case green against the unfixed hook.
+WTB=$(mktemp -d); WT="$WTB/repo"
+git init -q -b trunk "$WT"
+git -C "$WT" config user.email t@t.t; git -C "$WT" config user.name t
+git -C "$WT" config merge.ff false
+mkdir -p "$WT/.ai"
+printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$WT/.ai/flight-rules.conf"
+echo base > "$WT/f.txt"; git -C "$WT" add -A; git -C "$WT" commit -qm "chore: base"
+# Three merged branches. fix/ab exists because the substring filter dropped the longer
+# name from the "previously merged" list whenever the shorter one was just merged;
+# fix/c is the one that carries a worktree, so it is `+`-decorated AND not the branch
+# just merged — the combination the old note actually printed as `git branch -d + fix/c`.
+for b in fix/ab fix/c fix/a; do
+  git -C "$WT" checkout -qb "$b" 2>/dev/null
+  echo "$b" > "$WT/${b//\//_}.txt"; git -C "$WT" add -A; git -C "$WT" commit -qm "chore: on $b"
+  git -C "$WT" checkout -q trunk
+done
+mkdir -p "$WT/.ai/hooks"
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$WT/.ai/hooks/"
+chmod +x "$WT"/.ai/hooks/*; git -C "$WT" config core.hooksPath "$WT/.ai/hooks"
+for b in fix/ab fix/c; do git -C "$WT" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
+# a worktree on a merged branch → git marks that branch `+`; and a detached one, which
+# has no branch at all. A failure here is reported, not silenced: hidden by `2>&1` it
+# made every assertion below vacuous.
+git -C "$WT" worktree add -q "$WTB/wt-c" fix/c || { FAIL=$((FAIL+1)); echo "  ❌ fixture: worktree add failed"; }
+git -C "$WT" worktree add -q --detach "$WTB/wt-det" || { FAIL=$((FAIL+1)); echo "  ❌ fixture: detached worktree add failed"; }
+git -C "$WT" merge --no-verify --no-edit fix/a >/dev/null 2>&1
+WNOTE="$WT/.claude/post-merge-note.md"
+
+if grep -qE '^  git branch -d [*+]' "$WNOTE" 2>/dev/null; then
+  FAIL=$((FAIL+1)); printf '  ❌ the note emits a decorated branch name: %s\n' "$(grep -m1 -E '^  git branch -d [*+]' "$WNOTE")"
+else
+  PASS=$((PASS+1)); printf '  ✅ no `*`/`+` marker reaches a git branch -d line\n'
+fi
+if grep -q 'git branch -d fix/c$' "$WNOTE" 2>/dev/null; then
+  PASS=$((PASS+1)); printf '  ✅ a worktree-held merged branch is offered by its bare name\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ fix/c is not offered under its bare name\n'
+fi
+if grep -q 'wt-det' "$WNOTE" 2>/dev/null; then
+  FAIL=$((FAIL+1)); printf '  ❌ a detached-HEAD worktree is reported stale (grep -qF "" matches everything)\n'
+else
+  PASS=$((PASS+1)); printf '  ✅ a detached-HEAD worktree is not reported stale\n'
+fi
+if grep -q 'git branch -d fix/ab$' "$WNOTE" 2>/dev/null; then
+  PASS=$((PASS+1)); printf '  ✅ fix/ab survives the just-merged filter alongside fix/a\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ fix/ab was dropped as a substring of the just-merged fix/a\n'
+fi
+
+rm -rf "$WTB"
+
 echo "The note gate covers protected branches this project actually has:"
 # With no NOTE_GATED_BRANCHES the gated set is "protected but not PR-only", so a
 # project using its own names gets the gate without configuring one. The old default
