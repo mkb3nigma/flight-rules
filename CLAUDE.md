@@ -81,6 +81,10 @@ is injected into every session, so it is where an unearned line costs the most.
   make that loud.
 - Verify against the running hook, not by reading the regex. Several past gaps were
   invisible on paper (column-zero secrets, `git -C … commit`, macOS `grep -P`).
+- An assertion satisfied by NO output — "allowed", "not reported", "silent" — is also
+  satisfied by a hook that died before deciding. Check the exit status too, or pair it
+  with an assertion over the same run that the hook said something. The suites do this
+  now; keep it when you add a case.
 - Cross the shapes, do not sample them. A case per matcher and a case per shell wrapper
   leaves the combinations untested, and that is where the bugs have actually been: on
   2026-09-10 six matchers were denied bare and allowed inside `( … )`, and a bypass and

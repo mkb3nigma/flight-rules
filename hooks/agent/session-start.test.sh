@@ -41,7 +41,14 @@ branch() {
   return 0
 }
 # run <dir> → the hook's stdout. HOME is redirected so the once-a-day flag is fresh.
-run() { (cd "$1" && HOME="$1/fakehome" bash "$HOOK" 2>/dev/null); }
+# Half the assertions below are satisfied by NO output, which is also what a hook that
+# died produces — so a non-zero exit is turned into a line, and those assertions fail.
+run() {
+  local out rc
+  out=$( (cd "$1" && HOME="$1/fakehome" bash "$HOOK" 2>/dev/null) ); rc=$?
+  [ $rc -ne 0 ] && printf 'HARNESS: the hook exited %s — nothing was tested\n' "$rc"
+  printf '%s' "$out"
+}
 
 echo "Stale-worktree reminder names the worktrees that are actually merged:"
 D=$(mkrepo)
@@ -62,8 +69,12 @@ echo "A longer branch name is not the merged one (regression 2026-09-12):"
 D=$(mkrepo)
 branch "$D" fix/auth-tokens merge
 branch "$D" fix/auth
+git -C "$D" worktree add -q "$D/.ai/worktrees/tokens" fix/auth-tokens
 git -C "$D" worktree add -q "$D/.ai/worktrees/auth" fix/auth
 OUT=$(run "$D")
+# Paired: an "X is absent" assertion is also satisfied by a hook that printed nothing,
+# so each one runs beside a "Y is present" assertion over the same output.
+say "$(grep -cE 'Branch: fix/auth-tokens[[:space:]]' <<<"$OUT")" "1" "the merged fix/auth-tokens is reported"
 say "$(grep -cE 'Branch: fix/auth[[:space:]]' <<<"$OUT")" "0" "an unmerged fix/auth is not reported because fix/auth-tokens is merged"
 rm -rf "$D"
 
@@ -72,8 +83,10 @@ echo "A branch name is a name, not a pattern:"
 D=$(mkrepo)
 branch "$D" fix/axb merge
 branch "$D" fix/a.b
+git -C "$D" worktree add -q "$D/.ai/worktrees/axb" fix/axb
 git -C "$D" worktree add -q "$D/.ai/worktrees/dotted" fix/a.b
 OUT=$(run "$D")
+say "$(grep -c 'fix/axb' <<<"$OUT")" "1" "the merged fix/axb is reported"
 say "$(grep -c 'fix/a\.b' <<<"$OUT")" "0" "fix/a.b is not matched by the merged fix/axb"
 rm -rf "$D"
 
@@ -92,8 +105,8 @@ echo "Once a day, per project:"
 D=$(mkrepo)
 branch "$D" fix/merged merge
 git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
-FIRST=$( (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) )
-SECOND=$( (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) )
+FIRST=$(run "$D")
+SECOND=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$FIRST")" "1" "the first run of the day reports"
 say "$(grep -c . <<<"$SECOND" | tr -d ' ')" "0" "the second run of the day is silent"
 # The flag used to carry only the date, so the first project opened each day took the
@@ -101,15 +114,19 @@ say "$(grep -c . <<<"$SECOND" | tr -d ' ')" "0" "the second run of the day is si
 E=$(mkrepo)
 branch "$E" fix/merged merge
 git -C "$E" worktree add -q "$E/.ai/worktrees/merged" fix/merged
-OTHER=$( (cd "$E" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) )
+# deliberately the FIRST project's HOME, so the flag is the one already touched
+OTHER=$( (cd "$E" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) ); OTHER_RC=$?
+[ $OTHER_RC -ne 0 ] && OTHER="HARNESS: the hook exited $OTHER_RC"
 say "$(grep -c 'Branch: fix/merged' <<<"$OTHER")" "1" "a different project the same day still reports"
 rm -rf "$D" "$E"
 
 echo "A detached-HEAD worktree has no branch and is skipped:"
 D=$(mkrepo)
 branch "$D" fix/merged merge
+git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
 git -C "$D" worktree add -q --detach "$D/.ai/worktrees/detached"
 OUT=$(run "$D")
+say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "the merged worktree beside it is reported"
 say "$(grep -c 'detached' <<<"$OUT")" "0" "a detached worktree is not reported stale"
 rm -rf "$D"
 

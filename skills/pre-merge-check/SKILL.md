@@ -82,6 +82,12 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     ⚠️ list them. For a fix, ⚠️ unless the PR shows the new test run against the
     UNFIXED code and failing — a test written after the fix, or against a helper the
     fix introduced, cannot fail on the old code and so evidences nothing.
+    A new assertion that is **not** red against the unfixed code — a characterisation
+    test, or a new suite for code that already worked — is not thereby excused: ⚠️
+    unless the PR shows it failing against a deliberate break of the thing it claims to
+    check. Half of this repo's own new assertions have been vacuous on first writing
+    (wrong match direction, an anchor that could never match, a fixture whose setup
+    failed under `2>&1`), and each passed against the code it was supposed to test.
 14. **Migrations present if models/schema changed** — ⚠️ if not.
 15. **New TODO/FIXME/HACK** — ⚠️ list; resolve or track before merge.
 16. **Commit-count sanity** — ⚠️ above ~20 commits: consider splitting.
