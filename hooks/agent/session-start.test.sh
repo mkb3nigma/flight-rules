@@ -9,9 +9,9 @@ HOOK="$H/session-start.sh"
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
-# A project with an integration branch, a worktree dir, and the hooks NOT installed
-# (doctor's findings are its own suite's business; here they would drown the output,
-# so core.hooksPath and merge.ff are set to keep doctor quiet).
+# A project with an integration branch, a worktree dir, and the enforcement installed
+# far enough to keep doctor quiet — session-start runs doctor first, and its findings
+# are doctor.test.sh's business, not this suite's. They would drown every assertion here.
 mkrepo() {
   local d; d=$(cd "$(mktemp -d)" && pwd -P)
   git -C "$d" init -q -b trunk
@@ -41,7 +41,20 @@ branch() {
   return 0
 }
 # run <dir> → the hook's stdout. HOME is redirected so the once-a-day flag is fresh.
-run() { (cd "$1" && HOME="$1/fakehome" bash "$HOOK" 2>/dev/null); }
+# Half the assertions below are satisfied by NO output, which is also what a hook that
+# died produces — so a non-zero exit is turned into a line, and those assertions fail.
+run() {
+  local out rc
+  out=$( (cd "$1" && HOME="$1/fakehome" bash "$HOOK" 2>/dev/null) ); rc=$?
+  # The real output is DISCARDED on a non-zero exit, not appended to: a hook that
+  # printed the expected line and then died would otherwise satisfy every presence
+  # assertion. Nothing a crashed run said is evidence of anything.
+  if [ $rc -ne 0 ]; then
+    printf 'HARNESS: the hook exited %s — nothing below was tested\n' "$rc"
+    return
+  fi
+  printf '%s' "$out"
+}
 
 echo "Stale-worktree reminder names the worktrees that are actually merged:"
 D=$(mkrepo)
@@ -62,8 +75,12 @@ echo "A longer branch name is not the merged one (regression 2026-09-12):"
 D=$(mkrepo)
 branch "$D" fix/auth-tokens merge
 branch "$D" fix/auth
+git -C "$D" worktree add -q "$D/.ai/worktrees/tokens" fix/auth-tokens
 git -C "$D" worktree add -q "$D/.ai/worktrees/auth" fix/auth
 OUT=$(run "$D")
+# Paired: an "X is absent" assertion is also satisfied by a hook that printed nothing,
+# so each one runs beside a "Y is present" assertion over the same output.
+say "$(grep -cE 'Branch: fix/auth-tokens[[:space:]]' <<<"$OUT")" "1" "the merged fix/auth-tokens is reported"
 say "$(grep -cE 'Branch: fix/auth[[:space:]]' <<<"$OUT")" "0" "an unmerged fix/auth is not reported because fix/auth-tokens is merged"
 rm -rf "$D"
 
@@ -72,8 +89,10 @@ echo "A branch name is a name, not a pattern:"
 D=$(mkrepo)
 branch "$D" fix/axb merge
 branch "$D" fix/a.b
+git -C "$D" worktree add -q "$D/.ai/worktrees/axb" fix/axb
 git -C "$D" worktree add -q "$D/.ai/worktrees/dotted" fix/a.b
 OUT=$(run "$D")
+say "$(grep -c 'fix/axb' <<<"$OUT")" "1" "the merged fix/axb is reported"
 say "$(grep -c 'fix/a\.b' <<<"$OUT")" "0" "fix/a.b is not matched by the merged fix/axb"
 rm -rf "$D"
 
@@ -103,15 +122,19 @@ say "$(run "$D" | grep -c .)" "0" "no merged worktrees → no output at all"
 rm -rf "$D"
 
 D=$(mkrepo)
-say "$(run "$D" | grep -c .)" "0" "no worktree directory → no output"
+say "$(run "$D" | grep -c .)" "0" "an empty worktree directory → no output"
+rm -rf "$D"
+
+D=$(mkrepo); rmdir "$D/.ai/worktrees"
+say "$(run "$D" | grep -c .)" "0" "no worktree directory at all → no output"
 rm -rf "$D"
 
 echo "Once a day, per project:"
 D=$(mkrepo)
 branch "$D" fix/merged merge
 git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
-FIRST=$( (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) )
-SECOND=$( (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) )
+FIRST=$(run "$D")
+SECOND=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$FIRST")" "1" "the first run of the day reports"
 say "$(grep -c . <<<"$SECOND" | tr -d ' ')" "0" "the second run of the day is silent"
 # The flag used to carry only the date, so the first project opened each day took the
@@ -119,15 +142,19 @@ say "$(grep -c . <<<"$SECOND" | tr -d ' ')" "0" "the second run of the day is si
 E=$(mkrepo)
 branch "$E" fix/merged merge
 git -C "$E" worktree add -q "$E/.ai/worktrees/merged" fix/merged
-OTHER=$( (cd "$E" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) )
+# deliberately the FIRST project's HOME, so the flag is the one already touched
+OTHER=$( (cd "$E" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) ); OTHER_RC=$?
+[ $OTHER_RC -ne 0 ] && OTHER="HARNESS: the hook exited $OTHER_RC"
 say "$(grep -c 'Branch: fix/merged' <<<"$OTHER")" "1" "a different project the same day still reports"
 rm -rf "$D" "$E"
 
 echo "A detached-HEAD worktree has no branch and is skipped:"
 D=$(mkrepo)
 branch "$D" fix/merged merge
+git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
 git -C "$D" worktree add -q --detach "$D/.ai/worktrees/detached"
 OUT=$(run "$D")
+say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "the merged worktree beside it is reported"
 say "$(grep -c 'detached' <<<"$OUT")" "0" "a detached worktree is not reported stale"
 rm -rf "$D"
 

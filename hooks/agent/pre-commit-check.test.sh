@@ -27,14 +27,28 @@ make_repo() {
   printf '%s' "$dir"
 }
 
+# What the exit-status guards below do and do not prove. The guard signals a block by
+# printing JSON and exiting 0; an allow is silence and exit 0. So a non-zero exit means
+# the hook DIED, and is reported as a harness failure rather than counted as an allow.
+# Two limits, accepted rather than papered over:
+#   - an allow is still the absence of a deny. A hook that exits 0 having decided
+#     nothing passes every allow case, and there is no signal that would tell them
+#     apart while allow stays silent by contract.
+#   - if the guard ever moves to exit-status signalling (non-zero = block), these
+#     guards would read a legitimate block as a crash. They are pinned to the current
+#     JSON contract deliberately; change both together.
 # check <description> <expect: deny|allow> <branch> <command> [env assignments...]
 check() {
   local desc="$1" expect="$2" branch="$3" cmd="$4"; shift 4
-  local dir out got
+  local dir out got rc
   dir=$(make_repo "$branch")
   # Run from inside the repo so a command with no `cd`/`-C` resolves there.
   out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" env "$@" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
+    rm -rf "$dir"; return
+  fi
   if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
   if [[ "$got" == "$expect" ]]; then
     PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
@@ -50,11 +64,18 @@ check() {
 # itself off because a worktree's toplevel is never CLAUDE_PROJECT_DIR.
 check_wt() {
   local desc="$1" expect="$2" branch="$3" wt_branch="$4" cmd="$5"
-  local dir out got
+  local dir out got rc
   dir=$(make_repo "$branch")
-  git -C "$dir" worktree add -q "$dir/.ai/worktrees/x" -b "$wt_branch" >/dev/null 2>&1
+  if ! git -C "$dir" worktree add -q "$dir/.ai/worktrees/x" -b "$wt_branch" >/dev/null 2>&1; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: worktree add failed — nothing was tested\n' "$desc"
+    rm -rf "$dir"; return
+  fi
   out=$(cd "$dir/.ai/worktrees/x" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
+    rm -rf "$dir"; return
+  fi
   if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
   if [[ "$got" == "$expect" ]]; then
     PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
@@ -151,11 +172,15 @@ echo "Config file (.ai/flight-rules.conf) — the tool-agnostic home:"
 # conf_check <desc> <expect> <branch> <command> <conf-contents>
 conf_check() {
   local desc="$1" expect="$2" branch="$3" cmd="$4" conf="$5"
-  local dir out got
+  local dir out got rc
   dir=$(make_repo "$branch")
   mkdir -p "$dir/.ai"; printf '%s\n' "$conf" > "$dir/.ai/flight-rules.conf"
   out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
+    rm -rf "$dir"; return
+  fi
   if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
   if [[ "$got" == "$expect" ]]; then
     PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
@@ -290,13 +315,20 @@ echo "Secret scan — staged content on a feature branch:"
 # secret_check <desc> <expect> <file path> <content>
 secret_check() {
   local desc="$1" expect="$2" path="$3" content="$4"
-  local dir out got
+  local dir out got rc
   dir=$(make_repo feature/x)
   mkdir -p "$dir/$(dirname "$path")"
   printf '%s\n' "$content" > "$dir/$path"
-  git -C "$dir" add "$path" >/dev/null 2>&1
+  if ! git -C "$dir" add "$path" >/dev/null 2>&1; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: git add failed — nothing was staged to scan\n' "$desc"
+    rm -rf "$dir"; return
+  fi
   out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+        <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
+    rm -rf "$dir"; return
+  fi
   if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
   if [[ "$got" == "$expect" ]]; then
     PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
@@ -402,8 +434,12 @@ fi
 rm -rf "$D"
 # Another repo's branches are not ours to police (same scoping as the branch policy).
 D=$(make_repo main); O=$(make_repo main)
-OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
-if grep -q '"deny"' <<<"$OUT"; then
+OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null); RC=$?
+# An "allow" here is the ABSENCE of a deny, which is also what a hook that died
+# produces. The exit status is what tells the two apart.
+if [[ $RC -ne 0 ]]; then
+  FAIL=$((FAIL+1)); printf '  ❌ harness: the hook exited %s — the sibling-repo case proved nothing\n' "$RC"
+elif grep -q '"deny"' <<<"$OUT"; then
   FAIL=$((FAIL+1)); printf '  ❌ checkout -b in a sibling repo was denied\n'
 else
   PASS=$((PASS+1)); printf '  ✅ checkout -b in a sibling repo is not our business\n'
@@ -441,10 +477,14 @@ check_wt "commit on a feature branch in a worktree" allow scratch feature/x 'git
 check_wt "push a feature branch from a worktree"    allow scratch feature/x 'git push --force origin feature/x'
 
 D=$(make_repo main); O=$(make_repo main)
-git -C "$O" worktree add -q "$O/.ai/worktrees/x" -b feature/x >/dev/null 2>&1
+if ! git -C "$O" worktree add -q "$O/.ai/worktrees/x" -b feature/x >/dev/null 2>&1; then
+  FAIL=$((FAIL+1)); printf '  ❌ harness: worktree add failed — the sibling-worktree case proved nothing\n'
+fi
 OUT=$(cd "$O/.ai/worktrees/x" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
-      <<<'{"tool_input":{"command":"git push --force origin main"}}' 2>/dev/null)
-if grep -q '"deny"' <<<"$OUT"; then
+      <<<'{"tool_input":{"command":"git push --force origin main"}}' 2>/dev/null); RC=$?
+if [[ $RC -ne 0 ]]; then
+  FAIL=$((FAIL+1)); printf '  ❌ harness: the hook exited %s — the sibling-worktree case proved nothing\n' "$RC"
+elif grep -q '"deny"' <<<"$OUT"; then
   FAIL=$((FAIL+1)); printf '  ❌ a sibling repo'"'"'s worktree was policed as ours\n'
 else
   PASS=$((PASS+1)); printf '  ✅ a sibling repo'"'"'s worktree is still not ours to police\n'
@@ -554,10 +594,17 @@ GEN_MAIN=$(make_repo main)
 GEN_FEAT=$(make_repo feature/x)
 
 gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
-  local expect="$1" where="$2" wname="$3" cmd="$4" dir out got
+  local expect="$1" where="$2" wname="$3" cmd="$4" dir out got rc
   [ "$where" = main ] && dir="$GEN_MAIN" || dir="$GEN_FEAT"
   out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null)
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  # "allow" is the absence of a deny, and a hook that never ran produces exactly that.
+  # These loops print one ✅ for hundreds of cases, so a silent vacuous pass is invisible.
+  if [ $rc -ne 0 ]; then
+    FAIL=$((FAIL+1))
+    printf '  ❌ [%s] %s\n     %s\n     harness: the hook exited %s — no verdict\n' "$where" "$wname" "$cmd" "$rc"
+    return
+  fi
   if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
   if [ "$got" = "$expect" ]; then
     PASS=$((PASS+1))
@@ -772,8 +819,12 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ no jq, no python3: git command was not denied\n'
 fi
 OUT=$(cd "$D" && PATH="$P" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
-      <<<'{"tool_input":{"command":"ls -la"}}' 2>/dev/null)
-if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+      <<<'{"tool_input":{"command":"ls -la"}}' 2>/dev/null); RC=$?
+# With no jq and no python3 this is the case most likely to die rather than decide,
+# and dying would satisfy the assertion below.
+if [[ $RC -ne 0 ]]; then
+  FAIL=$((FAIL+1)); printf '  ❌ harness: the hook exited %s with no parser — the pass-through proved nothing\n' "$RC"
+elif grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
   FAIL=$((FAIL+1)); printf '  ❌ no parser: a non-git command was denied\n'
 else
   PASS=$((PASS+1)); printf '  ✅ no parser: a non-git command still passes\n'
