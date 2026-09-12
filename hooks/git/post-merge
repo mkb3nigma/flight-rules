@@ -69,7 +69,11 @@ MERGED_BRANCH=$(printf '%s\n' "$MERGE_MSG" | sed -nE \
 # (error: branch '+' not found). Following this repo's own worktree-per-change workflow
 # was enough to produce it. for-each-ref emits bare names: no marker to remember.
 # The current branch is the integration branch here — the hook exits above otherwise.
-ALL_MERGED=$(git for-each-ref --merged "$INTEGRATION_BRANCH" --format='%(refname:short)' refs/heads 2>/dev/null \
+# `lstrip=2`, not `short`: `short` abbreviates against ALL refs, so a tag sharing a
+# branch's name makes it come back as `heads/<name>` — which passes both filters below
+# and put `git branch -d heads/main` in the note. `refs/heads/` on --merged for the same
+# reason: a bare name there resolves to the tag. (Found by review, 2026-09-12.)
+ALL_MERGED=$(git for-each-ref --merged "refs/heads/$INTEGRATION_BRANCH" --format='%(refname:lstrip=2)' refs/heads 2>/dev/null \
   | grep -v '^$' \
   | grep -vxF "$INTEGRATION_BRANCH" \
   | grep -vE "$PROTECTED_RE")
@@ -134,7 +138,7 @@ mkdir -p "$(dirname "$NOTE_FILE")"
       rel="${wt#$REPO_ROOT/}"
       wt_branch=$(git -C "$wt" branch --show-current 2>/dev/null || echo "?")
       echo "  Branch: $wt_branch  →  $rel"
-      echo "  git worktree remove $rel"
+      echo "  git worktree remove '$rel'"
     done
   else
     echo "### Worktrees: none stale ✓"
@@ -145,12 +149,12 @@ mkdir -p "$(dirname "$NOTE_FILE")"
   if [[ -n "$ALL_MERGED" ]]; then
     echo "### ⚠ Branches merged into $INTEGRATION_BRANCH (safe to delete):"
     if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]]; then
-      echo "  git branch -d $JUST_MERGED  ← just merged"
+      echo "  git branch -d '$JUST_MERGED'  ← just merged"
     fi
     if [[ -n "$PREVIOUSLY_MERGED" ]]; then
       echo "  (previously merged, not yet deleted:)"
       while IFS= read -r branch; do
-        [[ -n "$branch" ]] && echo "  git branch -d $branch"
+        [[ -n "$branch" ]] && echo "  git branch -d '$branch'"
       done <<< "$PREVIOUSLY_MERGED"
     fi
   else

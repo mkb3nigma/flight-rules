@@ -261,13 +261,13 @@ for b in qa release-2 feature/real; do
 done
 NOTE="$PM/.claude/post-merge-note.md"
 for prot in qa release-2 trunk; do
-  if grep -q "git branch -d $prot\$" "$NOTE" 2>/dev/null; then
+  if grep -q "git branch -d '$prot'" "$NOTE" 2>/dev/null; then
     FAIL=$((FAIL+1)); printf '  ❌ offered protected branch "%s" for deletion\n' "$prot"
   else
     PASS=$((PASS+1)); printf '  ✅ protected branch "%s" is not offered for deletion\n' "$prot"
   fi
 done
-if grep -q 'git branch -d feature/real' "$NOTE" 2>/dev/null; then
+if grep -q "git branch -d 'feature/real'" "$NOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a real feature branch is still offered\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ the note no longer offers merged feature branches\n'
@@ -313,12 +313,12 @@ git -C "$WT" worktree add -q --detach "$WTB/wt-det" || { FAIL=$((FAIL+1)); echo 
 git -C "$WT" merge --no-verify --no-edit fix/a >/dev/null 2>&1
 WNOTE="$WT/.claude/post-merge-note.md"
 
-if grep -qE '^  git branch -d [*+]' "$WNOTE" 2>/dev/null; then
-  FAIL=$((FAIL+1)); printf '  ❌ the note emits a decorated branch name: %s\n' "$(grep -m1 -E '^  git branch -d [*+]' "$WNOTE")"
+if grep -qE "^  git branch -d '?[*+]" "$WNOTE" 2>/dev/null; then
+  FAIL=$((FAIL+1)); printf '  ❌ the note emits a decorated branch name: %s\n' "$(grep -m1 -E "^  git branch -d '?[*+]" "$WNOTE")"
 else
   PASS=$((PASS+1)); printf '  ✅ no `*`/`+` marker reaches a git branch -d line\n'
 fi
-if grep -q 'git branch -d fix/c$' "$WNOTE" 2>/dev/null; then
+if grep -q "git branch -d 'fix/c'" "$WNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a worktree-held merged branch is offered by its bare name\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/c is not offered under its bare name\n'
@@ -328,13 +328,80 @@ if grep -q 'wt-det' "$WNOTE" 2>/dev/null; then
 else
   PASS=$((PASS+1)); printf '  ✅ a detached-HEAD worktree is not reported stale\n'
 fi
-if grep -q 'git branch -d fix/ab$' "$WNOTE" 2>/dev/null; then
+if grep -q "git branch -d 'fix/ab'" "$WNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ fix/ab survives the just-merged filter alongside fix/a\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/ab was dropped as a substring of the just-merged fix/a\n'
 fi
 
 rm -rf "$WTB"
+
+echo "post-merge: a tag sharing a branch name does not rename the branch:"
+# Regression 2026-09-12 (adversarial review): `%(refname:short)` abbreviates against ALL
+# refs, not refs/heads. With a tag named `trunk`, the integration branch comes back as
+# `heads/trunk` — which matches neither `grep -vxF trunk` nor PROTECTED_BRANCHES=^trunk$,
+# so the note offered `git branch -d heads/trunk`. A bare `--merged trunk` resolves to
+# the tag as well, so the merged set is computed against the wrong commit.
+AM=$(mktemp -d); AMR="$AM/repo"
+git init -q -b trunk "$AMR"
+git -C "$AMR" config user.email t@t.t; git -C "$AMR" config user.name t
+git -C "$AMR" config merge.ff false
+mkdir -p "$AMR/.ai"
+printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$AMR/.ai/flight-rules.conf"
+echo base > "$AMR/f.txt"; git -C "$AMR" add -A; git -C "$AMR" commit -qm "chore: base"
+for b in fix/old fix/new; do
+  git -C "$AMR" checkout -qb "$b" 2>/dev/null
+  echo "$b" > "$AMR/${b//\//_}.txt"; git -C "$AMR" add -A; git -C "$AMR" commit -qm "chore: on $b"
+  git -C "$AMR" checkout -q trunk
+done
+mkdir -p "$AMR/.ai/hooks"
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$AMR/.ai/hooks/"
+chmod +x "$AMR"/.ai/hooks/*; git -C "$AMR" config core.hooksPath "$AMR/.ai/hooks"
+git -C "$AMR" merge --no-verify --no-edit fix/old >/dev/null 2>&1
+git -C "$AMR" tag trunk        # the ambiguity
+git -C "$AMR" merge --no-verify --no-edit fix/new >/dev/null 2>&1
+ANOTE="$AMR/.claude/post-merge-note.md"
+if grep -q 'heads/' "$ANOTE" 2>/dev/null; then
+  FAIL=$((FAIL+1)); printf '  ❌ a ref was named `heads/...` in the note: %s\n' "$(grep -m1 'heads/' "$ANOTE")"
+else
+  PASS=$((PASS+1)); printf '  ✅ no `heads/` prefix reaches the note\n'
+fi
+if grep -qE "git branch -d '?(heads/)?trunk" "$ANOTE" 2>/dev/null; then
+  FAIL=$((FAIL+1)); printf '  ❌ the integration branch was offered for deletion: %s\n' "$(grep -m1 -E "git branch -d '?(heads/)?trunk" "$ANOTE")"
+else
+  PASS=$((PASS+1)); printf '  ✅ the integration branch is not offered even when a tag shadows it\n'
+fi
+if grep -q "git branch -d 'fix/old'" "$ANOTE" 2>/dev/null; then
+  PASS=$((PASS+1)); printf '  ✅ the real merged branch is still offered\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ fix/old was not offered — the merged set was computed against the tag\n'
+fi
+rm -rf "$AM"
+
+echo "post-merge: the emitted commands quote what they interpolate:"
+# `&`, `$`, `|` and parentheses are legal in a refname, and the note is advertised as a
+# command you can paste. `git branch -d fix/a&b` backgrounds a DIFFERENT branch's deletion.
+QB=$(mktemp -d); QR="$QB/repo"
+git init -q -b trunk "$QR"
+git -C "$QR" config user.email t@t.t; git -C "$QR" config user.name t
+git -C "$QR" config merge.ff false
+mkdir -p "$QR/.ai"
+printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QR/.ai/flight-rules.conf"
+echo base > "$QR/f.txt"; git -C "$QR" add -A; git -C "$QR" commit -qm "chore: base"
+git -C "$QR" checkout -qb 'fix/a&b' 2>/dev/null
+echo x > "$QR/x.txt"; git -C "$QR" add -A; git -C "$QR" commit -qm "chore: x"
+git -C "$QR" checkout -q trunk
+mkdir -p "$QR/.ai/hooks"
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$QR/.ai/hooks/"
+chmod +x "$QR"/.ai/hooks/*; git -C "$QR" config core.hooksPath "$QR/.ai/hooks"
+git -C "$QR" merge --no-verify --no-edit 'fix/a&b' >/dev/null 2>&1
+QNOTE="$QR/.claude/post-merge-note.md"
+if grep -q "git branch -d 'fix/a&b'" "$QNOTE" 2>/dev/null; then
+  PASS=$((PASS+1)); printf '  ✅ a name with shell metacharacters is quoted\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ fix/a&b is emitted unquoted: %s\n' "$(grep -m1 'branch -d' "$QNOTE")"
+fi
+rm -rf "$QB"
 
 echo "The note gate covers protected branches this project actually has:"
 # With no NOTE_GATED_BRANCHES the gated set is "protected but not PR-only", so a
