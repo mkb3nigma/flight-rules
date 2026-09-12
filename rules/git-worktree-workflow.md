@@ -93,7 +93,7 @@ git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR
 - Bad merge on a protected branch: revert it, don't rewrite history — but do it the way
   the branch allows. On a **PR-only** branch `git revert` is refused by
   `reference-transaction` (Forbidden 7 lists reverting), so make the revert on a branch
-  and open a PR: `git worktree add {WORKTREE_DIR}/revert-x -b fix/revert-x origin/main`,
+  and open a PR: `git worktree add {WORKTREE_DIR}/revert-x -b fix/revert-x origin/{INTEGRATION_BRANCH}`,
   then `git revert -m 1 <merge-sha>` there. On any other protected branch,
   `git revert -m 1 <merge-sha>` in place is fine.
 

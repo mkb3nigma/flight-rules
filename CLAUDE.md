@@ -11,14 +11,26 @@ injects the principles; the rest you read once.
 
 | Parameter | Value |
 |---|---|
-| `{PROTECTED_BRANCHES}` / `{PR_ONLY_BRANCHES}` | `main` — no direct commits, no local merges; it moves only through a reviewed PR |
-| `{INTEGRATION_BRANCH}` | `main` (trunk-based; there is no `dev`) |
+| `{PROTECTED_BRANCHES}` | `main` and `dev` — no direct commits to either |
+| `{PR_ONLY_BRANCHES}` | `main` — no local merges; it moves only through a reviewed PR |
+| `{NOTE_GATED_BRANCHES}` | `dev` — a local merge needs a `pre-merge-check` note on the branch being merged |
+| `{INTEGRATION_BRANCH}` | `dev` — work integrates here; `main` is the released state |
 | `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
 | `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh` — no arguments, no network |
 
-Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/main`,
-commit there, push, `gh pr create --base main`. Never commit on `main`; never merge
-into it locally. Sync with `git pull --ff-only origin main`.
+Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/dev`,
+commit there, push, `gh pr create --base dev`. Never commit on `main` or `dev`; never
+merge into `main` locally. Sync with `git pull --ff-only origin dev`.
+
+**`main` moves at a release, not per change.** A promotion is one PR, `dev` → `main`,
+carrying one version bump and a summary of what the batch did — so the published history
+is releases, not a debugging session. Both branches are protected on GitHub (PR required
+on `main`, CI required on both, force-push and deletion blocked); admins are exempt, which
+is the emergency path for a genuine bug in a release, taken deliberately and reviewed hard.
+
+Feature PRs to `dev` **do not touch `.claude-plugin/plugin.json`** — the bump belongs to
+the promotion PR. Bumping per feature is how three stacked PRs came to conflict on that
+one line while GitHub reported all three mergeable.
 
 ## The skills run here too
 
@@ -92,4 +104,5 @@ is injected into every session, so it is where an unearned line costs the most.
   the wrapper × core product for this reason — add to those lists, not a one-off case.
 - macOS ships BSD `grep`, `sed` and bash 3.2. CI runs the suites on both macOS and
   Ubuntu; do not use `grep -P`, `mapfile`, or `sed -i` without a suffix.
-- Bump `.claude-plugin/plugin.json` when hook behaviour changes.
+- Hook behaviour changed? Say so in the PR body. The `.claude-plugin/plugin.json` bump
+  happens once, in the `dev` → `main` promotion, not in the feature PR.
