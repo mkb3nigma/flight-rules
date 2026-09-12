@@ -14,13 +14,26 @@ PASS=0; FAIL=0
 TMPROOT=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$TMPROOT"' EXIT
 
+# A broken fixture is not a test failure, it is an aborted run — so it stops the suite
+# rather than being counted. make_repo runs inside a command substitution, so a FAIL
+# increment there would be discarded with the subshell (and seven of these assertions
+# pass against a repo that was never built: measured 2026-09-12 by pointing the clone
+# at a path that does not exist). `$$` is the parent's pid even inside $( ), so the
+# signal reaches the trap below.
+MAINPID=$$
+trap 'printf "\n%s\n" "ABORTED: the fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
+die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+
 # A clone of a bare upstream: two commits on main, plus feature/x off-upstream.
 # $1: conf body, "default", or "none". $2: "armed" (default) or "bare" (no hook).
 make_repo() {
     local conf="${1:-default}" armed="${2:-armed}" base up d
     base=$(mktemp -d "$TMPROOT/r.XXXXXX"); up="$base/up.git"; d="$base/repo"
-    git init -q --bare -b main "$up"
-    git clone -q "$up" "$d" 2>/dev/null
+    git init -q --bare -b main "$up" || die "git init --bare failed in $up"
+    # 2>/dev/null was hiding git's "you appear to have cloned an empty repository"
+    # note — and, with it, an actual clone failure. Silence the note, keep the status.
+    git clone -q "$up" "$d" 2>/dev/null || die "git clone of $up failed"
+    [ -d "$d/.git" ] || die "clone reported success but $d/.git is not there"
     git -C "$d" config user.email t@t.t
     git -C "$d" config user.name t
     git -C "$d" config merge.ff false
@@ -46,6 +59,11 @@ make_repo() {
         git -C "$d" config core.hooksPath "$base/hooks"
     fi
     git -C "$d" fetch -q origin
+    # What every assertion below assumes exists. Checked once here rather than
+    # rediscovered as eight confusing failures.
+    git -C "$d" rev-parse --verify -q main >/dev/null        || die "no main in the fixture"
+    git -C "$d" rev-parse --verify -q origin/main >/dev/null || die "no origin/main in the fixture"
+    git -C "$d" rev-parse --verify -q feature/x >/dev/null   || die "no feature/x in the fixture"
     printf '%s' "$d"
 }
 
