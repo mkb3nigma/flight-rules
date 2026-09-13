@@ -26,22 +26,25 @@ by **multica-ai**, licensed under
 **[MIT](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/LICENSE)** —
 itself derived from **Andrej Karpathy's** public observations on LLM coding pitfalls.
 
-Modifications in this repo: restructured into the current seven-principle format,
+Modifications in this repo: restructured into the current six-principle format,
 reworded bullets, and merged or dropped the ones that restructuring made redundant.
-Principle 5 does not come from this source — see below. Principles 6 and 7 are original
-to this repo and need no credit.
+Half of principle 5 does not come from this source — see below. The rest of principle 5,
+and principle 6, are original to this repo and need no credit.
 
 ## rules/engineering-principles.md — principle 5 — concept credit
 
-Principle 5 ("Suggest Better Ways") is owed to **an unnamed Reddit post** — unnamed
-because neither the author nor the link was recorded at the time, not because the
-author posted anonymously. The observation was that an assistant staying quiet about a
-better approach is itself a failure mode. The wording here is original; the insight is
+Principle 5 ("Judge Ideas on Their Merit, and Say So") carries one borrowed idea: the
+"say the better way even when it wasn't asked for" bullet — until the 2026-09-13 release
+pass its own principle, "Suggest Better Ways" — is owed to **an unnamed Reddit post**,
+unnamed because neither the author nor the link was recorded at the time, not because
+the author posted anonymously. The observation was that an assistant staying quiet about
+a better approach is itself a failure mode. The wording here is original; the insight is
 theirs. If the post resurfaces, credit the author and add the permalink here. There is
 nothing to track for updates, so this source has no [UPSTREAMS.md](UPSTREAMS.md) row.
 
-Principle 6 ("Judge Ideas on Their Merit") is original to this repo and MIT-licensed
-like the rest. It is called out only because its neighbours are not: principle 5 is credited below, and principle 7 is original to this repo.
+The rest of principle 5, and principle 6 ("Report So It Can Be Acted On"), are original
+to this repo and MIT-licensed like the rest. They are called out only because their
+neighbours are not.
 
 ## skills/diagnose/ — concept credit
 
