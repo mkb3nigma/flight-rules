@@ -89,7 +89,7 @@ a findings table: `| # | Finding | Dimension | Severity | Tag | Notes |`.
 
 ## Output Format
 
-Every stage reports as a register, not as prose (`engineering-principles.md` §6) — the
+Every stage reports as a register, not as prose (`engineering-principles.md` §7) — the
 pre-review included, which is otherwise the one stage with no prescribed shape and the
 place a long verdict turns back into paragraphs.
 
