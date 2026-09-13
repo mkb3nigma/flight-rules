@@ -23,8 +23,14 @@ does not want that, opt out rather than uninstalling:
 PROTECTED_BRANCHES=off
 ```
 
-The secret scan keeps running when the branch policy is off — leaking a key is not a
-workflow preference.
+`off` is wider than it looks. Measured 2026-09-13, it also stops `checkout -b`/`switch
+-c` being denied, and — when `NOTE_GATED_BRANCHES` is unset — silences the note gate,
+because the gated set is derived as *protected but not PR-only* and with no protected
+branches that set is empty. A project with a `dev` branch loses its `pre-merge-check`
+gate without being told. Name `NOTE_GATED_BRANCHES` explicitly if you want it kept.
+
+What `off` does **not** turn off is the secret scan — leaking a key is not a workflow
+preference.
 
 The **git hooks in `git/`** are still **files to copy**: git finds them through
 `core.hooksPath`, which no plugin can set for you. Copy them to `.ai/hooks/` and run
@@ -189,9 +195,9 @@ with all five git hooks installed.
 
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables the branch policy — no protected branches in the guard, and the ref gate stands down with it (the secret scan stays on). |
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
 | PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured here too — the ref gate and the local merge gate stand down, while `PROTECTED_BRANCHES` still applies. |
-| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. |
+| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |

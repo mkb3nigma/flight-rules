@@ -175,6 +175,28 @@ D=$(mkrepo); rm "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "no conf at all is a warning only"
 rm -rf "$D"
 
+echo "PROTECTED_BRANCHES=off empties the note gate, and doctor says so:"
+# The note gate's default set is DERIVED from PROTECTED_BRANCHES — "protected but not
+# PR-only" — so turning protection off empties it. Measured 2026-09-13: a merge landed
+# on an integration branch with no pre-merge-check note and no layer said a word. Only
+# worth saying when the project integrates somewhere other than main; a trunk-only
+# project has no note-gated branch either way.
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "empties the note gate")" "0" "off + a dev integration branch → warned"
+rm -rf "$D"
+
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\nINTEGRATION_BRANCH=main\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "empties the note gate")" "1" "off on a trunk-only project → not warned"
+rm -rf "$D"
+
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\nNOTE_GATED_BRANCHES=^dev$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "empties the note gate")" "1" "NOTE_GATED_BRANCHES named → not warned"
+rm -rf "$D"
+
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "empties the note gate")" "1" "policy on → not warned"
+rm -rf "$D"
+
 echo "Guard wiring — once, not twice, not a stale copy:"
 D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"
 printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/fakehome/.claude/settings.json"
