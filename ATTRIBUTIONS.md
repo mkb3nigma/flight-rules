@@ -40,8 +40,9 @@ better approach is itself a failure mode. The wording here is original; the insi
 theirs. If the post resurfaces, credit the author and add the permalink here. There is
 nothing to track for updates, so this source has no [UPSTREAMS.md](UPSTREAMS.md) row.
 
-Principle 6 ("Judge Ideas on Their Merit") is original to this repo and MIT-licensed
-like the rest. It is called out only because its neighbours are not: principle 5 is credited below, and principle 7 is original to this repo.
+Principles 6 ("Judge Ideas on Their Merit") and 7 ("Report So It Can Be Acted On") are
+original to this repo and MIT-licensed like the rest. They are called out only because
+their neighbours are not.
 
 ## skills/diagnose/ — concept credit
 
