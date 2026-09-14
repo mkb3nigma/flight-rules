@@ -278,15 +278,37 @@ branch_delete_targets() {
 }
 is_branch_delete() { [[ -n "$(branch_delete_targets "$1")" ]]; }
 
-if is_commit "$NORM"; then
+# Classify per SEGMENT. The target parsers have run per segment since 2026-09-10, for
+# the reason spelled out above them; the CLASSIFIERS did not, so a flag belonging to one
+# command was read as though it belonged to another. Measured 2026-09-13: an ordinary
+#
+#   git push -q origin dev && … | tr -d ' '
+#
+# was refused as a remote branch DELETION, because `-d` appears somewhere in the string
+# and the delete clause looked at the string. The same shape hides in is_destructive,
+# where `.*` spans segment boundaries: `git clean -n && rm -f x` reads as `git clean -f`,
+# and `git switch main && chmod -f 644 x` as `git switch -f`.
+#
+# Precedence is preserved exactly — every segment is tried against is_commit before any
+# is tried against is_force_push, and so on. Breaking on the first MATCHING SEGMENT
+# instead would reclassify `git rm x && git commit -m y` from commit to destructive, and
+# only a commit gets its staged diff scanned for secrets.
+_any_segment() {
+  local fn="$1" seg
+  while IFS= read -r seg; do
+    "$fn" "$seg" && return 0
+  done < <(command_segments "$NORM")
+  return 1
+}
+if _any_segment is_commit; then
   ACTION="commit"
-elif is_force_push "$NORM"; then
+elif _any_segment is_force_push; then
   ACTION="force-push"
-elif is_branch_delete "$NORM"; then
+elif _any_segment is_branch_delete; then
   ACTION="branch-delete"
-elif is_branch_create "$NORM"; then
+elif _any_segment is_branch_create; then
   ACTION="branch-create"
-elif is_destructive "$NORM"; then
+elif _any_segment is_destructive; then
   ACTION="destructive"
 else
   exit 0

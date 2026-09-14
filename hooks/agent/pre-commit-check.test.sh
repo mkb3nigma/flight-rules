@@ -735,6 +735,24 @@ while [ $i -lt ${#WRAP_NAME[@]} ]; do
 done
 printf '  ✅ %s wrapper × core combinations\n' "$(( ${#WRAP_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + ${#SAFE[@]}) ))"
 
+echo "…and a harmless command is not made dangerous by its neighbour:"
+# The mirror of the section below, and the direction that had no coverage. The target
+# parsers have run per SEGMENT since 2026-09-10, for the reason written above them; the
+# CLASSIFIERS matched the whole string, so a flag belonging to one command was read as
+# another's. Measured 2026-09-13: an ordinary push of `dev` was refused as a remote
+# branch DELETION because `tr -d` appeared later in the pipeline — which made the
+# two-branch workflow unusable, `dev` being protected but not PR-only and therefore
+# meant to move by local merge and push.
+check "a -d elsewhere is not a push --delete"  allow feature/x "git push origin main && wc -l | tr -d ' '"
+check "a -f elsewhere is not a clean -f"       allow main      "git clean -n && rm -f /tmp/nothing"
+check "a -f elsewhere is not a switch -f"      allow main      "git switch feature/x && chmod -f 644 f.txt"
+check "a --hard elsewhere is not a reset"      allow main      "git reset HEAD~1 --soft && echo --hard"
+# Each of those exonerates a verb; the real form of the same verb must not have moved.
+check "push --delete origin main still denied" deny  feature/x "git push --delete origin main"
+check "git clean -f still denied"              deny  main      "git clean -fd"
+check "git switch -f still denied"             deny  main      "git switch -f main"
+check "git reset --hard still denied"          deny  main      "git reset --hard HEAD~1"
+
 echo "Composition — a dangerous command is not laundered by a harmless neighbour:"
 # Order matters in both directions: the greedy parser saw only the LAST git verb, so a
 # protected target in the FIRST command escaped entirely.

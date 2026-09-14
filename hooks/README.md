@@ -388,9 +388,16 @@ restrictive enough to be safe against every shape is one nobody follows.
 
 ### The agent guard over-blocks prose. That is the accepted trade.
 
-It matches a git verb anywhere in the command string, so writing *about* a git command
+It matches a git verb anywhere in a command SEGMENT, so writing *about* a git command
 can read as running one — `echo "never git rm on main" >> notes.md` is refused. In a
 repo whose product is documentation about git, that is not rare.
+
+A segment, not the whole string: until 2026-09-13 the classifiers looked at everything
+between the first character and the last, so a flag from one command was read as
+another's. `git push origin dev && … | tr -d ' '` was refused as a remote branch
+deletion because of `tr -d`, `git clean -n && rm -f x` as `git clean -f`. The target
+parsers had run per segment since 2026-09-10; the classifiers that pick which parser to
+use had not.
 
 Measured 2026-09-11 against 405 commands taken from real sessions:
 
