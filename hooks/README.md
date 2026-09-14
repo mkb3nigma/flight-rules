@@ -159,9 +159,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   only the last `git push`/`git branch` in a compound, so a protected target in an
   earlier one escaped (`git branch -d main && git branch -d feature/x` was allowed), and reading
   past the end of that command turned a later word into a target (a following
-  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On **any** branch of the project
+  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On a **protected** branch of the project
   it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
-  created as worktrees (workflow rule 6), and the block shows the command. "The
+  created as worktrees (workflow rule 6), and the block shows the command. That applies
+  while you stand on a **protected** branch, which is when a branch made in place puts
+  feature work in the main checkout. It was nominally every branch until 2026-09-14,
+  though never actually enforced as such: a `git commit` in the same command elected
+  `commit` and branch creation was never judged at all. "The
   project" is its main checkout *and every worktree of it* — they share one
   `--git-common-dir`, which is how a worktree is told from an unrelated repo whose
   branches are none of this project's business.

@@ -245,9 +245,10 @@ common_repo_dir() {
 
 # Workflow rule 6: branches are created as worktrees, never with `checkout -b` /
 # `switch -c`. A branch created in place puts feature work in the main checkout —
-# the drift the whole worktree workflow exists to prevent — so this is denied on
-# EVERY branch of the project, not just protected ones. `git worktree add … -b`
-# is the sanctioned form and contains neither verb.
+# the drift the whole worktree workflow exists to prevent — so it is denied while you
+# stand on a protected branch, which is when that drift can happen. `git worktree add
+# … -b` is the sanctioned form and contains neither verb. (Denied on every branch until
+# 2026-09-14; see the narrowing note in judge_segment for why that changed.)
 is_branch_create() {
   [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+([^[:space:]]+[[:space:]]+)*-[bB]${E} ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+([^[:space:]]+[[:space:]]+)*(-[cC]|--create|--force-create)${E} ]] && return 0
@@ -289,10 +290,10 @@ is_branch_delete() { [[ -n "$(branch_delete_targets "$1")" ]]; }
 # where `.*` spans segment boundaries: `git clean -n && rm -f x` reads as `git clean -f`,
 # and `git switch main && chmod -f 644 x` as `git switch -f`.
 #
-# Precedence is preserved exactly — every segment is tried against is_commit before any
-# is tried against is_force_push, and so on. Breaking on the first MATCHING SEGMENT
-# instead would reclassify `git rm x && git commit -m y` from commit to destructive, and
-# only a commit gets its staged diff scanned for secrets.
+# There is no longer a single elected action: every segment is judged on its own further
+# down, and the first that must be refused decides the command. `git rm x && git commit
+# -m y` is therefore still scanned for secrets — HAS_COMMIT, set here, is what the scan
+# keys off, not which segment happened to be refused.
 _any_segment() {
   local fn="$1" seg
   while IFS= read -r seg; do
@@ -300,17 +301,15 @@ _any_segment() {
   done < <(command_segments "$NORM")
   return 1
 }
-if _any_segment is_commit; then
-  ACTION="commit"
-elif _any_segment is_force_push; then
-  ACTION="force-push"
-elif _any_segment is_branch_delete; then
-  ACTION="branch-delete"
-elif _any_segment is_branch_create; then
-  ACTION="branch-create"
-elif _any_segment is_destructive; then
-  ACTION="destructive"
-else
+# Is there anything here to judge at all, and is any part of it a commit? The verdict
+# itself is decided per segment further down — this pass only decides whether to keep
+# going, and whether a staged diff will need scanning.
+HAS_COMMIT=0
+_any_segment is_commit && HAS_COMMIT=1
+ACTION=""
+if [[ $HAS_COMMIT -eq 0 ]] \
+   && ! _any_segment is_force_push && ! _any_segment is_branch_delete \
+   && ! _any_segment is_branch_create && ! _any_segment is_destructive; then
   exit 0
 fi
 
@@ -367,9 +366,9 @@ WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WORKTREE_DIR}"
 GUARD_OFF=0
 if [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]]; then
   GUARD_OFF=1
-  # Nothing else to check unless this is a commit: the branch policy was the only
-  # gate for the other actions, and there is no staged diff to scan.
-  [[ "$ACTION" != "commit" ]] && exit 0
+  # Nothing else to check unless some part of this is a commit: the branch policy was
+  # the only gate for the other actions, and there is no staged diff to scan.
+  [[ $HAS_COMMIT -eq 1 ]] || exit 0
 fi
 
 # Case-insensitively, so QA/Qa/qa and Main/main are each one branch to this check.
@@ -377,34 +376,107 @@ fi
 # case-sensitive, or `git RM` style false matches creep in.
 IS_PROTECTED=0
 BLOCKED_BRANCH="$CURRENT_BRANCH"
-shopt -s nocasematch
-if [[ "$GUARD_OFF" == "0" ]]; then
-  # For a push, what matters is the ref being written, not the branch you happen
-  # to stand on: deleting a merged feature branch's remote ref is a normal step of
-  # post-merge cleanup, which the workflow has you do FROM the protected branch.
-  # So the current branch counts only when the push names no ref of its own —
-  # the case where the current branch IS the target. Every other action (commit,
-  # destructive) acts on the checkout, where the current branch is the subject.
-  # A branch deletion is judged the same way, on the branch NAMED rather than the one
-  # you are standing on: `git branch -d feature/old` from a protected branch is the
-  # normal cleanup step, and `git branch -D main` from a feature branch is the harm.
-  PUSH_TARGETS=$(push_targets "$NORM")
-  if [[ "$ACTION" != "force-push" && "$ACTION" != "branch-delete" ]] \
-     || [[ "$ACTION" == "force-push" && -z "${PUSH_TARGETS//[[:space:]]/}" ]]; then
-    [[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]] && IS_PROTECTED=1
+
+# A command is allowed only if EVERY part of it is allowed. Each segment is classified
+# and judged on its own; the first one that must be refused decides the verdict for the
+# whole command, and nothing runs.
+#
+# This used to elect one ACTION for the whole command and judge only that, which meant
+# the target check — the thing that notices `main` — ran only for the action that won.
+# Measured 2026-09-14 on a feature branch, each of these ALLOWED while either half alone
+# was denied:
+#
+#   git commit -m x && git push --force origin main
+#   git commit -m x && git branch -D main
+#   git commit -m x && git push --mirror origin
+#   git push --force origin feature/x && git branch -D main
+#
+# Not a security hole — typing `--force origin main` is deliberate, and this guard is
+# explicitly not a security boundary. It is a coherence one: the same operation got a
+# different verdict because of what sat next to it, and a guard that inconsistent is one
+# people learn to ignore.
+#
+# Why each action is judged the way it is, unchanged from before:
+#   * a push is judged on the ref it NAMES, not the branch you stand on — deleting a
+#     merged feature branch's remote ref is normal cleanup, done FROM the protected
+#     branch. The current branch counts only when the push names no ref of its own.
+#   * a branch deletion likewise: `git branch -d feature/old` from main is the cleanup
+#     step, `git branch -D main` from a feature branch is the harm.
+#   * a commit or a destructive command acts on the checkout, so the current branch is
+#     the subject.
+judge_segment() {   # sets ACTION/BLOCKED_BRANCH; returns 0 if this segment must be refused
+  local seg="$1" a t targets
+  if is_commit "$seg";          then a="commit"
+  elif is_force_push "$seg";    then a="force-push"
+  elif is_branch_delete "$seg"; then a="branch-delete"
+  elif is_branch_create "$seg"; then a="branch-create"
+  elif is_destructive "$seg";   then a="destructive"
+  else return 1
   fi
-  if [[ "$ACTION" == "branch-delete" ]]; then
+  if [[ "$a" == "force-push" ]]; then
+    targets=$(push_targets "$seg")
     while IFS= read -r t; do
-      [[ -n "$t" && "$t" =~ $PROTECTED_RE ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="$t"; }
-    done <<<"$(branch_delete_targets "$NORM")"
-  fi
-  if [[ "$ACTION" == "force-push" ]]; then
-    while IFS= read -r t; do
-      [[ -n "$t" && "$t" =~ $PROTECTED_RE ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="$t"; }
-    done <<<"$PUSH_TARGETS"
+      [[ -n "$t" && "$t" =~ $PROTECTED_RE ]] && { ACTION="$a"; BLOCKED_BRANCH="$t"; return 0; }
+    done <<<"$targets"
     # `--mirror` names no branch and touches all of them, protected ones included.
-    [[ "$NORM" =~ [[:space:]]--mirror${E} ]] && { IS_PROTECTED=1; BLOCKED_BRANCH="every branch (--mirror)"; }
+    if [[ "$seg" =~ [[:space:]]--mirror${E} ]]; then
+      ACTION="$a"; BLOCKED_BRANCH="every branch (--mirror)"; return 0
+    fi
+    # No ref named: the target is the branch you are on.
+    if [[ -z "${targets//[[:space:]]/}" && "$CURRENT_BRANCH" =~ $PROTECTED_RE ]]; then
+      ACTION="$a"; BLOCKED_BRANCH="$CURRENT_BRANCH"; return 0
+    fi
+    return 1
   fi
+  if [[ "$a" == "branch-delete" ]]; then
+    while IFS= read -r t; do
+      [[ -n "$t" && "$t" =~ $PROTECTED_RE ]] && { ACTION="$a"; BLOCKED_BRANCH="$t"; return 0; }
+    done <<<"$(branch_delete_targets "$seg")"
+    return 1
+  fi
+  # Branch creation is judged on the branch you stand on, like a commit. The harm rule 6
+  # prevents is feature work drifting into the MAIN checkout, and that only arises when
+  # you are on the integration branch; making a scratch branch while already on a feature
+  # branch is not that failure.
+  #
+  # It used to be refused on every branch of the project — except when a `git commit`
+  # shared the command, because the elected action was `commit` and branch creation was
+  # never judged at all. Measured 2026-09-14, standing on a feature branch: bare, in a
+  # subshell, after `git status` and after `git stash list` it was refused; after a
+  # commit, or before one, it was allowed. Judging every segment made the rule consistent
+  # for the first time, and consistent-and-universal refused 7 of 405 real commands from
+  # this project's own transcripts — test harnesses making a branch in a throwaway repo,
+  # and the verb appearing as text in a file being edited. Narrowed deliberately rather
+  # than left inconsistent.
+  if [[ "$CURRENT_BRANCH" =~ $PROTECTED_RE ]]; then
+    ACTION="$a"; BLOCKED_BRANCH="$CURRENT_BRANCH"; return 0
+  fi
+  return 1
+}
+
+shopt -s nocasematch
+# A merge in progress waives some refusals — committing the merge is the whole point of
+# being on the branch — but the waiver belongs to the SEGMENT it applies to, not to the
+# command. Applied after the loop, as it was, the first refused segment both stopped the
+# scan and carried the waiver, so anything after it was never judged. Measured 2026-09-14
+# on a protected branch mid-merge: `git commit -m x` waived (right), branch creation on
+# its own refused (right), and the two together ALLOWED (wrong). A waived segment is
+# skipped and the scan continues.
+MERGE_IN_PROGRESS=0
+[[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
+if [[ "$GUARD_OFF" == "0" ]]; then
+  while IFS= read -r _seg; do
+    judge_segment "$_seg" || continue
+    # Waived: the merge commit itself, and the working-tree commands that resolve a
+    # conflict (`git rm`, `git checkout -- <path>`). Nothing else. The list used to be
+    # stated as an exclusion — everything except force-push and branch-create — which
+    # quietly waived a local delete of a protected branch, something no part of
+    # committing a merge requires.
+    if [[ $MERGE_IN_PROGRESS -eq 1 && ( "$ACTION" == "commit" || "$ACTION" == "destructive" ) ]]; then
+      ACTION=""; BLOCKED_BRANCH="$CURRENT_BRANCH"; continue
+    fi
+    IS_PROTECTED=1; break
+  done < <(command_segments "$NORM")
 fi
 shopt -u nocasematch
 
@@ -436,9 +508,8 @@ GIT_DIR_PATH=$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)
 if [[ "$IN_THIS_PROJECT" == "0" ]]; then
   # Another repo — its branch policy is not ours to enforce
   :
-elif [[ -f "$GIT_DIR_PATH/MERGE_HEAD" && "$ACTION" != "force-push" && "$ACTION" != "branch-create" ]]; then
-  # A merge is in progress; let it through
-  :
+# The merge waiver used to sit here, judging the one elected action. It is applied per
+# segment in the loop above instead — see the note there.
 elif [[ "$ACTION" == "branch-create" ]]; then
   deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
 
@@ -488,8 +559,9 @@ If this project deliberately works on \"$BLOCKED_BRANCH\" and does not use the w
   exit 0
 fi
 
-# Only a commit has a staged diff to scan; the other actions end here.
-[[ "$ACTION" != "commit" ]] && exit 0
+# Only a commit has a staged diff to scan; the other actions end here. HAS_COMMIT, not
+# ACTION: ACTION now names the segment that was REFUSED, and is empty when none was.
+[[ $HAS_COMMIT -eq 1 ]] || exit 0
 
 # ─────────────────────────────────────────────
 # 2. SECRET LEAK CHECK

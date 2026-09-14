@@ -424,7 +424,13 @@ check "rebase on a feature branch"        allow feature/x 'git rebase main'
 
 echo "Workflow rule 6 — branches are created as worktrees, on any branch:"
 check "checkout -b on main"               deny  main      'git checkout -b feature/y'
-check "checkout -b on a feature branch"   deny  feature/x 'git checkout -b feature/y'
+# Narrowed 2026-09-14: rule 6 guards the MAIN checkout against feature work landing in
+# it, which is a protected-branch condition. It was nominally universal but not actually
+# enforced — a `git commit` in the same command elected `commit` and branch creation was
+# never judged. Made consistent, universal cost 7 of 405 real commands; narrowed instead.
+check "checkout -b on a feature branch"   allow feature/x 'git checkout -b feature/y'
+check "…and still denied on a protected branch when a commit shares the command" \
+                                          deny  main      'git commit -m x && git checkout -b feature/y'
 check "checkout -B"                       deny  main      'git checkout -B feature/y'
 check "checkout -q -b (option before)"    deny  main      'git checkout -q -b feature/y'
 check "switch -c"                         deny  main      'git switch -c feature/y'
@@ -480,7 +486,7 @@ check_wt "force-push to main from a worktree"   deny  scratch feature/x 'git pus
 check_wt "remote-delete main from a worktree"   deny  scratch feature/x 'git push --delete origin main'
 check_wt "empty-source push from a worktree"    deny  scratch feature/x 'git push origin :main'
 check_wt "--mirror from a worktree"             deny  scratch feature/x 'git push --mirror origin'
-check_wt "checkout -b from a worktree"          deny  scratch feature/x 'git checkout -b feature/y'
+check_wt "checkout -b from a worktree on a feature branch" allow scratch feature/x 'git checkout -b feature/y'
 # A worktree checked out ON the protected branch: commits and destructive
 # commands there are the plain case, and were allowed too.
 check_wt "commit on main from a worktree"       deny  scratch main 'git commit -m x'
@@ -679,6 +685,9 @@ PREFIX_FMT=(  'git --no-pager %s'
 
 # Denied on a protected branch, whatever shape they arrive in.
 DANGER_MAIN=( 'git commit -m x'
+              # Moved from DANGER_ANY on 2026-09-14. Branch creation is now judged on the
+              # branch you stand on, like a commit — see the narrowing note in the guard.
+              'git checkout -b feature/y'
               'git rm f.txt'
               'git reset --hard HEAD~1'
               'git clean -fd'
@@ -692,8 +701,7 @@ DANGER_MAIN=( 'git commit -m x'
 # Denied from ANY branch, because they name the protected branch themselves.
 DANGER_ANY=( 'git branch -D main'
              'git push --force origin main'
-             'git push --mirror'
-             'git checkout -b feature/y' )
+             'git push --mirror' )
 
 # Allowed everywhere — these must survive every wrapper, including the one whose
 # suffix contains the word "main".
@@ -734,6 +742,35 @@ while [ $i -lt ${#WRAP_NAME[@]} ]; do
   i=$((i+1))
 done
 printf '  ✅ %s wrapper × core combinations\n' "$(( ${#WRAP_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + ${#SAFE[@]}) ))"
+
+echo "A merge in progress waives the commit, and nothing else in the same command:"
+# Committing the merge is the whole point of standing on the branch, so that refusal is
+# waived. The waiver used to be applied to the COMMAND after the scan had already stopped
+# at the first refused segment, so anything after it was never judged — found by review
+# 2026-09-14, and it had no coverage at all, which is why it had to be reasoned rather
+# than run. Each case pairs the waived thing with a thing that must stay refused.
+MG=$(make_repo main)
+printf '%s' "$(git -C "$MG" rev-parse HEAD)" > "$MG/.git/MERGE_HEAD"
+mg() {   # mg <expect> <desc> <command>
+  local expect="$1" desc="$2" cmd="$3" out rc got
+  out=$(cd "$MG" && CLAUDE_PROJECT_DIR="$MG" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+mg allow "mid-merge: the merge commit itself is waived"        'git commit -m "merge feature/x"'
+mg deny  "mid-merge: branch creation is not waivable"          'git checkout -b feature/y'
+mg deny  "mid-merge: the waived commit does not carry a branch creation with it" \
+         'git commit -m "merge feature/x" && git checkout -b feature/y'
+mg deny  "mid-merge: nor a forced push at a protected branch" \
+         'git commit -m "merge feature/x" && git push --force origin main'
+mg deny  "mid-merge: nor a local delete of a protected branch" \
+         'git commit -m "merge feature/x" && git branch -D main'
+rm -rf "$MG"
 
 echo "…and a harmless command is not made dangerous by its neighbour:"
 # The mirror of the section below, and the direction that had no coverage. The target
