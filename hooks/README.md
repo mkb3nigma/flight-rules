@@ -23,11 +23,14 @@ does not want that, opt out rather than uninstalling:
 PROTECTED_BRANCHES=off
 ```
 
-`off` is wider than it looks. Measured 2026-09-13, it also stops `checkout -b`/`switch
--c` being denied, and — when `NOTE_GATED_BRANCHES` is unset — silences the note gate,
-because the gated set is derived as *protected but not PR-only* and with no protected
-branches that set is empty. A project with a `dev` branch loses its `pre-merge-check`
-gate without being told. Name `NOTE_GATED_BRANCHES` explicitly if you want it kept.
+`off` is wider than it looks in one direction and narrower in another. It also stops
+`checkout -b`/`switch -c` being denied, and — when `NOTE_GATED_BRANCHES` is unset —
+silences the note gate, because the gated set is derived as *protected but not PR-only*
+and with no protected branches that set is empty. A project with a `dev` branch loses its
+`pre-merge-check` gate without being told; name `NOTE_GATED_BRANCHES` explicitly to keep
+it. What it does **not** touch is the PR-only side: `pre-merge-commit`, `pre-rebase` and
+the squash guard read `PR_ONLY_BRANCHES` directly, so local merges and rebases into a
+PR-only branch stay refused.
 
 What `off` does **not** turn off is the secret scan — leaking a key is not a workflow
 preference.
@@ -36,6 +39,14 @@ The **git hooks in `git/`** are still **files to copy**: git finds them through
 `core.hooksPath`, which no plugin can set for you. Copy them to `.ai/hooks/` and run
 `install.sh`. No editing — they read their branches from `.ai/flight-rules.conf`, the
 one channel git hooks, agent hooks and skills all share.
+
+> **What these are for.** They catch the workflow slip — a fix committed straight to a
+> protected branch, a merge of work whose checks never ran, a `git rm` with a relative
+> path after a `cd` that silently failed. They are guardrails, not a security boundary:
+> anyone who means to get past them can, and an assistant given full control of a machine
+> is beyond anything a repository of rules can reach. The goal is to make the accidental
+> path harder than the correct one. The full statement, with what is deliberately left
+> uncovered, is in [What these hooks are — and are not](#what-these-hooks-are--and-are-not).
 
 ## Contents
 
@@ -164,10 +175,11 @@ Guards that fire on the assistant's own events, before git ever runs:
   `*.md|rst|txt` — keys are still caught
   there). A line marked `flight-rules: allow` is a reviewed exception.
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
-  rather than silently switching off. Nothing else is required: the compound-command
-  split is pure bash, because when it shelled out to `tr` a PATH without `tr` made
-  `git push --force origin main` and `git branch -D main` ALLOWED from a feature
-  branch, silently — the ref they name is read by splitting the command.
+  rather than silently switching off. It also uses `sed`, which is in every base system
+  the hooks target. The compound-command SPLIT is pure bash, though: when that shelled
+  out to `tr`, a PATH without `tr` made a forced push and a branch deletion naming a
+  protected branch ALLOWED from a feature branch, silently — the ref they name is read
+  by splitting the command, and nothing announced the dependency.
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
 - **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
   every hook's executable bit *and* that each one still contains the string that makes

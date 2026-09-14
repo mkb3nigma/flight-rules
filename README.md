@@ -16,6 +16,14 @@ Claude Code, Cursor, Codex, Copilot, Antigravity, or any assistant that reads Ma
 context. A thin Claude Code plugin wrapper is included so Claude installs the skills
 natively.
 
+> **What the hooks are for.** They catch the workflow slip — a fix committed straight to
+> a protected branch instead of on a worktree branch, a merge of work whose checks never
+> ran, a `git rm` with a relative path after a `cd` that silently failed. They are
+> guardrails, not a security boundary: anyone who means to get past them can, and an
+> assistant given full control of a machine is beyond anything a repository of rules can
+> reach. The design goal is to make the accidental path harder than the correct one, not
+> to be unbypassable. See [hooks/README.md](hooks/README.md#what-these-hooks-are--and-are-not).
+
 ## How it flows
 
 One hub, two directions. Improvements from the sources this playbook adapts flow **in**

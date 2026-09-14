@@ -160,7 +160,12 @@ rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "PROTECTED_BRANCHES=off is allowed"
-say "$(has "$D" "the branch policy is off")" "0" "…with a warning naming both layers"
+say "$(has "$D" "no protected branches in the agent guard")" "0" "…with a warning naming the layers it stands down"
+# It used to say "the branch policy is off", which is not what happens: pre-merge-commit,
+# pre-rebase and the squash guard read PR_ONLY_BRANCHES directly and keep refusing local
+# merges and rebases into a PR-only branch. A reader turning `off` on to work locally
+# would have been told more was disabled than is.
+say "$(has "$D" "PR_ONLY_BRANCHES still refuses")" "0" "…and says what it does NOT disable"
 rm -rf "$D"
 
 # This case asserted that `off` on a git-hook key is an error, on the belief that only
@@ -195,6 +200,10 @@ rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
 say "$(has "$D" "empties the note gate")" "1" "policy on → not warned"
+rm -rf "$D"
+
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\nPR_ONLY_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "empties the note gate")" "1" "integration branch is PR-only → not warned, there is no gate to lose"
 rm -rf "$D"
 
 echo "Guard wiring — once, not twice, not a stale copy:"

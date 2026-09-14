@@ -4,7 +4,10 @@
 name: hook tests
 on:
   push:
-    branches: [main]
+    # dev too: it is the integration branch and it moves by LOCAL merge, which no
+    # pull_request event covers. Without this a batch could sit on dev untested until
+    # the promotion PR ran, while the docs claimed CI on both branches.
+    branches: [main, dev]
   pull_request:
 jobs:
   test:
