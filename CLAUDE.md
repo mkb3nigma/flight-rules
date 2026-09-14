@@ -34,22 +34,13 @@ Feature PRs to `dev` **do not touch `.claude-plugin/plugin.json`** — the bump 
 the release. Bumping per feature is how three stacked PRs came to conflict on that one
 line while GitHub reported all three mergeable.
 
-**Releasing, end to end.** `dev` is protected, so the bump cannot be committed on it
-directly, and the promotion PR's head is `dev` — there is nowhere in the promotion itself
-to put it. It goes in one more branch first:
-
-1. `git worktree add .ai/worktrees/release-<v> -b chore/release-<v> origin/dev`
-2. Bump `.claude-plugin/plugin.json`; add the CHANGELOG entry for what the batch does to
-   a consumer, behaviour changes first.
-3. PR to `dev` as usual, merge it the usual way.
-4. `pr-create` step 2a: run every `{TEST_COMMANDS}` entry on the exact `dev` commit being
-   pushed, and report the sha.
-5. `gh pr create --base main` from `dev`. This is the one PR whose head is a protected
-   branch — `pr-create`'s constraint names the exception.
-
-Specified in prose across four files and never executed, this took three attempts to get
-right; the first promotion found that steps 1–3 had no home and step 5 was forbidden by
-the skill that defines it.
+**Releasing.** The version bump is a change like any other, so it arrives through a
+branch and a PR — `dev` is protected and the promotion PR's head *is* `dev`, so there is
+nowhere else to put it. Bump `.claude-plugin/plugin.json` and add the CHANGELOG entry on
+a `chore/release-<v>` branch, merge that to `dev`, then open the promotion PR: run
+`pr-create` step 2a first (every `{TEST_COMMANDS}` entry on the exact commit being
+pushed, reporting the sha), and `--base main`. That promotion is the one PR whose head is
+a protected branch, which `pr-create`'s constraint names as its only exception.
 
 ## The skills run here too
 
