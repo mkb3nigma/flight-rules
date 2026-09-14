@@ -37,6 +37,22 @@ The **git hooks in `git/`** are still **files to copy**: git finds them through
 `install.sh`. No editing — they read their branches from `.ai/flight-rules.conf`, the
 one channel git hooks, agent hooks and skills all share.
 
+## Contents
+
+- [Git hooks (`git/`)](#git-hooks-git)
+- [Agent hook scripts (`agent/`)](#agent-hook-scripts-agent)
+  - [Configuration](#configuration)
+  - [Where to set it](#where-to-set-it)
+  - [Wiring (Claude Code)](#wiring-claude-code)
+- [What these hooks are — and are not](#what-these-hooks-are--and-are-not)
+  - [With the plugin alone, a protected branch is only half guarded](#with-the-plugin-alone-a-protected-branch-is-only-half-guarded)
+  - [The agent guard over-blocks prose. That is the accepted trade.](#the-agent-guard-over-blocks-prose-that-is-the-accepted-trade)
+- [Layered defence](#layered-defence)
+
+The first five sections install and configure the hooks. The last three are what
+they do **not** catch — measured rather than asserted — and are worth reading
+before you rely on them.
+
 ## Git hooks (`git/`)
 
 - **`pre-merge-commit`** — mechanism 1 of the merge gate: **PR-only branches**
