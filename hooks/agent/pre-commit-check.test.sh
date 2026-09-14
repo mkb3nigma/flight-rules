@@ -424,7 +424,13 @@ check "rebase on a feature branch"        allow feature/x 'git rebase main'
 
 echo "Workflow rule 6 — branches are created as worktrees, on any branch:"
 check "checkout -b on main"               deny  main      'git checkout -b feature/y'
-check "checkout -b on a feature branch"   deny  feature/x 'git checkout -b feature/y'
+# Narrowed 2026-09-14: rule 6 guards the MAIN checkout against feature work landing in
+# it, which is a protected-branch condition. It was nominally universal but not actually
+# enforced — a `git commit` in the same command elected `commit` and branch creation was
+# never judged. Made consistent, universal cost 7 of 405 real commands; narrowed instead.
+check "checkout -b on a feature branch"   allow feature/x 'git checkout -b feature/y'
+check "…and still denied on a protected branch when a commit shares the command" \
+                                          deny  main      'git commit -m x && git checkout -b feature/y'
 check "checkout -B"                       deny  main      'git checkout -B feature/y'
 check "checkout -q -b (option before)"    deny  main      'git checkout -q -b feature/y'
 check "switch -c"                         deny  main      'git switch -c feature/y'
@@ -480,7 +486,7 @@ check_wt "force-push to main from a worktree"   deny  scratch feature/x 'git pus
 check_wt "remote-delete main from a worktree"   deny  scratch feature/x 'git push --delete origin main'
 check_wt "empty-source push from a worktree"    deny  scratch feature/x 'git push origin :main'
 check_wt "--mirror from a worktree"             deny  scratch feature/x 'git push --mirror origin'
-check_wt "checkout -b from a worktree"          deny  scratch feature/x 'git checkout -b feature/y'
+check_wt "checkout -b from a worktree on a feature branch" allow scratch feature/x 'git checkout -b feature/y'
 # A worktree checked out ON the protected branch: commits and destructive
 # commands there are the plain case, and were allowed too.
 check_wt "commit on main from a worktree"       deny  scratch main 'git commit -m x'
@@ -679,6 +685,9 @@ PREFIX_FMT=(  'git --no-pager %s'
 
 # Denied on a protected branch, whatever shape they arrive in.
 DANGER_MAIN=( 'git commit -m x'
+              # Moved from DANGER_ANY on 2026-09-14. Branch creation is now judged on the
+              # branch you stand on, like a commit — see the narrowing note in the guard.
+              'git checkout -b feature/y'
               'git rm f.txt'
               'git reset --hard HEAD~1'
               'git clean -fd'
@@ -692,8 +701,7 @@ DANGER_MAIN=( 'git commit -m x'
 # Denied from ANY branch, because they name the protected branch themselves.
 DANGER_ANY=( 'git branch -D main'
              'git push --force origin main'
-             'git push --mirror'
-             'git checkout -b feature/y' )
+             'git push --mirror' )
 
 # Allowed everywhere — these must survive every wrapper, including the one whose
 # suffix contains the word "main".

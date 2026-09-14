@@ -47,7 +47,9 @@ deleted.
 
 ### ✅ Required
 1. All branches created as worktrees under `{WORKTREE_DIR}` — hook for "as worktrees"
-   (Forbidden 6); the location is advisory
+   (Forbidden 6), enforced while you are on a protected branch, which is when a branch
+   made in place puts feature work in the checkout you meant to keep clean; the location
+   is advisory
 2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`, `hotfix/` — skill (`feature-start` 3)
 3. Conventional commit messages using the same prefixes (`hotfix/` branches commit as
    `fix:` — there is no `hotfix:` message prefix) — skill (`commit` 4, `pre-merge-check` 8)
