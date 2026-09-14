@@ -91,10 +91,15 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
 14. **Migrations present if models/schema changed** — ⚠️ if not.
 15. **New TODO/FIXME/HACK** — ⚠️ list; resolve or track before merge.
 16. **Commit-count sanity** — ⚠️ above ~20 commits: consider splitting.
-17. **Docs match the change** — grep the docs (`README*`, `docs/`, `rules/`, `skills/`,
-    script header comments) for every name the diff renames or removes. ❌ if a doc
-    still describes the old behaviour; ⚠️ if a behaviour change touched no doc and the
-    PR does not say why.
+17. **Docs match the change** — ask **"what claims does this diff make false?"**, then
+    go find them. Not a grep for renamed symbols: a change that renames nothing and only
+    makes a sentence untrue leaves every grep empty. Run narrowly it has missed four
+    times in this repo, the last on 2026-09-14 — a rule's **Required** entry was updated
+    and its **Forbidden** entry, three lines away, still described the old behaviour.
+    Search `README*`, `docs/`, `rules/`, `skills/`, `CLAUDE.md` and script header
+    comments for the BEHAVIOUR, including the places that state it as a rule rather than
+    naming the code. ❌ if a doc still describes the old behaviour; ⚠️ if a behaviour
+    change touched no doc and the PR does not say why.
 18. **Rules earn their place** — for every item the diff adds to or widens in a rules
     file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
     warrant, what goes wrong without it, and how it is enforced. The warrant is an

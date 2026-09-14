@@ -20,7 +20,10 @@ Open a GitHub PR for the current feature branch. Project parameters:
 (defaults: `main` / `main` / `.ai/worktrees/` / the project's test commands).
 
 ## Constraints
-- Never open a PR from one of `{PROTECTED_BRANCHES}`.
+- Never open a PR from one of `{PROTECTED_BRANCHES}` — **except the release PR**, whose
+  head is `{INTEGRATION_BRANCH}` and whose base is `main`. On a two-branch project the
+  integration branch is usually protected too, so without this exception the skill
+  forbids the release it describes in step 2a.
 - Base-branch routing: `feature/ fix/ refactor/ test/ docs/ chore/` branches target
   `{INTEGRATION_BRANCH}`; `hotfix/*` targets `main`; anything else → ask the user.
 - `/pre-merge-check` must be clean first — no ❌ items may remain. ⚠️ warnings are
