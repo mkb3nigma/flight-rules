@@ -23,8 +23,10 @@ commit there, push, `gh pr create --base dev`. Never commit on `main` or `dev`; 
 merge into `main` locally. Sync with `git pull --ff-only origin dev`.
 
 **`main` moves at a release, not per change.** A promotion is one PR, `dev` → `main`,
-carrying one version bump and a summary of what the batch did — so the published history
-is releases, not a debugging session. Both branches are protected on GitHub (PR required
+carrying one version bump, the full `{TEST_COMMANDS}` run on the exact commit being
+pushed (`pr-create` step 2a — the per-branch checks proved the pieces, not the sum), and
+a summary of what the batch did — so the published history is releases, not a debugging
+session. Both branches are protected on GitHub (PR required
 on `main`, CI required on both, force-push and deletion blocked); admins are exempt, which
 is the emergency path for a genuine bug in a release, taken deliberately and reviewed hard.
 
