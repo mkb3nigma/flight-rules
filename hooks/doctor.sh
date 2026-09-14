@@ -97,7 +97,20 @@ else
           # two errors was false, and it made this script report a problem every day
           # about a correctly configured project.
           case "$key" in
-            PROTECTED_BRANCHES)  warn "$key=$val — the branch policy is off: no protected branches in the agent guard, and the ref gate stands down too (the secret scan stays on)" ;;
+            PROTECTED_BRANCHES)
+              warn "$key=$val — the branch policy is off: no protected branches in the agent guard, branch creation is no longer routed through a worktree, and the ref gate stands down too (the secret scan stays on)"
+              # The note gate's default set is DERIVED from this key — "protected but
+              # not PR-only" — so turning protection off empties it. Measured
+              # 2026-09-13: a merge landed on an integration branch with no note and
+              # nothing said a word. Only worth saying when the project actually
+              # integrates somewhere other than the branch it releases from; a
+              # trunk-only project has no note-gated branch either way.
+              _ib=$(sed -n -E 's/^[[:space:]]*INTEGRATION_BRANCH[[:space:]]*=[[:space:]]*"?([^"[:space:]#]+)"?.*$/\1/p' "$CONF" | tail -1)
+              if ! grep -qE '^[[:space:]]*NOTE_GATED_BRANCHES[[:space:]]*=' "$CONF" \
+                 && [[ -n "$_ib" && "$_ib" != "main" ]]; then
+                warn "…and with NOTE_GATED_BRANCHES unset, that empties the note gate as well — a merge into $_ib needs no pre-merge-check note. Name NOTE_GATED_BRANCHES to keep it"
+              fi
+              ;;
             PR_ONLY_BRANCHES)    warn "$key=$val — no branch is PR-only: the ref gate and the local merge gate stand down (PROTECTED_BRANCHES still applies)" ;;
             NOTE_GATED_BRANCHES) warn "$key=$val — no branch requires a pre-merge-check note" ;;
           esac
