@@ -48,3 +48,5 @@ jobs:
         run: bash hooks/wiring.test.sh
       - name: Skills catalogue is consistent
         run: bash skills/catalogue.test.sh
+      - name: Docs, conf and CI agree with each other
+        run: bash docs-consistency.test.sh

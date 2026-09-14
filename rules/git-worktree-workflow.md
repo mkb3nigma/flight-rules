@@ -30,7 +30,10 @@ deleted.
 5. Force-pushing or rebasing a protected branch, or deleting it — locally or on the
    remote — hook
    (agent guard; the `pre-rebase` git hook covers PR-only branches only)
-6. Creating branches with `git checkout -b` / `git switch -c` — always `git worktree add` — hook
+6. Creating branches with `git checkout -b` / `git switch -c` while on a protected
+   branch — always `git worktree add` — hook (the guard enforces it there, which is where
+   a branch made in place strands feature work in the checkout you meant to keep clean;
+   on a feature branch it is convention, not enforcement)
 7. Moving a **PR-only branch (default `main`) onto anything not already on its remote**
    — merging locally, committing directly, cherry-picking, reverting, `branch -f`,
    `update-ref`, `reset --hard`. It moves only through a reviewed pull request. Sync

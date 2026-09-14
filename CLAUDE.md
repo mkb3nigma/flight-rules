@@ -16,7 +16,7 @@ injects the principles; the rest you read once.
 | `{NOTE_GATED_BRANCHES}` | `dev` — a local merge needs a `pre-merge-check` note on the branch being merged |
 | `{INTEGRATION_BRANCH}` | `dev` — work integrates here; `main` is the released state |
 | `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
-| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh` — no arguments, no network |
+| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
 Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/dev`,
 commit there, push, `gh pr create --base dev`. Never commit on `main` or `dev`; never
@@ -31,8 +31,25 @@ on `main`, CI required on both, force-push and deletion blocked); admins are exe
 is the emergency path for a genuine bug in a release, taken deliberately and reviewed hard.
 
 Feature PRs to `dev` **do not touch `.claude-plugin/plugin.json`** — the bump belongs to
-the promotion PR. Bumping per feature is how three stacked PRs came to conflict on that
-one line while GitHub reported all three mergeable.
+the release. Bumping per feature is how three stacked PRs came to conflict on that one
+line while GitHub reported all three mergeable.
+
+**Releasing, end to end.** `dev` is protected, so the bump cannot be committed on it
+directly, and the promotion PR's head is `dev` — there is nowhere in the promotion itself
+to put it. It goes in one more branch first:
+
+1. `git worktree add .ai/worktrees/release-<v> -b chore/release-<v> origin/dev`
+2. Bump `.claude-plugin/plugin.json`; add the CHANGELOG entry for what the batch does to
+   a consumer, behaviour changes first.
+3. PR to `dev` as usual, merge it the usual way.
+4. `pr-create` step 2a: run every `{TEST_COMMANDS}` entry on the exact `dev` commit being
+   pushed, and report the sha.
+5. `gh pr create --base main` from `dev`. This is the one PR whose head is a protected
+   branch — `pr-create`'s constraint names the exception.
+
+Specified in prose across four files and never executed, this took three attempts to get
+right; the first promotion found that steps 1–3 had no home and step 5 was forbidden by
+the skill that defines it.
 
 ## The skills run here too
 
@@ -107,4 +124,5 @@ is injected into every session, so it is where an unearned line costs the most.
 - macOS ships BSD `grep`, `sed` and bash 3.2. CI runs the suites on both macOS and
   Ubuntu; do not use `grep -P`, `mapfile`, or `sed -i` without a suffix.
 - Hook behaviour changed? Say so in the PR body. The `.claude-plugin/plugin.json` bump
-  happens once, in the `dev` → `main` promotion, not in the feature PR.
+  happens once per release, on a `chore/release-<v>` branch — see **Releasing, end to
+  end** above — never in a feature PR.
