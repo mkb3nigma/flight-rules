@@ -743,6 +743,35 @@ while [ $i -lt ${#WRAP_NAME[@]} ]; do
 done
 printf '  ✅ %s wrapper × core combinations\n' "$(( ${#WRAP_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + ${#SAFE[@]}) ))"
 
+echo "A merge in progress waives the commit, and nothing else in the same command:"
+# Committing the merge is the whole point of standing on the branch, so that refusal is
+# waived. The waiver used to be applied to the COMMAND after the scan had already stopped
+# at the first refused segment, so anything after it was never judged — found by review
+# 2026-09-14, and it had no coverage at all, which is why it had to be reasoned rather
+# than run. Each case pairs the waived thing with a thing that must stay refused.
+MG=$(make_repo main)
+printf '%s' "$(git -C "$MG" rev-parse HEAD)" > "$MG/.git/MERGE_HEAD"
+mg() {   # mg <expect> <desc> <command>
+  local expect="$1" desc="$2" cmd="$3" out rc got
+  out=$(cd "$MG" && CLAUDE_PROJECT_DIR="$MG" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+mg allow "mid-merge: the merge commit itself is waived"        'git commit -m "merge feature/x"'
+mg deny  "mid-merge: branch creation is not waivable"          'git checkout -b feature/y'
+mg deny  "mid-merge: the waived commit does not carry a branch creation with it" \
+         'git commit -m "merge feature/x" && git checkout -b feature/y'
+mg deny  "mid-merge: nor a forced push at a protected branch" \
+         'git commit -m "merge feature/x" && git push --force origin main'
+mg deny  "mid-merge: nor a local delete of a protected branch" \
+         'git commit -m "merge feature/x" && git branch -D main'
+rm -rf "$MG"
+
 echo "…and a harmless command is not made dangerous by its neighbour:"
 # The mirror of the section below, and the direction that had no coverage. The target
 # parsers have run per SEGMENT since 2026-09-10, for the reason written above them; the

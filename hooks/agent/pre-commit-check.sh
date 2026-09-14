@@ -290,10 +290,10 @@ is_branch_delete() { [[ -n "$(branch_delete_targets "$1")" ]]; }
 # where `.*` spans segment boundaries: `git clean -n && rm -f x` reads as `git clean -f`,
 # and `git switch main && chmod -f 644 x` as `git switch -f`.
 #
-# Precedence is preserved exactly — every segment is tried against is_commit before any
-# is tried against is_force_push, and so on. Breaking on the first MATCHING SEGMENT
-# instead would reclassify `git rm x && git commit -m y` from commit to destructive, and
-# only a commit gets its staged diff scanned for secrets.
+# There is no longer a single elected action: every segment is judged on its own further
+# down, and the first that must be refused decides the command. `git rm x && git commit
+# -m y` is therefore still scanned for secrets — HAS_COMMIT, set here, is what the scan
+# keys off, not which segment happened to be refused.
 _any_segment() {
   local fn="$1" seg
   while IFS= read -r seg; do
@@ -455,9 +455,27 @@ judge_segment() {   # sets ACTION/BLOCKED_BRANCH; returns 0 if this segment must
 }
 
 shopt -s nocasematch
+# A merge in progress waives some refusals — committing the merge is the whole point of
+# being on the branch — but the waiver belongs to the SEGMENT it applies to, not to the
+# command. Applied after the loop, as it was, the first refused segment both stopped the
+# scan and carried the waiver, so anything after it was never judged. Measured 2026-09-14
+# on a protected branch mid-merge: `git commit -m x` waived (right), branch creation on
+# its own refused (right), and the two together ALLOWED (wrong). A waived segment is
+# skipped and the scan continues.
+MERGE_IN_PROGRESS=0
+[[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
 if [[ "$GUARD_OFF" == "0" ]]; then
   while IFS= read -r _seg; do
-    if judge_segment "$_seg"; then IS_PROTECTED=1; break; fi
+    judge_segment "$_seg" || continue
+    # Waived: the merge commit itself, and the working-tree commands that resolve a
+    # conflict (`git rm`, `git checkout -- <path>`). Nothing else. The list used to be
+    # stated as an exclusion — everything except force-push and branch-create — which
+    # quietly waived a local delete of a protected branch, something no part of
+    # committing a merge requires.
+    if [[ $MERGE_IN_PROGRESS -eq 1 && ( "$ACTION" == "commit" || "$ACTION" == "destructive" ) ]]; then
+      ACTION=""; BLOCKED_BRANCH="$CURRENT_BRANCH"; continue
+    fi
+    IS_PROTECTED=1; break
   done < <(command_segments "$NORM")
 fi
 shopt -u nocasematch
@@ -490,9 +508,8 @@ GIT_DIR_PATH=$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)
 if [[ "$IN_THIS_PROJECT" == "0" ]]; then
   # Another repo — its branch policy is not ours to enforce
   :
-elif [[ -f "$GIT_DIR_PATH/MERGE_HEAD" && "$ACTION" != "force-push" && "$ACTION" != "branch-create" ]]; then
-  # A merge is in progress; let it through
-  :
+# The merge waiver used to sit here, judging the one elected action. It is applied per
+# segment in the loop above instead — see the note there.
 elif [[ "$ACTION" == "branch-create" ]]; then
   deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
 
