@@ -16,6 +16,8 @@ Claude Code, Cursor, Codex, Copilot, Antigravity, or any assistant that reads Ma
 context. A thin Claude Code plugin wrapper is included so Claude installs the skills
 natively.
 
+See [CHANGELOG.md](CHANGELOG.md) for what changes between versions.
+
 > **What the hooks are for.** They catch the workflow slip — a fix committed straight to
 > a protected branch instead of on a worktree branch, a merge of work whose checks never
 > ran, a `git rm` with a relative path after a `cd` that silently failed. They are
