@@ -23,13 +23,46 @@ does not want that, opt out rather than uninstalling:
 PROTECTED_BRANCHES=off
 ```
 
-The secret scan keeps running when the branch policy is off — leaking a key is not a
-workflow preference.
+`off` is wider than it looks in one direction and narrower in another. It also stops
+`checkout -b`/`switch -c` being denied, and — when `NOTE_GATED_BRANCHES` is unset —
+silences the note gate, because the gated set is derived as *protected but not PR-only*
+and with no protected branches that set is empty. A project with a `dev` branch loses its
+`pre-merge-check` gate without being told; name `NOTE_GATED_BRANCHES` explicitly to keep
+it. What it does **not** touch is the PR-only side: `pre-merge-commit`, `pre-rebase` and
+the squash guard read `PR_ONLY_BRANCHES` directly, so local merges and rebases into a
+PR-only branch stay refused.
+
+What `off` does **not** turn off is the secret scan — leaking a key is not a workflow
+preference.
 
 The **git hooks in `git/`** are still **files to copy**: git finds them through
 `core.hooksPath`, which no plugin can set for you. Copy them to `.ai/hooks/` and run
 `install.sh`. No editing — they read their branches from `.ai/flight-rules.conf`, the
 one channel git hooks, agent hooks and skills all share.
+
+> **What these are for.** They catch the workflow slip — a fix committed straight to a
+> protected branch, a merge of work whose checks never ran, a `git rm` with a relative
+> path after a `cd` that silently failed. They are guardrails, not a security boundary:
+> anyone who means to get past them can, and an assistant given full control of a machine
+> is beyond anything a repository of rules can reach. The goal is to make the accidental
+> path harder than the correct one. The full statement, with what is deliberately left
+> uncovered, is in [What these hooks are — and are not](#what-these-hooks-are--and-are-not).
+
+## Contents
+
+- [Git hooks (`git/`)](#git-hooks-git)
+- [Agent hook scripts (`agent/`)](#agent-hook-scripts-agent)
+  - [Configuration](#configuration)
+  - [Where to set it](#where-to-set-it)
+  - [Wiring (Claude Code)](#wiring-claude-code)
+- [What these hooks are — and are not](#what-these-hooks-are--and-are-not)
+  - [With the plugin alone, a protected branch is only half guarded](#with-the-plugin-alone-a-protected-branch-is-only-half-guarded)
+  - [The agent guard over-blocks prose. That is the accepted trade.](#the-agent-guard-over-blocks-prose-that-is-the-accepted-trade)
+- [Layered defence](#layered-defence)
+
+The first five sections install and configure the hooks. The last three are what
+they do **not** catch — measured rather than asserted — and are worth reading
+before you rely on them.
 
 ## Git hooks (`git/`)
 
@@ -126,9 +159,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   only the last `git push`/`git branch` in a compound, so a protected target in an
   earlier one escaped (`git branch -d main && git branch -d feature/x` was allowed), and reading
   past the end of that command turned a later word into a target (a following
-  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On **any** branch of the project
+  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On a **protected** branch of the project
   it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
-  created as worktrees (workflow rule 6), and the block shows the command. "The
+  created as worktrees (workflow rule 6), and the block shows the command. That applies
+  while you stand on a **protected** branch, which is when a branch made in place puts
+  feature work in the main checkout. It was nominally every branch until 2026-09-14,
+  though never actually enforced as such: a `git commit` in the same command elected
+  `commit` and branch creation was never judged at all. "The
   project" is its main checkout *and every worktree of it* — they share one
   `--git-common-dir`, which is how a worktree is told from an unrelated repo whose
   branches are none of this project's business.
@@ -142,7 +179,11 @@ Guards that fire on the assistant's own events, before git ever runs:
   `*.md|rst|txt` — keys are still caught
   there). A line marked `flight-rules: allow` is a reviewed exception.
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
-  rather than silently switching off.
+  rather than silently switching off. It also uses `sed`, which is in every base system
+  the hooks target. The compound-command SPLIT is pure bash, though: when that shelled
+  out to `tr`, a PATH without `tr` made a forced push and a branch deletion naming a
+  protected branch ALLOWED from a feature branch, silently — the ref they name is read
+  by splitting the command, and nothing announced the dependency.
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
 - **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
   every hook's executable bit *and* that each one still contains the string that makes
@@ -186,9 +227,9 @@ with all five git hooks installed.
 
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables the branch policy — no protected branches in the guard, and the ref gate stands down with it (the secret scan stays on). |
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
 | PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured here too — the ref gate and the local merge gate stand down, while `PROTECTED_BRANCHES` still applies. |
-| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. |
+| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
@@ -363,9 +404,16 @@ restrictive enough to be safe against every shape is one nobody follows.
 
 ### The agent guard over-blocks prose. That is the accepted trade.
 
-It matches a git verb anywhere in the command string, so writing *about* a git command
+It matches a git verb anywhere in a command SEGMENT, so writing *about* a git command
 can read as running one — `echo "never git rm on main" >> notes.md` is refused. In a
 repo whose product is documentation about git, that is not rare.
+
+A segment, not the whole string: until 2026-09-13 the classifiers looked at everything
+between the first character and the last, so a flag from one command was read as
+another's. `git push origin dev && … | tr -d ' '` was refused as a remote branch
+deletion because of `tr -d`, `git clean -n && rm -f x` as `git clean -f`. The target
+parsers had run per segment since 2026-09-10; the classifiers that pick which parser to
+use had not.
 
 Measured 2026-09-11 against 405 commands taken from real sessions:
 

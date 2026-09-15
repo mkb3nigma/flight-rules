@@ -20,11 +20,19 @@ Open a GitHub PR for the current feature branch. Project parameters:
 (defaults: `main` / `main` / `.ai/worktrees/` / the project's test commands).
 
 ## Constraints
-- Never open a PR from one of `{PROTECTED_BRANCHES}`.
+- Never open a PR from one of `{PROTECTED_BRANCHES}` — **except the release PR**, whose
+  head is `{INTEGRATION_BRANCH}` and whose base is `main`. On a two-branch project the
+  integration branch is usually protected too, so without this exception the skill
+  forbids the release it describes in step 2a.
 - Base-branch routing: `feature/ fix/ refactor/ test/ docs/ chore/` branches target
   `{INTEGRATION_BRANCH}`; `hotfix/*` targets `main`; anything else → ask the user.
 - `/pre-merge-check` must be clean first — no ❌ items may remain. ⚠️ warnings are
   non-blocking but must be listed in the PR body.
+- A release PR (`{INTEGRATION_BRANCH}` → `main`) additionally needs the full
+  `{TEST_COMMANDS}` run on the commit being pushed — step 2a. Warrant: AppliHawk's
+  release PR #191 went red on its first CI run on 2026-09-14 with every merged branch
+  individually green, because five merges landed after the batch run and the integration
+  branch was never tested whole.
 - PR title in conventional-commit format — derived from the branch name unless the
   user supplies one as arguments.
 - Never force-push after opening a PR.
@@ -91,6 +99,15 @@ branch from a local copy and opening a fresh PR against the correct base.
    depends on another open PR, do **not** set that PR's head as the base — use `gh stack`
    (see **Stacked PRs** above) or wait for it to merge.
 2. Run `/pre-merge-check`; STOP on any ❌ failure.
+2a. **Release PR only** — when the head is `{INTEGRATION_BRANCH}` and the base is `main`:
+   before pushing it, run every `{TEST_COMMANDS}` entry on the **exact commit that will
+   be pushed**, and stop on any failure. Report the commit sha you ran them on, not just
+   that you ran them — "I ran the suite" and "I ran the suite on the commit I am pushing"
+   are different claims, and only the second is checkable.
+
+   Per-branch checks prove each change in isolation; the release PR ships the **sum**.
+   Nothing has tested the sum until something runs everything on the merged tree. A red
+   offline run costs the same minutes as a red CI run and none of anyone's attention.
 3. Summarize `git log <base>..HEAD` (one user-facing bullet per commit) and
    `git diff <base>...HEAD --stat` (files-changed summary), then create the PR:
 
