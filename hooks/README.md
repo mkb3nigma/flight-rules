@@ -199,6 +199,20 @@ Guards that fire on the assistant's own events, before git ever runs:
   A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
   reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.
   Tests: `session-start.test.sh`.
+- **`session-start-rules.sh`** — injects `rules/engineering-principles.md` into the
+  session. A plugin surfaces skills, commands and hooks as live primitives, but its
+  `rules/*.md` are just files: installing the plugin does not put them in the model's
+  context, and this is what does.
+
+  **The injection happens once, at session start, and updating the plugin does not redo
+  it.** `/reload-plugins` refreshes skills and hooks on disk while the running session
+  keeps the text it was given — reported 2026-09-15 by a session that had just read the
+  new version's SKILL.md from disk and was still following the previous version's
+  principles. Nothing in this repo can re-inject into a live session; **a new session is
+  what picks up a rules change.** So the header names the plugin version, which turns
+  invisible staleness into something a reader can check against the plugin directory.
+  Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
+  install shape, because reading the version must never cost the rules.
 
 ### Configuration
 
