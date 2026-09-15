@@ -19,8 +19,13 @@ injects the principles; the rest you read once.
 | `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
 Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/dev`,
-commit there, push, `gh pr create --base dev`. Never commit on `main` or `dev`; never
-merge into `main` locally. Sync with `git pull --ff-only origin dev`.
+commit there, push. Then, **as the owner**, merge it into `dev` locally — stamp the
+`pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
+from the `dev` checkout, then push `dev`. No PR: `dev` is note-gated, not PR-only, and the
+local merge is what exercises the note gate, the authorisation trailer and the back-merge
+exemption — a GitHub-button merge runs none of them. **A contributor** cannot push `dev`
+and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `main` or
+`dev`; sync with `git pull --ff-only origin dev`.
 
 **`main` moves at a release, not per change.** A promotion is one PR, `dev` → `main`,
 carrying one version bump, the full `{TEST_COMMANDS}` run on the exact commit being
