@@ -492,6 +492,14 @@ D=$(mkauth)
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
 git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: explicit'
 say "$?" "0" "an authorised merge lands and records it in the commit"
+# #62: grep found the line, git's trailer parser did not. The hook appended
+# '\n<trailer>\n', meaning the leading newline to be the blank line a trailer block
+# needs — but the message file git hands commit-msg for a non-interactive merge ends
+# WITHOUT a trailing newline (probed 2026-10-04, git 2.55), so that newline only
+# terminated the subject. Every owner merge on dev at c3a708e had the line glued to
+# the subject and %(trailers) returned empty for all of them.
+[ -n "$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)')" ]
+say "$?" "0" "…as a trailer git itself can parse, not just a greppable line"
 rm -rf "$D"
 
 D=$(mkauth)
@@ -504,6 +512,8 @@ D=$(mkauth "MERGE_NEEDS_INSTRUCTION=off")
 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
 git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: not required'
 say "$?" "0" "the project opt-out works, and history records that it was used"
+[ -n "$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)')" ]
+say "$?" "0" "…and that record is a parseable trailer too"
 rm -rf "$D"
 
 # The trailer must not stack if the message is rewritten.
@@ -537,6 +547,27 @@ git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
 git -C "$D" log -1 --pretty=%B | grep -q 'Merge-authorisation'
 say "$?" "1" "merging into an unprotected branch is not gated at all"
 rm -rf "$D"
+echo "post-merge names the branch for the subject the owner flow actually writes:"
+# #63: since 2026-09-15 the owner merges into dev locally from origin/<branch>, so the
+# subject is "Merge remote-tracking branch 'origin/x' into dev" — and the parser knew
+# "Merge branch 'x'", "Merge pull request #N from o/x" and "Merge x into y", none of
+# which match it. Every owner merge on dev since 0.22.0 was recorded as `unknown` and
+# lost its "← just merged" line. The local branch is what `git branch -d` wants, so
+# the `origin/` prefix is stripped.
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" push -q origin main dev feature/x 2>/dev/null || die "could not push the fixture to its origin"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/dev/null 2>&1
+say "$?" "0" "merging origin/feature/x into dev lands"
+[ "$(git -C "$D" log -1 --pretty=%s)" = "Merge remote-tracking branch 'origin/feature/x' into dev" ]
+say "$?" "0" "…with the remote-tracking subject (the fixture is the real shape)"
+grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…and the note names feature/x, not unknown"
+grep -q "git branch -d 'feature/x'  ← just merged" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…and offers the local branch for deletion as just merged"
+rm -rf "$D" "$O"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
