@@ -224,9 +224,15 @@ if echo "$NOTE" | grep -q "^passed:"; then
 
     # Record it in the commit message: a note can be rewritten and is easy to miss,
     # the message travels with the merge forever. Appended only if absent, so an
-    # amend or a rerun does not stack duplicates.
+    # amend or a rerun does not stack duplicates. interpret-trailers, not a printf
+    # of '\n%s\n': the file git hands this hook for a non-interactive merge ends
+    # without a trailing newline, so that leading newline only closed the subject
+    # and the line landed glued to it — greppable, but no trailer parser saw it,
+    # and %s carried it into every `git log --oneline` (#62, observed on dev at
+    # c3a708e). interpret-trailers supplies the blank line itself and places the
+    # trailer before any comment block when the message is being edited.
     if [ -n "${1:-}" ] && [ -f "$1" ] && ! grep -q '^Merge-authorisation:' "$1"; then
-        printf '\n%s\n' "$TRAILER" >> "$1"
+        git interpret-trailers --in-place --trailer "$TRAILER" "$1"
     fi
     echo "✅ Pre-merge check verified for $MERGE_BRANCH → $CURRENT_BRANCH"
     echo "   ${TRAILER}"
