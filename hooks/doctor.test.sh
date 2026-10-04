@@ -150,6 +150,24 @@ say "$(rc "$D")" "1" "…and the same wiring with the script gone → problem"
 say "$(has "$D" "wires .claude/hooks/x.sh, which does not exist")" "0" "…naming the path as written, prefix included"
 rm -rf "$D"
 
+# 2e. A variable-prefixed path — the `R=$(git rev-parse --show-toplevel); … "$R/hooks/x.sh"`
+#     idiom this repo's own .claude/settings.json uses. 2c's fix captured the whole prefix,
+#     so `$R/hooks/x.sh` was read as `R/hooks/x.sh` and reported missing on the first
+#     doctor run after it merged (dev f86a990, 2026-10-04). A `$VAR/` prefix other than
+#     CLAUDE_PLUGIN_ROOT is taken to be the repo root, which is what the idiom means.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "bash -c 'R=$(git rev-parse --show-toplevel); exec bash \"$R/hooks/x.sh\"'" },
+  { "type": "command", "command": "bash -c 'R=$(git rev-parse --show-toplevel); exec bash \"${R}/hooks/y.sh\"'" } ] } ] } }
+JSON
+printf '#!/bin/sh\nexit 0\n' > "$D/hooks/x.sh"; cp "$D/hooks/x.sh" "$D/hooks/y.sh"; chmod +x "$D/hooks/x.sh" "$D/hooks/y.sh"
+say "$(has "$D" "does not exist")" "1" "\$R/ and \${R}/ prefixed scripts that exist are not reported"
+rm "$D/hooks/y.sh"
+say "$(has "$D" "wires hooks/y.sh, which does not exist")" "0" "…and a missing one is named by its repo-relative path"
+say "$(has "$D" "wires hooks/x.sh")" "1" "…while the one that exists stays silent"
+rm -rf "$D"
+
 # 2d. An absolute path is tested where it points, not under the repo root.
 D=$(mkrepo); mkdir -p "$D/.claude" "$D/elsewhere/hooks"
 printf '#!/bin/sh\nexit 0\n' > "$D/elsewhere/hooks/y.sh"; chmod +x "$D/elsewhere/hooks/y.sh"

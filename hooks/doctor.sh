@@ -172,12 +172,16 @@ if [[ -f .claude/settings.json ]]; then
     # The whole path before `hooks/` is captured, not a list of known prefixes: the list
     # knew `.ai/` and missed `.claude/`, so `.claude/hooks/x.sh` was tested as `hooks/x.sh`
     # and reported missing while it ran (#66). The `$(git rev-parse --show-toplevel)/`
-    # form README recommends is stripped first — it IS $ROOT. A ${CLAUDE_PLUGIN_ROOT}
-    # path lives in the installed plugin, not here; it is captured with its prefix so it
-    # can be dropped rather than reported as missing.
+    # form README recommends is stripped first — it IS $ROOT. A `$VAR/` or `${VAR}/`
+    # prefix is captured with the path: ${CLAUDE_PLUGIN_ROOT} lives in the installed
+    # plugin, not here, and is dropped rather than reported as missing; any other variable
+    # is taken to be the repo root (`R=$(git rev-parse --show-toplevel); … "$R/hooks/x.sh"`,
+    # this repo's own wiring) and stripped. Capturing `R/hooks/x.sh` instead reported this
+    # repo's own session hook as missing on the first run after #66 merged.
   done < <(sed -E 's#\$\(git rev-parse --show-toplevel\)/?##g' .claude/settings.json \
-           | grep -oE '(\$\{?CLAUDE_PLUGIN_ROOT\}?/|[A-Za-z0-9_./-]*)hooks/[A-Za-z0-9_/-]*\.sh' \
-           | grep -v CLAUDE_PLUGIN_ROOT | sort -u)
+           | grep -oE '(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/|[A-Za-z0-9_./-]*)hooks/[A-Za-z0-9_/-]*\.sh' \
+           | grep -v CLAUDE_PLUGIN_ROOT \
+           | sed -E 's#^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/##' | sort -u)
 fi
 if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
   warn "the flight-rules plugin is enabled AND .claude/settings.json wires a pre-commit-check.sh — the guard runs twice (drop the local wiring)"
