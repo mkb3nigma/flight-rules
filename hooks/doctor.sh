@@ -153,8 +153,12 @@ fi
 # ── 4. The guard is wired once, not twice ─────────────────────────────────────
 PLUGIN_ON=0
 # `"flight-rules@x": false` contains the name too. Match the VALUE, or a disabled plugin
-# reports as a wired guard.
-grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' "$HOME/.claude/settings.json" 2>/dev/null && PLUGIN_ON=1
+# reports as a wired guard. Claude Code writes `enabledPlugins` to the user-level file
+# for a user-scope install and to the repo's .claude/settings.json or
+# .claude/settings.local.json for a project-scope one (#67): reading only ~/.claude
+# declared the guard absent in a repo where it was running.
+grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' \
+  "$HOME/.claude/settings.json" .claude/settings.json .claude/settings.local.json 2>/dev/null && PLUGIN_ON=1
 LOCAL_WIRED=0
 grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=1
 # Wiring a path is not the same as wiring a FILE. Every script named in the settings is
@@ -163,10 +167,16 @@ grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=
 if [[ -f .claude/settings.json ]]; then
   while IFS= read -r rel; do
     [[ -z "$rel" ]] && continue
-    [[ -f "$ROOT/$rel" ]] || bad ".claude/settings.json wires $rel, which does not exist — that hook never runs"
-    # A ${CLAUDE_PLUGIN_ROOT}-prefixed path lives in the installed plugin, not here; it is
-    # captured with its prefix so it can be dropped rather than reported as missing.
-  done < <(grep -oE '(\$\{?CLAUDE_PLUGIN_ROOT\}?/)?(\.ai/)?hooks/[A-Za-z0-9_/-]*\.sh' .claude/settings.json \
+    p="$rel"; [[ "$p" = /* ]] || p="$ROOT/$p"
+    [[ -f "$p" ]] || bad ".claude/settings.json wires $rel, which does not exist — that hook never runs"
+    # The whole path before `hooks/` is captured, not a list of known prefixes: the list
+    # knew `.ai/` and missed `.claude/`, so `.claude/hooks/x.sh` was tested as `hooks/x.sh`
+    # and reported missing while it ran (#66). The `$(git rev-parse --show-toplevel)/`
+    # form README recommends is stripped first — it IS $ROOT. A ${CLAUDE_PLUGIN_ROOT}
+    # path lives in the installed plugin, not here; it is captured with its prefix so it
+    # can be dropped rather than reported as missing.
+  done < <(sed -E 's#\$\(git rev-parse --show-toplevel\)/?##g' .claude/settings.json \
+           | grep -oE '(\$\{?CLAUDE_PLUGIN_ROOT\}?/|[A-Za-z0-9_./-]*)hooks/[A-Za-z0-9_/-]*\.sh' \
            | grep -v CLAUDE_PLUGIN_ROOT | sort -u)
 fi
 if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
