@@ -169,9 +169,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   project" is its main checkout *and every worktree of it* — they share one
   `--git-common-dir`, which is how a worktree is told from an unrelated repo whose
   branches are none of this project's business.
-  `git -C`/`-c` are normalised
-  away first, the *last* `cd` decides the target repo, and a merge in progress is
-  exempt so conflicts can be resolved.
+  The target repo is resolved **per segment**: a `cd` sets it for the segments after
+  it, a `git -C <dir>` sets it for its own segment only, and `-c`/other global options
+  are normalised away so every matcher sees `git <verb>`. Until #61 it was resolved
+  once per command — the last `cd` anywhere, else the first `-C` anywhere — so
+  `git -C /other status && git commit -m x` on a protected branch was allowed and the
+  secret scan read `/other`. A merge in progress is exempt so conflicts can be
+  resolved.
   Regardless of branch, a commit is denied with a staged `.env` (templates
   `.env.example|sample|template|dist` and `.env.md` exempt), a provider key (AWS,
   `sk-…`, GitHub, Slack, Google), any PEM private-key header, or a credential literal
