@@ -107,7 +107,8 @@ fi
 #
 # Nothing AFTER the verb is touched: `git log -p` and `git push --force` are untouched,
 # because the run must begin immediately after `git`.
-NORM=$(printf '%s' "$COMMAND" | sed -E 's/git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path|super-prefix|config-env|attr-source)([=][^[:space:]]*|[[:space:]]+[^[:space:]]+)|-[^[:space:]]+))+/git/g')
+NORM_SED='s/git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path|super-prefix|config-env|attr-source)([=][^[:space:]]*|[[:space:]]+[^[:space:]]+)|-[^[:space:]]+))+/git/g'
+NORM=$(printf '%s' "$COMMAND" | sed -E "$NORM_SED")
 
 # $B is what may precede the `git` word. It is a NEGATED class rather than a list
 # of separators: the first version enumerated space/;/&/| and so missed `(git rm)`
@@ -316,66 +317,84 @@ fi
 # ─────────────────────────────────────────────
 # 1. BRANCH POLICY CHECK
 # ─────────────────────────────────────────────
-# Which repo is the command aimed at? The LAST `cd` wins (`cd /a && cd /b && git …`
-# acts in /b), quotes around the path are tolerated, and `git -C <dir>` retargets
-# the repo just as surely as a `cd` does. Without this the guard resolves the
+# Which repo is a segment aimed at? A `cd` changes the directory for every segment AFTER
+# it (`cd /a && cd /b && git …` acts in /b; quotes around the path are tolerated), and a
+# `git -C <dir>` retargets the one segment it sits in. Without this the guard resolves the
 # branch from the shell's cwd and can clear a command that is actually aimed at a
 # protected branch in another checkout.
-WORK_DIR=""
-CD_RE="${B}cd[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]&;|)]+)"
-if [[ "$COMMAND" =~ $CD_RE ]]; then
-  WORK_DIR=$(printf '%s' "$COMMAND" | sed -E "s/.*${B}cd[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]&;|)]+).*/\2/")
-  WORK_DIR="${WORK_DIR#\"}"; WORK_DIR="${WORK_DIR%\"}"
-  WORK_DIR="${WORK_DIR#\'}"; WORK_DIR="${WORK_DIR%\'}"
-elif [[ "$COMMAND" =~ git[[:space:]]+-C[[:space:]]+([^[:space:]]+) ]]; then
-  WORK_DIR="${BASH_REMATCH[1]}"
-fi
-GIT=(git)
-[[ -n "$WORK_DIR" ]] && GIT=(git -C "$WORK_DIR")
+#
+# Resolved ONCE PER COMMAND until #61 — the last `cd` anywhere, else the first `git -C`
+# anywhere — and then used for every segment. Probed 2026-09-17 on dev at c3a708e:
+# `git -C /tmp/somewhere status && git commit -m x` was ALLOWED, because the `-C` on the
+# harmless status retargeted the branch check for the commit; `git commit -m x && cd
+# /other` likewise. The secret scan read the same wrong repo, so a key staged where the
+# commit was actually going was never looked at. Each segment is now resolved on its own,
+# in the loop below.
+# A path: quoted either way, or a bare token.
+PATH_RE="(\"[^\"]+\"|'[^']+'|[^[:space:]&;|)]+)"
+# `cd` counts only as the COMMAND of its segment — first word, or first after the `{`,
+# `then`, `do` or `else` a segment can open with. Matched anywhere, the word inside
+# `git commit -m "cd /tmp"` retargeted the commit to /tmp, where there is no branch to
+# protect, and the commit was allowed (pre-review of this change, 2026-10-04; the
+# per-command version had the same hole, over the whole command).
+CD_RE="^[[:space:]]*([{]|then|do|else)?[[:space:]]*cd[[:space:]]+${PATH_RE}"
+# `-C <dir>` wherever git accepts it before the verb: other flags may precede it
+# (`git --no-pager -C /x commit`); a flag that takes a separate value (`-c k=v`) is not
+# understood here and leaves the segment on the directory in effect, as before.
+DASH_C_RE="${B}git([[:space:]]+-[^C[:space:]][^[:space:]]*)*[[:space:]]+-C[[:space:]]+${PATH_RE}"
+unquote() { local p="$1"; p="${p#\"}"; p="${p%\"}"; p="${p#\'}"; p="${p%\'}"; printf '%s' "$p"; }
 
-# A `cd "$(git rev-parse --show-toplevel)"` or `cd "$VAR"` reaches here unexpanded, so
-# `git -C "$WORK_DIR"` resolves nothing — and that emptied the STAGED DIFF as well as the
-# branch, silently skipping the secret scan. The branch half is backstopped by the ref
-# gate and by being a guard, not a boundary; a leaked key is backstopped by nothing. So
-# the scan falls back to the shell's own cwd, which is the repo being committed to in
-# every realistic version of this. Deliberately NOT applied to the branch policy: falling
-# back there would judge the wrong repo and deny legitimate work in the other direction.
-SCAN_GIT=("${GIT[@]}")
-SCAN_FELL_BACK=0
-if ! "${GIT[@]}" rev-parse --git-dir >/dev/null 2>&1; then
-  SCAN_GIT=(git); SCAN_FELL_BACK=1
-fi
-CURRENT_BRANCH=$("${GIT[@]}" branch --show-current 2>/dev/null)
-
-# Now that the target repo is known, resolve config from it: environment first,
-# then that repo's .ai/flight-rules.conf, then the built-in defaults.
-CONF_ROOT=$("${GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
-[ -z "$CONF_ROOT" ] && CONF_ROOT="${CLAUDE_PROJECT_DIR:-.}"
-CONF_FILE="$CONF_ROOT/.ai/flight-rules.conf"
-
-PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$CONF_FILE")}"
-PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
-WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF_FILE")}"
-WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WORKTREE_DIR}"
-
-# Escape hatch. Installing the plugin now activates this guard, so a project whose
-# normal working branch IS main (or one that simply does not want the worktree
-# workflow) needs a way out that is not "uninstall the plugin". PROTECTED_BRANCHES=off
-# turns the branch policy off. The secret scan below still runs — leaking a key is
-# not a workflow preference.
-GUARD_OFF=0
-if [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]]; then
-  GUARD_OFF=1
-  # Nothing else to check unless some part of this is a commit: the branch policy was
-  # the only gate for the other actions, and there is no staged diff to scan.
-  [[ $HAS_COMMIT -eq 1 ]] || exit 0
-fi
+# resolve_target <dir> — "" is the shell's own cwd. Sets GIT and CURRENT_BRANCH for that
+# repo, the policy read from THAT repo (environment first, then its .ai/flight-rules.conf,
+# then the built-in defaults), whether a merge is in progress there, and whether it is
+# this project at all. Cached on the directory: nearly every command names one.
+RESOLVED_DIR=""; RESOLVED=0
+resolve_target() {
+  local dir="$1" target_root target_repo project_repo
+  [[ $RESOLVED -eq 1 && "$dir" == "$RESOLVED_DIR" ]] && return
+  RESOLVED=1; RESOLVED_DIR="$dir"
+  GIT=(git); [[ -n "$dir" ]] && GIT=(git -C "$dir")
+  CURRENT_BRANCH=$("${GIT[@]}" branch --show-current 2>/dev/null)
+  target_root=$("${GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
+  CONF_FILE="${target_root:-${CLAUDE_PROJECT_DIR:-.}}/.ai/flight-rules.conf"
+  PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$CONF_FILE")}"
+  PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
+  WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF_FILE")}"
+  WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WORKTREE_DIR}"
+  # Escape hatch. Installing the plugin now activates this guard, so a project whose
+  # normal working branch IS main (or one that simply does not want the worktree
+  # workflow) needs a way out that is not "uninstall the plugin". PROTECTED_BRANCHES=off
+  # turns the branch policy off. The secret scan below still runs — leaking a key is
+  # not a workflow preference.
+  GUARD_OFF=0
+  [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]] && GUARD_OFF=1
+  MERGE_IN_PROGRESS=0
+  [[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
+  # Scope the branch policy to the project this hook belongs to. Without this, the
+  # guard applies the project's branch rules to every repo the session touches —
+  # including a sibling repo whose normal working branch IS main. (The secret scan
+  # below stays global on purpose: secrets are bad in any repo.)
+  #
+  # The comparison is between REPOSITORIES, not working trees. A worktree's toplevel
+  # is never the project dir ($WORKTREE_DIR/<name> by construction), so comparing
+  # toplevels switched the whole branch policy off inside the very worktrees the
+  # workflow tells you to work in — every rule below went unenforced there for the
+  # life of this hook. `--git-common-dir` is the shared repo: identical from the main
+  # checkout and from every worktree of it, different for a genuine sibling repo.
+  IN_THIS_PROJECT=1
+  if [[ -n "${CLAUDE_PROJECT_DIR:-}" && -n "$target_root" && "$target_root" != "$CLAUDE_PROJECT_DIR" ]]; then
+    target_repo=$(common_repo_dir "$target_root")
+    project_repo=$(common_repo_dir "$CLAUDE_PROJECT_DIR")
+    [[ -z "$target_repo" || "$target_repo" != "$project_repo" ]] && IN_THIS_PROJECT=0
+  fi
+  return 0
+}
 
 # Case-insensitively, so QA/Qa/qa and Main/main are each one branch to this check.
-# Scoped to these comparisons: the command-matching regexes above must stay
-# case-sensitive, or `git RM` style false matches creep in.
+# Scoped to judge_segment: the command-matching regexes above and the path comparisons
+# in resolve_target must stay case-sensitive, or `git RM` style false matches creep in.
 IS_PROTECTED=0
-BLOCKED_BRANCH="$CURRENT_BRANCH"
+BLOCKED_BRANCH=""
 
 # A command is allowed only if EVERY part of it is allowed. Each segment is classified
 # and judged on its own; the first one that must be refused decides the verdict for the
@@ -454,7 +473,6 @@ judge_segment() {   # sets ACTION/BLOCKED_BRANCH; returns 0 if this segment must
   return 1
 }
 
-shopt -s nocasematch
 # A merge in progress waives some refusals — committing the merge is the whole point of
 # being on the branch — but the waiver belongs to the SEGMENT it applies to, not to the
 # command. Applied after the loop, as it was, the first refused segment both stopped the
@@ -462,55 +480,58 @@ shopt -s nocasematch
 # on a protected branch mid-merge: `git commit -m x` waived (right), branch creation on
 # its own refused (right), and the two together ALLOWED (wrong). A waived segment is
 # skipped and the scan continues.
-MERGE_IN_PROGRESS=0
-[[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
-if [[ "$GUARD_OFF" == "0" ]]; then
-  while IFS= read -r _seg; do
-    judge_segment "$_seg" || continue
-    # Waived: the merge commit itself, and the working-tree commands that resolve a
-    # conflict (`git rm`, `git checkout -- <path>`). Nothing else. The list used to be
-    # stated as an exclusion — everything except force-push and branch-create — which
-    # quietly waived a local delete of a protected branch, something no part of
-    # committing a merge requires.
-    if [[ $MERGE_IN_PROGRESS -eq 1 && ( "$ACTION" == "commit" || "$ACTION" == "destructive" ) ]]; then
-      ACTION=""; BLOCKED_BRANCH="$CURRENT_BRANCH"; continue
-    fi
-    IS_PROTECTED=1; break
-  done < <(command_segments "$NORM")
-fi
-shopt -u nocasematch
-
-# Scope the branch policy to the project this hook belongs to. Without this, the
-# guard applies the project's branch rules to every repo the session touches —
-# including a sibling repo whose normal working branch IS main. (The secret scan
-# below stays global on purpose: secrets are bad in any repo.)
 #
-# The comparison is between REPOSITORIES, not working trees. A worktree's toplevel
-# is never the project dir ($WORKTREE_DIR/<name> by construction), so comparing
-# toplevels switched the whole branch policy off inside the very worktrees the
-# workflow tells you to work in — every rule below went unenforced there for the
-# life of this hook. `--git-common-dir` is the shared repo: identical from the main
-# checkout and from every worktree of it, different for a genuine sibling repo.
-IN_THIS_PROJECT=1
-if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
-  TARGET_ROOT=$("${GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
-  if [[ -n "$TARGET_ROOT" && "$TARGET_ROOT" != "$CLAUDE_PROJECT_DIR" ]]; then
-    TARGET_REPO=$(common_repo_dir "$TARGET_ROOT")
-    PROJECT_REPO=$(common_repo_dir "$CLAUDE_PROJECT_DIR")
-    [[ -z "$TARGET_REPO" || "$TARGET_REPO" != "$PROJECT_REPO" ]] && IN_THIS_PROJECT=0
+# The loop walks the RAW command, not NORM: a segment's `-C <dir>` has to be read before
+# the segment is normalised to `git <verb>` for the matchers — normalising the whole
+# command first is also how the per-segment `-C` was lost (#61). A `cd` is honoured only
+# for the segments after it; a `-C` only for its own.
+# A relative path — `cd .`, `cd ..`, `-C sub` — is relative to the directory in effect
+# when it runs, not to the shell's cwd. Taken literally, `cd /wt && git -C . commit` would
+# judge the cwd's branch for a commit aimed at /wt, and the corpus read for this change
+# found exactly that shape (a relative `-C` after a `cd`) flipping to a false deny.
+rel_to() { case "$2" in /*|'') printf '%s' "$2" ;; *) printf '%s' "${1:+$1/}$2" ;; esac; }
+CWD_NOW=""                      # the directory in effect: the `cd`s seen so far, chained
+SCAN_DIR=""; SCAN_DIR_SET=0     # where the first commit is aimed — what the secret scan reads
+while IFS= read -r _raw; do
+  [[ "$_raw" =~ $CD_RE ]] && CWD_NOW=$(rel_to "$CWD_NOW" "$(unquote "${BASH_REMATCH[2]}")")
+  _dir="$CWD_NOW"
+  [[ "$_raw" =~ $DASH_C_RE ]] && _dir=$(rel_to "$CWD_NOW" "$(unquote "${BASH_REMATCH[3]}")")
+  _seg=$(printf '%s' "$_raw" | sed -E "$NORM_SED")
+  if [[ $SCAN_DIR_SET -eq 0 ]] && is_commit "$_seg"; then SCAN_DIR="$_dir"; SCAN_DIR_SET=1; fi
+  resolve_target "$_dir"
+  # Another repo's branches are not ours to police, and a repo that turned the policy off
+  # has none — but only for the segment aimed there, not for its neighbours.
+  [[ $IN_THIS_PROJECT -eq 0 || $GUARD_OFF -eq 1 ]] && continue
+  shopt -s nocasematch
+  judge_segment "$_seg"; _refused=$?
+  shopt -u nocasematch
+  [[ $_refused -eq 0 ]] || continue
+  # Waived: the merge commit itself, and the working-tree commands that resolve a
+  # conflict (`git rm`, `git checkout -- <path>`). Nothing else. The list used to be
+  # stated as an exclusion — everything except force-push and branch-create — which
+  # quietly waived a local delete of a protected branch, something no part of
+  # committing a merge requires.
+  if [[ $MERGE_IN_PROGRESS -eq 1 && ( "$ACTION" == "commit" || "$ACTION" == "destructive" ) ]]; then
+    ACTION=""; BLOCKED_BRANCH="$CURRENT_BRANCH"; continue
   fi
+  IS_PROTECTED=1; break
+done < <(command_segments "$COMMAND")
+
+# The secret scan reads the repo the commit is aimed at. A `cd "$(git rev-parse
+# --show-toplevel)"` or `cd "$VAR"` reaches here unexpanded, so `git -C` on it resolves
+# nothing — and that emptied the STAGED DIFF as well as the branch, silently skipping the
+# scan. The branch half is backstopped by the ref gate and by being a guard, not a
+# boundary; a leaked key is backstopped by nothing. So the scan falls back to the shell's
+# own cwd, which is the repo being committed to in every realistic version of this.
+# Deliberately NOT applied to the branch policy: falling back there would judge the wrong
+# repo and deny legitimate work in the other direction.
+SCAN_GIT=(git); [[ -n "$SCAN_DIR" ]] && SCAN_GIT=(git -C "$SCAN_DIR")
+SCAN_FELL_BACK=0
+if ! "${SCAN_GIT[@]}" rev-parse --git-dir >/dev/null 2>&1; then
+  SCAN_GIT=(git); SCAN_FELL_BACK=1
 fi
 
-# Allow merge commits on protected branches — merging feature branches in is the
-# intended workflow — and the working-tree commands that resolving conflicts needs.
-# A force-push gets no such pass: nothing about a merge in progress calls for one.
-GIT_DIR_PATH=$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)
-if [[ "$IN_THIS_PROJECT" == "0" ]]; then
-  # Another repo — its branch policy is not ours to enforce
-  :
-# The merge waiver used to sit here, judging the one elected action. It is applied per
-# segment in the loop above instead — see the note there.
-elif [[ "$ACTION" == "branch-create" ]]; then
+if [[ "$ACTION" == "branch-create" ]]; then
   deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
