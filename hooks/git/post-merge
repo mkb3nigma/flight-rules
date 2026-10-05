@@ -53,11 +53,15 @@ is_feature_merge() {
 # Parse merged branch from merge commit message
 MERGE_MSG=$(git log -1 --pretty=%s HEAD 2>/dev/null)
 # sed, not `grep -P`: macOS ships BSD grep without -P, and the first version fell
-# through to "unknown" on every merge there. Handles the three subject shapes git
-# and GitHub write: "Merge branch 'x'", "Merge branch 'x' into y", "Merge pull
-# request #N from owner/x", then the generic "Merge x into y".
+# through to "unknown" on every merge there. Handles the four subject shapes git
+# and GitHub write: "Merge branch 'x'", "Merge branch 'x' into y", "Merge
+# remote-tracking branch 'origin/x' into y" (what a local merge from origin/<branch>
+# writes — the owner flow since 2026-09-15, recorded as `unknown` until #63; the
+# remote prefix is dropped because the LOCAL branch is what `git branch -d` wants),
+# "Merge pull request #N from owner/x", then the generic "Merge x into y".
 MERGED_BRANCH=$(printf '%s\n' "$MERGE_MSG" | sed -nE \
   -e "s/^Merge branch '([^']+)'.*/\\1/p" \
+  -e "s|^Merge remote-tracking branch '[^/']+/([^']+)'.*|\\1|p" \
   -e 's|^Merge pull request #[0-9]+ from [^/]+/(.*)$|\1|p' \
   -e 's/^Merge ([^ ]+) into .*/\1/p' | head -1)
 [[ -z "$MERGED_BRANCH" ]] && MERGED_BRANCH="unknown"
