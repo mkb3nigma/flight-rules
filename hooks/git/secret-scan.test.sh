@@ -108,10 +108,19 @@ blocks "diff.noprefix"      'git config diff.noprefix true && echo "k=$AWS" > f 
 echo "What it leaves alone:"
 allows "an ordinary commit"                  'echo hello > f && git add f && git commit -qm x'
 allows "removing a line that held a key"     'echo "k=$AWS" > f && git add f && git commit -qm x --no-verify' ': > f && git commit -qam y'
-allows "editing an already-tracked .env"     'echo X=1 > .env.development && git add . && git commit -qm x --no-verify' 'echo Y=2 >> .env.development && git commit -qam y'
+# Only removing a .env is let through: editing one already tracked is refused like adding
+# it, so a password typed into committed defaults never lands quietly (owner's call,
+# 2026-10-05). Wanting it is a --no-verify, deliberately.
+blocks "editing an already-tracked .env"     'echo X=1 > .env.development && git add . && git commit -qm x --no-verify' 'echo Y=2 >> .env.development && git commit -qam y'
 blocks "a key written into a tracked .env"  'echo X=1 > .env.development && git add . && git commit -qm x --no-verify' 'echo "K=$AWS" >> .env.development && git commit -qam y'
 blocks "a .env symlink turned into a file" 'ln -s /dev/null .env && git add .env && git commit -qm x --no-verify' 'rm .env && echo X=1 > .env && git add .env && git commit -qm y'
 blocks "an added line that starts with ++" 'printf "++ %s\n" "$AWS" > f && git add f && git commit -qm x'
+blocks "a key inside a small binary"    'printf "\000\001%s\000\n" "$AWS" > k.dat && git add k.dat && git commit -qm x'
+# The git hook has no timeout to outrun, so it reads every binary whole: it is the
+# backstop for what the agent guard's 1 MB limit skips.
+blocks "a key inside a 2 MB binary"     'head -c 2097152 /dev/zero > big.dat && printf "%s\n" "$AWS" >> big.dat && git add big.dat && git commit -qm x'
+blocks "renaming a .env away"           'echo X=1 > .env && git add .env && git commit -qm x --no-verify' 'git mv .env config.txt && git commit -qm y'
+blocks "renaming a .env to a template"  'echo X=1 > .env && git add .env && git commit -qm x --no-verify' 'git mv .env .env.example && git commit -qm y'
 blocks "a key after a binary file"     'printf "\000\001\002\377" > a.bin && printf "caf\351 %s\n" "$AWS" > z.txt && git add . && git commit -qm x'
 allows "deleting a committed .env"           'echo X=1 > .env && git add .env && git commit -qm x --no-verify' 'git rm -q .env && git commit -qm y'
 allows "untracking a committed .env"         'echo X=1 > .env && git add .env && git commit -qm x --no-verify' 'git rm -q --cached .env && git commit -qm y'
@@ -143,6 +152,18 @@ h=$(git -C "$R" rev-parse HEAD)
 git -C "$R" commit -qm merge >/dev/null 2>&1
 say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a key concludes"
 say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
+
+echo "A large binary is not read as text (/dg, 2026-10-05):"
+# Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s. The bound is loose: this
+# catches --text applied to every binary again, not a slow runner.
+R=$(make_repo armed)
+head -c 41943040 /dev/urandom > "$R/big.bin" && git -C "$R" add big.bin || die "could not stage the large binary"
+h=$(git -C "$R" rev-parse HEAD); START=$SECONDS
+git -C "$R" commit -qm big >/dev/null 2>&1
+TOOK=$((SECONDS - START))
+say "$(landed "$R" "$h")" yes "a 40 MB binary commits"
+[ "$TOOK" -le 8 ] && say yes yes "…in ${TOOK}s (bound 8s)" || say no yes "…took ${TOOK}s (bound 8s)"
+rm -rf "$R"
 
 echo
 echo "$PASS passed, $FAIL failed"

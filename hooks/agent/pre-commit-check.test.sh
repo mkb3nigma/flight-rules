@@ -10,6 +10,8 @@
 set -uo pipefail
 HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pre-commit-check.sh"
 PASS=0; FAIL=0
+# Assembled at run time so this file never carries a literal key for a scanner to flag.
+AKIA=$(printf 'AKIA%s' IOSFODNN7EXAMPLE)
 
 # A fixture that cannot be built is not a test failure, it is an aborted run — so it
 # stops the suite rather than being counted. make_repo runs inside a command
@@ -263,7 +265,7 @@ conf_check "off via the conf file"       allow main 'git rm f' 'PROTECTED_BRANCH
 # Opting out of the branch policy must NOT disable the secret scan — leaking a key
 # is not a workflow preference.
 D=$(make_repo main)
-printf 'AWS_KEY = "AKIAIOSFODNN7EXAMPLE"\n' > "$D/leak.py"
+printf 'AWS_KEY = "%s"\n' "$AKIA" > "$D/leak.py"
 git -C "$D" add leak.py >/dev/null 2>&1
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_PROTECTED_BRANCHES=off \
       bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
@@ -362,7 +364,7 @@ secret_check() {
 # Regression: every pattern was anchored `^\+[^+].*`, demanding a character between
 # the diff's "+" and the secret — a column-zero assignment was never matched.
 secret_check "password at column zero"        deny  src/config.py 'password = "hunter2hunter2"'
-secret_check "AWS key at column zero"         deny  src/config.py 'AKIAIOSFODNN7EXAMPLE'
+secret_check "AWS key at column zero"         deny  src/config.py "$AKIA"
 secret_check "indented password (control)"    deny  src/config.py '    password = "hunter2hunter2"'
 secret_check "PASSWORD (case-insensitive)"    deny  src/config.py 'PASSWORD = "hunter2hunter2"'
 secret_check "API_KEY"                        deny  src/config.py 'API_KEY = "abcdefghijklmnop"'
@@ -395,7 +397,7 @@ secret_check "*.test.ts excluded"             allow src/auth.test.ts 'password =
 secret_check "*.spec.js excluded"             allow src/auth.spec.js 'password = "hunter2hunter2"'
 secret_check "conftest.py excluded"           allow conftest.py 'password = "hunter2hunter2"'
 # …but a provider key is a leak wherever it sits.
-secret_check "AWS key in a test file"         deny  tests/test_a.py 'AKIAIOSFODNN7EXAMPLE'
+secret_check "AWS key in a test file"         deny  tests/test_a.py "$AKIA"
 # Post-merge review: names git quotes, documented .env templates, prose files, the
 # allow trailer, and the extra placeholder words.
 secret_check "non-ASCII filename is scanned"  deny  'src/cönfig.py' 'password = "hunter2hunter2"'
@@ -411,8 +413,69 @@ secret_check "README example"                 allow README.md 'api_key = "abcdef
 secret_check "placeholder your-…"             allow src/config.py 'password = "your-password-goes"'
 secret_check "placeholder …-here"             allow src/config.py 'password = "put-real-value-here"'
 secret_check "flight-rules: allow trailer"    allow src/config.py 'password = "hunter2hunter2"  # flight-rules: allow'
-secret_check "provider key in docs still caught" deny docs/setup.md 'key: AKIAIOSFODNN7EXAMPLE'
+secret_check "provider key in docs still caught" deny docs/setup.md "key: $AKIA"
 secret_check "provider key in locale still caught" deny locales/en.json '{"k": "sk-ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123"}'
+
+echo "The repo's own diff settings do not hide a staged key, and a .env leaving is not one entering:"
+# scan_case <desc> <expect> <setup> [<command>] — <setup> runs in the fixture repo before
+# the commit is judged, and must leave something staged; a setup that fails aborts the
+# run. <command> is what the agent runs, `git commit -m x` by default.
+# The first five were allowed until the scan read the diff with --no-color, --no-ext-diff,
+# --no-textconv and --text: color.ui=always prefixed every added line with an escape
+# code, so no pattern anchored on "+" matched (probed 2026-10-05 on dev at adbabc5).
+scan_case() {
+  local desc="$1" expect="$2" setup="$3" cmd="${4:-git commit -m x}" dir out got rc
+  dir=$(make_repo feature/x)
+  (cd "$dir" && eval "$setup") >/dev/null 2>&1 || die "setup failed for: $desc"
+  [ -n "$(git -C "$dir" diff --cached --name-only)" ] || die "setup staged nothing for: $desc"
+  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
+    rm -rf "$dir"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
+  fi
+  rm -rf "$dir"
+}
+STAGE_KEY='printf "%s\n" "$AKIA" > k.txt && git add k.txt'
+scan_case "color.ui=always"                  deny "git config color.ui always && $STAGE_KEY"
+scan_case "color.diff=always"                deny "git config color.diff always && $STAGE_KEY"
+scan_case "diff.external that prints nothing" deny "git config diff.external true && $STAGE_KEY"
+scan_case "-diff attribute (binary)"         deny "echo '*.txt -diff' > .gitattributes && $STAGE_KEY"
+scan_case "textconv that redacts"            deny "echo '*.txt diff=r' > .gitattributes && git config diff.r.textconv 'sed s/AKIA/XXXX/' && $STAGE_KEY"
+# diff.relative cut the diff to the directory the commit ran from, so a key staged at the
+# root passed a commit made from a subdirectory (/dg, 2026-10-05).
+scan_case "diff.relative, commit from a subdirectory" deny "mkdir sub && echo s > sub/s && git config diff.relative true && $STAGE_KEY" 'cd sub && git commit -m x'
+# The credential check passed root-relative names back as cwd-relative pathspecs, so from
+# a subdirectory nothing matched and it never ran — with no config at all.
+scan_case "a password at the root, commit from a subdirectory" deny "mkdir -p sub src && echo s > sub/s && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add src/config.py" 'cd sub && git commit -m x'
+# A `-diff` attribute makes a large TEXT file look binary to git; the 1 MB limit is for
+# real binaries only, so a lockfile marked -diff is still read.
+scan_case "a key in a 2 MB text file marked -diff" deny "echo '*.lock -diff' > .gitattributes && for i in \$(seq 1 40000); do echo 'line of a large generated lockfile entry'; done > big.lock && printf '%s\\n' \"\$AKIA\" >> big.lock && git add .gitattributes big.lock"
+scan_case "a key inside a small binary"      deny "printf '\\000\\001%s\\000\\n' \"\$AKIA\" > k.dat && git add k.dat"
+# The credential-literal check reads its own diff of the non-test files; that one too.
+scan_case "diff.external hiding a password"  deny "mkdir -p src && git config diff.external true && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add src/config.py"
+# --text hands the scan a binary file's raw bytes. Under a UTF-8 locale macOS grep skips a
+# line holding an invalid byte (Codex, /dg), and tr stops at the first one — "Illegal
+# byte sequence" — so nothing after it was scanned at all.
+LC_ALL=en_US.UTF-8 scan_case "a key after an invalid byte, UTF-8 locale" deny "echo '*.bin -diff' > .gitattributes && printf '\377\n%s\377\n' \"\$AKIA\" > k.bin && git add k.bin"
+# Removing a .env is the one change let through, as in the git pre-commit hook: deleting
+# or untracking it is how a leak is cleaned up, and was refused because the name list
+# carried no --diff-filter. Editing one already tracked is still refused (owner's call,
+# 2026-10-05): a password typed into it has no quotes for the literal check to catch.
+TRACK_ENV='printf "X=1\n" > .env && git add .env && git commit -qm env'
+scan_case "git rm of a tracked .env"         allow "$TRACK_ENV && git rm -q .env"
+scan_case "untracking a .env (rm --cached)"  allow "$TRACK_ENV && git rm -q --cached .env"
+scan_case "editing a tracked .env"           deny  "$TRACK_ENV && printf 'DB_PASSWORD=hunter2\n' >> .env && git add .env"
+scan_case "renaming a .env away"             deny  "$TRACK_ENV && git mv .env config.txt"
+scan_case "renaming a .env to a template"    deny  "$TRACK_ENV && git mv .env .env.example"
+scan_case "…but a key written into it"       deny  "$TRACK_ENV && printf '%s\n' \"\$AKIA\" >> .env && git add .env"
+scan_case "a .env renamed in"                deny  "printf 'X=1\n' > .env.example && git add .env.example && git commit -qm e && git mv .env.example .env"
 
 echo "More ways to rewrite or discard a protected branch (post-merge review):"
 check "checkout <rev> -- <path>"          deny  main 'git checkout HEAD -- f.txt'
@@ -1007,7 +1070,7 @@ echo "A staged secret is caught even when the target repo cannot be resolved:"
 # this half is backstopped by nothing.
 for pfx in 'cd "$(git rev-parse --show-toplevel)" && ' 'cd "$REPO_ROOT" && ' 'git --no-pager ' ''; do
   D=$(make_repo feature/x)
-  printf 'AKIAIOSFODNN7EXAMPLE\n' > "$D/leak.txt"
+  printf '%s\n' "$AKIA" > "$D/leak.txt"
   git -C "$D" add leak.txt >/dev/null 2>&1
   case "$pfx" in
     'git --no-pager ') cmd="git --no-pager commit -m x" ;;
@@ -1096,6 +1159,47 @@ if command -v python3 >/dev/null 2>&1; then
     FAIL=$((FAIL+1)); printf '  ❌ python3 fallback did not produce a normal deny\n'
   fi
   rm -rf "$P"
+fi
+rm -rf "$D"
+
+echo "A large staged binary is not read as text (/dg, 2026-10-05):"
+# Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s; past the hook's timeout the
+# commit runs unchecked. Loose bound, as below.
+D=$(make_repo feature/x)
+head -c 41943040 /dev/urandom > "$D/big.bin" && git -C "$D" add big.bin || die "could not stage the large binary"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+TOOK=$((SECONDS - START))
+if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary: allowed in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
+fi
+rm -rf "$D"
+
+echo "A long heredoc and a commit are judged well inside the hook's timeout (#73):"
+# A hook killed by its timeout lets the command run unchecked. A heredoc splits into a
+# segment per line, and the guard forked once or twice per segment: 64 KB took ~17s on
+# macOS before #73 and ~1.5s after. The bound is loose on purpose — this catches the
+# per-segment fork coming back, not a slow CI runner.
+D=$(make_repo feature/x)
+printf '%s\n' "$AKIA" > "$D/leak.txt"; git -C "$D" add leak.txt >/dev/null 2>&1 || die "could not stage the key"
+BODY=$(for i in $(seq 1 1600); do printf 'x_%04d = compute(value_%04d) + 1  # c\n' "$i" "$i"; done)
+CMD=$(printf 'cat > f.py <<EOF\n%s\nEOF\ngit add f.py && git commit -m x' "$BODY")
+[ "${#CMD}" -gt 60000 ] || die "the long command is only ${#CMD} bytes"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<"$(jq -n --arg c "$CMD" '{tool_input:{command:$c}}')" 2>/dev/null)
+TOOK=$((SECONDS - START))
+if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ 64 KB heredoc + commit: a verdict was reached (the staged key denied)\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ 64 KB heredoc + commit: no deny for the staged key\n'
+fi
+if [ "$TOOK" -le 8 ]; then
+  PASS=$((PASS+1)); printf '  ✅ 64 KB heredoc + commit: judged in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ 64 KB heredoc + commit: took %ss (bound 8s)\n' "$TOOK"
 fi
 rm -rf "$D"
 

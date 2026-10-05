@@ -46,13 +46,20 @@ git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && run_local "$@"
 # leave the `^+` match below with nothing to see: --no-color (color.diff=always),
 # --no-ext-diff (diff.external), --no-textconv (a textconv driver that redacts), and
 # --text (a `-diff` attribute, which turns the file into "Binary files differ").
-# NUL bytes are dropped before the shell sees them, which would otherwise warn on each.
+# Every binary is read whole: this hook has no timeout to outrun, so it is the backstop
+# for the large binaries the agent guard skips. NUL bytes are dropped before the shell
+# sees them, which would otherwise warn on each.
 STAGED_DIFF=$(git diff --cached --no-color --no-ext-diff --no-textconv --text -U0 2>/dev/null | tr -d '\000')
-# A .env is flagged when it ENTERS the repo — added, copied, renamed to, or a symlink
-# turned into a file (A/C/R/T). Deleting one is the clean-up, and editing one that is
-# already tracked (committed defaults, `.env.development`) is not a new leak; any key
-# written into it is still caught by the patterns below.
-STAGED_FILES=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACRT 2>/dev/null)
+# A .env is flagged for every change except its removal (--diff-filter=d): deleting or
+# untracking one is the clean-up. Editing one already tracked is refused like adding it
+# (owner's call, 2026-10-05) — a password typed into committed defaults has no format
+# for the patterns below to catch. A project that commits one on purpose uses
+# --no-verify, deliberately. A rename or copy is listed under its new name only, so
+# its source is added: `git mv .env config.txt` keeps the secrets tracked under a name
+# nothing watches.
+STAGED_FILES=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=d 2>/dev/null
+               git -c core.quotePath=false diff --cached --name-status --diff-filter=RC 2>/dev/null \
+                 | awk -F '\t' '{print $2}')
 FINDINGS=""
 
 # Added lines are the `+` lines inside a hunk. Everything from `diff --git` to the first
