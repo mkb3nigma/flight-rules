@@ -960,6 +960,21 @@ seg deny  "…and the outer ) restores the cwd"                                 
 seg deny  "\$(( )) arithmetic is balanced and changes nothing"                  "n=\$((1+2)) && git commit -m x"
 rm -rf "$D" "$O"
 
+echo "The scan is bounded, and closed at the bound:"
+# Every directory a cd names is scanned, at a git call or two each. A command with
+# hundreds of them would run the hook past its timeout, and a killed hook lets the
+# command through unchecked — so past the bound it denies instead. 2026-10-05.
+D=$(make_repo feature/x)
+MANY=$(for i in $(seq 1 100); do printf 'cd /tmp/d%d\n' "$i"; done; echo "cd $D && git commit -m x")
+SECONDS=0
+seg deny  "a commit after 100 distinct cd targets is denied, not scanned"        "$MANY"
+T=$SECONDS
+if [[ $T -le 20 ]]; then PASS=$((PASS+1)); printf '  ✅ …in %ss\n' "$T"
+else FAIL=$((FAIL+1)); printf '  ❌ …in %ss (want ≤20)\n' "$T"; fi
+SAME=$(for i in $(seq 1 100); do printf 'cd %s\n' "$D"; done; echo "git commit -m x")
+seg allow "one directory named 100 times is one entry, not a hundred"           "$SAME"
+rm -rf "$D"
+
 echo "The paren splitter stays linear on a long command:"
 # bash 3.2 runs \${s//(/…} super-linearly under a UTF-8 locale: the first version of the
 # marked splitter took 188s on this input, past any hook timeout — and a hook that is

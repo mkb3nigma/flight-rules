@@ -525,6 +525,12 @@ CWD_STACK=()                    # CWD_NOW at each open `(`, restored at its `)`
 CWD_NAIVE=""                    # the same, with every `cd` lasting forever (the old reading)
 SCAN_DIRS=()                    # where every commit is aimed, under the scoped reading
 SCAN_ALSO=("")                  # every other directory the command could be committing in
+# Each directory once, by its spelling — every entry costs git calls in the scan, and a
+# heredoc'd script can carry hundreds of `cd` lines (/dg security pass, 2026-10-05).
+also() { local d; for d in "$@"; do
+  case "$ALSO_SEEN" in *"|$d|"*) ;; *) ALSO_SEEN="$ALSO_SEEN$d|"; SCAN_ALSO+=("$d") ;; esac
+done; }
+ALSO_SEEN="||"
 while IFS= read -r _raw; do
   case "$_raw" in
     "(") CWD_STACK+=("$CWD_NOW"); continue ;;
@@ -536,7 +542,7 @@ while IFS= read -r _raw; do
   if [[ "$_raw" =~ $CD_RE ]]; then
     _to=$(unquote "${BASH_REMATCH[2]}")
     CWD_NOW=$(rel_to "$CWD_NOW" "$_to"); CWD_NAIVE=$(rel_to "$CWD_NAIVE" "$_to")
-    SCAN_ALSO+=("$CWD_NOW" "$CWD_NAIVE")
+    also "$CWD_NOW" "$CWD_NAIVE"
   fi
   _dir="$CWD_NOW"; _ndir="$CWD_NAIVE"
   if [[ "$_raw" =~ $DASH_C_RE ]]; then
@@ -544,7 +550,7 @@ while IFS= read -r _raw; do
     _dir=$(rel_to "$CWD_NOW" "$_to"); _ndir=$(rel_to "$CWD_NAIVE" "$_to")
   fi
   _seg=$(printf '%s' "$_raw" | sed -E "$NORM_SED")
-  is_commit "$_seg" && { SCAN_DIRS+=("$_dir"); SCAN_ALSO+=("$_ndir"); }
+  is_commit "$_seg" && { SCAN_DIRS+=("$_dir"); also "$_ndir"; }
   resolve_target "$_dir"
   # Another repo's branches are not ours to police, and a repo that turned the policy off
   # has none — but only for the segment aimed there, not for its neighbours.
@@ -714,6 +720,17 @@ scan_repo() {
 # repo and deny legitimate work in the other direction.
 SCANNED="|"; N_SCANNED=0; ALL_FINDINGS=""; LABELLED_FINDINGS=""; SCAN_FELL_BACK=0
 _n_targets=${#SCAN_DIRS[@]}
+# Bounded, and closed when the bound is hit: a scan that runs past the hook's timeout is
+# killed, and a killed hook lets the command through unchecked. Of the 949 commands in
+# this machine's transcripts that mention a commit, none cds to more than 6 places
+# (2026-10-05); each can add two entries here, so 24 leaves room.
+MAX_SCAN_DIRS=24
+if [[ ${#SCAN_ALSO[@]} -gt $MAX_SCAN_DIRS ]]; then
+  deny "🔐 BLOCKED: this command commits and changes directory into ${#SCAN_ALSO[@]} places — more than the secret scan will check ($MAX_SCAN_DIRS).
+
+Split it: run the commit in its own command, from the repo it belongs to."
+  exit 0
+fi
 for _sd in "${SCAN_DIRS[@]}" "${SCAN_ALSO[@]}"; do
   SCAN_GIT=(git); [[ -n "$_sd" ]] && SCAN_GIT=(git -C "$_sd")
   if ! "${SCAN_GIT[@]}" rev-parse --git-dir >/dev/null 2>&1; then
