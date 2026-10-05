@@ -28,7 +28,7 @@ for h in $AGENT_HOOKS; do
 done
 
 echo "…and by the without-plugin snippet in the README:"
-SNIPPET=$(sed -n '/^### Wiring (Claude Code)/,/^### /p' "$H/README.md")
+SNIPPET=$(sed -n '/^## Wiring (Claude Code)$/,/^## /p' "$H/README.md")
 for h in $AGENT_HOOKS; do
   grep -qF "$h" <<<"$SNIPPET"; say "$?" "README snippet registers $h"
 done

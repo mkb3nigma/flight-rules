@@ -50,19 +50,150 @@ one channel git hooks, agent hooks and skills all share.
 
 ## Contents
 
+- [Configuration](#configuration)
+  - [Where to set it](#where-to-set-it)
+- [Wiring (Claude Code)](#wiring-claude-code)
 - [Git hooks (`git/`)](#git-hooks-git)
 - [Agent hook scripts (`agent/`)](#agent-hook-scripts-agent)
-  - [Configuration](#configuration)
-  - [Where to set it](#where-to-set-it)
-  - [Wiring (Claude Code)](#wiring-claude-code)
 - [What these hooks are — and are not](#what-these-hooks-are--and-are-not)
   - [With the plugin alone, a protected branch is only half guarded](#with-the-plugin-alone-a-protected-branch-is-only-half-guarded)
   - [The agent guard over-blocks prose. That is the accepted trade.](#the-agent-guard-over-blocks-prose-that-is-the-accepted-trade)
 - [Layered defence](#layered-defence)
 
-The first five sections install and configure the hooks. The last three are what
-they do **not** catch — measured rather than asserted — and are worth reading
+Installing is above. The first three sections configure and wire the hooks; the next
+two are the reference, one entry per hook. **What these hooks are — and are not** is
+what they do **not** catch — measured rather than asserted — and is worth reading
 before you rely on them.
+
+## Configuration
+
+Every hook is configured per project **without forking it**, from
+`.ai/flight-rules.conf` — beside the rules, not inside any one tool's settings, so
+every layer reads one list:
+
+```ini
+# .ai/flight-rules.conf
+PROTECTED_BRANCHES=^(main|release/.*)$
+WORKTREE_DIR=.worktrees
+```
+
+The file is parsed as **data** (matched with `sed`, never `source`d), so a cloned
+repository cannot execute code through it. `#` comments, blank lines, spaces around
+`=`, and quoted values are all fine — including a comment **after** a value
+(`PROTECTED_BRANCHES=^main$   # trunk-based`). An inline comment must be preceded by
+whitespace, so a `#` inside a value (`^feature#1$`) is kept.
+
+That last part was a documented claim before it was a true one. Until 2026-09-11 the
+three hook parsers captured to end-of-line, so a trailing comment became part of the
+regex, the value matched nothing, and the layer reading it stopped enforcing in silence
+— while `doctor.sh`, which *did* strip comments, printed ✅ for the same line. One
+trailing comment on `PR_ONLY_BRANCHES` let a direct commit land on a PR-only `main`
+with all five git hooks installed.
+
+| Setting | conf key | Environment variable | Read by | Controls |
+|---|---|---|---|---|
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
+| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured here too — the ref gate and the local merge gate stand down, while `PROTECTED_BRANCHES` still applies. |
+| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
+| Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
+| Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
+| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
+
+Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
+the conf file is read from the repo the command targets, so a session spanning several
+repos gets each project's own policy.
+
+> ⚠️ **The gate hooks read the conf from a state an incoming branch cannot edit — `reference-transaction` from the upstream, `pre-merge-commit`/`commit-msg`/`pre-rebase` from `HEAD`, not the working tree.** During a
+> merge git updates the working tree *before* the hooks run, so a working-tree read
+> would let the incoming branch configure the gate that judges it — a branch shipping
+> `NOTE_GATED_BRANCHES=^nothing$` would wave itself through. They read
+> `HEAD:.ai/flight-rules.conf` (the merge target's committed policy) and fall back to
+> the built-in default, never to the working tree. Practical consequence: **a conf
+> change only takes effect on the merge gate once it is committed on the target
+> branch.** `pre-commit-check.sh` still reads the working tree on purpose — it guards
+> an interactive session, where an uncommitted edit should apply immediately.
+
+The environment variables carry a `FLIGHT_RULES_` prefix because the environment is a
+shared namespace; the file keys do not, because the filename already scopes them.
+
+**Default protected set** — `main`, `master`, `dev`, `develop`, `development`,
+`staging`, `stage`, `qa`, `uat`, `prod`, `production`, and `release` (bare or as a
+`release/1.0` train). Case-insensitive, so `QA` and `qa` are the same branch here.
+
+The default is broad on purpose: being stopped on a branch you did not mean to protect
+costs one message, while *not* being stopped on one you did costs work. It covers the
+common conventions (git-flow's `develop`, release trains, QA/UAT gates) so most projects
+need no configuration at all. `hotfix/*` is deliberately excluded — you commit to a
+hotfix branch, so it is a working branch, not one to defend.
+
+> ⚠️ **The variable replaces the default list — it does not extend it.** Setting
+> `FLIGHT_RULES_PROTECTED_BRANCHES` to `^integration$` protects that branch and
+> *nothing else*: `main` and `dev` become unguarded. To keep the defaults **and** add
+> your own, copy the whole pattern and extend the first group.
+
+Worked examples:
+
+| Goal | Value |
+|---|---|
+| Only `main` | `^main$` |
+| `main` plus release trains | `^(main\|release/.*)$` |
+| Trunk-based, one branch | `^trunk$` |
+| Defaults **plus** `integration` | `^(main\|master\|dev\|develop\|development\|staging\|stage\|qa\|uat\|prod\|production\|integration)$\|^release(/\|$)` |
+
+### Where to set it
+
+- **`.ai/flight-rules.conf`** (recommended) — tool-agnostic and committed with the
+  project, so every assistant and every contributor gets the same policy. This is the
+  one to use.
+- **`.claude/settings.json` `"env"`** — a Claude-Code-only override, for when a policy
+  should apply to Claude sessions but not to the git hooks.
+- **The shell environment** — `export FLIGHT_RULES_PROTECTED_BRANCHES='^main$'`. Useful
+  for a one-off; not durable.
+
+The hook does **not** read a `.env` file. If your project keeps settings there, put the
+branch policy in `.ai/flight-rules.conf` instead — `.env` is for secrets and
+per-machine values, and this policy is neither.
+
+The conf file is read as data and never `source`d: a sourced config file would let any
+cloned repo execute code inside the hook.
+
+## Wiring (Claude Code)
+
+`hooks/wiring.test.sh` checks both paths by RUNNING every registered hook in each
+environment — with `CLAUDE_PLUGIN_ROOT` set and with it unset — rather than by matching
+filenames. It used to match, and passed 15/15 while the snippet below injected nothing.
+
+**With the plugin, nothing to wire** — `hooks/hooks.json` registers all three agent
+hooks; pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep
+the scripts in `.ai/hooks/` and point `.claude/settings.json` at them:
+
+There are **three**, and each path used to ship a different two. Until 2026-09-10 the
+plugin registered the principles injector and the guard but not `session-start.sh`, so
+plugin users got no install health check; the snippet below registered
+`session-start.sh` and the guard but not the injector, so hand-wired users got **no
+rules injected at all** — half of what this playbook does. Register all three.
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [
+      { "type": "command",
+        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/session-start-rules.sh\"'" },
+      { "type": "command",
+        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\"'" }] }],
+    "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command",
+      "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/pre-commit-check.sh\"'" }] }]
+  }
+}
+```
+
+(Equivalently, `.claude/hooks/*.sh` can be two-line shims that `exec` the `.ai`
+scripts — useful when migrating an existing setup without touching settings.json.)
+
+The scripts read Claude Code's hook protocol — tool input as JSON on stdin, a
+structured `permissionDecision` on stdout. To use them with another assistant, wrap
+the same checks in that tool's hook protocol; the point of keeping them in `.ai/` is
+that the logic has exactly one home.
 
 ## Git hooks (`git/`)
 
@@ -243,136 +374,6 @@ Guards that fire on the assistant's own events, before git ever runs:
   invisible staleness into something a reader can check against the plugin directory.
   Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
   install shape, because reading the version must never cost the rules.
-
-### Configuration
-
-Every hook is configured per project **without forking it**, from
-`.ai/flight-rules.conf` — beside the rules, not inside any one tool's settings, so
-every layer reads one list:
-
-```ini
-# .ai/flight-rules.conf
-PROTECTED_BRANCHES=^(main|release/.*)$
-WORKTREE_DIR=.worktrees
-```
-
-The file is parsed as **data** (matched with `sed`, never `source`d), so a cloned
-repository cannot execute code through it. `#` comments, blank lines, spaces around
-`=`, and quoted values are all fine — including a comment **after** a value
-(`PROTECTED_BRANCHES=^main$   # trunk-based`). An inline comment must be preceded by
-whitespace, so a `#` inside a value (`^feature#1$`) is kept.
-
-That last part was a documented claim before it was a true one. Until 2026-09-11 the
-three hook parsers captured to end-of-line, so a trailing comment became part of the
-regex, the value matched nothing, and the layer reading it stopped enforcing in silence
-— while `doctor.sh`, which *did* strip comments, printed ✅ for the same line. One
-trailing comment on `PR_ONLY_BRANCHES` let a direct commit land on a PR-only `main`
-with all five git hooks installed.
-
-| Setting | conf key | Environment variable | Read by | Controls |
-|---|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
-| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured here too — the ref gate and the local merge gate stand down, while `PROTECTED_BRANCHES` still applies. |
-| Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
-| Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
-| Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
-| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
-
-Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
-the conf file is read from the repo the command targets, so a session spanning several
-repos gets each project's own policy.
-
-> ⚠️ **The gate hooks read the conf from a state an incoming branch cannot edit — `reference-transaction` from the upstream, `pre-merge-commit`/`commit-msg`/`pre-rebase` from `HEAD`, not the working tree.** During a
-> merge git updates the working tree *before* the hooks run, so a working-tree read
-> would let the incoming branch configure the gate that judges it — a branch shipping
-> `NOTE_GATED_BRANCHES=^nothing$` would wave itself through. They read
-> `HEAD:.ai/flight-rules.conf` (the merge target's committed policy) and fall back to
-> the built-in default, never to the working tree. Practical consequence: **a conf
-> change only takes effect on the merge gate once it is committed on the target
-> branch.** `pre-commit-check.sh` still reads the working tree on purpose — it guards
-> an interactive session, where an uncommitted edit should apply immediately.
-
-The environment variables carry a `FLIGHT_RULES_` prefix because the environment is a
-shared namespace; the file keys do not, because the filename already scopes them.
-
-**Default protected set** — `main`, `master`, `dev`, `develop`, `development`,
-`staging`, `stage`, `qa`, `uat`, `prod`, `production`, and `release` (bare or as a
-`release/1.0` train). Case-insensitive, so `QA` and `qa` are the same branch here.
-
-The default is broad on purpose: being stopped on a branch you did not mean to protect
-costs one message, while *not* being stopped on one you did costs work. It covers the
-common conventions (git-flow's `develop`, release trains, QA/UAT gates) so most projects
-need no configuration at all. `hotfix/*` is deliberately excluded — you commit to a
-hotfix branch, so it is a working branch, not one to defend.
-
-> ⚠️ **The variable replaces the default list — it does not extend it.** Setting
-> `FLIGHT_RULES_PROTECTED_BRANCHES` to `^integration$` protects that branch and
-> *nothing else*: `main` and `dev` become unguarded. To keep the defaults **and** add
-> your own, copy the whole pattern and extend the first group.
-
-Worked examples:
-
-| Goal | Value |
-|---|---|
-| Only `main` | `^main$` |
-| `main` plus release trains | `^(main\|release/.*)$` |
-| Trunk-based, one branch | `^trunk$` |
-| Defaults **plus** `integration` | `^(main\|master\|dev\|develop\|development\|staging\|stage\|qa\|uat\|prod\|production\|integration)$\|^release(/\|$)` |
-
-### Where to set it
-
-- **`.ai/flight-rules.conf`** (recommended) — tool-agnostic and committed with the
-  project, so every assistant and every contributor gets the same policy. This is the
-  one to use.
-- **`.claude/settings.json` `"env"`** — a Claude-Code-only override, for when a policy
-  should apply to Claude sessions but not to the git hooks.
-- **The shell environment** — `export FLIGHT_RULES_PROTECTED_BRANCHES='^main$'`. Useful
-  for a one-off; not durable.
-
-The hook does **not** read a `.env` file. If your project keeps settings there, put the
-branch policy in `.ai/flight-rules.conf` instead — `.env` is for secrets and
-per-machine values, and this policy is neither.
-
-The conf file is read as data and never `source`d: a sourced config file would let any
-cloned repo execute code inside the hook.
-
-### Wiring (Claude Code)
-
-`hooks/wiring.test.sh` checks both paths by RUNNING every registered hook in each
-environment — with `CLAUDE_PLUGIN_ROOT` set and with it unset — rather than by matching
-filenames. It used to match, and passed 15/15 while the snippet below injected nothing.
-
-**With the plugin, nothing to wire** — `hooks/hooks.json` registers all three agent
-hooks; pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep
-the scripts in `.ai/hooks/` and point `.claude/settings.json` at them:
-
-There are **three**, and each path used to ship a different two. Until 2026-09-10 the
-plugin registered the principles injector and the guard but not `session-start.sh`, so
-plugin users got no install health check; the snippet below registered
-`session-start.sh` and the guard but not the injector, so hand-wired users got **no
-rules injected at all** — half of what this playbook does. Register all three.
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{ "hooks": [
-      { "type": "command",
-        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/session-start-rules.sh\"'" },
-      { "type": "command",
-        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\"'" }] }],
-    "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command",
-      "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/pre-commit-check.sh\"'" }] }]
-  }
-}
-```
-
-(Equivalently, `.claude/hooks/*.sh` can be two-line shims that `exec` the `.ai`
-scripts — useful when migrating an existing setup without touching settings.json.)
-
-The scripts read Claude Code's hook protocol — tool input as JSON on stdin, a
-structured `permissionDecision` on stdout. To use them with another assistant, wrap
-the same checks in that tool's hook protocol; the point of keeping them in `.ai/` is
-that the logic has exactly one home.
 
 ## What these hooks are — and are not
 
