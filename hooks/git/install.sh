@@ -33,6 +33,7 @@ echo "   core.hooksPath = $(git config core.hooksPath)"
 echo ""
 echo "   Active hooks:"
 for f in "$HOOKS_DIR"/*; do
+    [[ -d "$f" ]] && continue                    # a project's own agent/ scripts are not git hooks
     [[ "$(basename "$f")" == *.* ]] && continue  # skip .sh/.md — git only runs bare hook names
     echo "     $(basename "$f")"
 done

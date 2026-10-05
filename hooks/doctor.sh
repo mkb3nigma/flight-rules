@@ -153,8 +153,12 @@ fi
 # ── 4. The guard is wired once, not twice ─────────────────────────────────────
 PLUGIN_ON=0
 # `"flight-rules@x": false` contains the name too. Match the VALUE, or a disabled plugin
-# reports as a wired guard.
-grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' "$HOME/.claude/settings.json" 2>/dev/null && PLUGIN_ON=1
+# reports as a wired guard. Claude Code writes `enabledPlugins` to the user-level file
+# for a user-scope install and to the repo's .claude/settings.json or
+# .claude/settings.local.json for a project-scope one (#67): reading only ~/.claude
+# declared the guard absent in a repo where it was running.
+grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' \
+  "$HOME/.claude/settings.json" .claude/settings.json .claude/settings.local.json 2>/dev/null && PLUGIN_ON=1
 LOCAL_WIRED=0
 grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=1
 # Wiring a path is not the same as wiring a FILE. Every script named in the settings is
@@ -163,11 +167,21 @@ grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=
 if [[ -f .claude/settings.json ]]; then
   while IFS= read -r rel; do
     [[ -z "$rel" ]] && continue
-    [[ -f "$ROOT/$rel" ]] || bad ".claude/settings.json wires $rel, which does not exist — that hook never runs"
-    # A ${CLAUDE_PLUGIN_ROOT}-prefixed path lives in the installed plugin, not here; it is
-    # captured with its prefix so it can be dropped rather than reported as missing.
-  done < <(grep -oE '(\$\{?CLAUDE_PLUGIN_ROOT\}?/)?(\.ai/)?hooks/[A-Za-z0-9_/-]*\.sh' .claude/settings.json \
-           | grep -v CLAUDE_PLUGIN_ROOT | sort -u)
+    p="$rel"; [[ "$p" = /* ]] || p="$ROOT/$p"
+    [[ -f "$p" ]] || bad ".claude/settings.json wires $rel, which does not exist — that hook never runs"
+    # The whole path before `hooks/` is captured, not a list of known prefixes: the list
+    # knew `.ai/` and missed `.claude/`, so `.claude/hooks/x.sh` was tested as `hooks/x.sh`
+    # and reported missing while it ran (#66). The `$(git rev-parse --show-toplevel)/`
+    # form README recommends is stripped first — it IS $ROOT. A `$VAR/` or `${VAR}/`
+    # prefix is captured with the path: ${CLAUDE_PLUGIN_ROOT} lives in the installed
+    # plugin, not here, and is dropped rather than reported as missing; any other variable
+    # is taken to be the repo root (`R=$(git rev-parse --show-toplevel); … "$R/hooks/x.sh"`,
+    # this repo's own wiring) and stripped. Capturing `R/hooks/x.sh` instead reported this
+    # repo's own session hook as missing on the first run after #66 merged.
+  done < <(sed -E 's#\$\(git rev-parse --show-toplevel\)/?##g' .claude/settings.json \
+           | grep -oE '(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/|[A-Za-z0-9_./-]*)hooks/[A-Za-z0-9_/-]*\.sh' \
+           | grep -v CLAUDE_PLUGIN_ROOT \
+           | sed -E 's#^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/##' | sort -u)
 fi
 if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
   warn "the flight-rules plugin is enabled AND .claude/settings.json wires a pre-commit-check.sh — the guard runs twice (drop the local wiring)"

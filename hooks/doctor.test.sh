@@ -133,6 +133,48 @@ printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash \\"${CLAUDE_PLUGIN_RO
 say "$(rc "$D")" "0" "a plugin-rooted path is not reported as missing"
 rm -rf "$D"
 
+# 2c. A script wired from a prefix the regex did not list (#66). The optional prefix group
+#     knew `.ai/` and `${CLAUDE_PLUGIN_ROOT}/`, so `.claude/hooks/x.sh` was captured as
+#     `hooks/x.sh` and tested at the wrong place — three ❌ lines about files that
+#     existed and ran, in the layout hooks/README.md itself recommends. Seen 2026-10-04.
+D=$(mkrepo); mkdir -p "$D/.claude/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command",
+  "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.claude/hooks/x.sh\"'" } ] } ] } }
+JSON
+printf '#!/bin/sh\nexit 0\n' > "$D/.claude/hooks/x.sh"; chmod +x "$D/.claude/hooks/x.sh"
+say "$(rc "$D")" "0" "an existing .claude/hooks/ script is not reported as missing"
+say "$(has "$D" "does not exist")" "1" "…no dangling-path line at all"
+rm "$D/.claude/hooks/x.sh"
+say "$(rc "$D")" "1" "…and the same wiring with the script gone → problem"
+say "$(has "$D" "wires .claude/hooks/x.sh, which does not exist")" "0" "…naming the path as written, prefix included"
+rm -rf "$D"
+
+# 2e. A variable-prefixed path — the `R=$(git rev-parse --show-toplevel); … "$R/hooks/x.sh"`
+#     idiom this repo's own .claude/settings.json uses. 2c's fix captured the whole prefix,
+#     so `$R/hooks/x.sh` was read as `R/hooks/x.sh` and reported missing on the first
+#     doctor run after it merged (dev f86a990, 2026-10-04). A `$VAR/` prefix other than
+#     CLAUDE_PLUGIN_ROOT is taken to be the repo root, which is what the idiom means.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "bash -c 'R=$(git rev-parse --show-toplevel); exec bash \"$R/hooks/x.sh\"'" },
+  { "type": "command", "command": "bash -c 'R=$(git rev-parse --show-toplevel); exec bash \"${R}/hooks/y.sh\"'" } ] } ] } }
+JSON
+printf '#!/bin/sh\nexit 0\n' > "$D/hooks/x.sh"; cp "$D/hooks/x.sh" "$D/hooks/y.sh"; chmod +x "$D/hooks/x.sh" "$D/hooks/y.sh"
+say "$(has "$D" "does not exist")" "1" "\$R/ and \${R}/ prefixed scripts that exist are not reported"
+rm "$D/hooks/y.sh"
+say "$(has "$D" "wires hooks/y.sh, which does not exist")" "0" "…and a missing one is named by its repo-relative path"
+say "$(has "$D" "wires hooks/x.sh")" "1" "…while the one that exists stays silent"
+rm -rf "$D"
+
+# 2d. An absolute path is tested where it points, not under the repo root.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/elsewhere/hooks"
+printf '#!/bin/sh\nexit 0\n' > "$D/elsewhere/hooks/y.sh"; chmod +x "$D/elsewhere/hooks/y.sh"
+printf '{"hooks":{"SessionStart":[{"hooks":[{"command":"bash %s/elsewhere/hooks/y.sh"}]}]}}' "$D" > "$D/.claude/settings.json"
+say "$(has "$D" "does not exist")" "1" "an absolute path to an existing script is not reported as missing"
+rm -rf "$D"
+
 # 3. The plugin is listed and switched OFF. The check was a grep for the name.
 D=$(mkrepo); mkdir -p "$D/fakehome/.claude"
 printf '{"enabledPlugins":{"flight-rules@mkb3nigma": false}}\n' > "$D/fakehome/.claude/settings.json"
@@ -211,6 +253,28 @@ D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"
 printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/fakehome/.claude/settings.json"
 printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash x/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
 say "$(has "$D" "runs twice")" "0" "plugin + local wiring → double-fire warning"
+rm -rf "$D"
+
+# The plugin can be enabled at PROJECT scope (#67): Claude Code then writes the
+# enabledPlugins key to <repo>/.claude/settings.local.json and nothing to ~/.claude.
+# doctor read only the user-level file and declared the guard absent in a repo where it
+# demonstrably ran — the one thing it must never say wrongly, because the "fix" a reader
+# reaches for is hand-wiring pre-commit-check.sh, which is the double-fire. Seen 2026-10-04.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"
+printf '{}' > "$D/fakehome/.claude/settings.json"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/.claude/settings.local.json"
+say "$(has "$D" "agent guard via the plugin")" "0" "plugin enabled only in .claude/settings.local.json → wired"
+say "$(has "$D" "no agent guard wired")" "1" "…and not declared absent"
+rm -rf "$D"
+
+D=$(mkrepo); mkdir -p "$D/.claude"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":true},"hooks":{"PreToolUse":[{"hooks":[{"command":"bash x/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
+say "$(has "$D" "runs twice")" "0" "plugin enabled in .claude/settings.json + local wiring in the same file → double-fire warning"
+rm -rf "$D"
+
+D=$(mkrepo); mkdir -p "$D/.claude"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/.claude/settings.local.json"
+say "$(has "$D" "no agent guard wired")" "0" "a plugin disabled at project scope does not count as wired"
 rm -rf "$D"
 
 D=$(mkrepo); mkdir -p "$D/.claude/" "$D/.ai/hooks/agent"
