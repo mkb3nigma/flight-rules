@@ -86,6 +86,26 @@ JUST_MERGED="$MERGED_BRANCH"
 # -x: a substring match drops `fix/ab` from the list whenever `fix/a` was the branch
 # just merged, and the note is the only place that branch gets mentioned.
 PREVIOUSLY_MERGED=$(echo "$ALL_MERGED" | grep -vxF "$JUST_MERGED" || true)
+# `git branch -d` judges a branch that has an upstream against that upstream, not HEAD:
+# one cut with `-b fix/x origin/<integration>` is refused until the merge is pushed
+# (2026-10-04, three of four branches refused). The note is written the moment the merge
+# lands, before the owner pushes, so a branch -d would refuse right now says which
+# upstream has to receive it first. No upstream, or one that has it: nothing is added.
+# The full ref, not %(upstream:short): short is a local branch's bare name and turns
+# ambiguous next to a tag, and neither is under refs/remotes/. An upstream that no
+# longer resolves (pruned, deleted on the remote) makes git fall back to HEAD, so -d
+# works and nothing is said.
+refused_until() {
+  local up
+  up=$(git for-each-ref --format='%(upstream)' "refs/heads/$1" 2>/dev/null)
+  [[ -n "$up" ]] || return 0
+  git rev-parse -q --verify "$up^{commit}" >/dev/null 2>&1 || return 0
+  git merge-base --is-ancestor "refs/heads/$1" "$up" 2>/dev/null && return 0
+  case "$up" in
+    refs/remotes/*) printf '  (refused until %s has it — push that first)' "${up#refs/remotes/}" ;;
+    *)              printf '  (refused until %s contains it)' "${up#refs/heads/}" ;;
+  esac
+}
 
 # Worktrees whose branch is in the merged list
 STALE_WORKTREES=()
@@ -153,12 +173,12 @@ mkdir -p "$(dirname "$NOTE_FILE")"
   if [[ -n "$ALL_MERGED" ]]; then
     echo "### ⚠ Branches merged into $INTEGRATION_BRANCH (safe to delete):"
     if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]]; then
-      echo "  git branch -d '$JUST_MERGED'  ← just merged"
+      echo "  git branch -d '$JUST_MERGED'  ← just merged$(refused_until "$JUST_MERGED")"
     fi
     if [[ -n "$PREVIOUSLY_MERGED" ]]; then
       echo "  (previously merged, not yet deleted:)"
       while IFS= read -r branch; do
-        [[ -n "$branch" ]] && echo "  git branch -d '$branch'"
+        [[ -n "$branch" ]] && echo "  git branch -d '$branch'$(refused_until "$branch")"
       done <<< "$PREVIOUSLY_MERGED"
     fi
   else
