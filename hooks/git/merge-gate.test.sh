@@ -566,6 +566,72 @@ grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/
 say "$?" "0" "…and the note names feature/x, not unknown"
 grep -q "git branch -d 'feature/x'  ← just merged" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…and offers the local branch for deletion as just merged"
+grep -q "refused until" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "1" "…with no push warning: feature/x has no upstream, so -d works now"
+rm -rf "$D" "$O"
+
+echo "post-merge says when git branch -d will refuse, and only then:"
+# A branch cut with `-b fix/x origin/dev` tracks origin/dev, and `git branch -d` judges
+# it against that, so it is refused until dev is pushed — and the note is written
+# before the push (2026-10-04).
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" push -q origin main dev 2>/dev/null || die "could not push the fixture to its origin"
+git -C "$D" branch -q --set-upstream-to=origin/dev feature/x || die "could not make feature/x track origin/dev"
+git -C "$D" branch -q plain dev && git -C "$D" branch -q --set-upstream-to=origin/dev plain \
+  || die "could not make the already-pushed branch"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+say "$?" "0" "merging feature/x (tracking origin/dev) into dev lands"
+git -C "$D" branch -d feature/x >/dev/null 2>&1
+say "$?" "1" "…and git branch -d refuses it before dev is pushed (the case is real)"
+grep -qF "git branch -d 'feature/x'  ← just merged  (refused until origin/dev has it — push that first)" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…and the note says origin/dev must have it first"
+grep -q "git branch -d 'plain'$" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…but not for a branch its upstream already has"
+git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev in the fixture"
+git -C "$D" branch -d feature/x >/dev/null 2>&1
+say "$?" "0" "…and after the push, -d deletes it"
+rm -rf "$D" "$O"
+
+echo "…and says nothing where -d would in fact delete:"
+# Each of these was annotated by the first version while `git branch -d` deleted the
+# branch: git judges against HEAD when the upstream ref does not resolve, and the short
+# upstream name is not a refs/remotes/ path for a local upstream or next to a tag.
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" push -q origin main dev 2>/dev/null || die "could not push the fixture to its origin"
+git -C "$D" push -q -u origin feature/x 2>/dev/null || die "could not push feature/x"
+git -C "$D" push -q origin --delete feature/x 2>/dev/null && git -C "$D" fetch -q --prune origin \
+  || die "could not make feature/x's upstream gone"
+git -C "$D" branch -q local-up feature/x && git -C "$D" branch -q --set-upstream-to=main local-up \
+  || die "could not make the branch with a local upstream"
+git -C "$D" branch -q tagged feature/x && git -C "$D" branch -q --set-upstream-to=origin/dev tagged \
+  && git -C "$D" tag origin/dev main || die "could not make the tag that shadows origin/dev"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev"
+(cd "$D" && .ai/hooks/post-merge 0) >/dev/null 2>&1 || die "post-merge failed when run directly"
+NOTE="$D/.claude/post-merge-note.md"
+grep -qE "^  git branch -d 'feature/x'  ← just merged$" "$NOTE" 2>/dev/null
+say "$?" "0" "an upstream gone from the remote: no annotation"
+grep -qE "^  git branch -d 'tagged'$" "$NOTE" 2>/dev/null
+say "$?" "0" "a tag named origin/dev beside the branch: no annotation"
+grep -qE "^  git branch -d 'local-up'  \(refused until main contains it\)$" "$NOTE" 2>/dev/null
+say "$?" "0" "a local upstream that lacks it: 'contains', not 'push'"
+for b in feature/x tagged; do git -C "$D" branch -d "$b" >/dev/null 2>&1 || echo "$b"; done > "$D/undeleted"
+say "$(cat "$D/undeleted")" "" "…and -d really deletes the unannotated ones"
+rm -rf "$D" "$O"
+
+echo "…under a remote that is not called origin:"
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add upstream "$O"
+git -C "$D" push -q upstream main dev 2>/dev/null || die "could not push the fixture to upstream"
+git -C "$D" branch -q --set-upstream-to=upstream/dev feature/x || die "could not make feature/x track upstream/dev"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+grep -qF "(refused until upstream/dev has it" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "the note names upstream/dev"
 rm -rf "$D" "$O"
 
 
