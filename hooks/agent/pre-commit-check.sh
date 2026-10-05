@@ -295,7 +295,9 @@ branch_delete_targets() {
     done
   done < <(command_segments "$1")
 }
-is_branch_delete() { [[ -n "$(branch_delete_targets "$1")" ]]; }
+# The regex first, so the subshell runs only for a `git branch`: forked for every segment,
+# it was most of the guard's time on a long heredoc (#73).
+is_branch_delete() { [[ "$1" =~ ${B}git[[:space:]]+branch${E} ]] && [[ -n "$(branch_delete_targets "$1")" ]]; }
 
 # Classify per SEGMENT. The target parsers have run per segment since 2026-09-10, for
 # the reason spelled out above them; the CLASSIFIERS did not, so a flag belonging to one
@@ -549,7 +551,10 @@ while IFS= read -r _raw; do
     _to=$(unquote "${BASH_REMATCH[3]}")
     _dir=$(rel_to "$CWD_NOW" "$_to"); _ndir=$(rel_to "$CWD_NAIVE" "$_to")
   fi
-  _seg=$(printf '%s' "$_raw" | sed -E "$NORM_SED")
+  # NORM_SED only rewrites text after a literal `git`, so a segment without one is left
+  # as it is — and skipping the fork is what keeps a heredoc that splits into a segment
+  # per line inside the hook's timeout (#73).
+  case "$_raw" in *git*) _seg=$(printf '%s' "$_raw" | sed -E "$NORM_SED") ;; *) _seg=$_raw ;; esac
   is_commit "$_seg" && { SCAN_DIRS+=("$_dir"); also "$_ndir"; }
   resolve_target "$_dir"
   # Another repo's branches are not ours to police, and a repo that turned the policy off
@@ -629,23 +634,50 @@ fi
 # scan_repo — the checks, over the staged diff of the repo SCAN_GIT names. Appends to
 # FINDINGS; run once per repo a commit in this command is aimed at.
 scan_repo() {
-  STAGED_DIFF=$("${SCAN_GIT[@]}" diff --cached 2>/dev/null)
+  # The repo's own diff settings must not shape what is scanned: color.ui=always put an
+  # escape code before every "+", diff.external or a textconv could print anything, and
+  # a -diff attribute reduced the file to "Binary files differ" — each let a staged key
+  # through (2026-10-05); so did diff.relative, which cut the diff down to the
+  # subdirectory a commit was run from. DIFF_RAW is the diff as git stores it.
+  local DIFF_RAW=(-c diff.relative=false diff --cached --no-color --no-ext-diff --no-textconv)
+  # A binary file — or one a `-diff` attribute marks as one — is scanned as text up to
+  # BINARY_SCAN_MAX bytes. Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s,
+  # and a hook killed by its timeout lets the commit through unscanned; a key is a short
+  # line in a small file, not a passage inside an image. NULs are dropped, which a shell
+  # variable cannot hold. Every tool that reads those bytes runs in the C locale (as the
+  # git pre-commit hook does throughout): under UTF-8, macOS tr stops at the first
+  # invalid byte and grep skips the line holding one (/dg, 2026-10-05).
+  local BINARY_SCAN_MAX=1048576 rec p small=()
+  while IFS= read -r -d '' rec; do
+    case "$rec" in "-	-	"*) p=${rec#-	-	} ;; *) continue ;; esac
+    [[ $("${SCAN_GIT[@]}" cat-file -s ":$p" 2>/dev/null || echo 0) -le $BINARY_SCAN_MAX ]] && small+=(":(top,literal)$p")
+  done < <("${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --no-renames --diff-filter=d --numstat -z 2>/dev/null)
+  STAGED_DIFF=$( { "${SCAN_GIT[@]}" "${DIFF_RAW[@]}" 2>/dev/null
+                   [[ ${#small[@]} -eq 0 ]] || "${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --text -- "${small[@]}" 2>/dev/null
+                 } | LC_ALL=C tr -d '\000')
   # core.quotePath=false: by default git prints a non-ASCII name as "c\303\266nfig.py"
   # in quotes, and feeding that back to `git diff -- <path>` matches nothing — so the
   # file was silently never scanned for credential literals.
-  STAGED_FILES=$("${SCAN_GIT[@]}" -c core.quotePath=false diff --cached --name-only 2>/dev/null)
+  # --diff-filter=d: every change to a .env except removing it, as in the git pre-commit
+  # hook. Deleting or untracking one is how a leak is cleaned up, and that was refused;
+  # adding or editing one stays refused (owner's call, 2026-10-05). A rename or copy is
+  # listed under its new name only, so its source is added: `git mv .env config.txt`
+  # keeps the secrets tracked under a name nothing watches.
+  STAGED_FILES=$("${SCAN_GIT[@]}" -c core.quotePath=false "${DIFF_RAW[@]}" --name-only --diff-filter=d 2>/dev/null
+                 "${SCAN_GIT[@]}" -c core.quotePath=false "${DIFF_RAW[@]}" --name-status --diff-filter=RC 2>/dev/null \
+                   | LC_ALL=C awk -F '\t' '{print $2}')
 
   # Added lines only, leading "+" stripped. Each file's `+++ b/path` header is dropped
   # as its own step: the first version folded that into every pattern as `^\+[^+]`,
   # which also demanded one character between the "+" and the secret — so an
   # assignment at column zero, the commonest place for one, was never matched.
-  added_lines() { grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//'; }
+  added_lines() { LC_ALL=C grep -aE '^\+' | LC_ALL=C grep -avE '^\+\+\+ ' | LC_ALL=C sed 's/^+//'; }
   ADDED=$(printf '%s\n' "$STAGED_DIFF" | added_lines)
-  hit() { printf '%s\n' "$ADDED" | grep -qE "$1"; }
+  hit() { printf '%s\n' "$ADDED" | LC_ALL=C grep -aqE "$1"; }
 
   # .env file staged (matches .env, .env.local, path/.env — but not the documented
   # templates: .env.example/.sample/.template/.dist, or a docs page named .env.md)
-  if printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -qvE '\.env\.(example|sample|template|dist|md)$'; then
+  if printf '%s\n' "$STAGED_FILES" | LC_ALL=C grep -aE '(^|/)\.env(\.|$)' | LC_ALL=C grep -aqvE '\.env\.(example|sample|template|dist|md)$'; then
     FINDINGS="$FINDINGS\n  • .env file is staged for commit"
   fi
 
@@ -687,19 +719,21 @@ scan_repo() {
   PROSE_FILE_RE='(^|/)(docs?|locales?|i18n|translations?)/|\.(md|rst|txt)$'
   NON_TEST=()
   while IFS= read -r -d '' f; do
-    [[ -n "$f" && ! "$f" =~ $TEST_FILE_RE && ! "$f" =~ $PROSE_FILE_RE ]] && NON_TEST+=("$f")
-  done < <("${SCAN_GIT[@]}" diff --cached --name-only -z 2>/dev/null)
+    [[ -n "$f" && ! "$f" =~ $TEST_FILE_RE && ! "$f" =~ $PROSE_FILE_RE ]] && NON_TEST+=(":(top,literal)$f")
+  # Names come back from the repo root, and a bare pathspec is read from the cwd: run
+  # from a subdirectory, no name matched and this check never ran. `top` anchors them.
+  done < <("${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --name-only -z 2>/dev/null)
   if [[ ${#NON_TEST[@]} -gt 0 ]]; then
-    NON_TEST_ADDED=$("${SCAN_GIT[@]}" diff --cached -- "${NON_TEST[@]}" 2>/dev/null | added_lines)
+    NON_TEST_ADDED=$("${SCAN_GIT[@]}" "${DIFF_RAW[@]}" -- "${NON_TEST[@]}" 2>/dev/null | added_lines)
     # Case-insensitive (PASSWORD, ApiKey), `=` or `:` (YAML/JSON), quoted key tolerated
     # ("password": "…"). Obvious placeholders are let through so an example does not
     # block a commit: <angle-bracket>, REDACTED, CHANGEME, EXAMPLE, your-…, …-here,
     # xxxxxxxx. A line carrying `flight-rules: allow` is a reviewed, deliberate
     # exception — it is greppable, so it is also auditable.
     if printf '%s\n' "$NON_TEST_ADDED" \
-        | grep -iE '(password|passwd|secret|token|api_?key)["'"'"']?[[:space:]]*[=:][[:space:]]*["'"'"'][^"'"'"'$\{]{8,}' \
-        | grep -v 'flight-rules: allow' \
-        | grep -qviE '<[^>]*>|redacted|changeme|example|placeholder|your[-_ ]|[-_ ]here["'"'"']|x{8,}|\*{8,}'; then
+        | LC_ALL=C grep -aiE '(password|passwd|secret|token|api_?key)["'"'"']?[[:space:]]*[=:][[:space:]]*["'"'"'][^"'"'"'$\{]{8,}' \
+        | LC_ALL=C grep -av 'flight-rules: allow' \
+        | LC_ALL=C grep -aqviE '<[^>]*>|redacted|changeme|example|placeholder|your[-_ ]|[-_ ]here["'"'"']|x{8,}|\*{8,}'; then
       FINDINGS="$FINDINGS\n  • Possible hardcoded credential (password/secret/token/api_key assigned to a string literal)"
     fi
   fi

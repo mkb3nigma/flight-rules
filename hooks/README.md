@@ -258,8 +258,8 @@ that the logic has exactly one home.
   Tests: `ref-gate.test.sh` (no arguments, no network).
 - **`pre-commit`** — the secret scan, on what the commit will actually record: a
   provider key (AWS, `sk-…`, GitHub, Slack, Google), a PEM private-key header, or a
-  `.env` entering the repo (templates exempt; editing one already tracked is not
-  refused, though a key written into it is). Git runs it after building the commit's index, so
+  `.env` added, edited or renamed away (templates exempt; removing one is the only `.env`
+  change let through). A binary is read as text up to 1 MB. Git runs it after building the commit's index, so
   `git add f && git commit`, `commit -a`, `commit <path>` and a `GIT_INDEX_FILE=`
   prefix are all covered — the agent guard scans before the command runs and saw none
   of them (#71, #72) — and a human's commit is scanned too. It is narrower than the
@@ -331,14 +331,18 @@ Guards that fire on the assistant's own events, before git ever runs:
   command names, so a key staged in a repo the command visits blocks the commit and
   the deny names the repo. A merge in progress is exempt so conflicts can be
   resolved.
-  Regardless of branch, a commit is denied with a staged `.env` (templates
-  `.env.example|sample|template|dist` and `.env.md` exempt), a provider key (AWS,
+  Regardless of branch, a commit is denied with a `.env` added, edited or renamed away (templates
+  `.env.example|sample|template|dist` and `.env.md` exempt; removing one is let
+  through), a provider key (AWS,
   `sk-…`, GitHub, Slack, Google), any PEM private-key header, or a credential literal
   outside test and prose files (`docs/`, `locales/`, `i18n/`, `translations/`,
   `*.md|rst|txt` — keys are still caught
   there). A line marked `flight-rules: allow` is a reviewed exception. It reads the
   index as it stands before the command runs, so anything the same command stages is
-  not in it; the git `pre-commit` hook is the scan that sees those.
+  not in it; the git `pre-commit` hook is the scan that sees those. The repo's own diff
+  settings — colour, an external diff, a textconv, a `-diff` attribute, `diff.relative`
+  — do not change what it reads. A binary is read as text up to 1 MB; past that it is
+  not scanned, because reading a large asset whole can outlast the hook's timeout.
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
   rather than silently switching off. It also uses `sed`, which is in every base system
   the hooks target. The compound-command SPLIT is pure bash, though: when that shelled
