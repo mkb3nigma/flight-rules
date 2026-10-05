@@ -125,8 +125,26 @@ before you rely on them.
   advertises — does not lift it. A repo with no upstream is not gated: there is no
   reviewed state to compare against, and a fresh `git init` must stay usable.
   Tests: `ref-gate.test.sh` (no arguments, no network).
+- **`pre-commit`** — the secret scan, on what the commit will actually record: a
+  provider key (AWS, `sk-…`, GitHub, Slack, Google), a PEM private-key header, or a
+  `.env` entering the repo (templates exempt; editing one already tracked is not
+  refused, though a key written into it is). Git runs it after building the commit's index, so
+  `git add f && git commit`, `commit -a`, `commit <path>` and a `GIT_INDEX_FILE=`
+  prefix are all covered — the agent guard scans before the command runs and saw none
+  of them (#71, #72) — and a human's commit is scanned too. It is narrower than the
+  agent guard on purpose: the guard's `password = "…"` heuristic warns an agent but
+  would block too many ordinary commits here. A merge being concluded is not
+  re-scanned (its commits were scanned when made — so neither is a key typed in while
+  resolving its conflict); a `merge --squash` is an ordinary commit and is scanned.
+  `cherry-pick`/`revert` do not run `pre-commit` at all. Override for a checked false
+  positive: `--no-verify`, the owner's call. **Already have a `pre-commit`** (a linter,
+  lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
+  scan and its exit status decides the commit. **Upgrading from 0.22.x:** a plugin
+  update cannot copy git hooks, so this one arrives only when you copy it in;
+  `doctor.sh` — run at session start — reports it missing with the exact `cp` command.
+  Tests: `secret-scan.test.sh`.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
-  unless all five bare-named hooks are present.
+  unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) that the next AI session picks up.
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
@@ -169,15 +187,27 @@ Guards that fire on the assistant's own events, before git ever runs:
   project" is its main checkout *and every worktree of it* — they share one
   `--git-common-dir`, which is how a worktree is told from an unrelated repo whose
   branches are none of this project's business.
-  `git -C`/`-c` are normalised
-  away first, the *last* `cd` decides the target repo, and a merge in progress is
-  exempt so conflicts can be resolved.
+  The target repo is resolved **per segment**: a `cd` sets it for the segments after
+  it, a `git -C <dir>` sets it for its own segment only, and `-c`/other global options
+  are normalised away so every matcher sees `git <verb>`. Until #61 it was resolved
+  once per command — the last `cd` anywhere, else the first `-C` anywhere — so
+  `git -C /other status && git commit -m x` on a protected branch was allowed and the
+  secret scan read `/other`. A `cd` inside `( … )` or `$( … )` ends at the `)`, as in
+  the shell (#70) — for branch policy, a best guess: a paren inside quotes, a heredoc
+  or a `case` pattern is not told from a real one, so the scope can be wrong either
+  way, and the ref gate is the backstop. The secret scan does not depend on it: it
+  reads the repo of **every** commit (#69), the cwd, and every repo any `cd` in the
+  command names, so a key staged in a repo the command visits blocks the commit and
+  the deny names the repo. A merge in progress is exempt so conflicts can be
+  resolved.
   Regardless of branch, a commit is denied with a staged `.env` (templates
   `.env.example|sample|template|dist` and `.env.md` exempt), a provider key (AWS,
   `sk-…`, GitHub, Slack, Google), any PEM private-key header, or a credential literal
   outside test and prose files (`docs/`, `locales/`, `i18n/`, `translations/`,
   `*.md|rst|txt` — keys are still caught
-  there). A line marked `flight-rules: allow` is a reviewed exception.
+  there). A line marked `flight-rules: allow` is a reviewed exception. It reads the
+  index as it stands before the command runs, so anything the same command stages is
+  not in it; the git `pre-commit` hook is the scan that sees those.
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
   rather than silently switching off. It also uses `sed`, which is in every base system
   the hooks target. The compound-command SPLIT is pure bash, though: when that shelled
@@ -465,4 +495,6 @@ engineering against.
 
 The agent guard and the git gate overlap on purpose: `pre-commit-check.sh` stops the
 assistant *before* it runs a bad commit, and `pre-merge-commit` stops *anyone* (human
-or tool that bypassed the agent layer) at merge time. Keep both.
+or tool that bypassed the agent layer) at merge time. The secret scan is layered the
+same way: the agent guard denies early with the reason, and git's `pre-commit` scans
+what the commit really records. Keep both.

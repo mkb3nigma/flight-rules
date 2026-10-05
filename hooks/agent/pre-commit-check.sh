@@ -107,7 +107,8 @@ fi
 #
 # Nothing AFTER the verb is touched: `git log -p` and `git push --force` are untouched,
 # because the run must begin immediately after `git`.
-NORM=$(printf '%s' "$COMMAND" | sed -E 's/git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path|super-prefix|config-env|attr-source)([=][^[:space:]]*|[[:space:]]+[^[:space:]]+)|-[^[:space:]]+))+/git/g')
+NORM_SED='s/git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path|super-prefix|config-env|attr-source)([=][^[:space:]]*|[[:space:]]+[^[:space:]]+)|-[^[:space:]]+))+/git/g'
+NORM=$(printf '%s' "$COMMAND" | sed -E "$NORM_SED")
 
 # $B is what may precede the `git` word. It is a NEGATED class rather than a list
 # of separators: the first version enumerated space/;/&/| and so missed `(git rm)`
@@ -205,6 +206,23 @@ command_segments() {
   local IFS=$';&|()\n'
   for w in $s; do printf '%s\n' "$w"; done
   case "$oldopts" in *f*) ;; *) set +f ;; esac
+}
+
+# The same split, with every `(` and `)` kept as a segment of its own, so the target loop
+# below can see where a subshell opens and closes: a `cd` inside `( … )` or `$( … )` ends
+# at the `)` (#70). The matchers keep the plain split — to them a paren is a separator.
+# A walk from paren to paren, in the C locale. The first version marked the parens with
+# `${s//(/…}`, which bash 3.2 runs super-linearly under a UTF-8 locale: 188s on a 25KB
+# paren-heavy command against 0.01s for the plain split (/dg of #69/#70, 2026-10-05) —
+# and a hook killed by its timeout lets the command run unchecked. This takes 0.7s there.
+command_segments_marked() {
+  local LC_ALL=C s="$1" pre
+  while [[ -n "$s" ]]; do
+    pre=${s%%[()]*}
+    [[ -n "$pre" ]] && command_segments "$pre"
+    [[ ${#pre} -eq ${#s} ]] && break
+    printf '%s\n' "${s:${#pre}:1}"; s=${s:${#pre}+1}
+  done
 }
 
 # The branches a `git push` names. `git push --force origin main` from a feature
@@ -316,66 +334,84 @@ fi
 # ─────────────────────────────────────────────
 # 1. BRANCH POLICY CHECK
 # ─────────────────────────────────────────────
-# Which repo is the command aimed at? The LAST `cd` wins (`cd /a && cd /b && git …`
-# acts in /b), quotes around the path are tolerated, and `git -C <dir>` retargets
-# the repo just as surely as a `cd` does. Without this the guard resolves the
+# Which repo is a segment aimed at? A `cd` changes the directory for every segment AFTER
+# it (`cd /a && cd /b && git …` acts in /b; quotes around the path are tolerated), and a
+# `git -C <dir>` retargets the one segment it sits in. Without this the guard resolves the
 # branch from the shell's cwd and can clear a command that is actually aimed at a
 # protected branch in another checkout.
-WORK_DIR=""
-CD_RE="${B}cd[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]&;|)]+)"
-if [[ "$COMMAND" =~ $CD_RE ]]; then
-  WORK_DIR=$(printf '%s' "$COMMAND" | sed -E "s/.*${B}cd[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]&;|)]+).*/\2/")
-  WORK_DIR="${WORK_DIR#\"}"; WORK_DIR="${WORK_DIR%\"}"
-  WORK_DIR="${WORK_DIR#\'}"; WORK_DIR="${WORK_DIR%\'}"
-elif [[ "$COMMAND" =~ git[[:space:]]+-C[[:space:]]+([^[:space:]]+) ]]; then
-  WORK_DIR="${BASH_REMATCH[1]}"
-fi
-GIT=(git)
-[[ -n "$WORK_DIR" ]] && GIT=(git -C "$WORK_DIR")
+#
+# Resolved ONCE PER COMMAND until #61 — the last `cd` anywhere, else the first `git -C`
+# anywhere — and then used for every segment. Probed 2026-09-17 on dev at c3a708e:
+# `git -C /tmp/somewhere status && git commit -m x` was ALLOWED, because the `-C` on the
+# harmless status retargeted the branch check for the commit; `git commit -m x && cd
+# /other` likewise. The secret scan read the same wrong repo, so a key staged where the
+# commit was actually going was never looked at. Each segment is now resolved on its own,
+# in the loop below.
+# A path: quoted either way, or a bare token.
+PATH_RE="(\"[^\"]+\"|'[^']+'|[^[:space:]&;|)]+)"
+# `cd` counts only as the COMMAND of its segment — first word, or first after the `{`,
+# `then`, `do` or `else` a segment can open with. Matched anywhere, the word inside
+# `git commit -m "cd /tmp"` retargeted the commit to /tmp, where there is no branch to
+# protect, and the commit was allowed (pre-review of this change, 2026-10-04; the
+# per-command version had the same hole, over the whole command).
+CD_RE="^[[:space:]]*([{]|then|do|else)?[[:space:]]*cd[[:space:]]+${PATH_RE}"
+# `-C <dir>` wherever git accepts it before the verb: other flags may precede it
+# (`git --no-pager -C /x commit`); a flag that takes a separate value (`-c k=v`) is not
+# understood here and leaves the segment on the directory in effect, as before.
+DASH_C_RE="${B}git([[:space:]]+-[^C[:space:]][^[:space:]]*)*[[:space:]]+-C[[:space:]]+${PATH_RE}"
+unquote() { local p="$1"; p="${p#\"}"; p="${p%\"}"; p="${p#\'}"; p="${p%\'}"; printf '%s' "$p"; }
 
-# A `cd "$(git rev-parse --show-toplevel)"` or `cd "$VAR"` reaches here unexpanded, so
-# `git -C "$WORK_DIR"` resolves nothing — and that emptied the STAGED DIFF as well as the
-# branch, silently skipping the secret scan. The branch half is backstopped by the ref
-# gate and by being a guard, not a boundary; a leaked key is backstopped by nothing. So
-# the scan falls back to the shell's own cwd, which is the repo being committed to in
-# every realistic version of this. Deliberately NOT applied to the branch policy: falling
-# back there would judge the wrong repo and deny legitimate work in the other direction.
-SCAN_GIT=("${GIT[@]}")
-SCAN_FELL_BACK=0
-if ! "${GIT[@]}" rev-parse --git-dir >/dev/null 2>&1; then
-  SCAN_GIT=(git); SCAN_FELL_BACK=1
-fi
-CURRENT_BRANCH=$("${GIT[@]}" branch --show-current 2>/dev/null)
-
-# Now that the target repo is known, resolve config from it: environment first,
-# then that repo's .ai/flight-rules.conf, then the built-in defaults.
-CONF_ROOT=$("${GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
-[ -z "$CONF_ROOT" ] && CONF_ROOT="${CLAUDE_PROJECT_DIR:-.}"
-CONF_FILE="$CONF_ROOT/.ai/flight-rules.conf"
-
-PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$CONF_FILE")}"
-PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
-WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF_FILE")}"
-WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WORKTREE_DIR}"
-
-# Escape hatch. Installing the plugin now activates this guard, so a project whose
-# normal working branch IS main (or one that simply does not want the worktree
-# workflow) needs a way out that is not "uninstall the plugin". PROTECTED_BRANCHES=off
-# turns the branch policy off. The secret scan below still runs — leaking a key is
-# not a workflow preference.
-GUARD_OFF=0
-if [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]]; then
-  GUARD_OFF=1
-  # Nothing else to check unless some part of this is a commit: the branch policy was
-  # the only gate for the other actions, and there is no staged diff to scan.
-  [[ $HAS_COMMIT -eq 1 ]] || exit 0
-fi
+# resolve_target <dir> — "" is the shell's own cwd. Sets GIT and CURRENT_BRANCH for that
+# repo, the policy read from THAT repo (environment first, then its .ai/flight-rules.conf,
+# then the built-in defaults), whether a merge is in progress there, and whether it is
+# this project at all. Cached on the directory: nearly every command names one.
+RESOLVED_DIR=""; RESOLVED=0
+resolve_target() {
+  local dir="$1" target_root target_repo project_repo
+  [[ $RESOLVED -eq 1 && "$dir" == "$RESOLVED_DIR" ]] && return
+  RESOLVED=1; RESOLVED_DIR="$dir"
+  GIT=(git); [[ -n "$dir" ]] && GIT=(git -C "$dir")
+  CURRENT_BRANCH=$("${GIT[@]}" branch --show-current 2>/dev/null)
+  target_root=$("${GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
+  CONF_FILE="${target_root:-${CLAUDE_PROJECT_DIR:-.}}/.ai/flight-rules.conf"
+  PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$CONF_FILE")}"
+  PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
+  WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF_FILE")}"
+  WORKTREE_DIR="${WORKTREE_DIR:-$DEFAULT_WORKTREE_DIR}"
+  # Escape hatch. Installing the plugin now activates this guard, so a project whose
+  # normal working branch IS main (or one that simply does not want the worktree
+  # workflow) needs a way out that is not "uninstall the plugin". PROTECTED_BRANCHES=off
+  # turns the branch policy off. The secret scan below still runs — leaking a key is
+  # not a workflow preference.
+  GUARD_OFF=0
+  [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]] && GUARD_OFF=1
+  MERGE_IN_PROGRESS=0
+  [[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
+  # Scope the branch policy to the project this hook belongs to. Without this, the
+  # guard applies the project's branch rules to every repo the session touches —
+  # including a sibling repo whose normal working branch IS main. (The secret scan
+  # below stays global on purpose: secrets are bad in any repo.)
+  #
+  # The comparison is between REPOSITORIES, not working trees. A worktree's toplevel
+  # is never the project dir ($WORKTREE_DIR/<name> by construction), so comparing
+  # toplevels switched the whole branch policy off inside the very worktrees the
+  # workflow tells you to work in — every rule below went unenforced there for the
+  # life of this hook. `--git-common-dir` is the shared repo: identical from the main
+  # checkout and from every worktree of it, different for a genuine sibling repo.
+  IN_THIS_PROJECT=1
+  if [[ -n "${CLAUDE_PROJECT_DIR:-}" && -n "$target_root" && "$target_root" != "$CLAUDE_PROJECT_DIR" ]]; then
+    target_repo=$(common_repo_dir "$target_root")
+    project_repo=$(common_repo_dir "$CLAUDE_PROJECT_DIR")
+    [[ -z "$target_repo" || "$target_repo" != "$project_repo" ]] && IN_THIS_PROJECT=0
+  fi
+  return 0
+}
 
 # Case-insensitively, so QA/Qa/qa and Main/main are each one branch to this check.
-# Scoped to these comparisons: the command-matching regexes above must stay
-# case-sensitive, or `git RM` style false matches creep in.
+# Scoped to judge_segment: the command-matching regexes above and the path comparisons
+# in resolve_target must stay case-sensitive, or `git RM` style false matches creep in.
 IS_PROTECTED=0
-BLOCKED_BRANCH="$CURRENT_BRANCH"
+BLOCKED_BRANCH=""
 
 # A command is allowed only if EVERY part of it is allowed. Each segment is classified
 # and judged on its own; the first one that must be refused decides the verdict for the
@@ -454,7 +490,6 @@ judge_segment() {   # sets ACTION/BLOCKED_BRANCH; returns 0 if this segment must
   return 1
 }
 
-shopt -s nocasematch
 # A merge in progress waives some refusals — committing the merge is the whole point of
 # being on the branch — but the waiver belongs to the SEGMENT it applies to, not to the
 # command. Applied after the loop, as it was, the first refused segment both stopped the
@@ -462,55 +497,80 @@ shopt -s nocasematch
 # on a protected branch mid-merge: `git commit -m x` waived (right), branch creation on
 # its own refused (right), and the two together ALLOWED (wrong). A waived segment is
 # skipped and the scan continues.
-MERGE_IN_PROGRESS=0
-[[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
-if [[ "$GUARD_OFF" == "0" ]]; then
-  while IFS= read -r _seg; do
-    judge_segment "$_seg" || continue
-    # Waived: the merge commit itself, and the working-tree commands that resolve a
-    # conflict (`git rm`, `git checkout -- <path>`). Nothing else. The list used to be
-    # stated as an exclusion — everything except force-push and branch-create — which
-    # quietly waived a local delete of a protected branch, something no part of
-    # committing a merge requires.
-    if [[ $MERGE_IN_PROGRESS -eq 1 && ( "$ACTION" == "commit" || "$ACTION" == "destructive" ) ]]; then
-      ACTION=""; BLOCKED_BRANCH="$CURRENT_BRANCH"; continue
-    fi
-    IS_PROTECTED=1; break
-  done < <(command_segments "$NORM")
-fi
-shopt -u nocasematch
-
-# Scope the branch policy to the project this hook belongs to. Without this, the
-# guard applies the project's branch rules to every repo the session touches —
-# including a sibling repo whose normal working branch IS main. (The secret scan
-# below stays global on purpose: secrets are bad in any repo.)
 #
-# The comparison is between REPOSITORIES, not working trees. A worktree's toplevel
-# is never the project dir ($WORKTREE_DIR/<name> by construction), so comparing
-# toplevels switched the whole branch policy off inside the very worktrees the
-# workflow tells you to work in — every rule below went unenforced there for the
-# life of this hook. `--git-common-dir` is the shared repo: identical from the main
-# checkout and from every worktree of it, different for a genuine sibling repo.
-IN_THIS_PROJECT=1
-if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
-  TARGET_ROOT=$("${GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
-  if [[ -n "$TARGET_ROOT" && "$TARGET_ROOT" != "$CLAUDE_PROJECT_DIR" ]]; then
-    TARGET_REPO=$(common_repo_dir "$TARGET_ROOT")
-    PROJECT_REPO=$(common_repo_dir "$CLAUDE_PROJECT_DIR")
-    [[ -z "$TARGET_REPO" || "$TARGET_REPO" != "$PROJECT_REPO" ]] && IN_THIS_PROJECT=0
+# The loop walks the RAW command, not NORM: a segment's `-C <dir>` has to be read before
+# the segment is normalised to `git <verb>` for the matchers — normalising the whole
+# command first is also how the per-segment `-C` was lost (#61). A `cd` is honoured only
+# for the segments after it; a `-C` only for its own.
+# A relative path — `cd .`, `cd ..`, `-C sub` — is relative to the directory in effect
+# when it runs, not to the shell's cwd. Taken literally, `cd /wt && git -C . commit` would
+# judge the cwd's branch for a commit aimed at /wt, and the corpus read for this change
+# found exactly that shape (a relative `-C` after a `cd`) flipping to a false deny.
+rel_to() { case "$2" in /*|'') printf '%s' "$2" ;; *) printf '%s' "${1:+$1/}$2" ;; esac; }
+# A `cd` inside `( … )` or `$( … )` ends at the `)`, as in the shell (#70). It used to
+# persist, so `(cd sub && make) && git commit` was judged — branch and secret scan — in
+# sub; probed 2026-10-05 on dev at 85df164, a key staged in the cwd was let through.
+#
+# The splitter cannot tell a real paren from one inside quotes, a heredoc body or a
+# `case` pattern, so the scope is a best guess, and it is wrong in BOTH directions:
+# `(echo "a ) b" && cd o) && git commit` leaks the cd, and a heredoc's `(see below …
+# :)` around a real cd undoes it (/dg of this change, 2026-10-05). That is acceptable
+# for the branch half, which the ref gate backstops, and not for the scan, which nothing
+# does. So the scan does not rely on it: SCAN_ALSO collects the cwd and every directory
+# any `cd` names, under both readings, and every one of those repos is scanned too. A
+# key staged in a repo the command visits blocks the commit — a false deny at worst, and
+# the deny names the repo.
+CWD_NOW=""                      # the directory in effect: the `cd`s seen so far, chained
+CWD_STACK=()                    # CWD_NOW at each open `(`, restored at its `)`
+CWD_NAIVE=""                    # the same, with every `cd` lasting forever (the old reading)
+SCAN_DIRS=()                    # where every commit is aimed, under the scoped reading
+SCAN_ALSO=("")                  # every other directory the command could be committing in
+# Each directory once, by its spelling — every entry costs git calls in the scan, and a
+# heredoc'd script can carry hundreds of `cd` lines (/dg security pass, 2026-10-05).
+also() { local d; for d in "$@"; do
+  case "$ALSO_SEEN" in *"|$d|"*) ;; *) ALSO_SEEN="$ALSO_SEEN$d|"; SCAN_ALSO+=("$d") ;; esac
+done; }
+ALSO_SEEN="||"
+while IFS= read -r _raw; do
+  case "$_raw" in
+    "(") CWD_STACK+=("$CWD_NOW"); continue ;;
+    ")") if [[ ${#CWD_STACK[@]} -gt 0 ]]; then
+           CWD_NOW="${CWD_STACK[${#CWD_STACK[@]}-1]}"; unset "CWD_STACK[${#CWD_STACK[@]}-1]"
+         fi
+         continue ;;
+  esac
+  if [[ "$_raw" =~ $CD_RE ]]; then
+    _to=$(unquote "${BASH_REMATCH[2]}")
+    CWD_NOW=$(rel_to "$CWD_NOW" "$_to"); CWD_NAIVE=$(rel_to "$CWD_NAIVE" "$_to")
+    also "$CWD_NOW" "$CWD_NAIVE"
   fi
-fi
+  _dir="$CWD_NOW"; _ndir="$CWD_NAIVE"
+  if [[ "$_raw" =~ $DASH_C_RE ]]; then
+    _to=$(unquote "${BASH_REMATCH[3]}")
+    _dir=$(rel_to "$CWD_NOW" "$_to"); _ndir=$(rel_to "$CWD_NAIVE" "$_to")
+  fi
+  _seg=$(printf '%s' "$_raw" | sed -E "$NORM_SED")
+  is_commit "$_seg" && { SCAN_DIRS+=("$_dir"); also "$_ndir"; }
+  resolve_target "$_dir"
+  # Another repo's branches are not ours to police, and a repo that turned the policy off
+  # has none — but only for the segment aimed there, not for its neighbours.
+  [[ $IN_THIS_PROJECT -eq 0 || $GUARD_OFF -eq 1 ]] && continue
+  shopt -s nocasematch
+  judge_segment "$_seg"; _refused=$?
+  shopt -u nocasematch
+  [[ $_refused -eq 0 ]] || continue
+  # Waived: the merge commit itself, and the working-tree commands that resolve a
+  # conflict (`git rm`, `git checkout -- <path>`). Nothing else. The list used to be
+  # stated as an exclusion — everything except force-push and branch-create — which
+  # quietly waived a local delete of a protected branch, something no part of
+  # committing a merge requires.
+  if [[ $MERGE_IN_PROGRESS -eq 1 && ( "$ACTION" == "commit" || "$ACTION" == "destructive" ) ]]; then
+    ACTION=""; BLOCKED_BRANCH="$CURRENT_BRANCH"; continue
+  fi
+  IS_PROTECTED=1; break
+done < <(command_segments_marked "$COMMAND")
 
-# Allow merge commits on protected branches — merging feature branches in is the
-# intended workflow — and the working-tree commands that resolving conflicts needs.
-# A force-push gets no such pass: nothing about a merge in progress calls for one.
-GIT_DIR_PATH=$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)
-if [[ "$IN_THIS_PROJECT" == "0" ]]; then
-  # Another repo — its branch policy is not ours to enforce
-  :
-# The merge waiver used to sit here, judging the one elected action. It is applied per
-# segment in the loop above instead — see the note there.
-elif [[ "$ACTION" == "branch-create" ]]; then
+if [[ "$ACTION" == "branch-create" ]]; then
   deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
@@ -566,83 +626,132 @@ fi
 # ─────────────────────────────────────────────
 # 2. SECRET LEAK CHECK
 # ─────────────────────────────────────────────
-STAGED_DIFF=$("${SCAN_GIT[@]}" diff --cached 2>/dev/null)
-# core.quotePath=false: by default git prints a non-ASCII name as "c\303\266nfig.py"
-# in quotes, and feeding that back to `git diff -- <path>` matches nothing — so the
-# file was silently never scanned for credential literals.
-STAGED_FILES=$("${SCAN_GIT[@]}" -c core.quotePath=false diff --cached --name-only 2>/dev/null)
-FINDINGS=""
+# scan_repo — the checks, over the staged diff of the repo SCAN_GIT names. Appends to
+# FINDINGS; run once per repo a commit in this command is aimed at.
+scan_repo() {
+  STAGED_DIFF=$("${SCAN_GIT[@]}" diff --cached 2>/dev/null)
+  # core.quotePath=false: by default git prints a non-ASCII name as "c\303\266nfig.py"
+  # in quotes, and feeding that back to `git diff -- <path>` matches nothing — so the
+  # file was silently never scanned for credential literals.
+  STAGED_FILES=$("${SCAN_GIT[@]}" -c core.quotePath=false diff --cached --name-only 2>/dev/null)
 
-# Added lines only, leading "+" stripped. Each file's `+++ b/path` header is dropped
-# as its own step: the first version folded that into every pattern as `^\+[^+]`,
-# which also demanded one character between the "+" and the secret — so an
-# assignment at column zero, the commonest place for one, was never matched.
-added_lines() { grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//'; }
-ADDED=$(printf '%s\n' "$STAGED_DIFF" | added_lines)
-hit() { printf '%s\n' "$ADDED" | grep -qE "$1"; }
+  # Added lines only, leading "+" stripped. Each file's `+++ b/path` header is dropped
+  # as its own step: the first version folded that into every pattern as `^\+[^+]`,
+  # which also demanded one character between the "+" and the secret — so an
+  # assignment at column zero, the commonest place for one, was never matched.
+  added_lines() { grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//'; }
+  ADDED=$(printf '%s\n' "$STAGED_DIFF" | added_lines)
+  hit() { printf '%s\n' "$ADDED" | grep -qE "$1"; }
 
-# .env file staged (matches .env, .env.local, path/.env — but not the documented
-# templates: .env.example/.sample/.template/.dist, or a docs page named .env.md)
-if printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -qvE '\.env\.(example|sample|template|dist|md)$'; then
-  FINDINGS="$FINDINGS\n  • .env file is staged for commit"
-fi
-
-# These six patterns are also written out in skills/pre-merge-check/SKILL.md, which a
-# plugin consumer's shell cannot read this file to get them from. Change one here and
-# catalogue.test.sh fails until the skill matches.
-# Provider key formats. Each is a fixed prefix plus a run of the provider's own
-# alphabet; the prefixes are the stable part, so keep the runs generous rather than
-# exact. `sk-` keys now carry hyphens and underscores (sk-ant-…, sk-proj-…) — the
-# first version required 32 unbroken alphanumerics and missed both.
-if hit 'AKIA[A-Z0-9]{16}'; then
-  FINDINGS="$FINDINGS\n  • AWS access key pattern detected (AKIA...)"
-fi
-if hit '(^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}'; then
-  FINDINGS="$FINDINGS\n  • API key pattern detected (sk-... — OpenAI/Anthropic style)"
-fi
-if hit 'gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}'; then
-  FINDINGS="$FINDINGS\n  • GitHub token pattern detected (ghp_/gho_/github_pat_...)"
-fi
-if hit 'xox[baprs]-[A-Za-z0-9-]{10,}'; then
-  FINDINGS="$FINDINGS\n  • Slack token pattern detected (xox...)"
-fi
-if hit 'AIza[0-9A-Za-z_-]{35}'; then
-  FINDINGS="$FINDINGS\n  • Google API key pattern detected (AIza...)"
-fi
-# Any PEM private key: RSA, EC, DSA, OPENSSH, ENCRYPTED, or the bare PKCS#8 header.
-if hit 'BEGIN [A-Z ]*PRIVATE KEY'; then
-  FINDINGS="$FINDINGS\n  • Private key header detected"
-fi
-
-# Hardcoded credential literals in non-test source files only. Test fixtures
-# legitimately use literal passwords, so test files are excluded by the common
-# naming conventions: tests/ and __tests__/ dirs, pytest's test_*.py, Go/Python
-# *_test.*, Jest/Vitest *.test.* and *.spec.*, conftest.py.
-TEST_FILE_RE='(^|/)(tests?|__tests__|spec|fixtures)/|(^|/)test_[^/]*\.py$|_test\.(py|go|ts|tsx|js|jsx)$|\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$|conftest\.py$'
-# Prose and UI strings are not credentials either: a docs page's `secret = "your-…"`
-# or a locale file's "Password must be 8 characters" is the commonest false block.
-# Provider-key patterns above still scan these files — a real key is a leak anywhere.
-PROSE_FILE_RE='(^|/)(docs?|locales?|i18n|translations?)/|\.(md|rst|txt)$'
-NON_TEST=()
-while IFS= read -r -d '' f; do
-  [[ -n "$f" && ! "$f" =~ $TEST_FILE_RE && ! "$f" =~ $PROSE_FILE_RE ]] && NON_TEST+=("$f")
-done < <("${SCAN_GIT[@]}" diff --cached --name-only -z 2>/dev/null)
-if [[ ${#NON_TEST[@]} -gt 0 ]]; then
-  NON_TEST_ADDED=$("${SCAN_GIT[@]}" diff --cached -- "${NON_TEST[@]}" 2>/dev/null | added_lines)
-  # Case-insensitive (PASSWORD, ApiKey), `=` or `:` (YAML/JSON), quoted key tolerated
-  # ("password": "…"). Obvious placeholders are let through so an example does not
-  # block a commit: <angle-bracket>, REDACTED, CHANGEME, EXAMPLE, your-…, …-here,
-  # xxxxxxxx. A line carrying `flight-rules: allow` is a reviewed, deliberate
-  # exception — it is greppable, so it is also auditable.
-  if printf '%s\n' "$NON_TEST_ADDED" \
-      | grep -iE '(password|passwd|secret|token|api_?key)["'"'"']?[[:space:]]*[=:][[:space:]]*["'"'"'][^"'"'"'$\{]{8,}' \
-      | grep -v 'flight-rules: allow' \
-      | grep -qviE '<[^>]*>|redacted|changeme|example|placeholder|your[-_ ]|[-_ ]here["'"'"']|x{8,}|\*{8,}'; then
-    FINDINGS="$FINDINGS\n  • Possible hardcoded credential (password/secret/token/api_key assigned to a string literal)"
+  # .env file staged (matches .env, .env.local, path/.env — but not the documented
+  # templates: .env.example/.sample/.template/.dist, or a docs page named .env.md)
+  if printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -qvE '\.env\.(example|sample|template|dist|md)$'; then
+    FINDINGS="$FINDINGS\n  • .env file is staged for commit"
   fi
-fi
 
-if [ -n "$FINDINGS" ]; then
+  # These six patterns are also written out in skills/pre-merge-check/SKILL.md, which a
+  # plugin consumer's shell cannot read this file to get them from, and in the git
+  # pre-commit hook. Change one here and catalogue.test.sh fails until both match.
+  # Provider key formats. Each is a fixed prefix plus a run of the provider's own
+  # alphabet; the prefixes are the stable part, so keep the runs generous rather than
+  # exact. `sk-` keys now carry hyphens and underscores (sk-ant-…, sk-proj-…) — the
+  # first version required 32 unbroken alphanumerics and missed both.
+  if hit 'AKIA[A-Z0-9]{16}'; then
+    FINDINGS="$FINDINGS\n  • AWS access key pattern detected (AKIA...)"
+  fi
+  if hit '(^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}'; then
+    FINDINGS="$FINDINGS\n  • API key pattern detected (sk-... — OpenAI/Anthropic style)"
+  fi
+  if hit 'gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}'; then
+    FINDINGS="$FINDINGS\n  • GitHub token pattern detected (ghp_/gho_/github_pat_...)"
+  fi
+  if hit 'xox[baprs]-[A-Za-z0-9-]{10,}'; then
+    FINDINGS="$FINDINGS\n  • Slack token pattern detected (xox...)"
+  fi
+  if hit 'AIza[0-9A-Za-z_-]{35}'; then
+    FINDINGS="$FINDINGS\n  • Google API key pattern detected (AIza...)"
+  fi
+  # Any PEM private key: RSA, EC, DSA, OPENSSH, ENCRYPTED, or the bare PKCS#8 header.
+  if hit 'BEGIN [A-Z ]*PRIVATE KEY'; then
+    FINDINGS="$FINDINGS\n  • Private key header detected"
+  fi
+
+  # Hardcoded credential literals in non-test source files only. Test fixtures
+  # legitimately use literal passwords, so test files are excluded by the common
+  # naming conventions: tests/ and __tests__/ dirs, pytest's test_*.py, Go/Python
+  # *_test.*, Jest/Vitest *.test.* and *.spec.*, conftest.py.
+  TEST_FILE_RE='(^|/)(tests?|__tests__|spec|fixtures)/|(^|/)test_[^/]*\.py$|_test\.(py|go|ts|tsx|js|jsx)$|\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$|conftest\.py$'
+  # Prose and UI strings are not credentials either: a docs page's `secret = "your-…"`
+  # or a locale file's "Password must be 8 characters" is the commonest false block.
+  # Provider-key patterns above still scan these files — a real key is a leak anywhere.
+  PROSE_FILE_RE='(^|/)(docs?|locales?|i18n|translations?)/|\.(md|rst|txt)$'
+  NON_TEST=()
+  while IFS= read -r -d '' f; do
+    [[ -n "$f" && ! "$f" =~ $TEST_FILE_RE && ! "$f" =~ $PROSE_FILE_RE ]] && NON_TEST+=("$f")
+  done < <("${SCAN_GIT[@]}" diff --cached --name-only -z 2>/dev/null)
+  if [[ ${#NON_TEST[@]} -gt 0 ]]; then
+    NON_TEST_ADDED=$("${SCAN_GIT[@]}" diff --cached -- "${NON_TEST[@]}" 2>/dev/null | added_lines)
+    # Case-insensitive (PASSWORD, ApiKey), `=` or `:` (YAML/JSON), quoted key tolerated
+    # ("password": "…"). Obvious placeholders are let through so an example does not
+    # block a commit: <angle-bracket>, REDACTED, CHANGEME, EXAMPLE, your-…, …-here,
+    # xxxxxxxx. A line carrying `flight-rules: allow` is a reviewed, deliberate
+    # exception — it is greppable, so it is also auditable.
+    if printf '%s\n' "$NON_TEST_ADDED" \
+        | grep -iE '(password|passwd|secret|token|api_?key)["'"'"']?[[:space:]]*[=:][[:space:]]*["'"'"'][^"'"'"'$\{]{8,}' \
+        | grep -v 'flight-rules: allow' \
+        | grep -qviE '<[^>]*>|redacted|changeme|example|placeholder|your[-_ ]|[-_ ]here["'"'"']|x{8,}|\*{8,}'; then
+      FINDINGS="$FINDINGS\n  • Possible hardcoded credential (password/secret/token/api_key assigned to a string literal)"
+    fi
+  fi
+}
+
+# Every commit's repo, not only the first one's (#69): `git -C other commit -m a && git
+# commit -m b` scanned `other` and never looked at the key staged here. Probed 2026-10-05
+# on dev at 85df164. Then every repo the command visits (SCAN_ALSO, above). Deduplicated
+# by toplevel, so one repo named two ways is scanned once.
+#
+# A target that cannot be resolved falls back to the cwd. A `cd "$(git rev-parse
+# --show-toplevel)"` or `cd "$VAR"` reaches here unexpanded, so `git -C` on it resolves
+# nothing — and that emptied the STAGED DIFF as well as the branch, silently skipping the
+# scan. The branch half is backstopped by the ref gate and by being a guard, not a
+# boundary; a leaked key is backstopped by nothing. So the scan falls back to the shell's
+# own cwd, which is the repo being committed to in every realistic version of this.
+# Deliberately NOT applied to the branch policy: falling back there would judge the wrong
+# repo and deny legitimate work in the other direction.
+SCANNED="|"; N_SCANNED=0; ALL_FINDINGS=""; LABELLED_FINDINGS=""; SCAN_FELL_BACK=0
+_n_targets=${#SCAN_DIRS[@]}
+# Bounded, and closed when the bound is hit: a scan that runs past the hook's timeout is
+# killed, and a killed hook lets the command through unchecked. Of the 949 commands in
+# this machine's transcripts that mention a commit, none cds to more than 6 places
+# (2026-10-05); each can add two entries here, so 24 leaves room.
+MAX_SCAN_DIRS=24
+if [[ ${#SCAN_ALSO[@]} -gt $MAX_SCAN_DIRS ]]; then
+  deny "🔐 BLOCKED: this command commits and changes directory into ${#SCAN_ALSO[@]} places — more than the secret scan will check ($MAX_SCAN_DIRS).
+
+Split it: run the commit in its own command, from the repo it belongs to."
+  exit 0
+fi
+for _sd in "${SCAN_DIRS[@]}" "${SCAN_ALSO[@]}"; do
+  SCAN_GIT=(git); [[ -n "$_sd" ]] && SCAN_GIT=(git -C "$_sd")
+  if ! "${SCAN_GIT[@]}" rev-parse --git-dir >/dev/null 2>&1; then
+    SCAN_GIT=(git)
+    # The note is about the COMMIT's target; a visited directory that resolves nowhere
+    # adds nothing, the cwd is scanned anyway.
+    [[ $_n_targets -gt 0 ]] && SCAN_FELL_BACK=1
+  fi
+  _n_targets=$((_n_targets-1))
+  _top=$("${SCAN_GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
+  case "$SCANNED" in *"|$_top|"*) continue ;; esac
+  SCANNED="$SCANNED$_top|"; N_SCANNED=$((N_SCANNED+1))
+  FINDINGS=""; scan_repo
+  [[ -n "$FINDINGS" ]] || continue
+  ALL_FINDINGS="$ALL_FINDINGS$FINDINGS"
+  LABELLED_FINDINGS="$LABELLED_FINDINGS\n  In ${_top:-$(pwd)}:$FINDINGS"
+done
+# Name the repo when more than one was scanned, or the agent cannot tell which to fix.
+[[ $N_SCANNED -gt 1 ]] && ALL_FINDINGS="$LABELLED_FINDINGS"
+
+if [ -n "$ALL_FINDINGS" ]; then
 SCAN_NOTE=""
 # If the command named a target this hook could not resolve, say which repo was actually
 # scanned. Without it the agent is told "a staged secret" with no file and no repo, for a
@@ -651,7 +760,7 @@ SCAN_NOTE=""
 
 "
   deny "${SCAN_NOTE}🔐 BLOCKED: Possible secret detected in staged files:
-$(echo -e "$FINDINGS")
+$(echo -e "$ALL_FINDINGS")
 
 Remove these before committing. If this is a false positive, unstage and re-check."
   exit 0
