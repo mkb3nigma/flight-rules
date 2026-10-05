@@ -174,7 +174,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   are normalised away so every matcher sees `git <verb>`. Until #61 it was resolved
   once per command — the last `cd` anywhere, else the first `-C` anywhere — so
   `git -C /other status && git commit -m x` on a protected branch was allowed and the
-  secret scan read `/other`. A merge in progress is exempt so conflicts can be
+  secret scan read `/other`. A `cd` inside `( … )` or `$( … )` ends at the `)`, as in
+  the shell (#70) — for branch policy, a best guess: a paren inside quotes, a heredoc
+  or a `case` pattern is not told from a real one, so the scope can be wrong either
+  way, and the ref gate is the backstop. The secret scan does not depend on it: it
+  reads the repo of **every** commit (#69), the cwd, and every repo any `cd` in the
+  command names, so a key staged in a repo the command visits blocks the commit and
+  the deny names the repo. A merge in progress is exempt so conflicts can be
   resolved.
   Regardless of branch, a commit is denied with a staged `.env` (templates
   `.env.example|sample|template|dist` and `.env.md` exempt), a provider key (AWS,
