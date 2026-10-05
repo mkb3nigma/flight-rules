@@ -29,10 +29,10 @@
 #    you are merging INTO. If HEAD has no conf, fall back to the default rather than
 #    to the working tree; failing open would restore the hole.
 #
-#    hooks/agent/pre-commit-check.sh deliberately still reads the working tree: it
-#    guards against mistakes in an interactive session, where an uncommitted config
-#    edit SHOULD take effect immediately. Only the merge gate has to resist the thing
-#    it is gating.
+#    The plugin's agent guard, pre-commit-check.sh, deliberately still reads the
+#    working tree: it guards against mistakes in an interactive session, where an
+#    uncommitted config edit SHOULD take effect immediately. Only the merge gate has
+#    to resist the thing it is gating.
 #
 # Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
 # install.sh once per clone.

@@ -568,6 +568,24 @@ grep -q "git branch -d 'feature/x'  ← just merged" "$D/.claude/post-merge-note
 say "$?" "0" "…and offers the local branch for deletion as just merged"
 rm -rf "$D" "$O"
 
+
+echo
+echo "install.sh lists hooks, not directories or dotted files:"
+# A consuming project may keep its own agent/ scripts under .ai/hooks/; git only runs
+# bare file names at the top level, so a directory is not an active hook and must not
+# be listed as one. The positive assertion on the same run keeps the negatives honest.
+D=$(mkrepo)
+cp "$H/reference-transaction" "$H/install.sh" "$D/.ai/hooks/" || die "could not copy install.sh"
+mkdir -p "$D/.ai/hooks/agent"; touch "$D/.ai/hooks/README.md"
+OUT=$(cd "$D" && bash .ai/hooks/install.sh 2>&1); RC=$?
+say "$RC" "0" "install.sh exits 0 with an agent/ subdirectory and a README beside the hooks"
+grep -qE '^ +pre-merge-commit$' <<<"$OUT"
+say "$?" "0" "install.sh lists pre-merge-commit as an active hook"
+grep -qE '^ +agent$' <<<"$OUT"
+say "$?" "1" "install.sh does not list the agent/ directory as an active hook"
+grep -q 'README' <<<"$OUT"
+say "$?" "1" "install.sh still skips dotted files"
+rm -rf "$D"
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
