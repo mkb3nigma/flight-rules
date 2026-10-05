@@ -320,8 +320,16 @@ check "push -f production feature/x"            allow feature/x 'git push -f pro
 
 echo "Target directory — the last cd wins, and quotes are tolerated:"
 # Regression: only the FIRST `cd` was honoured, so `cd /tmp && cd <repo> && git rm`
-# resolved the branch from /tmp (no repo, no branch) and was allowed on main.
-check "last cd wins"                     deny  main 'cd /tmp && cd . && git rm f.txt'
+# judged /tmp. Since #61 a relative `cd` chains onto the one before it, which is what
+# the shell does — so the case names the repo absolutely instead of as `cd .`.
+D=$(make_repo main)
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<"$(jq -n --arg c "cd /tmp && cd $D && git rm f.txt" '{tool_input:{command:$c}}')" 2>/dev/null); RC=$?
+if [[ $RC -ne 0 ]]; then FAIL=$((FAIL+1)); printf '  ❌ harness: the hook exited %s on the last-cd case\n' "$RC"
+elif grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then PASS=$((PASS+1)); printf '  ✅ last cd wins\n'
+else FAIL=$((FAIL+1)); printf '  ❌ last cd wins — expected deny, got allow\n'; fi
+rm -rf "$D"
+check "a relative cd chains onto the cd before it" allow main 'cd /tmp && cd . && git rm f.txt'
 check "double-quoted cd path"            deny  main 'cd "." && git rm f.txt'
 check "single-quoted cd path"            deny  main "cd '.' && git rm f.txt"
 
@@ -612,6 +620,9 @@ echo "Shape coverage — every wrapper crossed with every dangerous core:"
 # and 150+ fresh clones would dominate the suite's runtime for no extra coverage.
 GEN_MAIN=$(make_repo main)
 GEN_FEAT=$(make_repo feature/x)
+# A sibling repo that some wrappers name with `git -C` or `cd`: the segment that names it
+# is aimed there, and must not drag the verdict on the OTHER segments with it (#61).
+GEN_OTHER=$(make_repo feature/elsewhere)
 
 gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
   local expect="$1" where="$2" wname="$3" cmd="$4" dir out got rc
@@ -645,7 +656,19 @@ gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
 # hook with `;` deleted from E passes a suite without brace-group and fails 18 cases with
 # it — proven, not assumed. `if-then`, `for-loop`, `cmd-subst` and `semi-echo` caught
 # nothing the survivors do not.
-WRAP_NAME=( bare subshell brace-group cd-prefix and-echo echo-and pipe newline-after-main )
+# The three RETARGETING wrappers (#61, probed 2026-09-17 on dev at c3a708e): a `git -C
+# <other-repo>` on a harmless segment, before or after the core, and a `cd <other-repo>`
+# AFTER it. The target used to be resolved once per command — the last `cd` anywhere,
+# else the first `git -C` anywhere — so each of these judged the core against the other
+# repo's branch and ALLOWED a commit on a protected branch. An assistant only has to
+# inspect another worktree and commit in the same line. `cd` must only affect the
+# segments after it, and `-C` only its own segment.
+# The two SUBSHELL-cd wrappers (#70, probed 2026-10-05 on dev at 85df164): a `cd` inside
+# `( … )` or `$( … )` ends at the `)` in the shell, but persisted for the guard, so the
+# core was judged in the other repo — and allowed. `(cd sub && make) && git commit` is
+# the everyday shape.
+WRAP_NAME=( bare subshell brace-group cd-prefix and-echo echo-and pipe newline-after-main
+            other-C-before other-C-after cd-other-after subshell-cd-other cmd-subst-cd-other )
 WRAP_FMT=(  '%s'
             '(%s)'
             '{ %s; }'
@@ -654,7 +677,12 @@ WRAP_FMT=(  '%s'
             'echo start && %s'
             '%s | cat'
             '%s
-echo "=== main now ==="' )
+echo "=== main now ==="'
+            "git -C $GEN_OTHER status && %s"
+            "%s && git -C $GEN_OTHER status"
+            "%s && cd $GEN_OTHER"
+            "(cd $GEN_OTHER && true) && %s"
+            "x=\$(cd $GEN_OTHER && pwd) && %s" )
 
 # The GIT-INVOCATION PREFIX axis. Everything between the word `git` and its verb.
 # `NORM` normalised away only `-C <dir>` and `-c key=val`, so every other global option
@@ -818,7 +846,144 @@ for pair in "git status|echo main" \
 done
 printf '  ✅ 5 harmless pairs\n'
 
-rm -rf "$GEN_MAIN" "$GEN_FEAT"
+rm -rf "$GEN_MAIN" "$GEN_FEAT" "$GEN_OTHER"
+
+echo "The target is resolved per segment, not per command (#61):"
+# The product above proves a harmless segment aimed elsewhere cannot clear the core. The
+# cases here pin the other half of the rule: a segment GENUINELY aimed at another repo is
+# still not ours to judge, a `-C` on the segment itself beats an earlier `cd`, and the
+# secret scan reads the repo the COMMIT is aimed at — which the same bug also retargeted:
+# `git -C other status && git commit` from a repo with a staged key scanned `other`.
+D=$(make_repo dev); O=$(make_repo feature/elsewhere)
+seg() {   # seg <expect> <desc> <command>   — run from $D with the project scoped to $D
+  local expect="$1" desc="$2" cmd="$3" out rc got
+  out=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+seg deny  "the #61 shape: -C elsewhere on a status, then a bare commit"   "git -C $O status && git commit -m x"
+seg deny  "cd elsewhere AFTER the commit does not retarget it"            "git commit -m x && cd $O"
+seg deny  "-C on the commit segment beats an earlier cd elsewhere"        "cd $O && git -C $D commit -m x"
+seg deny  "cd elsewhere, then cd back, then commit"                       "cd $O && git status && cd $D && git commit -m x"
+seg allow "cd elsewhere, then commit: aimed there, not ours"              "cd $O && git commit -m x"
+seg allow "-C elsewhere on the commit itself: aimed there, not ours"      "git -C $O commit -m x"
+seg allow "-C elsewhere on a status alone is just a status"               "git -C $O status"
+seg allow "a relative -C after a cd is relative to the cd, not the cwd"  "cd $O && git -C . commit -m x"
+seg allow "…and so is a relative cd in a subshell"                         "cd $O && (cd . && git commit -m x)"
+seg deny  "a relative -C with no cd is relative to the cwd"                "git -C . commit -m x"
+# From the cross-family pre-review of this change (2026-10-04). `cd` is a directory change
+# only as the command of its segment; `-C` is found after other global flags and may be
+# quoted.
+seg deny  "'cd /tmp' inside a commit message does not retarget the commit" 'git commit -m "cd /tmp"'
+seg deny  "…nor does an echo of it in an earlier segment"                  'echo "cd /tmp" && git commit -m x'
+seg allow "cd as the first command of a brace group is a cd"              "{ cd $O && git commit -m x; }"
+seg allow "…and, as in the shell, it persists past the closing brace"      "{ cd $O && git status; } && git commit -m x"
+seg allow "-C after another global flag is still read"                     "git --no-pager -C $O commit -m x"
+seg deny  "…and judged where it points"                                    "cd $O && git --no-pager -C $D commit -m x"
+mkdir -p "$O/with space" && git init -q -b feature/spaced "$O/with space" 2>/dev/null \
+  && git -C "$O/with space" commit -q --allow-empty -m i 2>/dev/null
+seg allow "a quoted -C path with a space resolves whole"                   "git -C \"$O/with space\" commit -m x"
+# The scan follows the commit. A key staged HERE must be caught when the commit is here,
+# whatever another segment names; and a commit aimed at the other repo scans that repo.
+# Assembled at run time: the guard scans this file's own staged diff, and a literal
+# key here is exactly what it blocks (it did, 2026-10-04 — the right answer).
+printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$D/leak.txt"; git -C "$D" add leak.txt >/dev/null 2>&1
+git -C "$D" checkout -q -b feature/here 2>/dev/null   # off the protected branch, so only the scan can deny
+seg deny  "staged key here is caught despite -C elsewhere on another segment" "git -C $O status && git commit -m x"
+seg deny  "…and despite a cd elsewhere after the commit"                       "git commit -m x && cd $O"
+# Allowed until 2026-10-05: the commit is aimed at $O, which is clean. Now the cwd is
+# scanned whatever the command's cd's say, because the scope reading can be fooled (see
+# below), so a key staged where the command was typed blocks it — and the deny names it.
+seg deny  "a commit aimed at the other repo still scans the cwd"                 "cd $O && git commit -m x"
+# A `cd` inside `( … )` or `$( … )` ends at the `)` (#70). It used to persist for the
+# guard, so the scan read the other repo, found it clean, and let the key here through.
+seg deny  "a cd inside ( … ) does not move the scan off the commit's repo"      "(cd $O && make) && git commit -m x"
+seg deny  "…nor does one inside \$( … )"                                         "x=\$(cd $O && pwd) && git commit -m x"
+seg deny  "an unbalanced ) in a commit message does not disturb the target"     'git commit -m "fix)" && true'
+# The splitter's paren scope is a guess (quotes, heredocs, `case` are not parsed), so the
+# scan does not use it: the cwd and every repo a `cd` names are scanned too. Each of these
+# fooled the scoped reading in review (/dg, 2026-10-05) and is caught by the union.
+seg deny  "a quoted ) inside a subshell, then a cd: the cwd is still scanned"    "(echo \"doing ) thing\" && cd $O && true) && git commit -m x"
+seg deny  "a case pattern ) inside a subshell, then a cd"                        "(case x in x) cd $O ;; esac) && git commit -m x"
+seg deny  "a quoted ( inside a subshell pairs with the real )"                   "(cd $O && git commit -m \"wip (part\") && git commit -m y"
+seg deny  "a cd in a pipeline runs in a subshell"                                "cd $O | true; git commit -m x"
+seg deny  "heredoc text with stray parens around a real cd"                      "cat > n.md <<'EOF'
+- see (below
+EOF
+cd $O
+cat > m.md <<'EOF'
+- done :)
+EOF
+cd $D && git commit -m x"
+seg deny  "the commit-message heredoc with a 1) list, key here"                  "git commit -m \"\$(cat <<'EOF'
+fix: thing (scope)
+
+1) first
+2) second
+EOF
+)\""
+seg deny  "a commit inside a subshell elsewhere still scans the cwd it was typed in" "(cd $O && git commit -m x)"
+# Every commit's repo is scanned, not the first one's (#69). A command that commits in
+# two repos had the second one's staged diff never looked at.
+seg deny  "a key here is caught when another repo's commit comes first"         "git -C $O commit -m a && git commit -m x"
+git -C "$D" reset -q leak.txt 2>/dev/null
+printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$O/leak.txt"; git -C "$O" add leak.txt >/dev/null 2>&1
+seg deny  "a key staged in the SECOND commit's repo is caught (-C)"             "git commit -m x && git -C $O commit -m b"
+seg deny  "…and when the second commit is reached by cd"                         "git commit -m x && cd $O && git commit -m b"
+seg allow "a key in a repo the command never names is not its business"        "git commit -m x"
+seg deny  "a key in a repo the command cds through is — a false deny, by design" "cd $O && git status; cd $D && git commit -m x"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<"$(jq -n --arg c "cd $O && git status; cd $D && git commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
+if grep -qF "In $O:" <<<"$OUT"; then PASS=$((PASS+1)); printf '  ✅ …and the deny names the repo holding the key\n'
+else FAIL=$((FAIL+1)); printf '  ❌ …and the deny names the repo holding the key\n     got: %s\n' "$OUT"; fi
+git -C "$O" reset -q leak.txt 2>/dev/null
+printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$D/leak.txt"; git -C "$D" add leak.txt >/dev/null 2>&1
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<"$(jq -n --arg c "git commit -m a && git commit -m b" '{tool_input:{command:$c}}')" 2>/dev/null)
+if grep -q 'AWS access key' <<<"$OUT" && ! grep -q '  In /' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ two commits in one repo: one finding, no repo label\n'
+else FAIL=$((FAIL+1)); printf '  ❌ two commits in one repo: one finding, no repo label\n     got: %s\n' "$OUT"; fi
+rm -rf "$D" "$O"
+
+echo "Paren scope still decides the BRANCH verdict (#70):"
+# The scan no longer depends on the scope; the branch policy still does, so the stack is
+# pinned here, from a protected checkout with nothing staged.
+D=$(make_repo dev); O=$(make_repo feature/elsewhere)
+seg allow "a commit inside ( cd elsewhere … ) is aimed there"                    "(cd $O && git commit -m x)"
+seg allow "a closing ) restores the directory of its own (, not the cwd"         "(cd $O && (cd $D && true) && git commit -m x)"
+seg deny  "…and the outer ) restores the cwd"                                    "(cd $O && (cd $D && true)) && git commit -m x"
+seg deny  "\$(( )) arithmetic is balanced and changes nothing"                  "n=\$((1+2)) && git commit -m x"
+rm -rf "$D" "$O"
+
+echo "The scan is bounded, and closed at the bound:"
+# Every directory a cd names is scanned, at a git call or two each. A command with
+# hundreds of them would run the hook past its timeout, and a killed hook lets the
+# command through unchecked — so past the bound it denies instead. 2026-10-05.
+D=$(make_repo feature/x)
+MANY=$(for i in $(seq 1 100); do printf 'cd /tmp/d%d\n' "$i"; done; echo "cd $D && git commit -m x")
+SECONDS=0
+seg deny  "a commit after 100 distinct cd targets is denied, not scanned"        "$MANY"
+T=$SECONDS
+if [[ $T -le 20 ]]; then PASS=$((PASS+1)); printf '  ✅ …in %ss\n' "$T"
+else FAIL=$((FAIL+1)); printf '  ❌ …in %ss (want ≤20)\n' "$T"; fi
+SAME=$(for i in $(seq 1 100); do printf 'cd %s\n' "$D"; done; echo "git commit -m x")
+seg allow "one directory named 100 times is one entry, not a hundred"           "$SAME"
+rm -rf "$D"
+
+echo "The paren splitter stays linear on a long command:"
+# bash 3.2 runs \${s//(/…} super-linearly under a UTF-8 locale: the first version of the
+# marked splitter took 188s on this input, past any hook timeout — and a hook that is
+# killed lets the command through unchecked. 2026-10-05.
+eval "$(sed -n '/^command_segments() {/,/^}/p;/^command_segments_marked() {/,/^}/p' "$HOOK")"
+BIG=$(for i in $(seq 1 1000); do printf 'x%d = f(g(%d), h(%d))\n' "$i" "$i" "$i"; done)
+SECONDS=0; NSEG=$(LC_ALL=en_US.UTF-8 command_segments_marked "$BIG" | grep -c '^[()]$'); T=$SECONDS
+if [[ $NSEG -eq 6000 && $T -le 10 ]]; then PASS=$((PASS+1)); printf '  ✅ %s bytes, %s parens, %ss\n' "${#BIG}" "$NSEG" "$T"
+else FAIL=$((FAIL+1)); printf '  ❌ %s bytes: %s parens (want 6000) in %ss (want ≤10)\n' "${#BIG}" "$NSEG" "$T"; fi
 echo "An unresolvable cd target: the SECRET half is fixed, the branch half is not:"
 # `cd "$(git rev-parse --show-toplevel)"` and `cd "$VAR"` arrive unexpanded, so
 # `git -C "$WORK_DIR"` resolves no repo. Two different halves, two different answers,

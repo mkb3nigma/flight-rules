@@ -50,171 +50,22 @@ one channel git hooks, agent hooks and skills all share.
 
 ## Contents
 
+- [Configuration](#configuration)
+  - [Where to set it](#where-to-set-it)
+- [Wiring (Claude Code)](#wiring-claude-code)
 - [Git hooks (`git/`)](#git-hooks-git)
 - [Agent hook scripts (`agent/`)](#agent-hook-scripts-agent)
-  - [Configuration](#configuration)
-  - [Where to set it](#where-to-set-it)
-  - [Wiring (Claude Code)](#wiring-claude-code)
 - [What these hooks are — and are not](#what-these-hooks-are--and-are-not)
   - [With the plugin alone, a protected branch is only half guarded](#with-the-plugin-alone-a-protected-branch-is-only-half-guarded)
   - [The agent guard over-blocks prose. That is the accepted trade.](#the-agent-guard-over-blocks-prose-that-is-the-accepted-trade)
 - [Layered defence](#layered-defence)
 
-The first five sections install and configure the hooks. The last three are what
-they do **not** catch — measured rather than asserted — and are worth reading
+Installing is above. The first three sections configure and wire the hooks; the next
+two are the reference, one entry per hook. **What these hooks are — and are not** is
+what they do **not** catch — measured rather than asserted — and is worth reading
 before you rely on them.
 
-## Git hooks (`git/`)
-
-- **`pre-merge-commit`** — mechanism 1 of the merge gate: **PR-only branches**
-  (`PR_ONLY_BRANCHES`, default `main`) are blocked from any local merge; they move
-  only through a reviewed pull request. The hook fires only when git creates a merge
-  commit (a `--ff-only` pull does not), so its firing on a PR-only branch *is* the
-  violation, and it needs no `MERGE_HEAD`. It only sees merges git completes in one
-  step: a **conflicted** merge stops before the merge commit and never reaches this
-  hook, which is why `reference-transaction` below is the actual guarantee and this
-  is the early, specific message. Sync with `git pull --ff-only origin main`.
-- **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`; unset,
-  the set is *protected but not PR-only*) require a passing `pre-merge-check` note on the
-  incoming commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
-  modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
-  lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
-  runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates
-  merges, never ordinary commits. A **back-merge** — the incoming commit is the tip of
-  a PR-only branch — passes without a note: it already went through a reviewed PR, and
-  reconciling `main` into the integration branch is what `feature-start` step 4 asks
-  for. Only local branches and `origin/*` count, and the commit must be on `origin/<x>`
-  when origin has it — a forced local `main` or a stale `upstream/main` exempts nothing.
-  The same hook refuses the commit that would complete a **squash merge** into a
-  PR-only branch, which creates no merge commit and so never fires `pre-merge-commit`.
-  **A passing note is not consent.** The agent writes that note itself, so a stamped
-  merge nobody asked for used to land with a green `✅ Pre-merge check verified` —
-  measured 2026-09-10, no warning of any kind. The merge is now refused unless it says
-  who wanted it: `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`. An agent *can* set that
-  variable itself — nothing inside its own tool calls distinguishes "the user asked"
-  from "the agent decided" — so this does not claim proof. It makes the unbidden merge
-  a deliberate, named act rather than a silent one, and writes the outcome into the
-  merge commit as a `Merge-authorisation:` trailer, which survives and is greppable.
-  `MERGE_NEEDS_INSTRUCTION=off` drops the check; that is recorded in the trailer too,
-  so history still distinguishes the two.
-  Tests: `merge-gate.test.sh` (no arguments, no network).
-- **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
-  `main` rewrites it with no merge commit, so nothing else fires.
-- **`reference-transaction`** — the backstop for everything that moves a REF, and the
-  only hook that sees every one of those. One rule: **a PR-only branch may only move to
-  a commit already on `origin/<branch>`.**
-  Read the scope precisely: it fires when a ref moves. `git rm`, `git clean -fd`,
-  `git restore`, `git checkout -- .` and `git stash drop` destroy work and move no ref,
-  so **this hook never sees them** — the agent guard is the only thing between an agent
-  and that class. Verified 2026-09-11 on a repo with the full gate installed: a commit on
-  `main` was blocked and the ref held, while `git rm`, `git clean -fd` and
-  `git stash drop` all succeeded and destroyed their target. An earlier wording here
-  ("the only hook that sees every write path") read as though it covered them; it does
-  not, and a change was built on that misreading before the error was caught. It asks where the ref landed, not which command moved it, so
-  the enumeration cannot fall behind. It exists because the command-shaped guards kept
-  losing (all verified on git 2.55, 2026-09-10):
-  `git cherry-pick` and `git revert` run **neither** `pre-commit` nor `commit-msg` —
-  they are sequencer operations and fire only `prepare-commit-msg`; `git branch -f`
-  and `git update-ref` create no commit, so no commit hook fires at all; and a
-  **conflicted** `git merge` never reaches `pre-merge-commit`, because git stops at the
-  conflict and the finishing `git commit` is an ordinary commit. Every one of those
-  reached `main` unguarded before this hook.
-  `git pull --ff-only`, all feature work, `fetch`, and branch creation are unaffected.
-  Unlike the agent guard it reads its config from the **upstream's** committed state,
-  so editing the working-tree conf — the bypass the agent guard's own block message
-  advertises — does not lift it. A repo with no upstream is not gated: there is no
-  reviewed state to compare against, and a fresh `git init` must stay usable.
-  Tests: `ref-gate.test.sh` (no arguments, no network).
-  **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
-  unless all five bare-named hooks are present.
-- **`post-merge`** — after a merge into the integration branch, writes a cleanup note
-  (stale worktrees, deletable branches) that the next AI session picks up.
-  Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
-  conversations for the project so the next session starts fresh — read the guarded
-  block in the script before enabling.
-- **`install.sh`** — one-time per clone: `chmod` the hooks, set
-  `core.hooksPath`, and set `merge.ff false` so the merge gate always fires
-  (a fast-forward merge would silently skip `pre-merge-commit`).
-
-## Agent hook scripts (`agent/`)
-
-Guards that fire on the assistant's own events, before git ever runs:
-
-- **`pre-commit-check.sh`** — PreToolUse guard on the Bash tool. On a protected branch
-  it denies `git commit` and everything that rewrites or discards the tree without one:
-  `rm`, `restore`, `reset --hard|--merge`, `clean -f`, `checkout -- .` and
-  `checkout <rev> -- <path>`, `switch --discard-changes`, `rebase` (not its
-  `--abort`/`--continue`), `stash drop|clear`. From any branch it denies a push that
-  force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
-  `+refspec`, `--delete`, `origin :main`, `--mirror`); a push that names some other
-  ref is judged on that ref, not on the branch you happen to stand on, so post-merge
-  cleanup from the protected branch is not blocked. It also denies `git branch -d`/`-D`
-  of a protected branch — local deletion, which `post-merge` was found recommending.
-  A matcher's trailing boundary is an **end-of-token**, not a space: a subshell closes
-  with `)`, a brace group or loop body with `;`. Until 2026-09-10 it was `[[:space:]]`
-  alone, so `git rebase`, `git push --mirror`, `git switch -f`, `git stash drop|clear`,
-  `git checkout --` and `git restore` were each denied bare and **allowed** inside
-  `( … )` or `{ …; }` on a protected branch.
-  **Targets are read per simple command**, not per command string: a greedy match found
-  only the last `git push`/`git branch` in a compound, so a protected target in an
-  earlier one escaped (`git branch -d main && git branch -d feature/x` was allowed), and reading
-  past the end of that command turned a later word into a target (a following
-  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On a **protected** branch of the project
-  it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
-  created as worktrees (workflow rule 6), and the block shows the command. That applies
-  while you stand on a **protected** branch, which is when a branch made in place puts
-  feature work in the main checkout. It was nominally every branch until 2026-09-14,
-  though never actually enforced as such: a `git commit` in the same command elected
-  `commit` and branch creation was never judged at all. "The
-  project" is its main checkout *and every worktree of it* — they share one
-  `--git-common-dir`, which is how a worktree is told from an unrelated repo whose
-  branches are none of this project's business.
-  `git -C`/`-c` are normalised
-  away first, the *last* `cd` decides the target repo, and a merge in progress is
-  exempt so conflicts can be resolved.
-  Regardless of branch, a commit is denied with a staged `.env` (templates
-  `.env.example|sample|template|dist` and `.env.md` exempt), a provider key (AWS,
-  `sk-…`, GitHub, Slack, Google), any PEM private-key header, or a credential literal
-  outside test and prose files (`docs/`, `locales/`, `i18n/`, `translations/`,
-  `*.md|rst|txt` — keys are still caught
-  there). A line marked `flight-rules: allow` is a reviewed exception.
-  Needs `jq` or `python3`; with neither it denies git commands with an install hint
-  rather than silently switching off. It also uses `sed`, which is in every base system
-  the hooks target. The compound-command SPLIT is pure bash, though: when that shelled
-  out to `tr`, a PATH without `tr` made a forced push and a branch deletion naming a
-  protected branch ALLOWED from a feature branch, silently — the ref they name is read
-  by splitting the command, and nothing announced the dependency.
-  Tests: `pre-commit-check.test.sh` (no arguments, no network).
-- **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
-  every hook's executable bit *and* that each one still contains the string that makes
-  it that hook (a present, executable stub enforces nothing), `merge.ff`, the guard's
-  parser, the conf's keys and regexes, that every script `.claude/settings.json` wires
-  exists, and that the guard is wired once and actually enabled — every one a state
-  that has failed silently before. `session-start.sh` runs it daily and prints only
-  problems.
-  Tests: `doctor.test.sh`.
-- **`session-start.sh`** — SessionStart banner: once a day per project, lists
-  worktrees whose branches are already merged so they get cleaned up. Reads
-  `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
-  A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
-  reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.
-  Tests: `session-start.test.sh`.
-- **`session-start-rules.sh`** — injects `rules/engineering-principles.md` into the
-  session. A plugin surfaces skills, commands and hooks as live primitives, but its
-  `rules/*.md` are just files: installing the plugin does not put them in the model's
-  context, and this is what does.
-
-  **The injection happens once, at session start, and updating the plugin does not redo
-  it.** `/reload-plugins` refreshes skills and hooks on disk while the running session
-  keeps the text it was given — reported 2026-09-15 by a session that had just read the
-  new version's SKILL.md from disk and was still following the previous version's
-  principles. Nothing in this repo can re-inject into a live session; **a new session is
-  what picks up a rules change.** So the header names the plugin version, which turns
-  invisible staleness into something a reader can check against the plugin directory.
-  Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
-  install shape, because reading the version must never cost the rules.
-
-### Configuration
+## Configuration
 
 Every hook is configured per project **without forking it**, from
 `.ai/flight-rules.conf` — beside the rules, not inside any one tool's settings, so
@@ -306,7 +157,7 @@ per-machine values, and this policy is neither.
 The conf file is read as data and never `source`d: a sourced config file would let any
 cloned repo execute code inside the hook.
 
-### Wiring (Claude Code)
+## Wiring (Claude Code)
 
 `hooks/wiring.test.sh` checks both paths by RUNNING every registered hook in each
 environment — with `CLAUDE_PLUGIN_ROOT` set and with it unset — rather than by matching
@@ -343,6 +194,186 @@ The scripts read Claude Code's hook protocol — tool input as JSON on stdin, a
 structured `permissionDecision` on stdout. To use them with another assistant, wrap
 the same checks in that tool's hook protocol; the point of keeping them in `.ai/` is
 that the logic has exactly one home.
+
+## Git hooks (`git/`)
+
+- **`pre-merge-commit`** — mechanism 1 of the merge gate: **PR-only branches**
+  (`PR_ONLY_BRANCHES`, default `main`) are blocked from any local merge; they move
+  only through a reviewed pull request. The hook fires only when git creates a merge
+  commit (a `--ff-only` pull does not), so its firing on a PR-only branch *is* the
+  violation, and it needs no `MERGE_HEAD`. It only sees merges git completes in one
+  step: a **conflicted** merge stops before the merge commit and never reaches this
+  hook, which is why `reference-transaction` below is the actual guarantee and this
+  is the early, specific message. Sync with `git pull --ff-only origin main`.
+- **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`; unset,
+  the set is *protected but not PR-only*) require a passing `pre-merge-check` note on the
+  incoming commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
+  modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
+  lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
+  runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates
+  merges, never ordinary commits. A **back-merge** — the incoming commit is the tip of
+  a PR-only branch — passes without a note: it already went through a reviewed PR, and
+  reconciling `main` into the integration branch is what `feature-start` step 4 asks
+  for. Only local branches and `origin/*` count, and the commit must be on `origin/<x>`
+  when origin has it — a forced local `main` or a stale `upstream/main` exempts nothing.
+  The same hook refuses the commit that would complete a **squash merge** into a
+  PR-only branch, which creates no merge commit and so never fires `pre-merge-commit`.
+  **A passing note is not consent.** The agent writes that note itself, so a stamped
+  merge nobody asked for used to land with a green `✅ Pre-merge check verified` —
+  measured 2026-09-10, no warning of any kind. The merge is now refused unless it says
+  who wanted it: `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`. An agent *can* set that
+  variable itself — nothing inside its own tool calls distinguishes "the user asked"
+  from "the agent decided" — so this does not claim proof. It makes the unbidden merge
+  a deliberate, named act rather than a silent one, and writes the outcome into the
+  merge commit as a `Merge-authorisation:` trailer, which survives and is greppable.
+  `MERGE_NEEDS_INSTRUCTION=off` drops the check; that is recorded in the trailer too,
+  so history still distinguishes the two.
+  Tests: `merge-gate.test.sh` (no arguments, no network).
+- **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
+  `main` rewrites it with no merge commit, so nothing else fires.
+- **`reference-transaction`** — the backstop for everything that moves a REF, and the
+  only hook that sees every one of those. One rule: **a PR-only branch may only move to
+  a commit already on `origin/<branch>`.**
+  Read the scope precisely: it fires when a ref moves. `git rm`, `git clean -fd`,
+  `git restore`, `git checkout -- .` and `git stash drop` destroy work and move no ref,
+  so **this hook never sees them** — the agent guard is the only thing between an agent
+  and that class. Verified 2026-09-11 on a repo with the full gate installed: a commit on
+  `main` was blocked and the ref held, while `git rm`, `git clean -fd` and
+  `git stash drop` all succeeded and destroyed their target. An earlier wording here
+  ("the only hook that sees every write path") read as though it covered them; it does
+  not, and a change was built on that misreading before the error was caught. It asks where the ref landed, not which command moved it, so
+  the enumeration cannot fall behind. It exists because the command-shaped guards kept
+  losing (all verified on git 2.55, 2026-09-10):
+  `git cherry-pick` and `git revert` run **neither** `pre-commit` nor `commit-msg` —
+  they are sequencer operations and fire only `prepare-commit-msg`; `git branch -f`
+  and `git update-ref` create no commit, so no commit hook fires at all; and a
+  **conflicted** `git merge` never reaches `pre-merge-commit`, because git stops at the
+  conflict and the finishing `git commit` is an ordinary commit. Every one of those
+  reached `main` unguarded before this hook.
+  `git pull --ff-only`, all feature work, `fetch`, and branch creation are unaffected.
+  Unlike the agent guard it reads its config from the **upstream's** committed state,
+  so editing the working-tree conf — the bypass the agent guard's own block message
+  advertises — does not lift it. A repo with no upstream is not gated: there is no
+  reviewed state to compare against, and a fresh `git init` must stay usable.
+  Tests: `ref-gate.test.sh` (no arguments, no network).
+- **`pre-commit`** — the secret scan, on what the commit will actually record: a
+  provider key (AWS, `sk-…`, GitHub, Slack, Google), a PEM private-key header, or a
+  `.env` entering the repo (templates exempt; editing one already tracked is not
+  refused, though a key written into it is). Git runs it after building the commit's index, so
+  `git add f && git commit`, `commit -a`, `commit <path>` and a `GIT_INDEX_FILE=`
+  prefix are all covered — the agent guard scans before the command runs and saw none
+  of them (#71, #72) — and a human's commit is scanned too. It is narrower than the
+  agent guard on purpose: the guard's `password = "…"` heuristic warns an agent but
+  would block too many ordinary commits here. A merge being concluded is not
+  re-scanned (its commits were scanned when made — so neither is a key typed in while
+  resolving its conflict); a `merge --squash` is an ordinary commit and is scanned.
+  `cherry-pick`/`revert` do not run `pre-commit` at all. Override for a checked false
+  positive: `--no-verify`, the owner's call. **Already have a `pre-commit`** (a linter,
+  lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
+  scan and its exit status decides the commit. **Upgrading from 0.22.x:** a plugin
+  update cannot copy git hooks, so this one arrives only when you copy it in;
+  `doctor.sh` — run at session start — reports it missing with the exact `cp` command.
+  Tests: `secret-scan.test.sh`.
+  **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
+  unless all six bare-named hooks are present.
+- **`post-merge`** — after a merge into the integration branch, writes a cleanup note
+  (stale worktrees, deletable branches) that the next AI session picks up.
+  Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
+  conversations for the project so the next session starts fresh — read the guarded
+  block in the script before enabling.
+- **`install.sh`** — one-time per clone: `chmod` the hooks, set
+  `core.hooksPath`, and set `merge.ff false` so the merge gate always fires
+  (a fast-forward merge would silently skip `pre-merge-commit`).
+
+## Agent hook scripts (`agent/`)
+
+Guards that fire on the assistant's own events, before git ever runs:
+
+- **`pre-commit-check.sh`** — PreToolUse guard on the Bash tool. On a protected branch
+  it denies `git commit` and everything that rewrites or discards the tree without one:
+  `rm`, `restore`, `reset --hard|--merge`, `clean -f`, `checkout -- .` and
+  `checkout <rev> -- <path>`, `switch --discard-changes`, `rebase` (not its
+  `--abort`/`--continue`), `stash drop|clear`. From any branch it denies a push that
+  force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
+  `+refspec`, `--delete`, `origin :main`, `--mirror`); a push that names some other
+  ref is judged on that ref, not on the branch you happen to stand on, so post-merge
+  cleanup from the protected branch is not blocked. It also denies `git branch -d`/`-D`
+  of a protected branch — local deletion, which `post-merge` was found recommending.
+  A matcher's trailing boundary is an **end-of-token**, not a space: a subshell closes
+  with `)`, a brace group or loop body with `;`. Until 2026-09-10 it was `[[:space:]]`
+  alone, so `git rebase`, `git push --mirror`, `git switch -f`, `git stash drop|clear`,
+  `git checkout --` and `git restore` were each denied bare and **allowed** inside
+  `( … )` or `{ …; }` on a protected branch.
+  **Targets are read per simple command**, not per command string: a greedy match found
+  only the last `git push`/`git branch` in a compound, so a protected target in an
+  earlier one escaped (`git branch -d main && git branch -d feature/x` was allowed), and reading
+  past the end of that command turned a later word into a target (a following
+  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On a **protected** branch of the project
+  it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
+  created as worktrees (workflow rule 6), and the block shows the command. That applies
+  while you stand on a **protected** branch, which is when a branch made in place puts
+  feature work in the main checkout. It was nominally every branch until 2026-09-14,
+  though never actually enforced as such: a `git commit` in the same command elected
+  `commit` and branch creation was never judged at all. "The
+  project" is its main checkout *and every worktree of it* — they share one
+  `--git-common-dir`, which is how a worktree is told from an unrelated repo whose
+  branches are none of this project's business.
+  The target repo is resolved **per segment**: a `cd` sets it for the segments after
+  it, a `git -C <dir>` sets it for its own segment only, and `-c`/other global options
+  are normalised away so every matcher sees `git <verb>`. Until #61 it was resolved
+  once per command — the last `cd` anywhere, else the first `-C` anywhere — so
+  `git -C /other status && git commit -m x` on a protected branch was allowed and the
+  secret scan read `/other`. A `cd` inside `( … )` or `$( … )` ends at the `)`, as in
+  the shell (#70) — for branch policy, a best guess: a paren inside quotes, a heredoc
+  or a `case` pattern is not told from a real one, so the scope can be wrong either
+  way, and the ref gate is the backstop. The secret scan does not depend on it: it
+  reads the repo of **every** commit (#69), the cwd, and every repo any `cd` in the
+  command names, so a key staged in a repo the command visits blocks the commit and
+  the deny names the repo. A merge in progress is exempt so conflicts can be
+  resolved.
+  Regardless of branch, a commit is denied with a staged `.env` (templates
+  `.env.example|sample|template|dist` and `.env.md` exempt), a provider key (AWS,
+  `sk-…`, GitHub, Slack, Google), any PEM private-key header, or a credential literal
+  outside test and prose files (`docs/`, `locales/`, `i18n/`, `translations/`,
+  `*.md|rst|txt` — keys are still caught
+  there). A line marked `flight-rules: allow` is a reviewed exception. It reads the
+  index as it stands before the command runs, so anything the same command stages is
+  not in it; the git `pre-commit` hook is the scan that sees those.
+  Needs `jq` or `python3`; with neither it denies git commands with an install hint
+  rather than silently switching off. It also uses `sed`, which is in every base system
+  the hooks target. The compound-command SPLIT is pure bash, though: when that shelled
+  out to `tr`, a PATH without `tr` made a forced push and a branch deletion naming a
+  protected branch ALLOWED from a feature branch, silently — the ref they name is read
+  by splitting the command, and nothing announced the dependency.
+  Tests: `pre-commit-check.test.sh` (no arguments, no network).
+- **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
+  every hook's executable bit *and* that each one still contains the string that makes
+  it that hook (a present, executable stub enforces nothing), `merge.ff`, the guard's
+  parser, the conf's keys and regexes, that every script `.claude/settings.json` wires
+  exists, and that the guard is wired once and actually enabled — every one a state
+  that has failed silently before. `session-start.sh` runs it daily and prints only
+  problems.
+  Tests: `doctor.test.sh`.
+- **`session-start.sh`** — SessionStart banner: once a day per project, lists
+  worktrees whose branches are already merged so they get cleaned up. Reads
+  `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
+  A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
+  reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.
+  Tests: `session-start.test.sh`.
+- **`session-start-rules.sh`** — injects `rules/engineering-principles.md` into the
+  session. A plugin surfaces skills, commands and hooks as live primitives, but its
+  `rules/*.md` are just files: installing the plugin does not put them in the model's
+  context, and this is what does.
+
+  **The injection happens once, at session start, and updating the plugin does not redo
+  it.** `/reload-plugins` refreshes skills and hooks on disk while the running session
+  keeps the text it was given — reported 2026-09-15 by a session that had just read the
+  new version's SKILL.md from disk and was still following the previous version's
+  principles. Nothing in this repo can re-inject into a live session; **a new session is
+  what picks up a rules change.** So the header names the plugin version, which turns
+  invisible staleness into something a reader can check against the plugin directory.
+  Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
+  install shape, because reading the version must never cost the rules.
 
 ## What these hooks are — and are not
 
@@ -465,4 +496,6 @@ engineering against.
 
 The agent guard and the git gate overlap on purpose: `pre-commit-check.sh` stops the
 assistant *before* it runs a bad commit, and `pre-merge-commit` stops *anyone* (human
-or tool that bypassed the agent layer) at merge time. Keep both.
+or tool that bypassed the agent layer) at merge time. The secret scan is layered the
+same way: the agent guard denies early with the reason, and git's `pre-commit` scans
+what the commit really records. Keep both.

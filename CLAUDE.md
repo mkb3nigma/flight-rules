@@ -16,7 +16,7 @@ injects the principles; the rest you read once.
 | `{NOTE_GATED_BRANCHES}` | `dev` — a local merge needs a `pre-merge-check` note on the branch being merged |
 | `{INTEGRATION_BRANCH}` | `dev` — work integrates here; `main` is the released state |
 | `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
-| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
+| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/git/secret-scan.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
 Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/dev`,
 commit there, push. Then, **as the owner**, merge it into `dev` locally — stamp the
