@@ -26,14 +26,14 @@ mkrepo() {
   # expect for other reasons — the 2026-09-11 shape where a suite silently tested the
   # wrong copy. So it is checked, not assumed.
   cp "$H/git/pre-merge-commit" "$H/git/commit-msg" "$H/git/pre-rebase" "$H/git/post-merge" \
-     "$H/git/reference-transaction" "$d/.ai/hooks/" || die "could not copy the git hooks from $H/git"
+     "$H/git/reference-transaction" "$H/git/pre-commit" "$d/.ai/hooks/" || die "could not copy the git hooks from $H/git"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath .ai/hooks
   git -C "$d" config merge.ff false
   printf 'PROTECTED_BRANCHES=^main$\n' > "$d/.ai/flight-rules.conf"
-  # What every assertion assumes: a repo, and five hooks that are there to be broken.
+  # What every assertion assumes: a repo, and six hooks that are there to be broken.
   [ -d "$d/.git" ] || die "no .git in the fixture at $d"
-  for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction; do
+  for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
     [ -x "$d/.ai/hooks/$_h" ] || die "$_h missing or not executable in the fixture"
   done
   printf '%s' "$d"
@@ -79,6 +79,19 @@ rm -rf "$D"
 
 D=$(mkrepo); chmod -x "$D/.ai/hooks/reference-transaction"
 say "$(rc "$D")" "1" "reference-transaction without +x → problem"
+rm -rf "$D"
+
+# The secret scan for commits (#71): without it, `git add f && git commit` is scanned by
+# nothing, and every other hook still reports healthy.
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
+say "$(rc "$D")" "1" "pre-commit missing → problem"
+say "$(has "$D" "pre-commit missing")" "0" "…names the hook"
+# A plugin upgrade cannot copy it in, so this line is how an upgraded project learns of
+# it — and it must say how. Following it must actually clear the problem.
+FIX=$(run "$D" | grep -o "cp '[^']*/git/pre-commit' '[^']*/' && chmod +x '[^']*'" | head -1)
+say "$([ -n "$FIX" ] && echo yes)" "yes" "…and gives the command that copies it in"
+(cd "$D" && eval "$FIX") >/dev/null 2>&1
+say "$(rc "$D")" "0" "…which, run, clears it"
 rm -rf "$D"
 
 D=$(mkrepo); printf 'MERGE_NEEDS_INSTRUCTION=off\n' >> "$D/.ai/flight-rules.conf"

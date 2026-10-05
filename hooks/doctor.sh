@@ -19,12 +19,13 @@ ok()   { [[ $QUIET -eq 1 ]] || printf '  ✅ %s\n' "$1"; }
 warn() { WARN=$((WARN+1)); printf '  ⚠️  %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$1"; }
 
+GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/git"   # the copies shipped beside this script
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { bad "not inside a git repository"; exit 1; }
 cd "$ROOT" || exit 1
 
 # A hook that is present, executable and EMPTY passes every other check here while
 # enforcing nothing. doctor already content-checks the agent guard (for a pre-conf copy);
-# these are the same idea for the five git hooks — one string each that a real copy must
+# these are the same idea for the six git hooks — one string each that a real copy must
 # contain. It is a grep, so a determined edit defeats it; it catches the stub, the
 # truncated copy and the wrong-file-name, which is what actually happens.
 hook_marker() {
@@ -34,6 +35,7 @@ hook_marker() {
     pre-rebase)             printf 'PR_ONLY' ;;
     post-merge)             printf 'post-merge-note' ;;
     reference-transaction)  printf 'is-ancestor' ;;
+    pre-commit)             printf 'PRIVATE KEY' ;;
     *)                      printf 'flight-rules' ;;
   esac
 }
@@ -48,9 +50,11 @@ else
     bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
   else
     ok "core.hooksPath=$HOOKS_PATH"
-    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction; do
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
-        bad "$h missing from $HOOKS_PATH — the gate is half built"
+        # A plugin upgrade cannot copy git hooks into a project, so a hook added in a
+        # release (pre-commit, 0.23.0) arrives as this line; say where to copy it from.
+        bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from this flight-rules: cp '$GIT_HOOKS_SRC/$h' '$HOOKS_PATH/' && chmod +x '$HOOKS_PATH/$h'"
       elif [[ ! -x "$HOOKS_DIR/$h" ]]; then
         bad "$h is not executable — git ignores it silently (chmod +x, and commit the mode)"
       elif ! grep -q "$(hook_marker "$h")" "$HOOKS_DIR/$h"; then
