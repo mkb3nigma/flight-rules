@@ -576,6 +576,13 @@ echo "install.sh lists hooks, not directories or dotted files:"
 # be listed as one. The positive assertion on the same run keeps the negatives honest.
 D=$(mkrepo)
 cp "$H/reference-transaction" "$H/install.sh" "$D/.ai/hooks/" || die "could not copy install.sh"
+# Without pre-commit nothing scans `git add f && git commit` for a key (#71), so a
+# copy that left it out must be refused, not installed half built.
+OUT=$(cd "$D" && bash .ai/hooks/install.sh 2>&1); RC=$?
+say "$RC" "1" "install.sh refuses when pre-commit is missing"
+grep -q 'pre-commit is missing' <<<"$OUT"
+say "$?" "0" "…and names it"
+cp "$H/pre-commit" "$D/.ai/hooks/" || die "could not copy pre-commit"
 mkdir -p "$D/.ai/hooks/agent"; touch "$D/.ai/hooks/README.md"
 OUT=$(cd "$D" && bash .ai/hooks/install.sh 2>&1); RC=$?
 say "$RC" "0" "install.sh exits 0 with an agent/ subdirectory and a README beside the hooks"

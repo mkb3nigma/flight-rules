@@ -609,8 +609,8 @@ if printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -qvE '\.env
 fi
 
 # These six patterns are also written out in skills/pre-merge-check/SKILL.md, which a
-# plugin consumer's shell cannot read this file to get them from. Change one here and
-# catalogue.test.sh fails until the skill matches.
+# plugin consumer's shell cannot read this file to get them from, and in the git
+# pre-commit hook. Change one here and catalogue.test.sh fails until both match.
 # Provider key formats. Each is a fixed prefix plus a run of the provider's own
 # alphabet; the prefixes are the stable part, so keep the runs generous rather than
 # exact. `sk-` keys now carry hyphens and underscores (sk-ant-…, sk-proj-…) — the
