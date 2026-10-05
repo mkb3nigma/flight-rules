@@ -89,17 +89,24 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     (wrong match direction, an anchor that could never match, a fixture whose setup
     failed under `2>&1`), and each passed against the code it was supposed to test.
 14. **Migrations present if models/schema changed** — ⚠️ if not.
-15. **New TODO/FIXME/HACK** — ⚠️ list; resolve or track before merge.
+15. **New TODO/FIXME/HACK** — ❌ unless the line cites the open issue that tracks it, in
+    whatever form the project's tracker resolves (`#123`, a key, a URL): unfinished work
+    is an issue, not a comment. ⚠️ for provisional phrasing on an added comment or prose
+    line — "for now", "temporary", "remove after", "until we" — with no issue and no
+    condition. Judge comments and prose, not identifiers or string literals: a token
+    grep over the diff flags enum members such as `ActionStatus.TODO`.
 16. **Commit-count sanity** — ⚠️ above ~20 commits: consider splitting.
 17. **Docs match the change** — ask **"what claims does this diff make false?"**, then
     go find them. Not a grep for renamed symbols: a change that renames nothing and only
     makes a sentence untrue leaves every grep empty. Run narrowly it has missed four
     times in this repo, the last on 2026-09-14 — a rule's **Required** entry was updated
     and its **Forbidden** entry, three lines away, still described the old behaviour.
-    Search `README*`, `docs/`, `rules/`, `skills/`, `CLAUDE.md` and script header
-    comments for the BEHAVIOUR, including the places that state it as a rule rather than
-    naming the code. ❌ if a doc still describes the old behaviour; ⚠️ if a behaviour
-    change touched no doc and the PR does not say why.
+    Search `README*`, `docs/`, `rules/`, `skills/`, `CLAUDE.md` and code comments —
+    header and inline — for the BEHAVIOUR, including the places that state it as a rule
+    rather than naming the code. ❌ if a doc still describes the old behaviour; ⚠️ if a
+    behaviour change touched no doc and the PR does not say why. A deleted comment line
+    that carries an anchor (issue, PR, sha, date) is ⚠️ unless the PR names the reason
+    that went — age is not a reason.
 18. **Rules earn their place** — for every item the diff adds to or widens in a rules
     file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
     warrant, what goes wrong without it, and how it is enforced. The warrant is an
