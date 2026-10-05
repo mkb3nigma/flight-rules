@@ -51,7 +51,7 @@ for l in $LISTED; do grep -q "^$l\$" <<<"$SKILLS" || bad "README table lists /$l
 echo "/pre-merge-check's fallback patterns match the guard's:"
 GUARD=hooks/agent/pre-commit-check.sh
 SKILL=skills/pre-merge-check/SKILL.md
-GUARD_PATS=$(sed -n -E "s/^if hit '(.*)'; then\$/\1/p" "$GUARD")
+GUARD_PATS=$(sed -n -E "s/^[[:space:]]*if hit '(.*)'; then\$/\1/p" "$GUARD")
 [ -n "$GUARD_PATS" ] || bad "$GUARD: no \`hit '…'\` patterns found — this test is reading the wrong thing"
 N=0
 while IFS= read -r pat; do
