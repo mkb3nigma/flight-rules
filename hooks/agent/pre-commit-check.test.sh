@@ -454,6 +454,9 @@ scan_case "diff.relative, commit from a subdirectory" deny "mkdir sub && echo s 
 # The credential check passed root-relative names back as cwd-relative pathspecs, so from
 # a subdirectory nothing matched and it never ran — with no config at all.
 scan_case "a password at the root, commit from a subdirectory" deny "mkdir -p sub src && echo s > sub/s && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add src/config.py" 'cd sub && git commit -m x'
+# A `-diff` attribute makes a large TEXT file look binary to git; the 1 MB limit is for
+# real binaries only, so a lockfile marked -diff is still read.
+scan_case "a key in a 2 MB text file marked -diff" deny "echo '*.lock -diff' > .gitattributes && for i in \$(seq 1 40000); do echo 'line of a large generated lockfile entry'; done > big.lock && printf '%s\\n' \"\$AKIA\" >> big.lock && git add .gitattributes big.lock"
 scan_case "a key inside a small binary"      deny "printf '\\000\\001%s\\000\\n' \"\$AKIA\" > k.dat && git add k.dat"
 # The credential-literal check reads its own diff of the non-test files; that one too.
 scan_case "diff.external hiding a password"  deny "mkdir -p src && git config diff.external true && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add src/config.py"

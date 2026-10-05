@@ -640,20 +640,25 @@ scan_repo() {
   # through (2026-10-05); so did diff.relative, which cut the diff down to the
   # subdirectory a commit was run from. DIFF_RAW is the diff as git stores it.
   local DIFF_RAW=(-c diff.relative=false diff --cached --no-color --no-ext-diff --no-textconv)
-  # A binary file — or one a `-diff` attribute marks as one — is scanned as text up to
-  # BINARY_SCAN_MAX bytes. Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s,
-  # and a hook killed by its timeout lets the commit through unscanned; a key is a short
-  # line in a small file, not a passage inside an image. NULs are dropped, which a shell
+  # A file git calls binary is read as text, except a real binary over BINARY_SCAN_MAX
+  # bytes. Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s, and a hook killed
+  # by its timeout lets the commit through unscanned; the git pre-commit hook, which has
+  # no timeout, reads those whole. "Real" is git's own test, a NUL in the first 8000
+  # bytes: a `-diff` attribute makes a large text file (a lockfile) look binary too, and
+  # that one is still read. NULs are dropped, which a shell
   # variable cannot hold. Every tool that reads those bytes runs in the C locale (as the
   # git pre-commit hook does throughout): under UTF-8, macOS tr stops at the first
   # invalid byte and grep skips the line holding one (/dg, 2026-10-05).
-  local BINARY_SCAN_MAX=1048576 rec p small=()
+  local BINARY_SCAN_MAX=1048576 rec p as_text=()
   while IFS= read -r -d '' rec; do
     case "$rec" in "-	-	"*) p=${rec#-	-	} ;; *) continue ;; esac
-    [[ $("${SCAN_GIT[@]}" cat-file -s ":$p" 2>/dev/null || echo 0) -le $BINARY_SCAN_MAX ]] && small+=(":(top,literal)$p")
+    if [[ $("${SCAN_GIT[@]}" cat-file -s ":$p" 2>/dev/null || echo 0) -le $BINARY_SCAN_MAX ]] \
+       || [[ $("${SCAN_GIT[@]}" cat-file blob ":$p" 2>/dev/null | head -c 8000 | LC_ALL=C tr -dc '\000' | wc -c) -eq 0 ]]; then
+      as_text+=(":(top,literal)$p")
+    fi
   done < <("${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --no-renames --diff-filter=d --numstat -z 2>/dev/null)
   STAGED_DIFF=$( { "${SCAN_GIT[@]}" "${DIFF_RAW[@]}" 2>/dev/null
-                   [[ ${#small[@]} -eq 0 ]] || "${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --text -- "${small[@]}" 2>/dev/null
+                   [[ ${#as_text[@]} -eq 0 ]] || "${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --text -- "${as_text[@]}" 2>/dev/null
                  } | LC_ALL=C tr -d '\000')
   # core.quotePath=false: by default git prints a non-ASCII name as "c\303\266nfig.py"
   # in quotes, and feeding that back to `git diff -- <path>` matches nothing — so the

@@ -116,6 +116,9 @@ blocks "a key written into a tracked .env"  'echo X=1 > .env.development && git 
 blocks "a .env symlink turned into a file" 'ln -s /dev/null .env && git add .env && git commit -qm x --no-verify' 'rm .env && echo X=1 > .env && git add .env && git commit -qm y'
 blocks "an added line that starts with ++" 'printf "++ %s\n" "$AWS" > f && git add f && git commit -qm x'
 blocks "a key inside a small binary"    'printf "\000\001%s\000\n" "$AWS" > k.dat && git add k.dat && git commit -qm x'
+# The git hook has no timeout to outrun, so it reads every binary whole: it is the
+# backstop for what the agent guard's 1 MB limit skips.
+blocks "a key inside a 2 MB binary"     'head -c 2097152 /dev/zero > big.dat && printf "%s\n" "$AWS" >> big.dat && git add big.dat && git commit -qm x'
 blocks "renaming a .env away"           'echo X=1 > .env && git add .env && git commit -qm x --no-verify' 'git mv .env config.txt && git commit -qm y'
 blocks "renaming a .env to a template"  'echo X=1 > .env && git add .env && git commit -qm x --no-verify' 'git mv .env .env.example && git commit -qm y'
 blocks "a key after a binary file"     'printf "\000\001\002\377" > a.bin && printf "caf\351 %s\n" "$AWS" > z.txt && git add . && git commit -qm x'

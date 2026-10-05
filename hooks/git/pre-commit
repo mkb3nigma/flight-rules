@@ -46,20 +46,10 @@ git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && run_local "$@"
 # leave the `^+` match below with nothing to see: --no-color (color.diff=always),
 # --no-ext-diff (diff.external), --no-textconv (a textconv driver that redacts), and
 # --text (a `-diff` attribute, which turns the file into "Binary files differ").
-# --text applies to binaries up to BINARY_SCAN_MAX bytes: scanned whole, a 30 MB asset
-# took 16s and a 100 MB one 52s (/dg, 2026-10-05) — a key is a short line in a small
-# file, not a passage inside an image. NUL bytes are dropped before the shell sees
-# them, which would otherwise warn on each.
-DIFF_RAW="diff --cached --no-color --no-ext-diff --no-textconv -U0"
-BINARY_SCAN_MAX=1048576
-SMALL=()
-while IFS= read -r -d '' rec; do
-  case "$rec" in "-	-	"*) p=${rec#-	-	} ;; *) continue ;; esac
-  [ "$(git cat-file -s ":$p" 2>/dev/null || echo 0)" -le $BINARY_SCAN_MAX ] && SMALL+=(":(top,literal)$p")
-done < <(git $DIFF_RAW --no-renames --diff-filter=d --numstat -z 2>/dev/null)
-STAGED_DIFF=$( { git $DIFF_RAW 2>/dev/null
-                 [ ${#SMALL[@]} -eq 0 ] || git $DIFF_RAW --text -- "${SMALL[@]}" 2>/dev/null
-               } | tr -d '\000')
+# Every binary is read whole: this hook has no timeout to outrun, so it is the backstop
+# for the large binaries the agent guard skips. NUL bytes are dropped before the shell
+# sees them, which would otherwise warn on each.
+STAGED_DIFF=$(git diff --cached --no-color --no-ext-diff --no-textconv --text -U0 2>/dev/null | tr -d '\000')
 # A .env is flagged for every change except its removal (--diff-filter=d): deleting or
 # untracking one is the clean-up. Editing one already tracked is refused like adding it
 # (owner's call, 2026-10-05) — a password typed into committed defaults has no format
