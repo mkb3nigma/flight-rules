@@ -28,7 +28,7 @@ mkrepo() {
   git -C "$d" config merge.ff false
   mkdir -p "$d/.ai/hooks" "$d/.ai/worktrees"
   cp "$H/../git/pre-merge-commit" "$H/../git/commit-msg" "$H/../git/pre-rebase" \
-     "$H/../git/post-merge" "$H/../git/reference-transaction" "$d/.ai/hooks/"
+     "$H/../git/post-merge" "$H/../git/reference-transaction" "$H/../git/pre-commit" "$d/.ai/hooks/"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath .ai/hooks
   printf 'INTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.ai/worktrees\nPROTECTED_BRANCHES=^trunk$\n' \

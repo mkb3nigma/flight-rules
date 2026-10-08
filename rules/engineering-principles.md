@@ -45,8 +45,12 @@
 - Every code change ships with new or updated tests; run them against the unfixed code
   and watch them fail, or passing proves nothing
 - When behaviour, an interface or a workflow changes, **edit** the sentence that
-  described it — in the same change. Delete what no longer applies; never leave a second
-  explanation beside the old one
+  described it — in the same change, comments included. Delete what no longer applies;
+  never leave a second explanation beside the old one. A comment is stale when its
+  reason has gone, not when it is old: follow its anchor (issue, PR, sha, date) and keep
+  the decision while the reason holds
+- Unfinished work is an issue, not a TODO. If the code must mark the spot, the comment
+  cites the issue
 - A hook block is information, not an obstacle: read the reason, do what it says,
   re-run. Never edit the hook or its config, add `--no-verify`, or reshape the command
   in order to slip past it. If the block is wrong, stop and say so — the owner decides

@@ -51,7 +51,7 @@ for l in $LISTED; do grep -q "^$l\$" <<<"$SKILLS" || bad "README table lists /$l
 echo "/pre-merge-check's fallback patterns match the guard's:"
 GUARD=hooks/agent/pre-commit-check.sh
 SKILL=skills/pre-merge-check/SKILL.md
-GUARD_PATS=$(sed -n -E "s/^if hit '(.*)'; then\$/\1/p" "$GUARD")
+GUARD_PATS=$(sed -n -E "s/^[[:space:]]*if hit '(.*)'; then\$/\1/p" "$GUARD")
 [ -n "$GUARD_PATS" ] || bad "$GUARD: no \`hit '…'\` patterns found — this test is reading the wrong thing"
 N=0
 while IFS= read -r pat; do
@@ -67,6 +67,18 @@ while IFS= read -r pat; do
   grep -qF -- "$pat" "$GUARD" || bad "$SKILL lists a pattern the guard does not have: $pat"
 done < <(awk '/^   ```$/{n++; next} n==1' "$SKILL" | sed -n -E 's/^   ([^ #][^#]*[^ #])[[:space:]]+#.*/\1/p')
 [ "$FAIL" -eq 0 ] && ok "$N guard patterns, all present in the skill and none extra"
+
+# The git pre-commit hook runs the same six on what the commit records (#71). A key the
+# agent guard knows and the git hook does not is a key that leaks through `git add && commit`.
+echo "The git pre-commit hook's patterns match the guard's:"
+GITHOOK=hooks/git/pre-commit
+HOOK_PATS=$(sed -n -E "s/^[[:space:]]*if hit '(.*)'; then\$/\1/p" "$GITHOOK")
+[ -n "$HOOK_PATS" ] || bad "$GITHOOK: no \`hit '…'\` patterns found — this test is reading the wrong thing"
+if [ "$(sort <<<"$GUARD_PATS")" = "$(sort <<<"$HOOK_PATS")" ]; then
+  ok "$(wc -l <<<"$HOOK_PATS" | tr -d ' ') patterns, same set in both"
+else
+  bad "$GITHOOK and $GUARD disagree on the secret patterns: $(diff <(sort <<<"$GUARD_PATS") <(sort <<<"$HOOK_PATS") | grep '^[<>]' | tr '\n' ' ')"
+fi
 
 echo "Plugin description names every skill that has a slash command in it:"
 for s in $(grep -oE '/[a-z-]+' .claude-plugin/plugin.json | tr -d / | sort -u); do
