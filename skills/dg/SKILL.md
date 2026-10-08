@@ -52,7 +52,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the pre-reviewer should be a different one — the roles swap freely depending on which
    assistant a project runs as its main. This file states only the preference; a project
    wires the concrete command in its extensions, e.g. from Claude Code
-   `codex exec -q "<brief>: $(cat <subject>)"`; from Codex, `claude -p "…"`.
+   `cat <brief> <subject> | codex exec -s read-only -` (stdin, so a large diff is not
+   squeezed through one argument); from Codex, `claude -p "…"`.
 
    Same-family fallback is correct, and stays the default when no second model is
    reachable. A same-family pre-review still beats none — never skip the step for want
