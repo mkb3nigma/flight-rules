@@ -458,6 +458,15 @@ scan_case "a password at the root, commit from a subdirectory" deny "mkdir -p su
 # real binaries only, so a lockfile marked -diff is still read.
 scan_case "a key in a 2 MB text file marked -diff" deny "echo '*.lock -diff' > .gitattributes && for i in \$(seq 1 40000); do echo 'line of a large generated lockfile entry'; done > big.lock && printf '%s\\n' \"\$AKIA\" >> big.lock && git add .gitattributes big.lock"
 scan_case "a key inside a small binary"      deny "printf '\\000\\001%s\\000\\n' \"\$AKIA\" > k.dat && git add k.dat"
+# The key's position crossed with a payload past 64 KB: the git hook committed a key with
+# more than 64 KB of added text after it (/dg, 2026-10-08), and every large case here put
+# the key last. A binary over 1 MB is not read by the guard, by design; the git hook is.
+FILL="awk 'BEGIN { for (i = 0; i < 30000; i++) print \"line of a large generated lockfile entry\" }'"
+scan_case "a key first in 1.2 MB of text"   deny "{ printf '%s\\n' \"\$AKIA\"; $FILL; } > big.txt && git add big.txt"
+scan_case "a key mid-way in 1.2 MB of text" deny "{ $FILL; printf '%s\\n' \"\$AKIA\"; $FILL; } > big.txt && git add big.txt"
+scan_case "a key last in 1.2 MB of text"    deny "{ $FILL; printf '%s\\n' \"\$AKIA\"; } > big.txt && git add big.txt"
+scan_case "a key first in 2 MB marked -diff" deny "echo '*.lock -diff' > .gitattributes && { printf '%s\\n' \"\$AKIA\"; $FILL; $FILL; } > big.lock && git add .gitattributes big.lock"
+scan_case "a key first in a 900 KB binary"  deny "{ printf '%s\\n' \"\$AKIA\"; head -c 921600 /dev/urandom; } > k.dat && git add k.dat"
 # The credential-literal check reads its own diff of the non-test files; that one too.
 scan_case "diff.external hiding a password"  deny "mkdir -p src && git config diff.external true && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add src/config.py"
 # --text hands the scan a binary file's raw bytes. Under a UTF-8 locale macOS grep skips a
@@ -473,6 +482,7 @@ scan_case "git rm of a tracked .env"         allow "$TRACK_ENV && git rm -q .env
 scan_case "untracking a .env (rm --cached)"  allow "$TRACK_ENV && git rm -q --cached .env"
 scan_case "editing a tracked .env"           deny  "$TRACK_ENV && printf 'DB_PASSWORD=hunter2\n' >> .env && git add .env"
 scan_case "renaming a .env away"             deny  "$TRACK_ENV && git mv .env config.txt"
+scan_case "renaming a .env away, renames off" deny "$TRACK_ENV && git config diff.renames false && git mv .env config.txt"
 scan_case "renaming a .env to a template"    deny  "$TRACK_ENV && git mv .env .env.example"
 scan_case "…but a key written into it"       deny  "$TRACK_ENV && printf '%s\n' \"\$AKIA\" >> .env && git add .env"
 scan_case "a .env renamed in"                deny  "printf 'X=1\n' > .env.example && git add .env.example && git commit -qm e && git mv .env.example .env"

@@ -172,7 +172,9 @@ mkdir -p "$(dirname "$NOTE_FILE")"
 
   if [[ -n "$ALL_MERGED" ]]; then
     echo "### ⚠ Branches merged into $INTEGRATION_BRANCH (safe to delete):"
-    if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]]; then
+    # Merged straight from origin/<x> with no local <x>, there is nothing to delete.
+    if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]] \
+       && git show-ref --verify -q "refs/heads/$JUST_MERGED"; then
       echo "  git branch -d '$JUST_MERGED'  ← just merged$(refused_until "$JUST_MERGED")"
     fi
     if [[ -n "$PREVIOUSLY_MERGED" ]]; then

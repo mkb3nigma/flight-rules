@@ -13,15 +13,18 @@ the secret scan that sees what a commit really records. A plugin update refreshe
 agent hooks but cannot copy git hooks into your project, so until you do this it is not
 running:
 
+**Already have a `pre-commit`** (a linter, lint-staged)? Rename it first, or the `cp`
+below replaces it: `mv .ai/hooks/pre-commit .ai/hooks/pre-commit.local`. It then runs
+after a clean scan, and its exit status decides the commit.
+
 ```bash
-cp <plugin>/hooks/git/pre-commit .ai/hooks/ && chmod +x .ai/hooks/pre-commit
+cp -n <plugin>/hooks/git/pre-commit .ai/hooks/ && chmod +x .ai/hooks/pre-commit
 .ai/hooks/install.sh
 ```
 
-`doctor` (run at session start) reports it missing and prints that `cp` line with the
-real path. `install.sh` now refuses to finish without it. **Already have a `pre-commit`**
-(a linter, lint-staged)? Rename yours `.ai/hooks/pre-commit.local`: it runs after a
-clean scan, and its exit status decides the commit.
+`doctor` (run at session start) reports the hook missing and prints the `cp` line with
+the real path, and says where a project's own `pre-commit` goes. `install.sh` now refuses
+to finish without it.
 
 ### Behaviour changes
 
@@ -38,8 +41,10 @@ Standing on a feature branch, an AWS key involved:
 The same holds for `commit <path>`, `--include` and a `GIT_INDEX_FILE=` prefix (#71,
 #72). It is narrower than the agent guard on purpose: provider keys, PEM private keys and
 `.env` files only, not the `password = "…"` heuristic, which would block too many
-ordinary human commits. A merge being concluded is not re-scanned; `cherry-pick` and
-`revert` do not run `pre-commit` at all. `--no-verify` is the owner's override.
+ordinary human commits. A merge being concluded is not re-scanned; a clean `cherry-pick`
+or `revert` does not run `pre-commit` (one finished with `--continue` after a conflict
+does). `--no-verify` is the owner's override; the refusal does not print it, because an
+agent reads the refusal too.
 
 **The agent guard's secret scan reads the repo each commit actually goes to.** A key staged
 in the repo being committed to; `O` a clean sibling repo:
@@ -55,7 +60,7 @@ The repo's own diff settings — colour, an external diff tool, a textconv, a `-
 attribute, `diff.relative` — no longer change what is scanned. A file git calls binary is
 read as text, except a real binary over 1 MB, which the agent guard skips because reading
 it whole can outlast the hook's timeout (a killed hook lets the command through); the git
-hook reads those.
+hook reads those whole, wherever the key sits in them.
 
 **Branch policy is judged per segment of a command.** On a protected branch:
 
@@ -93,10 +98,15 @@ real commit commands came near it (the most was 6).
 - `post-merge` recorded `unknown` for "Merge remote-tracking branch 'origin/x'" subjects,
   and lost its "← just merged" line (#63). Its note now also says when `git branch -d`
   will refuse a branch because its upstream does not have it yet — "(refused until
-  origin/dev has it — push that first)" — instead of offering it as safe to delete.
+  origin/dev has it — push that first)" — instead of offering it as safe to delete, and
+  offers no `git branch -d` for a branch merged from `origin/` that has no local copy.
 - `doctor` reported correctly wired hooks as missing when wired from `.claude/hooks/` or
-  through a `$VAR/` prefix (#66), and "no agent guard wired" when the plugin was enabled
-  at project scope (#67).
+  through a `$VAR` prefix — `$CLAUDE_PROJECT_DIR`, quoted or not, included (#66) — and
+  "no agent guard wired" when the plugin was enabled at project scope (#67). It now also
+  reports a `pre-commit.local` that is not executable, which the scan would skip silently.
+- The session-start check ran once a day, so after an update that day `doctor` — which
+  reports the missing git hook above — waited until the next. It now also runs on the
+  first session after the plugin version changes.
 - `install.sh` listed a directory under `.ai/hooks/` as an active hook; hook comments named
   paths that exist only in this repo.
 

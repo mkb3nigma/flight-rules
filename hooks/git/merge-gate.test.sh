@@ -569,6 +569,22 @@ say "$?" "0" "…and offers the local branch for deletion as just merged"
 grep -q "refused until" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "1" "…with no push warning: feature/x has no upstream, so -d works now"
 rm -rf "$D" "$O"
+# …and when there is no local branch of that name — merged straight from origin — there
+# is nothing to delete, so `git branch -d` would only fail (/dg, 2026-10-08).
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" push -q origin main dev feature/x 2>/dev/null || die "could not push the fixture to its origin"
+git -C "$D" branch -qD feature/x || die "could not delete the local feature/x"
+git -C "$D" branch -q fix/old dev || die "could not make fix/old"   # so the list is not empty
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/dev/null 2>&1
+grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "with no local feature/x, the note still names it"
+grep -q "git branch -d 'feature/x'" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "1" "…but does not offer a branch that is not there for deletion"
+grep -q "git branch -d 'fix/old'" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…while a merged one that is there is still offered"
+rm -rf "$D" "$O"
 
 echo "post-merge says when git branch -d will refuse, and only then:"
 # A branch cut with `-b fix/x origin/dev` tracks origin/dev, and `git branch -d` judges
