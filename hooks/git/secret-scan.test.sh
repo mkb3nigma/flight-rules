@@ -141,6 +141,9 @@ blocks "a key last in 1.2 MB of text"   '{ cat "$FT"; printf "%s\n" "$AWS"; } > 
 blocks "a key first in a 2 MB binary"   '{ printf "%s\n" "$AWS"; cat "$FB"; } > big.dat && git add big.dat && git commit -qm x'
 blocks "a key mid-way in a 2 MB binary" '{ cat "$FB"; printf "\n%s\n" "$AWS"; cat "$FB"; } > big.dat && git add big.dat && git commit -qm x'
 blocks "a key last in a 2 MB binary"    '{ cat "$FB"; printf "\n%s\n" "$AWS"; } > big.dat && git add big.dat && git commit -qm x'
+# A here-string that large is backed by a temp file; when it cannot be written (a full
+# /tmp, here a file-size limit) the match failed and the key was committed (/dg, 2026-10-08).
+blocks "a key first in 1.2 MB, temp files unwritable" '{ printf "%s\n" "$AWS"; cat "$FT"; } > big.txt && git add big.txt && (trap "" XFSZ; ulimit -f 64; git commit -qm x)'
 blocks "a key in one file, 1.2 MB in the next" '{ printf "%s\n" "$AWS"; } > a.txt && cp "$FT" b.txt && git add . && git commit -qm x'
 blocks "renaming a .env away"           'echo X=1 > .env && git add .env && git commit -qm x --no-verify' 'git mv .env config.txt && git commit -qm y'
 # With diff.renames=false a rename is listed as a delete and an add, so the source was

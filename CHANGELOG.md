@@ -22,6 +22,8 @@ cp -n <plugin>/hooks/git/pre-commit .ai/hooks/ && chmod +x .ai/hooks/pre-commit
 .ai/hooks/install.sh
 ```
 
+`cp -n` copies nothing, silently, if a `pre-commit` is still there — skip the rename
+and you keep only your own hook, which `doctor` then reports.
 `doctor` (run at session start) reports the hook missing and prints the `cp` line with
 the real path, and says where a project's own `pre-commit` goes. `install.sh` now refuses
 to finish without it.

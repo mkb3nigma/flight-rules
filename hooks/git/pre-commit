@@ -69,10 +69,12 @@ FINDINGS=""
 # `@@` is header, so a file-header filter like `^+++ ` is not needed — it also dropped
 # an added line whose own text began with `++ `.
 ADDED=$(printf '%s\n' "$STAGED_DIFF" | awk '/^diff --git /{h=1; next} /^@@/{h=0; next} !h && /^\+/{print substr($0,2)}')
-# Not `printf | grep -q`: grep stops at the first match, printf then dies of SIGPIPE,
-# and pipefail reports that as no match — a key with 64 KB of added text after it was
-# committed (/dg, 2026-10-08).
-hit() { grep -aqE "$1" <<<"$ADDED"; }
+# -c, not -q: grep -q stops at the first match, the writer then fails on the closed
+# pipe, and pipefail reports that as no match — a key with 64 KB of added text after it
+# was committed (/dg, 2026-10-08). -c reads to the end. Nor a here-string: that large,
+# it is a temp file, and one that cannot be written (a full /tmp) is no match too. Only
+# grep's "no match" (1) is clean; any other failure counts as a hit, so this fails closed.
+hit() { local n; n=$(printf '%s\n' "$ADDED" | grep -acE "$1"); [ $? -ne 1 ]; }
 
 ENV_FILES=$(printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -vE '\.env\.(example|sample|template|dist|md)$')
 if [ -n "$ENV_FILES" ]; then
