@@ -111,7 +111,7 @@ real commit commands came near it (the most was 6).
   loudly), "store and compute in UTC" (calendar arithmetic belongs in the owning zone),
   "every code change ships with tests" (refactors and new code had no workable reading).
   New: an action nothing can undo needs a person's yes; a universal claim names what was
-  checked; when two principles conflict, the blocked-command and irreversible-action
+  checked; a decision asked for carries its own reasoning, not a pointer to it; when two principles conflict, the blocked-command and irreversible-action
   stops win. Nothing cut. An advisory rule is no longer cut for being advisory or for
   not having fired lately — only when its reason is gone.
 - The injected rules header names the plugin version, so a session still holding an

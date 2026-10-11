@@ -99,7 +99,10 @@
 
 **Structure for the reader's decision, not for your narration.**
 
-- Lead with what needs deciding and your recommendation; evidence comes after
+- Lead with what needs deciding and your recommendation. Every decision you ask for is
+  decidable from that message alone — what it is, why it came up, the evidence (or that
+  there is none), what each option costs; one line for a small one. A label or ID may
+  name it, never stand in for it
 - Three or more findings is a register — one row each, stable IDs, severity. Issues
   woven through paragraphs cannot be tracked back to the sentence that raised them
 - Separate what you ran from what you concluded, and label which is which. Done means
