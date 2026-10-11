@@ -492,6 +492,14 @@ D=$(mkauth)
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
 git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: explicit'
 say "$?" "0" "an authorised merge lands and records it in the commit"
+# #62: grep found the line, git's trailer parser did not. The hook appended
+# '\n<trailer>\n', meaning the leading newline to be the blank line a trailer block
+# needs — but the message file git hands commit-msg for a non-interactive merge ends
+# WITHOUT a trailing newline (probed 2026-10-04, git 2.55), so that newline only
+# terminated the subject. Every owner merge on dev at c3a708e had the line glued to
+# the subject and %(trailers) returned empty for all of them.
+[ -n "$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)')" ]
+say "$?" "0" "…as a trailer git itself can parse, not just a greppable line"
 rm -rf "$D"
 
 D=$(mkauth)
@@ -504,6 +512,8 @@ D=$(mkauth "MERGE_NEEDS_INSTRUCTION=off")
 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
 git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: not required'
 say "$?" "0" "the project opt-out works, and history records that it was used"
+[ -n "$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)')" ]
+say "$?" "0" "…and that record is a parseable trailer too"
 rm -rf "$D"
 
 # The trailer must not stack if the message is rewritten.
@@ -536,6 +546,134 @@ git -C "$D" checkout -qb scratch 2>/dev/null
 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
 git -C "$D" log -1 --pretty=%B | grep -q 'Merge-authorisation'
 say "$?" "1" "merging into an unprotected branch is not gated at all"
+rm -rf "$D"
+echo "post-merge names the branch for the subject the owner flow actually writes:"
+# #63: since 2026-09-15 the owner merges into dev locally from origin/<branch>, so the
+# subject is "Merge remote-tracking branch 'origin/x' into dev" — and the parser knew
+# "Merge branch 'x'", "Merge pull request #N from o/x" and "Merge x into y", none of
+# which match it. Every owner merge on dev since 0.22.0 was recorded as `unknown` and
+# lost its "← just merged" line. The local branch is what `git branch -d` wants, so
+# the `origin/` prefix is stripped.
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" push -q origin main dev feature/x 2>/dev/null || die "could not push the fixture to its origin"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/dev/null 2>&1
+say "$?" "0" "merging origin/feature/x into dev lands"
+[ "$(git -C "$D" log -1 --pretty=%s)" = "Merge remote-tracking branch 'origin/feature/x' into dev" ]
+say "$?" "0" "…with the remote-tracking subject (the fixture is the real shape)"
+grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…and the note names feature/x, not unknown"
+grep -q "git branch -d 'feature/x'  ← just merged" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…and offers the local branch for deletion as just merged"
+grep -q "refused until" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "1" "…with no push warning: feature/x has no upstream, so -d works now"
+rm -rf "$D" "$O"
+# …and when there is no local branch of that name — merged straight from origin — there
+# is nothing to delete, so `git branch -d` would only fail (/dg, 2026-10-08).
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" push -q origin main dev feature/x 2>/dev/null || die "could not push the fixture to its origin"
+git -C "$D" branch -qD feature/x || die "could not delete the local feature/x"
+git -C "$D" branch -q fix/old dev || die "could not make fix/old"   # so the list is not empty
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/dev/null 2>&1
+grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "with no local feature/x, the note still names it"
+grep -q "git branch -d 'feature/x'" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "1" "…but does not offer a branch that is not there for deletion"
+grep -q "git branch -d 'fix/old'" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…while a merged one that is there is still offered"
+rm -rf "$D" "$O"
+
+echo "post-merge says when git branch -d will refuse, and only then:"
+# A branch cut with `-b fix/x origin/dev` tracks origin/dev, and `git branch -d` judges
+# it against that, so it is refused until dev is pushed — and the note is written
+# before the push (2026-10-04).
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" push -q origin main dev 2>/dev/null || die "could not push the fixture to its origin"
+git -C "$D" branch -q --set-upstream-to=origin/dev feature/x || die "could not make feature/x track origin/dev"
+git -C "$D" branch -q plain dev && git -C "$D" branch -q --set-upstream-to=origin/dev plain \
+  || die "could not make the already-pushed branch"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+say "$?" "0" "merging feature/x (tracking origin/dev) into dev lands"
+git -C "$D" branch -d feature/x >/dev/null 2>&1
+say "$?" "1" "…and git branch -d refuses it before dev is pushed (the case is real)"
+grep -qF "git branch -d 'feature/x'  ← just merged  (refused until origin/dev has it — push that first)" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…and the note says origin/dev must have it first"
+grep -q "git branch -d 'plain'$" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…but not for a branch its upstream already has"
+git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev in the fixture"
+git -C "$D" branch -d feature/x >/dev/null 2>&1
+say "$?" "0" "…and after the push, -d deletes it"
+rm -rf "$D" "$O"
+
+echo "…and says nothing where -d would in fact delete:"
+# Each of these was annotated by the first version while `git branch -d` deleted the
+# branch: git judges against HEAD when the upstream ref does not resolve, and the short
+# upstream name is not a refs/remotes/ path for a local upstream or next to a tag.
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" push -q origin main dev 2>/dev/null || die "could not push the fixture to its origin"
+git -C "$D" push -q -u origin feature/x 2>/dev/null || die "could not push feature/x"
+git -C "$D" push -q origin --delete feature/x 2>/dev/null && git -C "$D" fetch -q --prune origin \
+  || die "could not make feature/x's upstream gone"
+git -C "$D" branch -q local-up feature/x && git -C "$D" branch -q --set-upstream-to=main local-up \
+  || die "could not make the branch with a local upstream"
+git -C "$D" branch -q tagged feature/x && git -C "$D" branch -q --set-upstream-to=origin/dev tagged \
+  && git -C "$D" tag origin/dev main || die "could not make the tag that shadows origin/dev"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev"
+(cd "$D" && .ai/hooks/post-merge 0) >/dev/null 2>&1 || die "post-merge failed when run directly"
+NOTE="$D/.claude/post-merge-note.md"
+grep -qE "^  git branch -d 'feature/x'  ← just merged$" "$NOTE" 2>/dev/null
+say "$?" "0" "an upstream gone from the remote: no annotation"
+grep -qE "^  git branch -d 'tagged'$" "$NOTE" 2>/dev/null
+say "$?" "0" "a tag named origin/dev beside the branch: no annotation"
+grep -qE "^  git branch -d 'local-up'  \(refused until main contains it\)$" "$NOTE" 2>/dev/null
+say "$?" "0" "a local upstream that lacks it: 'contains', not 'push'"
+for b in feature/x tagged; do git -C "$D" branch -d "$b" >/dev/null 2>&1 || echo "$b"; done > "$D/undeleted"
+say "$(cat "$D/undeleted")" "" "…and -d really deletes the unannotated ones"
+rm -rf "$D" "$O"
+
+echo "…under a remote that is not called origin:"
+D=$(mkauth); O=$(mktemp -d)
+git -C "$O" init -q --bare || die "git init --bare failed in $O"
+git -C "$D" remote add upstream "$O"
+git -C "$D" push -q upstream main dev 2>/dev/null || die "could not push the fixture to upstream"
+git -C "$D" branch -q --set-upstream-to=upstream/dev feature/x || die "could not make feature/x track upstream/dev"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
+grep -qF "(refused until upstream/dev has it" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "the note names upstream/dev"
+rm -rf "$D" "$O"
+
+
+echo
+echo "install.sh lists hooks, not directories or dotted files:"
+# A consuming project may keep its own agent/ scripts under .ai/hooks/; git only runs
+# bare file names at the top level, so a directory is not an active hook and must not
+# be listed as one. The positive assertion on the same run keeps the negatives honest.
+D=$(mkrepo)
+cp "$H/reference-transaction" "$H/install.sh" "$D/.ai/hooks/" || die "could not copy install.sh"
+# Without pre-commit nothing scans `git add f && git commit` for a key (#71), so a
+# copy that left it out must be refused, not installed half built.
+OUT=$(cd "$D" && bash .ai/hooks/install.sh 2>&1); RC=$?
+say "$RC" "1" "install.sh refuses when pre-commit is missing"
+grep -q 'pre-commit is missing' <<<"$OUT"
+say "$?" "0" "…and names it"
+cp "$H/pre-commit" "$D/.ai/hooks/" || die "could not copy pre-commit"
+mkdir -p "$D/.ai/hooks/agent"; touch "$D/.ai/hooks/README.md"
+OUT=$(cd "$D" && bash .ai/hooks/install.sh 2>&1); RC=$?
+say "$RC" "0" "install.sh exits 0 with an agent/ subdirectory and a README beside the hooks"
+grep -qE '^ +pre-merge-commit$' <<<"$OUT"
+say "$?" "0" "install.sh lists pre-merge-commit as an active hook"
+grep -qE '^ +agent$' <<<"$OUT"
+say "$?" "1" "install.sh does not list the agent/ directory as an active hook"
+grep -q 'README' <<<"$OUT"
+say "$?" "1" "install.sh still skips dotted files"
 rm -rf "$D"
 echo
 echo "$PASS passed, $FAIL failed"
