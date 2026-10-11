@@ -265,10 +265,12 @@ that the logic has exactly one home.
   of them (#71, #72) — and a human's commit is scanned too. It is narrower than the
   agent guard on purpose: the guard's `password = "…"` heuristic warns an agent but
   would block too many ordinary commits here. A merge being concluded is not
-  re-scanned (its commits were scanned when made — so neither is a key typed in while
-  resolving its conflict); a `merge --squash` is an ordinary commit and is scanned.
-  `cherry-pick`/`revert` do not run `pre-commit` at all. Override for a checked false
-  positive: `--no-verify`, the owner's call. **Already have a `pre-commit`** (a linter,
+  re-scanned — its commits were scanned when made if this hook was installed then — so
+  neither is a key typed in while resolving its conflict; a `merge --squash` is an
+  ordinary commit and is scanned. A clean `cherry-pick`/`revert` does not run
+  `pre-commit`; one that stopped on a conflict and is finished with `--continue` does.
+  Override for a checked false positive: `--no-verify`, the owner's call — the refusal
+  does not print it, because an agent reads it too. **Already have a `pre-commit`** (a linter,
   lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
   scan and its exit status decides the commit. **Upgrading from 0.22.x:** a plugin
   update cannot copy git hooks, so this one arrives only when you copy it in;
@@ -359,8 +361,9 @@ Guards that fire on the assistant's own events, before git ever runs:
   that has failed silently before. `session-start.sh` runs it daily and prints only
   problems.
   Tests: `doctor.test.sh`.
-- **`session-start.sh`** — SessionStart banner: once a day per project, lists
-  worktrees whose branches are already merged so they get cleaned up. Reads
+- **`session-start.sh`** — SessionStart banner: once a day per project, and again after
+  a plugin update, runs `doctor.sh` and lists worktrees whose branches are already merged
+  so they get cleaned up. Reads
   `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
   A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
   reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.

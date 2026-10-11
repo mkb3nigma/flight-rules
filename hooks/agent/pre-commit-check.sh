@@ -667,9 +667,10 @@ scan_repo() {
   # hook. Deleting or untracking one is how a leak is cleaned up, and that was refused;
   # adding or editing one stays refused (owner's call, 2026-10-05). A rename or copy is
   # listed under its new name only, so its source is added: `git mv .env config.txt`
-  # keeps the secrets tracked under a name nothing watches.
+  # keeps the secrets tracked under a name nothing watches. -M because diff.renames=false
+  # lists a rename as a delete and an add, and the delete is filtered out.
   STAGED_FILES=$("${SCAN_GIT[@]}" -c core.quotePath=false "${DIFF_RAW[@]}" --name-only --diff-filter=d 2>/dev/null
-                 "${SCAN_GIT[@]}" -c core.quotePath=false "${DIFF_RAW[@]}" --name-status --diff-filter=RC 2>/dev/null \
+                 "${SCAN_GIT[@]}" -c core.quotePath=false "${DIFF_RAW[@]}" --name-status -M --diff-filter=RC 2>/dev/null \
                    | LC_ALL=C awk -F '\t' '{print $2}')
 
   # Added lines only, leading "+" stripped. Each file's `+++ b/path` header is dropped

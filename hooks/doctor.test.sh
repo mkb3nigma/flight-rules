@@ -93,6 +93,13 @@ say "$([ -n "$FIX" ] && echo yes)" "yes" "…and gives the command that copies i
 (cd "$D" && eval "$FIX") >/dev/null 2>&1
 say "$(rc "$D")" "0" "…which, run, clears it"
 rm -rf "$D"
+# A doctor.sh copied in by hand, with no git/ beside it, printed a cp from a directory
+# that does not exist (/dg, 2026-10-08). It names flight-rules' hooks/git/ instead.
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"; mkdir -p "$D/lone"; cp "$DOCTOR" "$D/lone/doctor.sh"
+LONE=$(cd "$D" && HOME="$D/fakehome" bash "$D/lone/doctor.sh" 2>&1)
+say "$(grep -c "$D/lone/git" <<<"$LONE")" "0" "doctor with no git/ beside it prints no cp from there"
+say "$(grep -c "from flight-rules' hooks/git/" <<<"$LONE")" "1" "…and names where the hook comes from"
+rm -rf "$D"
 
 D=$(mkrepo); printf 'MERGE_NEEDS_INSTRUCTION=off\n' >> "$D/.ai/flight-rules.conf"
 say "$(has "$D" "no longer needs the user")" "0" "MERGE_NEEDS_INSTRUCTION=off is surfaced, not silent"
@@ -126,6 +133,23 @@ for f in "$D"/.ai/hooks/*; do printf '#!/bin/sh\nexit 0\n' > "$f"; done
 chmod +x "$D"/.ai/hooks/*
 say "$(rc "$D")" "1" "hooks replaced by no-op stubs → problem"
 say "$(has "$D" "does not look like")" "0" "…and says which"
+rm -rf "$D"
+
+# 1b. A project upgrading to 0.23.0 already had its own pre-commit (a linter). doctor
+#     called it a possible stub and never said where it goes (/dg, 2026-10-08).
+D=$(mkrepo)
+printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
+say "$(has "$D" "rename it pre-commit.local")" "0" "a foreign pre-commit → told about pre-commit.local"
+rm -rf "$D"
+
+# 1c. A pre-commit.local without its executable bit is skipped by the scan without a
+#     word, so the project's own linter stops running unnoticed (/dg, 2026-10-08).
+D=$(mkrepo)
+printf '#!/bin/sh\nexit 0\n' > "$D/.ai/hooks/pre-commit.local"
+say "$(rc "$D")" "1" "a non-executable pre-commit.local → problem"
+say "$(has "$D" "pre-commit.local is not executable")" "0" "…and says so"
+chmod +x "$D/.ai/hooks/pre-commit.local"
+say "$(rc "$D")" "0" "…and an executable one is fine"
 rm -rf "$D"
 
 # 2. settings.json wires a script that is not there. doctor grepped the file for the
@@ -179,6 +203,31 @@ say "$(has "$D" "does not exist")" "1" "\$R/ and \${R}/ prefixed scripts that ex
 rm "$D/hooks/y.sh"
 say "$(has "$D" "wires hooks/y.sh, which does not exist")" "0" "…and a missing one is named by its repo-relative path"
 say "$(has "$D" "wires hooks/x.sh")" "1" "…while the one that exists stays silent"
+rm -rf "$D"
+
+# 2f. A `$VAR` prefix followed by more path, or by a closing quote: `$CLAUDE_PROJECT_DIR`
+#     is Claude Code's documented form, and both `"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`
+#     and `$CLAUDE_PROJECT_DIR/.claude/hooks/x.sh` were captured as the absolute
+#     `/.claude/hooks/x.sh` and reported missing, every day (/dg, 2026-10-08).
+D=$(mkrepo); mkdir -p "$D/.claude/hooks" "$D/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/a.sh" },
+  { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/b.sh" },
+  { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/c.sh\"" },
+  { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/d.sh" },
+  { "type": "command", "command": "bash \"$(git rev-parse --show-toplevel)\"/hooks/e.sh" } ] } ] } }
+JSON
+for f in .claude/hooks/a.sh .claude/hooks/b.sh .claude/hooks/c.sh .claude/hooks/d.sh hooks/e.sh; do
+  printf '#!/bin/sh\nexit 0\n' > "$D/$f"; chmod +x "$D/$f"
+done
+say "$(has "$D" "does not exist")" "1" "\$CLAUDE_PROJECT_DIR forms, quoted or not, that exist are not reported"
+rm "$D/.claude/hooks/a.sh" "$D/.claude/hooks/b.sh" "$D/.claude/hooks/c.sh" "$D/.claude/hooks/d.sh" "$D/hooks/e.sh"
+say "$(has "$D" "wires .claude/hooks/a.sh, which does not exist")" "0" "…a missing \"\$VAR\"/ one is named by its repo-relative path"
+say "$(has "$D" "wires .claude/hooks/b.sh, which does not exist")" "0" "…as is a missing \$VAR/.claude/ one"
+say "$(has "$D" "wires .claude/hooks/c.sh, which does not exist")" "0" "…and a missing \"\$VAR/…\" one"
+say "$(has "$D" "wires .claude/hooks/d.sh, which does not exist")" "0" "…and a missing \${VAR}/ one"
+say "$(has "$D" "wires hooks/e.sh, which does not exist")" "0" "…and a quoted \$(git rev-parse) one"
 rm -rf "$D"
 
 # 2d. An absolute path is tested where it points, not under the repo root.
