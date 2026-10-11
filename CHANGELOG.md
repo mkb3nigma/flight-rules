@@ -126,6 +126,10 @@ real commit commands came near it (the most was 6).
   checked; a decision asked for carries its own reasoning, not a pointer to it; when two principles conflict, the blocked-command and irreversible-action
   stops win. Nothing cut. An advisory rule is no longer cut for being advisory or for
   not having fired lately — only when its reason is gone.
+- The principles' two hard stops — a blocked command, an action nothing can undo — have
+  their own section, first, headed "Not yours to override". They were bullets
+  5–6 of §4, under a heading that says keep going. Wording unchanged; §1–§7 keep their
+  numbers.
 - The injected rules header names the plugin version, so a session still holding an
   older version's rules after an update can tell.
 - `hooks/README.md` reads in order: install, configure, wire, then the per-hook reference
