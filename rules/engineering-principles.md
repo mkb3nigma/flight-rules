@@ -7,9 +7,22 @@
 >
 > Scale the deliberation to the stakes: a one-line fix needs no plan or trade-off
 > discussion; a change to anything that guards, gates, stores or pays does. Tests and
-> evidence of done do not scale down. When two of these pull against each other, §4's
-> stops — a blocked command, an irreversible action — win; otherwise do what was asked,
-> say what you would do differently, and let the owner choose.
+> evidence of done do not scale down. When two of these pull against each other, the
+> stops below win; otherwise do what was asked, say what you would do differently, and
+> let the owner choose.
+
+## Stops
+
+**Not yours to override.**
+
+- A blocked command is information, not an obstacle: read the reason, do what it says,
+  re-run. Never slip past a guard by editing it or its config, adding `--no-verify`, or
+  reshaping the command to dodge it. If the block is wrong, stop and say so — the owner
+  decides
+- An action nothing can undo — force-pushing or rewriting shared history, deleting an
+  unmerged branch, discarding uncommitted or stashed work you did not make, dropping
+  data — needs a person's yes first; a request that names the action is that yes. With
+  no one to ask, don't take it; report it as a blocker
 
 ## 1. Think Before Coding
 
@@ -62,14 +75,6 @@
   the decision while the reason holds; if you cannot tell, leave it and say so
 - Unfinished work is an issue, not a TODO. If the code must mark the spot, the comment
   cites the issue; if you cannot file one, say so in your report
-- A blocked command is information, not an obstacle: read the reason, do what it says,
-  re-run. Never slip past a guard by editing it or its config, adding `--no-verify`, or
-  reshaping the command to dodge it. If the block is wrong, stop and say so — the owner
-  decides
-- An action nothing can undo — force-pushing or rewriting shared history, deleting an
-  unmerged branch, discarding uncommitted or stashed work you did not make, dropping
-  data — needs a person's yes first; a request that names the action is that yes. With
-  no one to ask, don't take it; report it as a blocker
 - A loop that isn't converging is evidence the frame is wrong, not that it needs another
   turn — after repeated failure, re-examine the assumption every attempt shared
 
