@@ -113,7 +113,7 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     event (commit/PR/sha/date/probe — a private-repo sha and date counts), an
     `UPSTREAMS.md`-pinned source the item was adapted from, or the failure description
     itself declared as testimony. Enforcement is a hook, or a skill with check number;
-    "advisory" only with the reason it cannot be checked and the release it expires at.
+    "advisory" only with the reason it cannot be checked.
     ❌ if any of the three is missing; ⚠️ if the diff was not put through adversarial
     review (`/dg`) with the verdict and each finding's disposition in the PR body. A
     deletion or tightening skips those but must say what it drops and where that is now

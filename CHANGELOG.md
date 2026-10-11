@@ -105,6 +105,15 @@ real commit commands came near it (the most was 6).
 - `rules/engineering-principles.md` §4: a comment is stale when its reason has gone, not
   when it is old; unfinished work is an issue, not a TODO. `/pre-merge-check` item 15
   now fails an added TODO that cites no issue (#68).
+- `rules/engineering-principles.md` had its release review, read as the assistant that
+  receives it. Rewritten where the literal reading invited the failure: "skip error
+  handling for scenarios that cannot occur" (a check's own failure must now fail
+  loudly), "store and compute in UTC" (calendar arithmetic belongs in the owning zone),
+  "every code change ships with tests" (refactors and new code had no workable reading).
+  New: an action nothing can undo needs a person's yes; a universal claim names what was
+  checked; when two principles conflict, the blocked-command and irreversible-action
+  stops win. Nothing cut. An advisory rule is no longer cut for being advisory or for
+  not having fired lately — only when its reason is gone.
 - The injected rules header names the plugin version, so a session still holding an
   older version's rules after an update can tell.
 - `hooks/README.md` reads in order: install, configure, wire, then the per-hook reference
