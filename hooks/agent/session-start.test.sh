@@ -28,7 +28,7 @@ mkrepo() {
   git -C "$d" config merge.ff false
   mkdir -p "$d/.ai/hooks" "$d/.ai/worktrees"
   cp "$H/../git/pre-merge-commit" "$H/../git/commit-msg" "$H/../git/pre-rebase" \
-     "$H/../git/post-merge" "$H/../git/reference-transaction" "$d/.ai/hooks/"
+     "$H/../git/post-merge" "$H/../git/reference-transaction" "$H/../git/pre-commit" "$d/.ai/hooks/"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath .ai/hooks
   printf 'INTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.ai/worktrees\nPROTECTED_BRANCHES=^trunk$\n' \
@@ -160,6 +160,21 @@ OTHER=$( (cd "$E" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) ); OTHER_RC=$?
 [ $OTHER_RC -ne 0 ] && OTHER="HARNESS: the hook exited $OTHER_RC"
 say "$(grep -c 'Branch: fix/merged' <<<"$OTHER")" "1" "a different project the same day still reports"
 rm -rf "$D" "$E"
+
+echo "A plugin update is checked the same day, not the next:"
+# The once-a-day flag carried no version, so a session started after an update that day
+# found it touched and skipped doctor — the one place an upgrade's missing git hook is
+# reported (/dg, 2026-10-08). The flag now names the plugin version.
+T=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$T/.claude-plugin" "$T/hooks/agent"
+cp "$HOOK" "$T/hooks/agent/" && cp "$H/../doctor.sh" "$T/hooks/" || die "could not lay out the fake plugin"
+printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"
+D=$(mkrepo); git -C "$D" config --unset merge.ff   # a problem for doctor to report
+PRUN() { (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null); }
+say "$(PRUN | grep -c 'flight-rules doctor')" "1" "the first session of the day runs doctor"
+say "$(PRUN | grep -c 'flight-rules doctor')" "0" "…the second, same version, does not"
+printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"
+say "$(PRUN | grep -c 'flight-rules doctor')" "1" "…the first after an update, same day, does"
+rm -rf "$D" "$T"
 
 echo "A detached-HEAD worktree has no branch and is skipped:"
 D=$(mkrepo)

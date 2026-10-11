@@ -54,7 +54,8 @@ UPSTREAMS.md      Sources this playbook adapts from + last-synced refs (see /ups
 ```
 
 The skills say what the workflow is; the hooks make it non-optional: `hooks/git/`
-gates merges into protected branches, `hooks/agent/` stops the assistant committing,
+gates merges into protected branches and refuses a commit that stages a key,
+`hooks/agent/` stops the assistant committing,
 destroying or force-pushing a protected branch, or committing secrets. The agent guard
 ships with the plugin; the git hooks are copied in once per clone. Both read
 `.ai/flight-rules.conf` — see `hooks/README.md`.

@@ -19,12 +19,13 @@ ok()   { [[ $QUIET -eq 1 ]] || printf '  ✅ %s\n' "$1"; }
 warn() { WARN=$((WARN+1)); printf '  ⚠️  %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$1"; }
 
+GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/git"   # the copies shipped beside this script
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { bad "not inside a git repository"; exit 1; }
 cd "$ROOT" || exit 1
 
 # A hook that is present, executable and EMPTY passes every other check here while
 # enforcing nothing. doctor already content-checks the agent guard (for a pre-conf copy);
-# these are the same idea for the five git hooks — one string each that a real copy must
+# these are the same idea for the six git hooks — one string each that a real copy must
 # contain. It is a grep, so a determined edit defeats it; it catches the stub, the
 # truncated copy and the wrong-file-name, which is what actually happens.
 hook_marker() {
@@ -34,6 +35,7 @@ hook_marker() {
     pre-rebase)             printf 'PR_ONLY' ;;
     post-merge)             printf 'post-merge-note' ;;
     reference-transaction)  printf 'is-ancestor' ;;
+    pre-commit)             printf 'PRIVATE KEY' ;;
     *)                      printf 'flight-rules' ;;
   esac
 }
@@ -48,17 +50,32 @@ else
     bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
   else
     ok "core.hooksPath=$HOOKS_PATH"
-    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction; do
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
-        bad "$h missing from $HOOKS_PATH — the gate is half built"
+        # A plugin upgrade cannot copy git hooks into a project, so a hook added in a
+        # release (pre-commit, 0.23.0) arrives as this line; say where to copy it from.
+        # A doctor.sh copied in by hand has no git/ beside it to copy from.
+        if [[ -f "$GIT_HOOKS_SRC/$h" ]]; then
+          bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from this flight-rules: cp '$GIT_HOOKS_SRC/$h' '$HOOKS_PATH/' && chmod +x '$HOOKS_PATH/$h'"
+        else
+          bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from flight-rules' hooks/git/ and chmod +x it"
+        fi
       elif [[ ! -x "$HOOKS_DIR/$h" ]]; then
         bad "$h is not executable — git ignores it silently (chmod +x, and commit the mode)"
       elif ! grep -q "$(hook_marker "$h")" "$HOOKS_DIR/$h"; then
-        bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything"
+        # pre-commit is the one hook a project is likely to have had already (a linter),
+        # and the upgrade to 0.23.0 is when it meets this line; say where it goes.
+        _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
+        bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
       else
         ok "$h installed and executable"
       fi
     done
+    # The scan runs pre-commit.local only if it is executable, and skips it without a
+    # word otherwise — a project's linter would stop running unnoticed.
+    if [[ -f "$HOOKS_DIR/pre-commit.local" && ! -x "$HOOKS_DIR/pre-commit.local" ]]; then
+      bad "pre-commit.local is not executable — pre-commit skips it silently, so your own pre-commit no longer runs (chmod +x)"
+    fi
   fi
 fi
 MERGE_FF=$(git config merge.ff 2>/dev/null || true)
@@ -153,8 +170,12 @@ fi
 # ── 4. The guard is wired once, not twice ─────────────────────────────────────
 PLUGIN_ON=0
 # `"flight-rules@x": false` contains the name too. Match the VALUE, or a disabled plugin
-# reports as a wired guard.
-grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' "$HOME/.claude/settings.json" 2>/dev/null && PLUGIN_ON=1
+# reports as a wired guard. Claude Code writes `enabledPlugins` to the user-level file
+# for a user-scope install and to the repo's .claude/settings.json or
+# .claude/settings.local.json for a project-scope one (#67): reading only ~/.claude
+# declared the guard absent in a repo where it was running.
+grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' \
+  "$HOME/.claude/settings.json" .claude/settings.json .claude/settings.local.json 2>/dev/null && PLUGIN_ON=1
 LOCAL_WIRED=0
 grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=1
 # Wiring a path is not the same as wiring a FILE. Every script named in the settings is
@@ -163,11 +184,24 @@ grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=
 if [[ -f .claude/settings.json ]]; then
   while IFS= read -r rel; do
     [[ -z "$rel" ]] && continue
-    [[ -f "$ROOT/$rel" ]] || bad ".claude/settings.json wires $rel, which does not exist — that hook never runs"
-    # A ${CLAUDE_PLUGIN_ROOT}-prefixed path lives in the installed plugin, not here; it is
-    # captured with its prefix so it can be dropped rather than reported as missing.
-  done < <(grep -oE '(\$\{?CLAUDE_PLUGIN_ROOT\}?/)?(\.ai/)?hooks/[A-Za-z0-9_/-]*\.sh' .claude/settings.json \
-           | grep -v CLAUDE_PLUGIN_ROOT | sort -u)
+    p="$rel"; [[ "$p" = /* ]] || p="$ROOT/$p"
+    [[ -f "$p" ]] || bad ".claude/settings.json wires $rel, which does not exist — that hook never runs"
+    # The whole path before `hooks/` is captured, not a list of known prefixes: the list
+    # knew `.ai/` and missed `.claude/`, so `.claude/hooks/x.sh` was tested as `hooks/x.sh`
+    # and reported missing while it ran (#66). A root prefix is marked first, then
+    # captured with the path: `$(git rev-parse --show-toplevel)` IS $ROOT, and so is any
+    # `$VAR` or `${VAR}` — $CLAUDE_PROJECT_DIR, Claude Code's documented form, or the
+    # `R=$(git rev-parse --show-toplevel); … "$R/hooks/x.sh"` idiom this repo's own wiring
+    # uses. ${CLAUDE_PLUGIN_ROOT} lives in the installed plugin, not here, and is dropped
+    # rather than reported as missing. A closing quote may sit between the prefix and
+    # its `/` (`"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`); unmarked, those captured as
+    # the absolute `/.claude/hooks/x.sh` and were reported missing (/dg, 2026-10-08).
+  done < <(sed -E 's#\$\{?CLAUDE_PLUGIN_ROOT\}?(\\")?/#@PLUGIN@/#g
+                   s#\$\(git rev-parse --show-toplevel\)(\\")?/#@ROOT@/#g
+                   s#\$\{?[A-Za-z_][A-Za-z0-9_]*\}?(\\")?/#@ROOT@/#g' .claude/settings.json \
+           | grep -oE '(@[A-Z]+@/)?[A-Za-z0-9_./-]*hooks/[A-Za-z0-9_/-]*\.sh' \
+           | grep -v '^@PLUGIN@' \
+           | sed 's#^@ROOT@/##' | sort -u)
 fi
 if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
   warn "the flight-rules plugin is enabled AND .claude/settings.json wires a pre-commit-check.sh — the guard runs twice (drop the local wiring)"
