@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# pre-commit hook — the secret scan, run by git on what is actually being committed.
+#
+# The agent guard scans too, but it scans BEFORE the command runs, so it sees the
+# index as it was, not as the command leaves it. `git add f && git commit`,
+# `git commit -a` and `git commit <path>` all stage in the same command and were
+# never scanned (#71), and a GIT_INDEX_FILE=/GIT_DIR= prefix pointed the commit at an
+# index the guard never read (#72). This hook runs after git has built the index the
+# commit will record (for -a and <path>, git's temporary index, which GIT_INDEX_FILE
+# names), so how the command was spelled no longer matters, and a human's commit is
+# scanned too.
+#
+# Deliberately narrow: only the findings that are a leak whoever reads them — a
+# provider key, a PEM private key, a staged .env. The agent guard's heuristic for
+# credential literals (`password = "…"`) is NOT run here: it is right often enough to
+# warn an agent, and wrong often enough that blocking every human commit on it would
+# be the kind of "safety" block this playbook avoids.
+#
+# A merge being concluded (MERGE_HEAD present) is not scanned. Its staged diff is the
+# whole incoming branch, whose commits were scanned when they were made; re-scanning
+# it blocks the merge on lines nobody is writing now. The cost, accepted: a key typed
+# in while resolving the conflict is not scanned either. A `merge --squash` is a new
+# commit, with no MERGE_HEAD, and is scanned like any other.
+#
+# A project that has its own pre-commit (a linter, lint-staged) renames it
+# `pre-commit.local` beside this one; it runs after a clean scan, with the same
+# arguments, and its exit status is the commit's.
+#
+# The six patterns are also in hooks/agent/pre-commit-check.sh and
+# skills/pre-merge-check/SKILL.md; skills/catalogue.test.sh fails until all three
+# match.
+#
+# Bypass — the owner's call, for a reviewed false positive:  git commit --no-verify
+
+set -uo pipefail
+# Bytes, not characters: a staged binary or Latin-1 file must not make grep stop at
+# "binary file matches" or drop the line that holds the key.
+export LC_ALL=C
+
+LOCAL_HOOK="$(dirname "$0")/pre-commit.local"
+run_local() { [ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"; exit 0; }
+
+git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && run_local "$@"
+
+# Every flag here stops repo config from changing what `git diff` prints, which would
+# leave the `^+` match below with nothing to see: --no-color (color.diff=always),
+# --no-ext-diff (diff.external), --no-textconv (a textconv driver that redacts), and
+# --text (a `-diff` attribute, which turns the file into "Binary files differ").
+# Every binary is read whole: this hook has no timeout to outrun, so it is the backstop
+# for the large binaries the agent guard skips. NUL bytes are dropped before the shell
+# sees them, which would otherwise warn on each.
+STAGED_DIFF=$(git diff --cached --no-color --no-ext-diff --no-textconv --text -U0 2>/dev/null | tr -d '\000')
+# A .env is flagged for every change except its removal (--diff-filter=d): deleting or
+# untracking one is the clean-up. Editing one already tracked is refused like adding it
+# (owner's call, 2026-10-05) — a password typed into committed defaults has no format
+# for the patterns below to catch. A project that commits one on purpose uses
+# --no-verify, deliberately. A rename or copy is listed under its new name only, so
+# its source is added: `git mv .env config.txt` keeps the secrets tracked under a name
+# nothing watches.
+STAGED_FILES=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=d 2>/dev/null
+               git -c core.quotePath=false diff --cached --name-status --diff-filter=RC 2>/dev/null \
+                 | awk -F '\t' '{print $2}')
+FINDINGS=""
+
+# Added lines are the `+` lines inside a hunk. Everything from `diff --git` to the first
+# `@@` is header, so a file-header filter like `^+++ ` is not needed — it also dropped
+# an added line whose own text began with `++ `.
+ADDED=$(printf '%s\n' "$STAGED_DIFF" | awk '/^diff --git /{h=1; next} /^@@/{h=0; next} !h && /^\+/{print substr($0,2)}')
+hit() { printf '%s\n' "$ADDED" 2>/dev/null | grep -aqE "$1"; }
+
+ENV_FILES=$(printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -vE '\.env\.(example|sample|template|dist|md)$')
+if [ -n "$ENV_FILES" ]; then
+  FINDINGS="$FINDINGS
+  • .env file staged: $(printf '%s' "$ENV_FILES" | tr '\n' ' ')"
+fi
+if hit 'AKIA[A-Z0-9]{16}'; then
+  FINDINGS="$FINDINGS
+  • AWS access key (AKIA...)"
+fi
+if hit '(^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}'; then
+  FINDINGS="$FINDINGS
+  • API key (sk-... — OpenAI/Anthropic style)"
+fi
+if hit 'gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}'; then
+  FINDINGS="$FINDINGS
+  • GitHub token (ghp_/gho_/github_pat_...)"
+fi
+if hit 'xox[baprs]-[A-Za-z0-9-]{10,}'; then
+  FINDINGS="$FINDINGS
+  • Slack token (xox...)"
+fi
+if hit 'AIza[0-9A-Za-z_-]{35}'; then
+  FINDINGS="$FINDINGS
+  • Google API key (AIza...)"
+fi
+if hit 'BEGIN [A-Z ]*PRIVATE KEY'; then
+  FINDINGS="$FINDINGS
+  • Private key header (BEGIN ... PRIVATE KEY)"
+fi
+
+[ -z "$FINDINGS" ] && run_local "$@"
+
+cat >&2 <<EOF
+🔐 flight-rules: commit refused — the staged changes look like they contain a secret:$FINDINGS
+
+Unstage or remove it, then commit again. If it is a false positive (a test fixture,
+say), build the value at run time instead of writing it literally; if you have
+checked and want it committed as is, that is the owner's call: git commit --no-verify
+EOF
+exit 1

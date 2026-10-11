@@ -4,6 +4,114 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.23.0 — 2026-10-08
+
+### Upgrading — one step a plugin update cannot do
+
+**Copy in the new git hook and re-run `install.sh`.** 0.23.0 adds `hooks/git/pre-commit`,
+the secret scan that sees what a commit really records. A plugin update refreshes the
+agent hooks but cannot copy git hooks into your project, so until you do this it is not
+running:
+
+```bash
+cp <plugin>/hooks/git/pre-commit .ai/hooks/ && chmod +x .ai/hooks/pre-commit
+.ai/hooks/install.sh
+```
+
+`doctor` (run at session start) reports it missing and prints that `cp` line with the
+real path. `install.sh` now refuses to finish without it. **Already have a `pre-commit`**
+(a linter, lint-staged)? Rename yours `.ai/hooks/pre-commit.local`: it runs after a
+clean scan, and its exit status decides the commit.
+
+### Behaviour changes
+
+**A key staged by the same command is caught.** The agent guard scans the index *before*
+a command runs, so anything the command itself stages was never seen. The new git
+`pre-commit` hook scans the index git actually commits — and a human's commit too.
+Standing on a feature branch, an AWS key involved:
+
+| Command | 0.22.0 | 0.23.0 |
+|---|---|---|
+| `git add leak.txt && git commit -m x` | committed | **refused** (git hook) |
+| `git commit -am x`, key in a tracked file | committed | **refused** (git hook) |
+
+The same holds for `commit <path>`, `--include` and a `GIT_INDEX_FILE=` prefix (#71,
+#72). It is narrower than the agent guard on purpose: provider keys, PEM private keys and
+`.env` files only, not the `password = "…"` heuristic, which would block too many
+ordinary human commits. A merge being concluded is not re-scanned; `cherry-pick` and
+`revert` do not run `pre-commit` at all. `--no-verify` is the owner's override.
+
+**The agent guard's secret scan reads the repo each commit actually goes to.** A key staged
+in the repo being committed to; `O` a clean sibling repo:
+
+| Command | 0.22.0 | 0.23.0 |
+|---|---|---|
+| `git -C O commit -m a && git commit -m x` | allowed | **denied** (#69) |
+| `(cd O && make) && git commit -m x` | allowed | **denied** (#70) |
+| with `color.ui=always` set, `git commit -m x` | allowed | **denied** |
+| with a `-diff` attribute on the file, `git commit -m x` | allowed | **denied** |
+
+The repo's own diff settings — colour, an external diff tool, a textconv, a `-diff`
+attribute, `diff.relative` — no longer change what is scanned. A file git calls binary is
+read as text, except a real binary over 1 MB, which the agent guard skips because reading
+it whole can outlast the hook's timeout (a killed hook lets the command through); the git
+hook reads those.
+
+**Branch policy is judged per segment of a command.** On a protected branch:
+
+| Command | 0.22.0 | 0.23.0 |
+|---|---|---|
+| `git -C O status && git commit -m x` | allowed | **denied** (#61) |
+
+A `cd` applies to the segments after it, a `git -C` to its own segment only, and a `cd`
+inside `( … )` or `$( … )` ends at the `)`.
+
+**Removing a `.env` is the one `.env` change allowed.** Both the agent guard and the git
+hook refuse a `.env` that is added, edited, renamed away or retyped; templates
+(`.env.example|sample|template|dist`, `.env.md`) are exempt.
+
+| Command | 0.22.0 | 0.23.0 |
+|---|---|---|
+| `git rm .env && git commit -m x` (a tracked `.env`) | denied | **allowed** |
+| editing a tracked `.env`, then `git commit -m x` | denied | denied |
+
+A project that commits a `.env` on purpose does so with `--no-verify`, deliberately.
+
+**A commit command visiting more than 24 directories is denied.** The scan now reads
+every repo a command `cd`s into, and its cost grows with each. Past 24 the guard denies
+and asks for the commit to be run on its own, rather than risk the timeout. None of 949
+real commit commands came near it (the most was 6).
+
+### Fixed
+
+- **The guard was slow on long commands** — a heredoc splits into a segment per line, and
+  it forked once or twice per segment. A 64 KB heredoc and a commit took 6s on 0.22.0
+  and take 1s now; a large enough one could reach the hook timeout and run unchecked
+  (#73).
+- `commit-msg` glued the `Merge-authorisation:` line to the subject, so git never saw a
+  trailer and `git log --oneline` showed it on every owner merge (#62).
+- `post-merge` recorded `unknown` for "Merge remote-tracking branch 'origin/x'" subjects,
+  and lost its "← just merged" line (#63). Its note now also says when `git branch -d`
+  will refuse a branch because its upstream does not have it yet — "(refused until
+  origin/dev has it — push that first)" — instead of offering it as safe to delete.
+- `doctor` reported correctly wired hooks as missing when wired from `.claude/hooks/` or
+  through a `$VAR/` prefix (#66), and "no agent guard wired" when the plugin was enabled
+  at project scope (#67).
+- `install.sh` listed a directory under `.ai/hooks/` as an active hook; hook comments named
+  paths that exist only in this repo.
+
+### Changed
+
+- `rules/engineering-principles.md` §4: a comment is stale when its reason has gone, not
+  when it is old; unfinished work is an issue, not a TODO. `/pre-merge-check` item 15
+  now fails an added TODO that cites no issue (#68).
+- The injected rules header names the plugin version, so a session still holding an
+  older version's rules after an update can tell.
+- `hooks/README.md` reads in order: install, configure, wire, then the per-hook reference
+  (#64).
+- `/dg`'s Codex pre-review example pipes the brief on stdin.
+- `secret-scan.test.sh` — the git hook's suite. Ninth suite.
+
 ## 0.22.0 — 2026-09-14
 
 ### Behaviour changes
