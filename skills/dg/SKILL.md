@@ -25,13 +25,18 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 /dg <file> <rounds>          # Review a file with N rounds
 /dg <topic or question>      # Review a concept, strategy, or decision
 /dg <rounds>                 # Review changes with N rounds
+/dg <base>...<head>          # Review a commit range — a release: origin/main...<sha>
 ```
 
 ## Process
 
-1. **Determine what to review** — file path → read it in full; description/question →
-   gather relevant context first; empty → `git diff HEAD`, then `git diff --staged`,
-   else stop and say so. Extract round count if present (default 5).
+1. **Determine what to review** — file path → read it in full; a `<base>...<head>`
+   range → `git diff <base>...<head>`, naming the exact shas reviewed in the verdict;
+   description/question → gather relevant context first; empty → `git diff HEAD`, then
+   `git diff --staged`, else stop and say so. Extract round count if present (default
+   5). A range too large for one pass (read `--stat` first) is reviewed by subsystem,
+   one run each, and the verdicts are merged — a subsystem left out is named as such,
+   never silently skipped.
 
 2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
    subject cold: no personas, no access to their findings. It enumerates correctness
