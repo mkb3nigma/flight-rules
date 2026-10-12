@@ -45,7 +45,10 @@ The same holds for `commit <path>`, `--include` and a `GIT_INDEX_FILE=` prefix (
 `.env` files only, not the `password = "…"` heuristic, which would block too many
 ordinary human commits. A merge being concluded is not re-scanned; a clean `cherry-pick`
 or `revert` does not run `pre-commit` (one finished with `--continue` after a conflict
-does). `--no-verify` is the owner's override; the refusal does not print it, because an
+does). If git cannot read what is staged, the commit is refused with git's reason, not
+passed unscanned — including, by design, a blobless partial clone that cannot reach its
+remote to fetch a file's old contents.
+`--no-verify` is the owner's override; the refusal does not print it, because an
 agent reads the refusal too.
 
 **The agent guard's secret scan reads the repo each commit actually goes to.** A key staged
@@ -62,7 +65,13 @@ The repo's own diff settings — colour, an external diff tool, a textconv, a `-
 attribute, `diff.relative` — no longer change what is scanned. A file git calls binary is
 read as text, except a real binary over 1 MB, which the agent guard skips because reading
 it whole can outlast the hook's timeout (a killed hook lets the command through); the git
-hook reads those whole, wherever the key sits in them.
+hook reads those whole, wherever the key sits in them. If git cannot read what is
+staged, the command is denied with git's reason, not allowed unscanned. A `cd` or `-C`
+target written with `~` or `$HOME` is followed; one the guard cannot resolve (another
+`$VAR`), from outside every repo, is denied unless the command creates the repo — a
+loop over several repos run from their parent included: it now runs per repo. The
+credential check reads the diff once, so a commit of thousands of files is checked
+whole — it was skipped past the argument limit.
 
 **Branch policy is judged per segment of a command.** On a protected branch:
 
@@ -104,8 +113,11 @@ real commit commands came near it (the most was 6).
   offers no `git branch -d` for a branch merged from `origin/` that has no local copy.
 - `doctor` reported correctly wired hooks as missing when wired from `.claude/hooks/` or
   through a `$VAR` prefix — `$CLAUDE_PROJECT_DIR`, quoted or not, included (#66) — and
-  "no agent guard wired" when the plugin was enabled at project scope (#67). It now also
-  reports a `pre-commit.local` that is not executable, which the scan would skip silently.
+  "no agent guard wired" when the plugin was enabled at project scope (#67). A hook wired
+  under `$HOME` or `~` is checked in the home directory, not the repo; a quoted path
+  with a space is checked whole; and a `$VAR` or `~` the shell never expands (inside
+  single quotes) is reported, since that hook never runs. It now also reports a `pre-commit.local` that is not
+  executable, which the scan would skip silently.
 - The session-start check ran once a day, so after an update that day `doctor` — which
   reports the missing git hook above — waited until the next. It now also runs on the
   first session after the plugin version changes.

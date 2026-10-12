@@ -230,6 +230,74 @@ say "$(has "$D" "wires .claude/hooks/d.sh, which does not exist")" "0" "…and a
 say "$(has "$D" "wires hooks/e.sh, which does not exist")" "0" "…and a quoted \$(git rev-parse) one"
 rm -rf "$D"
 
+# 2g. `$HOME`, `${HOME}` and an unquoted `~` are the home directory, not the repo root:
+#     they were tested under the repo, so a hook missing from home passed when the repo
+#     happened to hold that path, and one present there was reported missing. A quoted
+#     path with a space was cut at the space and reported missing (/dg G2-5, 2026-10-08).
+#     A quoted wrapper and its hook read as one spaced path (/dg, 2026-10-12): either
+#     existing is enough.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/h/hooks" "$D/my dir/hooks" "$D/h/hooks" "$D/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "$HOME/h/hooks/a.sh" },
+  { "type": "command", "command": "bash \"${HOME}/h/hooks/b.sh\"" },
+  { "type": "command", "command": "~/h/hooks/c.sh" },
+  { "type": "command", "command": "bash ~/h/hooks/d.sh" },
+  { "type": "command", "command": "X=~/h/hooks/k.sh; bash \"$X\"" },
+  { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/my dir/hooks/e.sh\"" },
+  { "type": "command", "command": "bash -c 'exec bash \"$CLAUDE_PROJECT_DIR/my dir/hooks/f.sh\"'" },
+  { "type": "command", "command": "bash './my dir/hooks/g.sh'" },
+  { "type": "command", "command": "bash \"my dir/hooks/m.sh\"" },
+  { "type": "command", "command": "bash -c '/usr/bin/env bash ./hooks/w1.sh'" },
+  { "type": "command", "command": "sh -c \"/usr/bin/env bash hooks/w2.sh\"" },
+  { "type": "command", "command": "bash -c '/usr/bin/timeout 5 $CLAUDE_PROJECT_DIR/hooks/w3.sh'" } ] } ] } }
+JSON
+for f in fakehome/h/hooks/a.sh fakehome/h/hooks/b.sh fakehome/h/hooks/c.sh fakehome/h/hooks/d.sh fakehome/h/hooks/k.sh \
+         "my dir/hooks/e.sh" "my dir/hooks/f.sh" "my dir/hooks/g.sh" "my dir/hooks/m.sh" hooks/w1.sh hooks/w2.sh hooks/w3.sh; do
+  printf '#!/bin/sh\nexit 0\n' > "$D/$f"; chmod +x "$D/$f"
+done
+say "$(rc "$D")" "0" "\$HOME, ~, spaced and wrapped paths that exist: doctor passes"
+say "$(has "$D" "does not exist")" "1" "…and reports none of them"
+rm "$D"/fakehome/h/hooks/*.sh "$D"/my\ dir/hooks/*.sh "$D"/hooks/w*.sh
+for f in a b c d k; do printf '#!/bin/sh\nexit 0\n' > "$D/h/hooks/$f.sh"; done   # the same paths under the repo
+say "$(has "$D" "wires ~/h/hooks/a.sh, which does not exist")" "0" "…a missing \$HOME/ one is named, though the repo has that path"
+say "$(has "$D" "wires ~/h/hooks/b.sh, which does not exist")" "0" "…as is a missing \"\${HOME}/…\" one"
+say "$(has "$D" "wires ~/h/hooks/c.sh, which does not exist")" "0" "…and a missing ~/ one"
+say "$(has "$D" "wires ~/h/hooks/d.sh, which does not exist")" "0" "…and a missing ~/ one after a word"
+say "$(has "$D" "wires ~/h/hooks/k.sh, which does not exist")" "0" "…and a missing ~/ one after ="
+say "$(has "$D" "wires my dir/hooks/e.sh, which does not exist")" "0" "…and a missing quoted path with a space, named whole"
+say "$(has "$D" "wires my dir/hooks/f.sh, which does not exist")" "0" "…and one inside bash -c '…'"
+say "$(has "$D" "wires ./my dir/hooks/g.sh, which does not exist")" "0" "…and a missing single-quoted one"
+say "$(has "$D" "wires my dir/hooks/m.sh, which does not exist")" "0" "…and one not starting at a root, / or ."
+say "$(has "$D" "wires dir/hooks/")" "1" "…never cut at the space"
+say "$(has "$D" "wires ./hooks/w1.sh, which does not exist")" "0" "…a missing hook behind a quoted wrapper is named by itself"
+say "$(has "$D" "wires hooks/w2.sh, which does not exist")" "1" "…but a last word not starting like a path is not split off"
+say "$(has "$D" "wires hooks/w3.sh, which does not exist")" "0" "…and a \$VAR one behind a wrapper is named from the root"
+rm -rf "$D"
+
+# 2h. A `$VAR` or `~` the shell never expands — inside single quotes, or `~` inside double
+#     quotes — means the hook never runs, so it is reported even where a file exists. As
+#     the home directory, `'$HOME/…'` was passed when the file was there (/dg, 2026-10-12);
+#     a `bash -c '$VAR/…'` script does expand, and is checked like any other.
+D=$(mkrepo); mkdir -p "$D/.claude/hooks" "$D/fakehome/h/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "'$CLAUDE_PROJECT_DIR'/.claude/hooks/q.sh" },
+  { "type": "command", "command": "'$CLAUDE_PROJECT_DIR/.claude/hooks/r.sh'" },
+  { "type": "command", "command": "bash '$HOME/h/hooks/s.sh'" },
+  { "type": "command", "command": "bash \"~/h/hooks/t.sh\"" },
+  { "type": "command", "command": "bash -c '$HOME/h/hooks/u.sh'" } ] } ] } }
+JSON
+for f in .claude/hooks/q.sh .claude/hooks/r.sh fakehome/h/hooks/s.sh fakehome/h/hooks/t.sh fakehome/h/hooks/u.sh; do
+  printf '#!/bin/sh\nexit 0\n' > "$D/$f"; chmod +x "$D/$f"
+done
+say "$(has "$D" "…/.claude/hooks/q.sh under a quoted \$VAR or ~, which the shell never expands")" "0" "'\$VAR'/… is reported, though the file exists"
+say "$(has "$D" "…/.claude/hooks/r.sh under a quoted \$VAR or ~, which the shell never expands")" "0" "…as is '\$VAR/…'"
+say "$(has "$D" "…/h/hooks/s.sh under a quoted \$VAR or ~, which the shell never expands")" "0" "…and '\$HOME/…'"
+say "$(has "$D" "…/h/hooks/t.sh under a quoted \$VAR or ~, which the shell never expands")" "0" "…and a double-quoted ~/…"
+say "$(has "$D" "u.sh")" "1" "…while bash -c '\$HOME/…', which its shell expands, passes"
+rm -rf "$D"
+
 # 2d. An absolute path is tested where it points, not under the repo root.
 D=$(mkrepo); mkdir -p "$D/.claude" "$D/elsewhere/hooks"
 printf '#!/bin/sh\nexit 0\n' > "$D/elsewhere/hooks/y.sh"; chmod +x "$D/elsewhere/hooks/y.sh"

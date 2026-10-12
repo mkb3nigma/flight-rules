@@ -182,6 +182,54 @@ git -C "$R" commit -qm merge >/dev/null 2>&1
 say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a key concludes"
 say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
 
+echo "A step that fails is a refusal, not a clean scan (/dg G2-4, 2026-10-08):"
+# Their output was taken without their status, so a failed git diff was an empty one
+# and the commit went through unscanned. git runs a hook with its own directory first
+# on PATH, so a failing `git` cannot be slipped in under `git commit`: the hook is run
+# directly, from the repo, as git would run it, with a `git` (or `awk`) that fails on
+# one call — git when an argument equals $FAIL_ON, awk when its program holds it.
+R=$(make_repo armed); REAL_GIT=$(command -v git); REAL_AWK=$(command -v awk)
+mkdir -p "$R/shim" \
+  && printf '#!/bin/sh\nfor a; do [ "$a" = "$FAIL_ON" ] && { echo "git-said-$FAIL_ON" >&2; exit 128; }; done\nexec "%s" "$@"\n' "$REAL_GIT" > "$R/shim/git" \
+  && printf '#!/bin/sh\nfor a; do case "$a" in *"$FAIL_ON"*) exit 2 ;; esac; done\nexec "%s" "$@"\n' "$REAL_AWK" > "$R/shim/awk" \
+  && chmod +x "$R/shim/git" "$R/shim/awk" && echo clean > "$R/f" && git -C "$R" add f || die "could not build the failing-git fixture"
+scan_with() { (cd "$R" && FAIL_ON="$1" PATH="$R/shim:$PATH" ./.hooks/pre-commit 2>&1); echo "rc=$?"; }
+out=$(scan_with --none-of-these)
+say "${out##*rc=}" 0 "the stand-in git and awk, failing nothing, let a clean commit through"
+for arg in --text --name-only --name-status 'diff --git' '.env'; do
+  out=$(scan_with "$arg")
+  say "${out##*rc=}" 1 "$arg fails — refused"
+  case "$out" in *"could not read what is staged"*) say yes yes "…and says the scan did not run" ;;
+                 *) say no yes "…and says the scan did not run (got: $out)" ;; esac
+done
+for arg in --text --name-only --name-status; do
+  out=$(scan_with "$arg")
+  case "$out" in *"git-said-$arg"*) say yes yes "git diff $arg fails — git's own error is shown" ;;
+                 *) say no yes "git diff $arg fails — git's own error is shown (got: $out)" ;; esac
+done
+rm -rf "$R"
+# The same, end to end through `git commit`: a blobless partial clone whose remote has
+# gone, changing a file whose old blob was never fetched. git diff cannot fetch it and
+# fails; git can still commit. The accepted cost named in the hook (/dg, 2026-10-12).
+for mode in armed bare; do
+  P="$TMPROOT/pc-$mode"; mkdir -p "$P"
+  ( git init -q -b main "$P/src" && cd "$P/src" && echo old > f && git add f \
+    && git -c user.email=t@t.t -c user.name=t commit -qm base && git config uploadpack.allowFilter true \
+    && git clone -q --filter=blob:none --no-checkout "file://$P/src" "$P/cl" && cd "$P/cl" && git read-tree HEAD \
+    && git config user.email t@t.t && git config user.name t && mkdir -p .hooks && git config core.hooksPath "$P/cl/.hooks" ) \
+    >/dev/null 2>&1 || die "could not build the partial clone"
+  [ "$mode" = bare ] || { cp "$HOOK_SRC" "$P/cl/.hooks/pre-commit" && chmod +x "$P/cl/.hooks/pre-commit"; } || die "could not arm the partial clone"
+  mv "$P/src" "$P/src.gone" && echo new > "$P/cl/f" && git -C "$P/cl" add f || die "could not stage in the partial clone"
+  h=$(git -C "$P/cl" rev-parse HEAD)
+  out=$(git -C "$P/cl" commit -qm x 2>&1)
+  if [ "$mode" = armed ]; then
+    say "$(landed "$P/cl" "$h")" no "partial clone, remote gone, an unfetched file changed — refused"
+    case "$out" in *"promisor remote"*) say yes yes "…and shows git's reason" ;; *) say no yes "…and shows git's reason (got: $out)" ;; esac
+  else
+    say "$(landed "$P/cl" "$h")" yes "…while git alone commits it"
+  fi
+done
+
 echo "A large binary is read whole, and quickly enough (/dg, 2026-10-05):"
 # Sized to what projects commit: the largest file kept in flight-rules or AppliHawk is
 # ~300 KB. This was 40 MB, a size nobody has committed, and at 6–8s it flaked against
