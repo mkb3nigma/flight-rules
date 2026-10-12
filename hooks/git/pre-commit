@@ -51,7 +51,31 @@ git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && run_local "$@"
 # Every binary is read whole: this hook has no timeout to outrun, so it is the backstop
 # for the large binaries the agent guard skips. NUL bytes are dropped before the shell
 # sees them, which would otherwise warn on each.
-STAGED_DIFF=$(git diff --cached --no-color --no-ext-diff --no-textconv --text -U0 2>/dev/null | tr -d '\000')
+# Every step below that reads the commit is checked: one that fails is a refusal, not
+# an empty result. Their status was not checked, so a failed git diff scanned nothing
+# and the commit went through (/dg G2-4, 2026-10-08). git's own error is shown, from a
+# second run of the same command: under `commit -a` or `commit <path>` the hook reads
+# git's temporary index, so the same command typed by hand reads a different one.
+# Accepted cost: a blobless partial clone, offline, refuses a commit that changes or
+# deletes a file whose blob was never fetched — git fetches it before the diff can be
+# filtered, and fails (/dg, 2026-10-12). The error says so; online, it goes through.
+unread() {
+  local rc=$1 what=$2 err=""; shift 2
+  [ $# -eq 0 ] || err=$("$@" 2>&1 >/dev/null | tail -n 3)
+  cat >&2 <<EOF
+🔐 flight-rules: commit refused — the secret scan could not read what is staged
+($what exited $rc), so nothing was scanned.${err:+
+$err}
+
+Fix the cause, then commit again. Committing unscanned is the repo owner's decision,
+not an agent's: stop and ask them.
+EOF
+  exit 1
+}
+DIFF=(git diff --cached --no-color --no-ext-diff --no-textconv --text -U0)
+NAMES=(git -c core.quotePath=false diff --cached --name-only --diff-filter=d)
+RENAMES=(git -c core.quotePath=false diff --cached --name-status -M --diff-filter=RC)
+STAGED_DIFF=$("${DIFF[@]}" 2>/dev/null | tr -d '\000') || unread $? "${DIFF[*]} | tr" "${DIFF[@]}"
 # A .env is flagged for every change except its removal (--diff-filter=d): deleting or
 # untracking one is the clean-up. Editing one already tracked is refused like adding it
 # (owner's call, 2026-10-05) — a password typed into committed defaults has no format
@@ -60,15 +84,17 @@ STAGED_DIFF=$(git diff --cached --no-color --no-ext-diff --no-textconv --text -U
 # its source is added: `git mv .env config.txt` keeps the secrets tracked under a name
 # nothing watches. -M because diff.renames=false lists a rename as a delete and an add,
 # and the delete is filtered out.
-STAGED_FILES=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=d 2>/dev/null
-               git -c core.quotePath=false diff --cached --name-status -M --diff-filter=RC 2>/dev/null \
-                 | awk -F '\t' '{print $2}')
+STAGED_FILES=$("${NAMES[@]}" 2>/dev/null) || unread $? "${NAMES[*]}" "${NAMES[@]}"
+RENAMED_FROM=$("${RENAMES[@]}" 2>/dev/null | awk -F '\t' '{print $2}') || unread $? "${RENAMES[*]} | awk" "${RENAMES[@]}"
+STAGED_FILES="$STAGED_FILES
+$RENAMED_FROM"
 FINDINGS=""
 
 # Added lines are the `+` lines inside a hunk. Everything from `diff --git` to the first
 # `@@` is header, so a file-header filter like `^+++ ` is not needed — it also dropped
 # an added line whose own text began with `++ `.
-ADDED=$(printf '%s\n' "$STAGED_DIFF" | awk '/^diff --git /{h=1; next} /^@@/{h=0; next} !h && /^\+/{print substr($0,2)}')
+ADDED=$(printf '%s\n' "$STAGED_DIFF" | awk '/^diff --git /{h=1; next} /^@@/{h=0; next} !h && /^\+/{print substr($0,2)}') \
+  || unread $? "reading the added lines (awk)"
 # -c, not -q: grep -q stops at the first match, the writer then fails on the closed
 # pipe, and pipefail reports that as no match — a key with 64 KB of added text after it
 # was committed (/dg, 2026-10-08). -c reads to the end. Nor a here-string: that large,
@@ -76,7 +102,10 @@ ADDED=$(printf '%s\n' "$STAGED_DIFF" | awk '/^diff --git /{h=1; next} /^@@/{h=0;
 # grep's "no match" (1) is clean; any other failure counts as a hit, so this fails closed.
 hit() { local n; n=$(printf '%s\n' "$ADDED" | grep -acE "$1"); [ $? -ne 1 ]; }
 
-ENV_FILES=$(printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env(\.|$)' | grep -vE '\.env\.(example|sample|template|dist|md)$')
+# awk, not grep: grep's "no match" status is also its success here, so a grep that
+# failed could not be told from no .env staged.
+ENV_FILES=$(printf '%s\n' "$STAGED_FILES" | awk '/(^|\/)\.env(\.|$)/ && !/\.env\.(example|sample|template|dist|md)$/') \
+  || unread $? "listing staged .env files (awk)"
 if [ -n "$ENV_FILES" ]; then
   FINDINGS="$FINDINGS
   • .env file staged: $(printf '%s' "$ENV_FILES" | tr '\n' ' ')"
