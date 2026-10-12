@@ -536,7 +536,6 @@ CWD_NOW=""                      # the directory in effect: the `cd`s seen so far
 CWD_STACK=()                    # CWD_NOW at each open `(`, restored at its `)`
 CWD_NAIVE=""                    # the same, with every `cd` lasting forever (the old reading)
 SCAN_DIRS=()                    # where every commit is aimed, under the scoped reading
-CREATED="|"                     # directories a `git init`/`git clone` here creates, |-separated
 SCAN_ALSO=("")                  # every other directory the command could be committing in
 # Each directory once, by its spelling — every entry costs git calls in the scan, and a
 # heredoc'd script can carry hundreds of `cd` lines (/dg security pass, 2026-10-05).
@@ -567,20 +566,6 @@ while IFS= read -r _raw; do
   # per line inside the hook's timeout (#73).
   case "$_raw" in *git*) _seg=$(printf '%s' "$_raw" | sed -E "$NORM_SED") ;; *) _seg=$_raw ;; esac
   is_commit "$_seg" && { SCAN_DIRS+=("$_dir"); also "$_ndir"; }
-  # A segment that IS `git init`/`git clone` — not one that mentions it (`echo git
-  # init`, a commit message) — creates a repo this command may then commit in: where it
-  # runs (init), or a directory it names. Every word that is not an option counts, under
-  # both readings of the cds — more than git creates, never less; an option's value or a
-  # clone's URL is no directory a commit is aimed at (security review, 2026-10-12).
-  if [[ "$_seg" =~ ^[[:space:]]*git[[:space:]]+(init|clone)${E} ]]; then
-    [[ "${BASH_REMATCH[1]}" == init ]] && CREATED="$CREATED$_dir|$_ndir|"
-    read -ra _words <<<"$_seg"
-    for _w in "${_words[@]:2}"; do
-      case "$_w" in -*) continue ;; esac
-      _w=$(target_path "$_w")
-      CREATED="$CREATED$(rel_to "$_dir" "$_w")|$(rel_to "$_ndir" "$_w")|"
-    done
-  fi
   resolve_target "$_dir"
   # Another repo's branches are not ours to police, and a repo that turned the policy off
   # has none — but only for the segment aimed there, not for its neighbours.
@@ -685,31 +670,50 @@ scan_repo() {
   # diff.dstPrefix or diff.noprefix moved a test fixture out from under the test-file
   # exemption (/dg, 2026-10-12).
   local DIFF_RAW=(-c diff.relative=false diff --cached --no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/)
-  # A file git calls binary is read as text, except a real binary over BINARY_SCAN_MAX
-  # bytes. Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s, and a hook killed
-  # by its timeout lets the commit through unscanned; the git pre-commit hook, which has
-  # no timeout, reads those whole. "Real" is git's own test, a NUL in the first 8000
-  # bytes: a `-diff` attribute makes a large text file (a lockfile) look binary too, and
-  # that one is still read. NULs are dropped, which a shell
-  # variable cannot hold. Every tool that reads those bytes runs in the C locale (as the
-  # git pre-commit hook does throughout): under UTF-8, macOS tr stops at the first
-  # invalid byte and grep skips the line holding one (/dg, 2026-10-05).
-  local BINARY_SCAN_MAX=1048576 rec p skip_big=() bins="" rc=""
-  local NUMSTAT=("${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --no-renames --diff-filter=d --numstat -z)
+  # Every staged file is read as text, except a real binary over BINARY_SCAN_MAX bytes.
+  # Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s, and a hook killed by its
+  # timeout lets the commit through unscanned; the git pre-commit hook, which has no
+  # timeout, reads those whole. Size and "real binary" are the content's call — a NUL in
+  # the first 8000 bytes, git's own test — never the repo's attributes: the limit once
+  # followed git's binary flag, so a `diff` attribute had a 40 MB binary read whole, past
+  # the timeout (security review, 2026-10-12), and a `-diff` one makes a large text file
+  # (a lockfile) look binary, which must still be read. Every staged file's size comes
+  # from one `cat-file --batch-check`; only those over the limit are opened.
+  # In the diff a NUL becomes \001, which a shell variable can hold: the credential check
+  # below tells a binary by it, and the key patterns drop it. Every tool that reads those
+  # bytes runs in the C locale (as the git pre-commit hook does throughout): under UTF-8,
+  # macOS tr stops at the first invalid byte and grep skips the line holding one (/dg,
+  # 2026-10-05).
+  local BINARY_SCAN_MAX=1048576 rec meta p skip_big=() paths=() blobs=() sizes rc="" i=0
+  local RAW=("${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --raw -z --no-abbrev --no-renames --diff-filter=d)
+  # Records alternate, `:oldmode newmode oldblob newblob status` then the path, and are
+  # told apart by position, not by the leading `:` — a path may start with one too.
+  meta=""
   while IFS= read -r -d '' rec; do
-    case "$rec" in "/rc="*) rc=${rec#/rc=}; continue ;; "-	-	"*) p=${rec#-	-	} ;; *) continue ;; esac
-    bins="$bins$p
-"
-    if [[ $("${SCAN_GIT[@]}" cat-file -s ":$p" 2>/dev/null || echo 0) -gt $BINARY_SCAN_MAX ]] \
-       && [[ $("${SCAN_GIT[@]}" cat-file blob ":$p" 2>/dev/null | head -c 8000 | LC_ALL=C tr -dc '\000' | wc -c) -gt 0 ]]; then
-      skip_big+=(":(top,exclude,literal)$p")
-    fi
-  done < <("${NUMSTAT[@]}" 2>/dev/null; printf '\0/rc=%s\0' "$?")
-  [[ "$rc" == 0 ]] || { read_failed "${rc:-?}" "git diff --cached --numstat" "${NUMSTAT[@]}"; return; }
+    # The status record is never a path (no path starts with `/`) nor a status line; an
+    # empty record ends one git left half-written.
+    case "$rec" in "/rc="*) rc=${rec#/rc=}; continue ;; "") meta=""; continue ;; esac
+    if [[ -z "$meta" ]]; then meta=$rec; continue; fi
+    set -f; set -- $meta; set +f
+    [[ "$2" == 160000 ]] || { paths+=("$rec"); blobs+=("$4"); }
+    meta=""
+  done < <("${RAW[@]}" 2>/dev/null; printf '\0/rc=%s\0' "$?")
+  [[ "$rc" == 0 ]] || { read_failed "${rc:-?}" "git diff --cached --raw" "${RAW[@]}"; return; }
+  if [[ ${#blobs[@]} -gt 0 ]]; then
+    sizes=$(set -o pipefail; printf '%s\n' "${blobs[@]}" | "${SCAN_GIT[@]}" cat-file --batch-check='%(objectsize)' 2>/dev/null) \
+      || { read_failed $? "git cat-file --batch-check"; return; }
+    while IFS= read -r rec; do
+      if [[ "$rec" =~ ^[0-9]+$ && $rec -gt $BINARY_SCAN_MAX ]] \
+         && [[ $("${SCAN_GIT[@]}" cat-file blob "${blobs[$i]}" 2>/dev/null | head -c 8000 | LC_ALL=C tr -dc '\000' | wc -c) -gt 0 ]]; then
+        skip_big+=(":(top,exclude,literal)${paths[$i]}")
+      fi
+      i=$((i+1))
+    done <<<"$sizes"
+  fi
   # One read, --text, of everything but the large real binaries — excluded by name, and
   # there are few of those, where the files read as text could be thousands.
   local TEXT_DIFF=("${SCAN_GIT[@]}" -c core.quotePath=false "${DIFF_RAW[@]}" --text -- ":(top)" "${skip_big[@]}")
-  STAGED_DIFF=$(set -o pipefail; "${TEXT_DIFF[@]}" 2>/dev/null | LC_ALL=C tr -d '\000') \
+  STAGED_DIFF=$(set -o pipefail; "${TEXT_DIFF[@]}" 2>/dev/null | LC_ALL=C tr '\000' '\001') \
     || { read_failed $? "git diff --cached --text | tr" "${TEXT_DIFF[@]}"; return; }
   # core.quotePath=false: by default git prints a non-ASCII name as "c\303\266nfig.py"
   # in quotes, and feeding that back to `git diff -- <path>` matches nothing — so the
@@ -732,7 +736,7 @@ scan_repo() {
   # as its own step: the first version folded that into every pattern as `^\+[^+]`,
   # which also demanded one character between the "+" and the secret — so an
   # assignment at column zero, the commonest place for one, was never matched.
-  added_lines() { LC_ALL=C grep -aE '^\+' | LC_ALL=C grep -avE '^\+\+\+ ' | LC_ALL=C sed 's/^+//'; }
+  added_lines() { LC_ALL=C grep -aE '^\+' | LC_ALL=C grep -avE '^\+\+\+ ' | LC_ALL=C sed 's/^+//' | LC_ALL=C tr -d '\001'; }
   ADDED=$(printf '%s\n' "$STAGED_DIFF" | added_lines)
   hit() { printf '%s\n' "$ADDED" | LC_ALL=C grep -aqE "$1"; }
 
@@ -780,19 +784,21 @@ scan_repo() {
   PROSE_FILE_RE='(^|/)(docs?|locales?|i18n|translations?)/|\.(md|rst|txt)$'
   # The added lines of source files only, from the diff already read: each file's
   # `+++ b/<path>` names it (quoted when git escapes the name; a name with a space ends
-  # in a tab, which kept, broke every `$`-anchored rule). A binary is left out —
-  # it is read as text for the key patterns above, not for this heuristic. The binaries'
-  # names come first on stdin, ended by a line holding only \001: in the environment, a
-  # few thousand of them overran Linux's 128 KB limit on one variable, awk never started,
-  # and the check found nothing (/dg, 2026-10-12). Its status is checked like a read's.
-  NON_TEST_ADDED=$(set -o pipefail; { printf '%s' "$bins"; printf '\001\n'; printf '%s\n' "$STAGED_DIFF"; } \
+  # in a tab, which kept, broke every `$`-anchored rule). A binary — a file whose diff
+  # holds a NUL, now \001 — is left out: it is read for the key patterns above, not for
+  # this heuristic. Which files are binary was git's flag, so a `-diff` or `binary`
+  # attribute on source files hid them from it (security review, 2026-10-12). Lines are
+  # held per file until the file's end shows whether it was one.
+  NON_TEST_ADDED=$(set -o pipefail; printf '%s\n' "$STAGED_DIFF" \
     | TRE="$TEST_FILE_RE" PRE="$PROSE_FILE_RE" LC_ALL=C awk '
-    !body { if ($0 == "\001") body = 1; else bin[$0] = 1; next }
-    /^diff --git / { h = 1; keep = 0; next }
+    /^diff --git / { f++; h = 1; keep = 0; next }
     h && /^\+\+\+ / { p = substr($0, 5); sub(/\t$/, "", p); if (p ~ /^".*"$/) p = substr(p, 2, length(p) - 2)
-                      sub(/^b\//, "", p); keep = !(p in bin) && p !~ ENVIRON["TRE"] && p !~ ENVIRON["PRE"]; next }
+                      sub(/^b\//, "", p); keep = p !~ ENVIRON["TRE"] && p !~ ENVIRON["PRE"]; next }
     /^@@/ { h = 0; next }
-    !h && keep && /^\+/ { print substr($0, 2) }') \
+    h { next }
+    index($0, "\001") { bin[f] = 1 }
+    keep && /^\+/ { n++; line[n] = substr($0, 2); of[n] = f }
+    END { for (i = 1; i <= n; i++) if (!(of[i] in bin)) print line[i] }') \
     || { read_failed $? "filtering the staged diff (awk)"; return; }
   if [[ -n "$NON_TEST_ADDED" ]]; then
     # Case-insensitive (PASSWORD, ApiKey), `=` or `:` (YAML/JSON), quoted key tolerated
@@ -822,7 +828,7 @@ scan_repo() {
 # own cwd, which is the repo being committed to in every realistic version of this.
 # Deliberately NOT applied to the branch policy: falling back there would judge the wrong
 # repo and deny legitimate work in the other direction.
-SCANNED="|"; N_SCANNED=0; ALL_FINDINGS=""; LABELLED_FINDINGS=""; SCAN_FELL_BACK=0; READ_FAILS=""; UNRESOLVED=""
+SCANNED="|"; N_SCANNED=0; ALL_FINDINGS=""; LABELLED_FINDINGS=""; SCAN_FELL_BACK=0; READ_FAILS=""
 _n_targets=${#SCAN_DIRS[@]}
 # Bounded, and closed when the bound is hit: a scan that runs past the hook's timeout is
 # killed, and a killed hook lets the command through unchecked. Of the 949 commands in
@@ -843,18 +849,12 @@ for _sd in "${SCAN_DIRS[@]}" "${SCAN_ALSO[@]}"; do
     # The note is about the COMMIT's target; a visited directory that resolves nowhere
     # adds nothing, the cwd is scanned anyway.
     [[ $_is_target -eq 1 ]] && SCAN_FELL_BACK=1
-    # No repo at all, not even the cwd. A commit aimed at a path this hook could not
-    # read — a `$VAR` or `$(…)` it does not expand — may be aimed at a repo holding a
-    # key, so it is denied: run from outside every repo, nothing else would scan it
-    # here (/dg, 2026-10-12). Otherwise there is nothing staged yet to read — a commit in
-    # a repo the command creates (`git init`, `git clone`) stages in that command, which
-    # is the git pre-commit hook's to scan (#71) — or the commit fails on its own.
-    if ! git rev-parse --git-dir >/dev/null 2>&1; then
-      case "$_is_target:$_sd" in 1:*'$'*|1:*'`'*)
-        case "$CREATED" in *"|$_sd|"*) ;; *) UNRESOLVED="$UNRESOLVED
-  $_sd" ;; esac ;; esac
-      continue
-    fi
+    # No repo at all, not even the cwd: nothing here to read. A commit aimed at a path
+    # this hook cannot expand (`cd "$PROJECT" && git commit`), typed from outside every
+    # repo, is not scanned by the guard — that repo's own git pre-commit hook scans it, if
+    # it runs one. Denying it was weighed and dropped (owner's call, 2026-10-12): it is a
+    # deliberate shape, and the guard assumes a competent developer, not an adversary.
+    "${SCAN_GIT[@]}" rev-parse --git-dir >/dev/null 2>&1 || continue
   fi
   _top=$("${SCAN_GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
   case "$SCANNED" in *"|$_top|"*) continue ;; esac
@@ -867,12 +867,6 @@ done
 # Name the repo when more than one was scanned, or the agent cannot tell which to fix.
 [[ $N_SCANNED -gt 1 ]] && ALL_FINDINGS="$LABELLED_FINDINGS"
 
-if [[ -n "$UNRESOLVED" ]]; then
-  deny "🔐 BLOCKED: this command commits in a directory the secret scan cannot resolve, run from outside any repo, so what it would commit was not scanned:$UNRESOLVED
-
-Run it from inside the repo, or name the repo by its path (\`cd /path/to/repo\` or \`git -C /path/to/repo\`). A loop over several repos: run the commit in each one by its path."
-  exit 0
-fi
 if [[ -n "$READ_FAILS" ]]; then
   deny "🔐 BLOCKED: the secret scan could not read what is staged, so the scan stopped there:$READ_FAILS
 ${LABELLED_FINDINGS:+

@@ -457,6 +457,12 @@ scan_case "a password at the root, commit from a subdirectory" deny "mkdir -p su
 # A `-diff` attribute makes a large TEXT file look binary to git; the 1 MB limit is for
 # real binaries only, so a lockfile marked -diff is still read.
 scan_case "a key in a 2 MB text file marked -diff" deny "echo '*.lock -diff' > .gitattributes && for i in \$(seq 1 40000); do echo 'line of a large generated lockfile entry'; done > big.lock && printf '%s\\n' \"\$AKIA\" >> big.lock && git add .gitattributes big.lock"
+# The credential check leaves binaries out; which files are binary was git's call, so a
+# `-diff` or `binary` attribute on source files hid them from it (security review,
+# 2026-10-12). It is the content's call now: a NUL in the file's diff.
+scan_case "a password in source marked -diff" deny "mkdir -p src && echo '*.py -diff' > .gitattributes && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add .gitattributes src/config.py"
+scan_case "a password in source marked binary" deny "mkdir -p src && echo '*.py binary' > .gitattributes && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add .gitattributes src/config.py"
+scan_case "a password-shaped string in a real binary is left alone" allow "mkdir -p src && printf '\000\001password = \"hunter2hunter2\"\n' > src/blob.dat && git add src/blob.dat"
 scan_case "a key inside a small binary"      deny "printf '\\000\\001%s\\000\\n' \"\$AKIA\" > k.dat && git add k.dat"
 # The key's position crossed with a payload past 64 KB: the git hook committed a key with
 # more than 64 KB of added text after it (/dg, 2026-10-08), and every large case here put
@@ -1186,6 +1192,34 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
 fi
 rm -rf "$D"
+# The same binary with a `diff` attribute, which tells git it is text: the size limit
+# followed git's word, so it was read whole, and could outrun the timeout. "Binary" is now
+# the content's call, not the repo's attributes (security review, 2026-10-12).
+D=$(make_repo feature/x)
+echo '*.bin diff' > "$D/.gitattributes" && head -c 41943040 /dev/urandom > "$D/big.bin" \
+  && git -C "$D" add .gitattributes big.bin || die "could not stage the attributed binary"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+TOOK=$((SECONDS - START))
+if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary marked diff (text): skipped in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary marked diff (text): rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
+fi
+rm -rf "$D"
+# A name starting with `:` looked like git's status line in the listing, so the file was
+# never sized and was read whole (security review of 77fa561, 2026-10-12).
+D=$(make_repo feature/x)
+head -c 41943040 /dev/urandom > "$D/:big.bin" && git -C "$D" add ":(literal):big.bin" || die "could not stage :big.bin"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+TOOK=$((SECONDS - START))
+if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary named :big.bin: skipped in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary named :big.bin: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
+fi
+rm -rf "$D"
 
 echo "A long heredoc and a commit are judged well inside the hook's timeout (#73):"
 # A hook killed by its timeout lets the command run unchecked. A heredoc splits into a
@@ -1222,7 +1256,6 @@ REAL_GIT=$(command -v git)
 cat > "$SHIM/git" <<SH
 #!/bin/sh
 [ -n "\$FAIL_ON" ] || exec "$REAL_GIT" "\$@"
-case " \$* " in *" --cached "*) ;; *) exec "$REAL_GIT" "\$@" ;; esac
 for w in \$FAIL_ON; do case " \$* " in *"\$w"*) ;; *) exec "$REAL_GIT" "\$@" ;; esac; done
 [ -z "\$PARTIAL" ] || printf '1\t0\tpart'
 echo "git-said-\$FAIL_ON" >&2; exit 128
@@ -1249,21 +1282,25 @@ verdict() {
 }
 guard_run "$D" "git commit -m x" PATH="$SHIM:$PATH"
 verdict "the stand-in git, failing nothing, allows a clean commit" allow
-for f in --numstat --text --name-only --name-status; do
+for f in --raw --text --name-only --name-status; do
   guard_run "$D" "git commit -m x" FAIL_ON="$f" PATH="$SHIM:$PATH"
   verdict "git diff $f fails — denied, with git's error" deny "could not read what is staged" "git-said-$f"
 done
+# The size lookup reads its input from stdin, so a re-run for its error has nothing to
+# say; its status is the message.
+guard_run "$D" "git commit -m x" FAIL_ON="--batch-check=%(objectsize)" PATH="$SHIM:$PATH"
+verdict "git cat-file --batch-check fails — denied" deny "could not read what is staged" "batch-check exited 128"
 # The credential filter is a step too: an awk that fails there is a deny, not "nothing
 # found". The stand-in awk fails when its program reads the binaries' list.
 REAL_AWK=$(command -v awk)
-printf '#!/bin/sh\n[ -n "$FAIL_AWK" ] && case "$*" in *"body = 1"*) echo awk-said >&2; exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL_AWK" > "$SHIM/awk" \
+printf '#!/bin/sh\n[ -n "$FAIL_AWK" ] && case "$*" in *"of[n] = f"*) echo awk-said >&2; exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL_AWK" > "$SHIM/awk" \
   && chmod +x "$SHIM/awk" || die "could not build the failing awk"
 guard_run "$D" "git commit -m x" FAIL_AWK=1 PATH="$SHIM:$PATH"
 verdict "the credential filter (awk) fails — denied" deny "could not read what is staged" "filtering the staged diff"
 # A git that dies mid-record: its partial record and the status record must not merge
 # into one the loop skips.
-guard_run "$D" "git commit -m x" FAIL_ON=--numstat PARTIAL=1 PATH="$SHIM:$PATH"
-verdict "git diff --numstat fails after partial output — denied, with its status" deny "--numstat exited 128"
+guard_run "$D" "git commit -m x" FAIL_ON=--raw PARTIAL=1 PATH="$SHIM:$PATH"
+verdict "git diff --raw fails after partial output — denied, with its status" deny "--raw exited 128"
 rm -rf "$D"
 
 # The same, with a real git: a repo whose diff config git rejects (git commit fails there
@@ -1328,10 +1365,11 @@ for c in "allow|setup guide.md" "allow|test_login flow.py" "allow|notes on sign 
   rm -rf "$D"
 done
 
-echo "A commit target the scan cannot resolve, from outside every repo (2026-10-12):"
+echo "A ~ or \$HOME commit target, from outside every repo (2026-10-12):"
 # `~` and `$HOME` were left unexpanded, so from a directory that is no repo the target
-# resolved nowhere and nothing was scanned. They are expanded now; any other `$VAR` is
-# denied, unless the command creates the repo.
+# resolved nowhere and nothing was scanned. They are expanded now. Any other `$VAR` the
+# guard cannot expand stays unscanned here, by the owner's call: it is allowed, and the
+# repo's own git hook scans it if it runs one.
 H=$(cd "$(mktemp -d)" && pwd -P); R=$(make_repo feature/x); mv "$R" "$H/r"
 printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$H/r/k.txt" && git -C "$H/r" add k.txt || die "could not stage in \$HOME/r"
 for c in 'cd ~/r && git commit -m x' 'cd $HOME/r && git commit -m x' 'cd "$HOME/r" && git commit -m x' \
@@ -1340,34 +1378,7 @@ for c in 'cd ~/r && git commit -m x' 'cd $HOME/r && git commit -m x' 'cd "$HOME/
   verdict "$c — the key is found" deny "AWS access key"
 done
 guard_run "$H" 'cd "$REPO" && git commit -m x' HOME="$H"
-verdict 'cd "$REPO" && git commit — denied as unresolvable' deny "cannot resolve"
-guard_run "$H" 'cd "$REPO" && git status' HOME="$H"
-verdict "…but not a command that commits nothing" allow
-guard_run "$H" 'cd "$N" && git init -q && git commit --allow-empty -m x' HOME="$H"
-verdict "…nor one that creates the repo it commits in" allow
-guard_run "$H" 'git clone -q "$URL" "$N" && cd "$N" && git commit --allow-empty -m x' HOME="$H"
-verdict "…nor one that clones it" allow
-# The exemption is a command that runs `git init`/`git clone`, not text that mentions it
-# (security review of 1f3bec3, 2026-10-12).
-# …and only for the directory it creates: a repo created elsewhere is no reason to skip
-# a commit aimed at an unresolvable one (security review of 34ab777, 2026-10-12).
-for c in 'git init -q "$N" && cd "$N" && git commit --allow-empty -m x' \
-         'git -C "$N" init -q && git -C "$N" commit --allow-empty -m x' \
-         'git clone -q -b main "$URL" "$N" && git -C "$N" commit --allow-empty -m x'; do
-  guard_run "$H" "$c" HOME="$H"
-  verdict "$c — allowed" allow
-done
-for c in 'git init -q /tmp/elsewhere; cd "$REPO" && git commit -m x' \
-         'git clone -q "$URL" "$OTHER"; cd "$REPO" && git commit -m x' \
-         'cd "$OTHER" && git init -q; cd "$REPO" && git commit -m x'; do
-  guard_run "$H" "$c" HOME="$H"
-  verdict "$c — denied" deny "cannot resolve"
-done
-for c in 'echo git init; cd "$REPO" && git commit -m x' 'echo "git clone"; cd "$REPO" && git commit -m x' \
-         'cd "$REPO" && git commit -m "after git init"' 'git initx; cd "$REPO" && git commit -m x'; do
-  guard_run "$H" "$c" HOME="$H"
-  verdict "$c — still denied as unresolvable" deny "cannot resolve"
-done
+verdict 'cd "$REPO" && git commit, from outside every repo — allowed, unscanned (owner'"'"'s call)' allow
 rm -rf "$H"
 
 # No repo at all is not a failed read: nothing is staged anywhere yet, and what the
