@@ -86,7 +86,7 @@ whitespace, so a `#` inside a value (`^feature#1$`) is kept.
 That last part was a documented claim before it was a true one. Until 2026-09-11 the
 three hook parsers captured to end-of-line, so a trailing comment became part of the
 regex, the value matched nothing, and the layer reading it stopped enforcing in silence
-— while `doctor.sh`, which *did* strip comments, printed ✅ for the same line. One
+— while `flight-rules-doctor.sh`, which *did* strip comments, printed ✅ for the same line. One
 trailing comment on `PR_ONLY_BRANCHES` let a direct commit land on a PR-only `main`
 with all five git hooks installed.
 
@@ -274,7 +274,7 @@ that the logic has exactly one home.
   lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
   scan and its exit status decides the commit. **Upgrading from 0.22.x:** a plugin
   update cannot copy git hooks, so this one arrives only when you copy it in;
-  `doctor.sh` — run at session start — reports it missing with the exact `cp` command.
+  `flight-rules-doctor.sh` — run at session start — reports it missing with the exact `cp` command.
   Tests: `secret-scan.test.sh`.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
   unless all six bare-named hooks are present.
@@ -353,16 +353,16 @@ Guards that fire on the assistant's own events, before git ever runs:
   protected branch ALLOWED from a feature branch, silently — the ref they name is read
   by splitting the command, and nothing announced the dependency.
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
-- **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
+- **`flight-rules-doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
   every hook's executable bit *and* that each one still contains the string that makes
   it that hook (a present, executable stub enforces nothing), `merge.ff`, the guard's
   parser, the conf's keys and regexes, that every script `.claude/settings.json` wires
   exists, and that the guard is wired once and actually enabled — every one a state
   that has failed silently before. `session-start.sh` runs it daily and prints only
   problems.
-  Tests: `doctor.test.sh`.
+  Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project, and again after
-  a plugin update, runs `doctor.sh` and lists worktrees whose branches are already merged
+  a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
   so they get cleaned up. Reads
   `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
   A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
@@ -429,7 +429,7 @@ protected PR-only `main`:
 | `git merge`, `git cherry-pick`, `git revert` | **allowed** |
 | `git branch -f main …`, `git update-ref refs/heads/main …` | **allowed** |
 
-`git merge feature/x` was confirmed moving `main` with no layer objecting. `doctor.sh`
+`git merge feature/x` was confirmed moving `main` with no layer objecting. `flight-rules-doctor.sh`
 reports this at session start — naming `core.hooksPath` and `merge.ff` with the commands
 to fix both — so the state is loud, not silent. **Run `install.sh`.** With the git hooks
 present, `reference-transaction` refuses every one of those.

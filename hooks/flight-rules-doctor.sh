@@ -6,7 +6,7 @@
 # a conf key misspelled so the hook falls back to its default without a word, a
 # local copy of the guard running beside the plugin's.
 #
-# Usage: hooks/doctor.sh [--problems-only]
+# Usage: hooks/flight-rules-doctor.sh [--problems-only]
 #   Prints one line per check (✅ / ⚠️ / ❌). Exit 1 if any ❌. --problems-only
 #   suppresses the ✅ lines (what session-start.sh uses, so a healthy repo is silent).
 #
@@ -54,7 +54,7 @@ else
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
         # A plugin upgrade cannot copy git hooks into a project, so a hook added in a
         # release (pre-commit, 0.23.0) arrives as this line; say where to copy it from.
-        # A doctor.sh copied in by hand has no git/ beside it to copy from.
+        # A flight-rules-doctor.sh copied in by hand has no git/ beside it to copy from.
         if [[ -f "$GIT_HOOKS_SRC/$h" ]]; then
           bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from this flight-rules: cp '$GIT_HOOKS_SRC/$h' '$HOOKS_PATH/' && chmod +x '$HOOKS_PATH/$h'"
         else

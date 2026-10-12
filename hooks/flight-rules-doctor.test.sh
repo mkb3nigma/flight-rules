@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Tests for doctor.sh — each case is an install state that has silently failed
-# for real. Run: ./doctor.test.sh (no args, no network; builds throwaway repos).
+# Tests for flight-rules-doctor.sh — each case is an install state that has silently failed
+# for real. Run: ./flight-rules-doctor.test.sh (no args, no network; builds throwaway repos).
 set -uo pipefail
 H="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOCTOR="$H/doctor.sh"
+DOCTOR="$H/flight-rules-doctor.sh"
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
@@ -71,7 +71,7 @@ rm -rf "$D"
 
 # Without this one, cherry-pick / revert / branch -f / update-ref and a CONFLICTED
 # merge all reach a PR-only branch unguarded — and every other hook still reports
-# healthy, which is the exact "looks installed" failure doctor.sh exists to catch.
+# healthy, which is the exact "looks installed" failure flight-rules-doctor.sh exists to catch.
 D=$(mkrepo); rm "$D/.ai/hooks/reference-transaction"
 say "$(rc "$D")" "1" "reference-transaction missing → problem"
 say "$(has "$D" "reference-transaction missing")" "0" "…names the hook"
@@ -93,10 +93,10 @@ say "$([ -n "$FIX" ] && echo yes)" "yes" "…and gives the command that copies i
 (cd "$D" && eval "$FIX") >/dev/null 2>&1
 say "$(rc "$D")" "0" "…which, run, clears it"
 rm -rf "$D"
-# A doctor.sh copied in by hand, with no git/ beside it, printed a cp from a directory
+# A flight-rules-doctor.sh copied in by hand, with no git/ beside it, printed a cp from a directory
 # that does not exist (/dg, 2026-10-08). It names flight-rules' hooks/git/ instead.
-D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"; mkdir -p "$D/lone"; cp "$DOCTOR" "$D/lone/doctor.sh"
-LONE=$(cd "$D" && HOME="$D/fakehome" bash "$D/lone/doctor.sh" 2>&1)
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"; mkdir -p "$D/lone"; cp "$DOCTOR" "$D/lone/flight-rules-doctor.sh"
+LONE=$(cd "$D" && HOME="$D/fakehome" bash "$D/lone/flight-rules-doctor.sh" 2>&1)
 say "$(grep -c "$D/lone/git" <<<"$LONE")" "0" "doctor with no git/ beside it prints no cp from there"
 say "$(grep -c "from flight-rules' hooks/git/" <<<"$LONE")" "1" "…and names where the hook comes from"
 rm -rf "$D"

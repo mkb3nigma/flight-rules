@@ -45,7 +45,7 @@ jobs:
       - name: Secret scan (git pre-commit)
         run: bash hooks/git/secret-scan.test.sh
       - name: Doctor
-        run: bash hooks/doctor.test.sh
+        run: bash hooks/flight-rules-doctor.test.sh
       - name: Wiring
         run: bash hooks/wiring.test.sh
       - name: Skills catalogue is consistent

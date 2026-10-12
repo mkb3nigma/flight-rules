@@ -20,7 +20,7 @@ die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; 
 
 # A project with an integration branch, a worktree dir, and the enforcement installed
 # far enough to keep doctor quiet — session-start runs doctor first, and its findings
-# are doctor.test.sh's business, not this suite's. They would drown every assertion here.
+# are flight-rules-doctor.test.sh's business, not this suite's. They would drown every assertion here.
 mkrepo() {
   local d; d=$(cd "$(mktemp -d)" && pwd -P)
   git -C "$d" init -q -b trunk || die "git init failed in $d"
@@ -166,7 +166,7 @@ echo "A plugin update is checked the same day, not the next:"
 # found it touched and skipped doctor — the one place an upgrade's missing git hook is
 # reported (/dg, 2026-10-08). The flag now names the plugin version.
 T=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$T/.claude-plugin" "$T/hooks/agent"
-cp "$HOOK" "$T/hooks/agent/" && cp "$H/../doctor.sh" "$T/hooks/" || die "could not lay out the fake plugin"
+cp "$HOOK" "$T/hooks/agent/" && cp "$H/../flight-rules-doctor.sh" "$T/hooks/" || die "could not lay out the fake plugin"
 printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"
 D=$(mkrepo); git -C "$D" config --unset merge.ff   # a problem for doctor to report
 PRUN() { (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null); }
