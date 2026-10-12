@@ -457,6 +457,12 @@ scan_case "a password at the root, commit from a subdirectory" deny "mkdir -p su
 # A `-diff` attribute makes a large TEXT file look binary to git; the 1 MB limit is for
 # real binaries only, so a lockfile marked -diff is still read.
 scan_case "a key in a 2 MB text file marked -diff" deny "echo '*.lock -diff' > .gitattributes && for i in \$(seq 1 40000); do echo 'line of a large generated lockfile entry'; done > big.lock && printf '%s\\n' \"\$AKIA\" >> big.lock && git add .gitattributes big.lock"
+# The credential check leaves binaries out; which files are binary was git's call, so a
+# `-diff` or `binary` attribute on source files hid them from it (security review,
+# 2026-10-12). It is the content's call now: a NUL in the file's diff.
+scan_case "a password in source marked -diff" deny "mkdir -p src && echo '*.py -diff' > .gitattributes && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add .gitattributes src/config.py"
+scan_case "a password in source marked binary" deny "mkdir -p src && echo '*.py binary' > .gitattributes && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add .gitattributes src/config.py"
+scan_case "a password-shaped string in a real binary is left alone" allow "mkdir -p src && printf '\000\001password = \"hunter2hunter2\"\n' > src/blob.dat && git add src/blob.dat"
 scan_case "a key inside a small binary"      deny "printf '\\000\\001%s\\000\\n' \"\$AKIA\" > k.dat && git add k.dat"
 # The key's position crossed with a payload past 64 KB: the git hook committed a key with
 # more than 64 KB of added text after it (/dg, 2026-10-08), and every large case here put
@@ -1186,6 +1192,21 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
 fi
 rm -rf "$D"
+# The same binary with a `diff` attribute, which tells git it is text: the size limit
+# followed git's word, so it was read whole, and could outrun the timeout. "Binary" is now
+# the content's call, not the repo's attributes (security review, 2026-10-12).
+D=$(make_repo feature/x)
+echo '*.bin diff' > "$D/.gitattributes" && head -c 41943040 /dev/urandom > "$D/big.bin" \
+  && git -C "$D" add .gitattributes big.bin || die "could not stage the attributed binary"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+TOOK=$((SECONDS - START))
+if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary marked diff (text): skipped in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary marked diff (text): rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
+fi
+rm -rf "$D"
 
 echo "A long heredoc and a commit are judged well inside the hook's timeout (#73):"
 # A hook killed by its timeout lets the command run unchecked. A heredoc splits into a
@@ -1222,7 +1243,6 @@ REAL_GIT=$(command -v git)
 cat > "$SHIM/git" <<SH
 #!/bin/sh
 [ -n "\$FAIL_ON" ] || exec "$REAL_GIT" "\$@"
-case " \$* " in *" --cached "*) ;; *) exec "$REAL_GIT" "\$@" ;; esac
 for w in \$FAIL_ON; do case " \$* " in *"\$w"*) ;; *) exec "$REAL_GIT" "\$@" ;; esac; done
 [ -z "\$PARTIAL" ] || printf '1\t0\tpart'
 echo "git-said-\$FAIL_ON" >&2; exit 128
@@ -1249,21 +1269,25 @@ verdict() {
 }
 guard_run "$D" "git commit -m x" PATH="$SHIM:$PATH"
 verdict "the stand-in git, failing nothing, allows a clean commit" allow
-for f in --numstat --text --name-only --name-status; do
+for f in --raw --text --name-only --name-status; do
   guard_run "$D" "git commit -m x" FAIL_ON="$f" PATH="$SHIM:$PATH"
   verdict "git diff $f fails — denied, with git's error" deny "could not read what is staged" "git-said-$f"
 done
+# The size lookup reads its input from stdin, so a re-run for its error has nothing to
+# say; its status is the message.
+guard_run "$D" "git commit -m x" FAIL_ON="--batch-check=%(objectsize)" PATH="$SHIM:$PATH"
+verdict "git cat-file --batch-check fails — denied" deny "could not read what is staged" "batch-check exited 128"
 # The credential filter is a step too: an awk that fails there is a deny, not "nothing
 # found". The stand-in awk fails when its program reads the binaries' list.
 REAL_AWK=$(command -v awk)
-printf '#!/bin/sh\n[ -n "$FAIL_AWK" ] && case "$*" in *"body = 1"*) echo awk-said >&2; exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL_AWK" > "$SHIM/awk" \
+printf '#!/bin/sh\n[ -n "$FAIL_AWK" ] && case "$*" in *"of[n] = f"*) echo awk-said >&2; exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL_AWK" > "$SHIM/awk" \
   && chmod +x "$SHIM/awk" || die "could not build the failing awk"
 guard_run "$D" "git commit -m x" FAIL_AWK=1 PATH="$SHIM:$PATH"
 verdict "the credential filter (awk) fails — denied" deny "could not read what is staged" "filtering the staged diff"
 # A git that dies mid-record: its partial record and the status record must not merge
 # into one the loop skips.
-guard_run "$D" "git commit -m x" FAIL_ON=--numstat PARTIAL=1 PATH="$SHIM:$PATH"
-verdict "git diff --numstat fails after partial output — denied, with its status" deny "--numstat exited 128"
+guard_run "$D" "git commit -m x" FAIL_ON=--raw PARTIAL=1 PATH="$SHIM:$PATH"
+verdict "git diff --raw fails after partial output — denied, with its status" deny "--raw exited 128"
 rm -rf "$D"
 
 # The same, with a real git: a repo whose diff config git rejects (git commit fails there

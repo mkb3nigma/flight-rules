@@ -62,9 +62,12 @@ in the repo being committed to; `O` a clean sibling repo:
 | with a `-diff` attribute on the file, `git commit -m x` | allowed | **denied** |
 
 The repo's own diff settings — colour, an external diff tool, a textconv, a `-diff`
-attribute, `diff.relative` — no longer change what is scanned. A file git calls binary is
-read as text, except a real binary over 1 MB, which the agent guard skips because reading
-it whole can outlast the hook's timeout (a killed hook lets the command through); the git
+attribute, `diff.relative` — no longer change what is scanned. Every staged file is read
+as text, except a real binary over 1 MB, which the agent guard skips because reading it
+whole can outlast the hook's timeout (a killed hook lets the command through). Which
+files are binary is decided by their content, not `.gitattributes`: an attribute no
+longer hides source files from the credential check or has a large binary read whole.
+The git
 hook reads those whole, wherever the key sits in them. If git cannot read what is
 staged, the command is denied with git's reason, not allowed unscanned. A `cd` or `-C`
 target written with `~` or `$HOME` is followed; one the guard cannot resolve (another
