@@ -1213,6 +1213,147 @@ else
 fi
 rm -rf "$D"
 
+echo "A git read that fails is a deny, not a clean scan (2026-10-12):"
+# Every git read of the staged diff had its status dropped, so a git that failed was an
+# empty diff and the commit was allowed unscanned. The hook is run with a `git` that
+# fails (exit 128, saying so) when every word of $FAIL_ON is among its arguments.
+D=$(make_repo feature/x); SHIM=$(mktemp -d)
+REAL_GIT=$(command -v git)
+cat > "$SHIM/git" <<SH
+#!/bin/sh
+[ -n "\$FAIL_ON" ] || exec "$REAL_GIT" "\$@"
+case " \$* " in *" --cached "*) ;; *) exec "$REAL_GIT" "\$@" ;; esac
+for w in \$FAIL_ON; do case " \$* " in *"\$w"*) ;; *) exec "$REAL_GIT" "\$@" ;; esac; done
+[ -z "\$PARTIAL" ] || printf '1\t0\tpart'
+echo "git-said-\$FAIL_ON" >&2; exit 128
+SH
+chmod +x "$SHIM/git" || die "could not build the failing git"
+echo clean > "$D/a.py" && printf '\000\001bin' > "$D/b.bin" && git -C "$D" add a.py b.bin >/dev/null 2>&1 \
+  || die "could not stage the clean files"
+# guard_run <dir> <command> [env…] — the hook's stdout; rc in $GUARD_RC.
+guard_run() {
+  local d="$1" c="$2"; shift 2
+  GUARD_OUT=$(cd "$d" && CLAUDE_PROJECT_DIR="$d" env "$@" bash "$HOOK" \
+              <<<"$(jq -n --arg c "$c" '{tool_input:{command:$c}}')" 2>/dev/null); GUARD_RC=$?
+}
+# verdict <description> <expect deny|allow> [<text the output must hold>…]
+verdict() {
+  local desc="$1" expect="$2" got t; shift 2
+  if [[ $GUARD_RC -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$GUARD_RC"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$GUARD_OUT"; then got=deny; else got=allow; fi
+  for t in "$@"; do grep -qF -- "$t" <<<"$GUARD_OUT" || got="$got, without \"$t\""; done
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+guard_run "$D" "git commit -m x" PATH="$SHIM:$PATH"
+verdict "the stand-in git, failing nothing, allows a clean commit" allow
+for f in --numstat --text --name-only --name-status; do
+  guard_run "$D" "git commit -m x" FAIL_ON="$f" PATH="$SHIM:$PATH"
+  verdict "git diff $f fails — denied, with git's error" deny "could not read what is staged" "git-said-$f"
+done
+# The credential filter is a step too: an awk that fails there is a deny, not "nothing
+# found". The stand-in awk fails when its program reads the binaries' list.
+REAL_AWK=$(command -v awk)
+printf '#!/bin/sh\n[ -n "$FAIL_AWK" ] && case "$*" in *"body = 1"*) echo awk-said >&2; exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL_AWK" > "$SHIM/awk" \
+  && chmod +x "$SHIM/awk" || die "could not build the failing awk"
+guard_run "$D" "git commit -m x" FAIL_AWK=1 PATH="$SHIM:$PATH"
+verdict "the credential filter (awk) fails — denied" deny "could not read what is staged" "filtering the staged diff"
+# A git that dies mid-record: its partial record and the status record must not merge
+# into one the loop skips.
+guard_run "$D" "git commit -m x" FAIL_ON=--numstat PARTIAL=1 PATH="$SHIM:$PATH"
+verdict "git diff --numstat fails after partial output — denied, with its status" deny "--numstat exited 128"
+rm -rf "$D"
+
+# The same, with a real git: a repo whose diff config git rejects (git commit fails there
+# too). Another repo in the same command holds a key; the deny names both.
+D=$(make_repo feature/x); O=$(make_repo feature/o)
+echo clean > "$D/a.py" && git -C "$D" add a.py && git -C "$D" config diff.renameLimit abc \
+  && printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$O/k.txt" && git -C "$O" add k.txt || die "could not build the two repos"
+guard_run "$D" "git -C $O commit -m a && git commit -m b"
+verdict "a repo git cannot diff, and a key in another — denied, naming both" deny \
+  "could not read what is staged" "In $D:" "In the repos it could read" "In $O:" "AWS access key"
+rm -rf "$D" "$O"
+
+# One read for the whole diff: a per-file pathspec of 14,000 files overran the argument
+# limit (exit 126) and denied a legitimate commit; before that, the credential check was
+# silently skipped. 9,000 files of 240-character paths is past the limit on macOS and
+# Linux; one of them holds a credential literal, which must still be found.
+D=$(make_repo feature/x); _long=$(printf 'd%.0s' $(seq 1 200))
+mkdir -p "$D/src/$_long" || die "could not build the large tree"
+for i in $(seq 1 9000); do echo "v = $i" > "$D/src/$_long/file_$i.py"; done
+echo 'password = "hunter2hunter2"' > "$D/src/$_long/file_9000.py"
+git -C "$D" add src >/dev/null 2>&1 || die "could not stage the large tree"
+guard_run "$D" "git commit -m x"
+verdict "9,000 staged files: read whole, the credential literal among them found" deny "hardcoded credential"
+grep -q 'could not read' <<<"$GUARD_OUT" && { FAIL=$((FAIL+1)); printf '  ❌ …and no read failed\n'; } \
+  || { PASS=$((PASS+1)); printf '  ✅ …and no read failed\n'; }
+rm -rf "$D"
+
+# The binaries' names reach the credential filter too: passed in the environment, a few
+# thousand of them overran Linux's 128 KB limit on one variable, awk never started, and
+# the check found nothing (/dg, 2026-10-12). 3,000 small binaries under a 60-character
+# directory is past it; a credential literal in a source file must still be found.
+D=$(make_repo feature/x); _dir=$(printf 'b%.0s' $(seq 1 60))
+mkdir -p "$D/assets/$_dir" || die "could not build the binary tree"
+for i in $(seq 1 3000); do printf '\000%s' "$i" > "$D/assets/$_dir/icon_$i.bin"; done
+echo 'password = "hunter2hunter2"' > "$D/app.py"
+git -C "$D" add . >/dev/null 2>&1 || die "could not stage the binary tree"
+guard_run "$D" "git commit -m x"
+verdict "3,000 staged binaries: the credential literal in source is still found" deny "hardcoded credential"
+rm -rf "$D"
+
+# git's file-name prefixes are the repo's to set (diff.dstPrefix, diff.noprefix); the
+# filter reads names from `+++ b/…`, so a test fixture's password stops being a test
+# file's under another prefix (/dg, 2026-10-12). The scan pins them.
+for cfg in "diff.dstPrefix x" "diff.noprefix true" "diff.mnemonicPrefix true"; do
+  D=$(make_repo feature/x); mkdir -p "$D/tests"
+  echo 'password = "hunter2hunter2"' > "$D/tests/fx.py" && git -C "$D" add tests && git -C "$D" config $cfg \
+    || die "could not build the $cfg fixture"
+  guard_run "$D" "git commit -m x"
+  verdict "with $cfg, a test fixture's password is still a test file's" allow
+  rm -rf "$D"
+done
+
+# A name with a space gets a trailing tab on its `+++ b/<path>` line; kept, it broke every
+# `$`-anchored file rule, and a prose page lost its exemption (/dg, 2026-10-12).
+for c in "allow|setup guide.md" "allow|test_login flow.py" "allow|notes on sign in.txt" "allow|my icon.bin" \
+         "allow|ünïcode notes.md" 'allow|say "hi".md' "deny|src/app main.py"; do
+  D=$(make_repo feature/x); f=${c#*|}; mkdir -p "$D/$(dirname "$f")"
+  { case "$f" in *.bin) printf '\000' ;; esac; echo 'password = "correcthorsebattery"'; } > "$D/$f" \
+    && git -C "$D" add . || die "could not stage $f"
+  guard_run "$D" "git commit -m x"
+  verdict "a credential-shaped line in \"$f\": ${c%%|*}" "${c%%|*}"
+  rm -rf "$D"
+done
+
+echo "A commit target the scan cannot resolve, from outside every repo (2026-10-12):"
+# `~` and `$HOME` were left unexpanded, so from a directory that is no repo the target
+# resolved nowhere and nothing was scanned. They are expanded now; any other `$VAR` is
+# denied, unless the command creates the repo.
+H=$(cd "$(mktemp -d)" && pwd -P); R=$(make_repo feature/x); mv "$R" "$H/r"
+printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$H/r/k.txt" && git -C "$H/r" add k.txt || die "could not stage in \$HOME/r"
+for c in 'cd ~/r && git commit -m x' 'cd $HOME/r && git commit -m x' 'cd "$HOME/r" && git commit -m x' \
+         'cd ${HOME}/r && git commit -m x' 'git -C ~/r commit -m x'; do
+  guard_run "$H" "$c" HOME="$H"
+  verdict "$c — the key is found" deny "AWS access key"
+done
+guard_run "$H" 'cd "$REPO" && git commit -m x' HOME="$H"
+verdict 'cd "$REPO" && git commit — denied as unresolvable' deny "cannot resolve"
+guard_run "$H" 'cd "$REPO" && git status' HOME="$H"
+verdict "…but not a command that commits nothing" allow
+guard_run "$H" 'cd "$N" && git init -q && git commit --allow-empty -m x' HOME="$H"
+verdict "…nor one that creates the repo it commits in" allow
+rm -rf "$H"
+
+# No repo at all is not a failed read: nothing is staged anywhere yet, and what the
+# command itself stages is the git pre-commit hook's to scan (#71).
+N=$(cd "$(mktemp -d)" && pwd -P)
+guard_run "$N" "git init -q r && cd r && git commit --allow-empty -m x"
+verdict "a commit in a repo the command creates, from outside any repo, is allowed" allow
+rm -rf "$N" "$SHIM"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
