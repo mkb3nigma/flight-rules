@@ -16,11 +16,23 @@ injects the principles; the rest you read once.
 | `{NOTE_GATED_BRANCHES}` | `dev` — a local merge needs a `pre-merge-check` note on the branch being merged |
 | `{INTEGRATION_BRANCH}` | `dev` — work integrates here; `main` is the released state |
 | `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
-| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
+| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/git/secret-scan.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
 Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/dev`,
-commit there, push, `gh pr create --base dev`. Never commit on `main` or `dev`; never
-merge into `main` locally. Sync with `git pull --ff-only origin dev`.
+commit there; the owner pushes it. Then, **as the owner**, merge it into `dev` locally — stamp the
+`pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
+from the `dev` checkout, then push `dev`. No PR: `dev` is note-gated, not PR-only, and the
+local merge is what exercises the note gate, the authorisation trailer and the back-merge
+exemption — a GitHub-button merge runs none of them. **A contributor** cannot push `dev`
+and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `main` or
+`dev`; sync with `git pull --ff-only origin dev`.
+
+An assistant pushes no branch, and runs no `/pr-create` (which pushes), unless the
+owner says so in that session — the owner reviews and pushes (standing instruction).
+A branch that has fallen behind `dev` or conflicts with it gets `dev` merged **into**
+it, is tested and stamped there, then merges back. The conflict is never resolved in
+the merge into `dev`, where the note would vouch for a tip that never held the
+resolution. Merge, not rebase (owner's preference, 2026-10-05).
 
 **`main` moves at a release, not per change.** A promotion is one PR, `dev` → `main`,
 carrying one version bump, the full `{TEST_COMMANDS}` run on the exact commit being
@@ -84,8 +96,11 @@ checked harder than code. Each added or widened item must pass all four, in the 
 2. **Says what goes wrong without it**, concretely. If the honest answer is "nothing
    much", it does not go in.
 3. **Says how it is enforced** — a hook, or a skill with the check number. "Advisory"
-   is not an answer by itself: it needs the reason the item cannot be checked, and it
-   expires at the next release unless enforcement has arrived by then.
+   is an answer only with the reason the item cannot be checked. Each release asks
+   again whether enforcement has become possible. An item is cut only when its warrant
+   is gone or another item covers it — never for being advisory, or for not having
+   fired lately (owner's call, 2026-10-11: read literally, an expiry would have cut
+   eleven earned principles at that release).
 4. **Survives adversarial review** — `/dg` on the diff, preferring a reviewer from a
    different model family than the author (the skill says why), with the verdict in
    the PR body and each finding's disposition, applied or declined with a reason.
@@ -94,7 +109,11 @@ checked harder than code. Each added or widened item must pass all four, in the 
 tightening skips the four points but still names what it drops and where that is now
 covered — a widening framed as a "fold" is how coverage quietly disappears. The same
 questions are put to every bullet of `engineering-principles.md` at each release: it
-is injected into every session, so it is where an unearned line costs the most.
+is injected into every session, so it is where an unearned line costs the most. That
+review reads the file as the assistant receiving it — what a bullet's literal reading
+would make it do, which bullets pull against each other, what is missing — not only
+whether its paperwork is in order. The file stays assistant-agnostic: it reaches every
+assistant, in projects that know nothing of this repo.
 
 ## When editing a hook
 

@@ -21,7 +21,13 @@ WORKTREE_DIR="$(conf_get WORKTREE_DIR)";             WORKTREE_DIR="${WORKTREE_DI
 FLAG_DIR="$HOME/.claude/hooks"
 mkdir -p "$FLAG_DIR"
 find "$FLAG_DIR" -maxdepth 1 -name '.worktree-check-*' -mtime +1 -delete 2>/dev/null
-LAST_RUN_FILE="$FLAG_DIR/.worktree-check-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')-$(date +%Y%m%d)"
+# The plugin version is in the name too, so an update re-runs doctor that day: it is
+# where an upgrade's missing git hook is reported, and a flag touched that morning made
+# the report wait a day (/dg, 2026-10-08). Hand-wired, there is no plugin.json and no
+# version, and the flag is per day only.
+PLUGIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+  "$(dirname "${BASH_SOURCE[0]}")/../../.claude-plugin/plugin.json" 2>/dev/null | head -1)
+LAST_RUN_FILE="$FLAG_DIR/.worktree-check-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')-$(date +%Y%m%d)${PLUGIN_VERSION:+-$PLUGIN_VERSION}"
 
 if [ -f "$LAST_RUN_FILE" ]; then
   exit 0

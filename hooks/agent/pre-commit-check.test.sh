@@ -10,6 +10,8 @@
 set -uo pipefail
 HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pre-commit-check.sh"
 PASS=0; FAIL=0
+# Assembled at run time so this file never carries a literal key for a scanner to flag.
+AKIA=$(printf 'AKIA%s' IOSFODNN7EXAMPLE)
 
 # A fixture that cannot be built is not a test failure, it is an aborted run — so it
 # stops the suite rather than being counted. make_repo runs inside a command
@@ -263,7 +265,7 @@ conf_check "off via the conf file"       allow main 'git rm f' 'PROTECTED_BRANCH
 # Opting out of the branch policy must NOT disable the secret scan — leaking a key
 # is not a workflow preference.
 D=$(make_repo main)
-printf 'AWS_KEY = "AKIAIOSFODNN7EXAMPLE"\n' > "$D/leak.py"
+printf 'AWS_KEY = "%s"\n' "$AKIA" > "$D/leak.py"
 git -C "$D" add leak.py >/dev/null 2>&1
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_PROTECTED_BRANCHES=off \
       bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
@@ -320,8 +322,16 @@ check "push -f production feature/x"            allow feature/x 'git push -f pro
 
 echo "Target directory — the last cd wins, and quotes are tolerated:"
 # Regression: only the FIRST `cd` was honoured, so `cd /tmp && cd <repo> && git rm`
-# resolved the branch from /tmp (no repo, no branch) and was allowed on main.
-check "last cd wins"                     deny  main 'cd /tmp && cd . && git rm f.txt'
+# judged /tmp. Since #61 a relative `cd` chains onto the one before it, which is what
+# the shell does — so the case names the repo absolutely instead of as `cd .`.
+D=$(make_repo main)
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<"$(jq -n --arg c "cd /tmp && cd $D && git rm f.txt" '{tool_input:{command:$c}}')" 2>/dev/null); RC=$?
+if [[ $RC -ne 0 ]]; then FAIL=$((FAIL+1)); printf '  ❌ harness: the hook exited %s on the last-cd case\n' "$RC"
+elif grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then PASS=$((PASS+1)); printf '  ✅ last cd wins\n'
+else FAIL=$((FAIL+1)); printf '  ❌ last cd wins — expected deny, got allow\n'; fi
+rm -rf "$D"
+check "a relative cd chains onto the cd before it" allow main 'cd /tmp && cd . && git rm f.txt'
 check "double-quoted cd path"            deny  main 'cd "." && git rm f.txt'
 check "single-quoted cd path"            deny  main "cd '.' && git rm f.txt"
 
@@ -354,7 +364,7 @@ secret_check() {
 # Regression: every pattern was anchored `^\+[^+].*`, demanding a character between
 # the diff's "+" and the secret — a column-zero assignment was never matched.
 secret_check "password at column zero"        deny  src/config.py 'password = "hunter2hunter2"'
-secret_check "AWS key at column zero"         deny  src/config.py 'AKIAIOSFODNN7EXAMPLE'
+secret_check "AWS key at column zero"         deny  src/config.py "$AKIA"
 secret_check "indented password (control)"    deny  src/config.py '    password = "hunter2hunter2"'
 secret_check "PASSWORD (case-insensitive)"    deny  src/config.py 'PASSWORD = "hunter2hunter2"'
 secret_check "API_KEY"                        deny  src/config.py 'API_KEY = "abcdefghijklmnop"'
@@ -387,7 +397,7 @@ secret_check "*.test.ts excluded"             allow src/auth.test.ts 'password =
 secret_check "*.spec.js excluded"             allow src/auth.spec.js 'password = "hunter2hunter2"'
 secret_check "conftest.py excluded"           allow conftest.py 'password = "hunter2hunter2"'
 # …but a provider key is a leak wherever it sits.
-secret_check "AWS key in a test file"         deny  tests/test_a.py 'AKIAIOSFODNN7EXAMPLE'
+secret_check "AWS key in a test file"         deny  tests/test_a.py "$AKIA"
 # Post-merge review: names git quotes, documented .env templates, prose files, the
 # allow trailer, and the extra placeholder words.
 secret_check "non-ASCII filename is scanned"  deny  'src/cönfig.py' 'password = "hunter2hunter2"'
@@ -403,8 +413,85 @@ secret_check "README example"                 allow README.md 'api_key = "abcdef
 secret_check "placeholder your-…"             allow src/config.py 'password = "your-password-goes"'
 secret_check "placeholder …-here"             allow src/config.py 'password = "put-real-value-here"'
 secret_check "flight-rules: allow trailer"    allow src/config.py 'password = "hunter2hunter2"  # flight-rules: allow'
-secret_check "provider key in docs still caught" deny docs/setup.md 'key: AKIAIOSFODNN7EXAMPLE'
+secret_check "provider key in docs still caught" deny docs/setup.md "key: $AKIA"
 secret_check "provider key in locale still caught" deny locales/en.json '{"k": "sk-ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123"}'
+
+echo "The repo's own diff settings do not hide a staged key, and a .env leaving is not one entering:"
+# scan_case <desc> <expect> <setup> [<command>] — <setup> runs in the fixture repo before
+# the commit is judged, and must leave something staged; a setup that fails aborts the
+# run. <command> is what the agent runs, `git commit -m x` by default.
+# The first five were allowed until the scan read the diff with --no-color, --no-ext-diff,
+# --no-textconv and --text: color.ui=always prefixed every added line with an escape
+# code, so no pattern anchored on "+" matched (probed 2026-10-05 on dev at adbabc5).
+scan_case() {
+  local desc="$1" expect="$2" setup="$3" cmd="${4:-git commit -m x}" dir out got rc
+  dir=$(make_repo feature/x)
+  (cd "$dir" && eval "$setup") >/dev/null 2>&1 || die "setup failed for: $desc"
+  [ -n "$(git -C "$dir" diff --cached --name-only)" ] || die "setup staged nothing for: $desc"
+  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
+    rm -rf "$dir"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
+  fi
+  rm -rf "$dir"
+}
+STAGE_KEY='printf "%s\n" "$AKIA" > k.txt && git add k.txt'
+scan_case "color.ui=always"                  deny "git config color.ui always && $STAGE_KEY"
+scan_case "color.diff=always"                deny "git config color.diff always && $STAGE_KEY"
+scan_case "diff.external that prints nothing" deny "git config diff.external true && $STAGE_KEY"
+scan_case "-diff attribute (binary)"         deny "echo '*.txt -diff' > .gitattributes && $STAGE_KEY"
+scan_case "textconv that redacts"            deny "echo '*.txt diff=r' > .gitattributes && git config diff.r.textconv 'sed s/AKIA/XXXX/' && $STAGE_KEY"
+# diff.relative cut the diff to the directory the commit ran from, so a key staged at the
+# root passed a commit made from a subdirectory (/dg, 2026-10-05).
+scan_case "diff.relative, commit from a subdirectory" deny "mkdir sub && echo s > sub/s && git config diff.relative true && $STAGE_KEY" 'cd sub && git commit -m x'
+# The credential check passed root-relative names back as cwd-relative pathspecs, so from
+# a subdirectory nothing matched and it never ran — with no config at all.
+scan_case "a password at the root, commit from a subdirectory" deny "mkdir -p sub src && echo s > sub/s && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add src/config.py" 'cd sub && git commit -m x'
+# A `-diff` attribute makes a large TEXT file look binary to git; the 1 MB limit is for
+# real binaries only, so a lockfile marked -diff is still read.
+scan_case "a key in a 2 MB text file marked -diff" deny "echo '*.lock -diff' > .gitattributes && for i in \$(seq 1 40000); do echo 'line of a large generated lockfile entry'; done > big.lock && printf '%s\\n' \"\$AKIA\" >> big.lock && git add .gitattributes big.lock"
+# The credential check leaves binaries out; which files are binary was git's call, so a
+# `-diff` or `binary` attribute on source files hid them from it (security review,
+# 2026-10-12). It is the content's call now: a NUL in the file's diff.
+scan_case "a password in source marked -diff" deny "mkdir -p src && echo '*.py -diff' > .gitattributes && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add .gitattributes src/config.py"
+scan_case "a password in source marked binary" deny "mkdir -p src && echo '*.py binary' > .gitattributes && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add .gitattributes src/config.py"
+scan_case "a password-shaped string in a real binary is left alone" allow "mkdir -p src && printf '\000\001password = \"hunter2hunter2\"\n' > src/blob.dat && git add src/blob.dat"
+scan_case "a key inside a small binary"      deny "printf '\\000\\001%s\\000\\n' \"\$AKIA\" > k.dat && git add k.dat"
+# The key's position crossed with a payload past 64 KB: the git hook committed a key with
+# more than 64 KB of added text after it (/dg, 2026-10-08), and every large case here put
+# the key last. A binary over 1 MB is not read by the guard, by design; the git hook is.
+FILL="awk 'BEGIN { for (i = 0; i < 30000; i++) print \"line of a large generated lockfile entry\" }'"
+scan_case "a key first in 1.2 MB of text"   deny "{ printf '%s\\n' \"\$AKIA\"; $FILL; } > big.txt && git add big.txt"
+scan_case "a key mid-way in 1.2 MB of text" deny "{ $FILL; printf '%s\\n' \"\$AKIA\"; $FILL; } > big.txt && git add big.txt"
+scan_case "a key last in 1.2 MB of text"    deny "{ $FILL; printf '%s\\n' \"\$AKIA\"; } > big.txt && git add big.txt"
+scan_case "a key first in 2 MB marked -diff" deny "echo '*.lock -diff' > .gitattributes && { printf '%s\\n' \"\$AKIA\"; $FILL; $FILL; } > big.lock && git add .gitattributes big.lock"
+scan_case "a key first in a 900 KB binary"  deny "{ printf '%s\\n' \"\$AKIA\"; head -c 921600 /dev/urandom; } > k.dat && git add k.dat"
+# The credential-literal check reads its own diff of the non-test files; that one too.
+scan_case "diff.external hiding a password"  deny "mkdir -p src && git config diff.external true && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add src/config.py"
+# --text hands the scan a binary file's raw bytes. Under a UTF-8 locale macOS grep skips a
+# line holding an invalid byte (Codex, /dg), and tr stops at the first one — "Illegal
+# byte sequence" — so nothing after it was scanned at all.
+LC_ALL=en_US.UTF-8 scan_case "a key after an invalid byte, UTF-8 locale" deny "echo '*.bin -diff' > .gitattributes && printf '\377\n%s\377\n' \"\$AKIA\" > k.bin && git add k.bin"
+# Removing a .env is the one change let through, as in the git pre-commit hook: deleting
+# or untracking it is how a leak is cleaned up, and was refused because the name list
+# carried no --diff-filter. Editing one already tracked is still refused (owner's call,
+# 2026-10-05): a password typed into it has no quotes for the literal check to catch.
+TRACK_ENV='printf "X=1\n" > .env && git add .env && git commit -qm env'
+scan_case "git rm of a tracked .env"         allow "$TRACK_ENV && git rm -q .env"
+scan_case "untracking a .env (rm --cached)"  allow "$TRACK_ENV && git rm -q --cached .env"
+scan_case "editing a tracked .env"           deny  "$TRACK_ENV && printf 'DB_PASSWORD=hunter2\n' >> .env && git add .env"
+scan_case "renaming a .env away"             deny  "$TRACK_ENV && git mv .env config.txt"
+scan_case "renaming a .env away, renames off" deny "$TRACK_ENV && git config diff.renames false && git mv .env config.txt"
+scan_case "renaming a .env to a template"    deny  "$TRACK_ENV && git mv .env .env.example"
+scan_case "…but a key written into it"       deny  "$TRACK_ENV && printf '%s\n' \"\$AKIA\" >> .env && git add .env"
+scan_case "a .env renamed in"                deny  "printf 'X=1\n' > .env.example && git add .env.example && git commit -qm e && git mv .env.example .env"
 
 echo "More ways to rewrite or discard a protected branch (post-merge review):"
 check "checkout <rev> -- <path>"          deny  main 'git checkout HEAD -- f.txt'
@@ -612,6 +699,9 @@ echo "Shape coverage — every wrapper crossed with every dangerous core:"
 # and 150+ fresh clones would dominate the suite's runtime for no extra coverage.
 GEN_MAIN=$(make_repo main)
 GEN_FEAT=$(make_repo feature/x)
+# A sibling repo that some wrappers name with `git -C` or `cd`: the segment that names it
+# is aimed there, and must not drag the verdict on the OTHER segments with it (#61).
+GEN_OTHER=$(make_repo feature/elsewhere)
 
 gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
   local expect="$1" where="$2" wname="$3" cmd="$4" dir out got rc
@@ -645,7 +735,19 @@ gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
 # hook with `;` deleted from E passes a suite without brace-group and fails 18 cases with
 # it — proven, not assumed. `if-then`, `for-loop`, `cmd-subst` and `semi-echo` caught
 # nothing the survivors do not.
-WRAP_NAME=( bare subshell brace-group cd-prefix and-echo echo-and pipe newline-after-main )
+# The three RETARGETING wrappers (#61, probed 2026-09-17 on dev at c3a708e): a `git -C
+# <other-repo>` on a harmless segment, before or after the core, and a `cd <other-repo>`
+# AFTER it. The target used to be resolved once per command — the last `cd` anywhere,
+# else the first `git -C` anywhere — so each of these judged the core against the other
+# repo's branch and ALLOWED a commit on a protected branch. An assistant only has to
+# inspect another worktree and commit in the same line. `cd` must only affect the
+# segments after it, and `-C` only its own segment.
+# The two SUBSHELL-cd wrappers (#70, probed 2026-10-05 on dev at 85df164): a `cd` inside
+# `( … )` or `$( … )` ends at the `)` in the shell, but persisted for the guard, so the
+# core was judged in the other repo — and allowed. `(cd sub && make) && git commit` is
+# the everyday shape.
+WRAP_NAME=( bare subshell brace-group cd-prefix and-echo echo-and pipe newline-after-main
+            other-C-before other-C-after cd-other-after subshell-cd-other cmd-subst-cd-other )
 WRAP_FMT=(  '%s'
             '(%s)'
             '{ %s; }'
@@ -654,7 +756,12 @@ WRAP_FMT=(  '%s'
             'echo start && %s'
             '%s | cat'
             '%s
-echo "=== main now ==="' )
+echo "=== main now ==="'
+            "git -C $GEN_OTHER status && %s"
+            "%s && git -C $GEN_OTHER status"
+            "%s && cd $GEN_OTHER"
+            "(cd $GEN_OTHER && true) && %s"
+            "x=\$(cd $GEN_OTHER && pwd) && %s" )
 
 # The GIT-INVOCATION PREFIX axis. Everything between the word `git` and its verb.
 # `NORM` normalised away only `-C <dir>` and `-c key=val`, so every other global option
@@ -818,7 +925,144 @@ for pair in "git status|echo main" \
 done
 printf '  ✅ 5 harmless pairs\n'
 
-rm -rf "$GEN_MAIN" "$GEN_FEAT"
+rm -rf "$GEN_MAIN" "$GEN_FEAT" "$GEN_OTHER"
+
+echo "The target is resolved per segment, not per command (#61):"
+# The product above proves a harmless segment aimed elsewhere cannot clear the core. The
+# cases here pin the other half of the rule: a segment GENUINELY aimed at another repo is
+# still not ours to judge, a `-C` on the segment itself beats an earlier `cd`, and the
+# secret scan reads the repo the COMMIT is aimed at — which the same bug also retargeted:
+# `git -C other status && git commit` from a repo with a staged key scanned `other`.
+D=$(make_repo dev); O=$(make_repo feature/elsewhere)
+seg() {   # seg <expect> <desc> <command>   — run from $D with the project scoped to $D
+  local expect="$1" desc="$2" cmd="$3" out rc got
+  out=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+seg deny  "the #61 shape: -C elsewhere on a status, then a bare commit"   "git -C $O status && git commit -m x"
+seg deny  "cd elsewhere AFTER the commit does not retarget it"            "git commit -m x && cd $O"
+seg deny  "-C on the commit segment beats an earlier cd elsewhere"        "cd $O && git -C $D commit -m x"
+seg deny  "cd elsewhere, then cd back, then commit"                       "cd $O && git status && cd $D && git commit -m x"
+seg allow "cd elsewhere, then commit: aimed there, not ours"              "cd $O && git commit -m x"
+seg allow "-C elsewhere on the commit itself: aimed there, not ours"      "git -C $O commit -m x"
+seg allow "-C elsewhere on a status alone is just a status"               "git -C $O status"
+seg allow "a relative -C after a cd is relative to the cd, not the cwd"  "cd $O && git -C . commit -m x"
+seg allow "…and so is a relative cd in a subshell"                         "cd $O && (cd . && git commit -m x)"
+seg deny  "a relative -C with no cd is relative to the cwd"                "git -C . commit -m x"
+# From the cross-family pre-review of this change (2026-10-04). `cd` is a directory change
+# only as the command of its segment; `-C` is found after other global flags and may be
+# quoted.
+seg deny  "'cd /tmp' inside a commit message does not retarget the commit" 'git commit -m "cd /tmp"'
+seg deny  "…nor does an echo of it in an earlier segment"                  'echo "cd /tmp" && git commit -m x'
+seg allow "cd as the first command of a brace group is a cd"              "{ cd $O && git commit -m x; }"
+seg allow "…and, as in the shell, it persists past the closing brace"      "{ cd $O && git status; } && git commit -m x"
+seg allow "-C after another global flag is still read"                     "git --no-pager -C $O commit -m x"
+seg deny  "…and judged where it points"                                    "cd $O && git --no-pager -C $D commit -m x"
+mkdir -p "$O/with space" && git init -q -b feature/spaced "$O/with space" 2>/dev/null \
+  && git -C "$O/with space" commit -q --allow-empty -m i 2>/dev/null
+seg allow "a quoted -C path with a space resolves whole"                   "git -C \"$O/with space\" commit -m x"
+# The scan follows the commit. A key staged HERE must be caught when the commit is here,
+# whatever another segment names; and a commit aimed at the other repo scans that repo.
+# Assembled at run time: the guard scans this file's own staged diff, and a literal
+# key here is exactly what it blocks (it did, 2026-10-04 — the right answer).
+printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$D/leak.txt"; git -C "$D" add leak.txt >/dev/null 2>&1
+git -C "$D" checkout -q -b feature/here 2>/dev/null   # off the protected branch, so only the scan can deny
+seg deny  "staged key here is caught despite -C elsewhere on another segment" "git -C $O status && git commit -m x"
+seg deny  "…and despite a cd elsewhere after the commit"                       "git commit -m x && cd $O"
+# Allowed until 2026-10-05: the commit is aimed at $O, which is clean. Now the cwd is
+# scanned whatever the command's cd's say, because the scope reading can be fooled (see
+# below), so a key staged where the command was typed blocks it — and the deny names it.
+seg deny  "a commit aimed at the other repo still scans the cwd"                 "cd $O && git commit -m x"
+# A `cd` inside `( … )` or `$( … )` ends at the `)` (#70). It used to persist for the
+# guard, so the scan read the other repo, found it clean, and let the key here through.
+seg deny  "a cd inside ( … ) does not move the scan off the commit's repo"      "(cd $O && make) && git commit -m x"
+seg deny  "…nor does one inside \$( … )"                                         "x=\$(cd $O && pwd) && git commit -m x"
+seg deny  "an unbalanced ) in a commit message does not disturb the target"     'git commit -m "fix)" && true'
+# The splitter's paren scope is a guess (quotes, heredocs, `case` are not parsed), so the
+# scan does not use it: the cwd and every repo a `cd` names are scanned too. Each of these
+# fooled the scoped reading in review (/dg, 2026-10-05) and is caught by the union.
+seg deny  "a quoted ) inside a subshell, then a cd: the cwd is still scanned"    "(echo \"doing ) thing\" && cd $O && true) && git commit -m x"
+seg deny  "a case pattern ) inside a subshell, then a cd"                        "(case x in x) cd $O ;; esac) && git commit -m x"
+seg deny  "a quoted ( inside a subshell pairs with the real )"                   "(cd $O && git commit -m \"wip (part\") && git commit -m y"
+seg deny  "a cd in a pipeline runs in a subshell"                                "cd $O | true; git commit -m x"
+seg deny  "heredoc text with stray parens around a real cd"                      "cat > n.md <<'EOF'
+- see (below
+EOF
+cd $O
+cat > m.md <<'EOF'
+- done :)
+EOF
+cd $D && git commit -m x"
+seg deny  "the commit-message heredoc with a 1) list, key here"                  "git commit -m \"\$(cat <<'EOF'
+fix: thing (scope)
+
+1) first
+2) second
+EOF
+)\""
+seg deny  "a commit inside a subshell elsewhere still scans the cwd it was typed in" "(cd $O && git commit -m x)"
+# Every commit's repo is scanned, not the first one's (#69). A command that commits in
+# two repos had the second one's staged diff never looked at.
+seg deny  "a key here is caught when another repo's commit comes first"         "git -C $O commit -m a && git commit -m x"
+git -C "$D" reset -q leak.txt 2>/dev/null
+printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$O/leak.txt"; git -C "$O" add leak.txt >/dev/null 2>&1
+seg deny  "a key staged in the SECOND commit's repo is caught (-C)"             "git commit -m x && git -C $O commit -m b"
+seg deny  "…and when the second commit is reached by cd"                         "git commit -m x && cd $O && git commit -m b"
+seg allow "a key in a repo the command never names is not its business"        "git commit -m x"
+seg deny  "a key in a repo the command cds through is — a false deny, by design" "cd $O && git status; cd $D && git commit -m x"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<"$(jq -n --arg c "cd $O && git status; cd $D && git commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
+if grep -qF "In $O:" <<<"$OUT"; then PASS=$((PASS+1)); printf '  ✅ …and the deny names the repo holding the key\n'
+else FAIL=$((FAIL+1)); printf '  ❌ …and the deny names the repo holding the key\n     got: %s\n' "$OUT"; fi
+git -C "$O" reset -q leak.txt 2>/dev/null
+printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$D/leak.txt"; git -C "$D" add leak.txt >/dev/null 2>&1
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<"$(jq -n --arg c "git commit -m a && git commit -m b" '{tool_input:{command:$c}}')" 2>/dev/null)
+if grep -q 'AWS access key' <<<"$OUT" && ! grep -q '  In /' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ two commits in one repo: one finding, no repo label\n'
+else FAIL=$((FAIL+1)); printf '  ❌ two commits in one repo: one finding, no repo label\n     got: %s\n' "$OUT"; fi
+rm -rf "$D" "$O"
+
+echo "Paren scope still decides the BRANCH verdict (#70):"
+# The scan no longer depends on the scope; the branch policy still does, so the stack is
+# pinned here, from a protected checkout with nothing staged.
+D=$(make_repo dev); O=$(make_repo feature/elsewhere)
+seg allow "a commit inside ( cd elsewhere … ) is aimed there"                    "(cd $O && git commit -m x)"
+seg allow "a closing ) restores the directory of its own (, not the cwd"         "(cd $O && (cd $D && true) && git commit -m x)"
+seg deny  "…and the outer ) restores the cwd"                                    "(cd $O && (cd $D && true)) && git commit -m x"
+seg deny  "\$(( )) arithmetic is balanced and changes nothing"                  "n=\$((1+2)) && git commit -m x"
+rm -rf "$D" "$O"
+
+echo "The scan is bounded, and closed at the bound:"
+# Every directory a cd names is scanned, at a git call or two each. A command with
+# hundreds of them would run the hook past its timeout, and a killed hook lets the
+# command through unchecked — so past the bound it denies instead. 2026-10-05.
+D=$(make_repo feature/x)
+MANY=$(for i in $(seq 1 100); do printf 'cd /tmp/d%d\n' "$i"; done; echo "cd $D && git commit -m x")
+SECONDS=0
+seg deny  "a commit after 100 distinct cd targets is denied, not scanned"        "$MANY"
+T=$SECONDS
+if [[ $T -le 20 ]]; then PASS=$((PASS+1)); printf '  ✅ …in %ss\n' "$T"
+else FAIL=$((FAIL+1)); printf '  ❌ …in %ss (want ≤20)\n' "$T"; fi
+SAME=$(for i in $(seq 1 100); do printf 'cd %s\n' "$D"; done; echo "git commit -m x")
+seg allow "one directory named 100 times is one entry, not a hundred"           "$SAME"
+rm -rf "$D"
+
+echo "The paren splitter stays linear on a long command:"
+# bash 3.2 runs \${s//(/…} super-linearly under a UTF-8 locale: the first version of the
+# marked splitter took 188s on this input, past any hook timeout — and a hook that is
+# killed lets the command through unchecked. 2026-10-05.
+eval "$(sed -n '/^command_segments() {/,/^}/p;/^command_segments_marked() {/,/^}/p' "$HOOK")"
+BIG=$(for i in $(seq 1 1000); do printf 'x%d = f(g(%d), h(%d))\n' "$i" "$i" "$i"; done)
+SECONDS=0; NSEG=$(LC_ALL=en_US.UTF-8 command_segments_marked "$BIG" | grep -c '^[()]$'); T=$SECONDS
+if [[ $NSEG -eq 6000 && $T -le 10 ]]; then PASS=$((PASS+1)); printf '  ✅ %s bytes, %s parens, %ss\n' "${#BIG}" "$NSEG" "$T"
+else FAIL=$((FAIL+1)); printf '  ❌ %s bytes: %s parens (want 6000) in %ss (want ≤10)\n' "${#BIG}" "$NSEG" "$T"; fi
 echo "An unresolvable cd target: the SECRET half is fixed, the branch half is not:"
 # `cd "$(git rev-parse --show-toplevel)"` and `cd "$VAR"` arrive unexpanded, so
 # `git -C "$WORK_DIR"` resolves no repo. Two different halves, two different answers,
@@ -842,7 +1086,7 @@ echo "A staged secret is caught even when the target repo cannot be resolved:"
 # this half is backstopped by nothing.
 for pfx in 'cd "$(git rev-parse --show-toplevel)" && ' 'cd "$REPO_ROOT" && ' 'git --no-pager ' ''; do
   D=$(make_repo feature/x)
-  printf 'AKIAIOSFODNN7EXAMPLE\n' > "$D/leak.txt"
+  printf '%s\n' "$AKIA" > "$D/leak.txt"
   git -C "$D" add leak.txt >/dev/null 2>&1
   case "$pfx" in
     'git --no-pager ') cmd="git --no-pager commit -m x" ;;
@@ -933,6 +1177,216 @@ if command -v python3 >/dev/null 2>&1; then
   rm -rf "$P"
 fi
 rm -rf "$D"
+
+echo "A large staged binary is not read as text (/dg, 2026-10-05):"
+# Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s; past the hook's timeout the
+# commit runs unchecked. Loose bound, as below.
+D=$(make_repo feature/x)
+head -c 41943040 /dev/urandom > "$D/big.bin" && git -C "$D" add big.bin || die "could not stage the large binary"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+TOOK=$((SECONDS - START))
+if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary: allowed in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
+fi
+rm -rf "$D"
+# The same binary with a `diff` attribute, which tells git it is text: the size limit
+# followed git's word, so it was read whole, and could outrun the timeout. "Binary" is now
+# the content's call, not the repo's attributes (security review, 2026-10-12).
+D=$(make_repo feature/x)
+echo '*.bin diff' > "$D/.gitattributes" && head -c 41943040 /dev/urandom > "$D/big.bin" \
+  && git -C "$D" add .gitattributes big.bin || die "could not stage the attributed binary"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+TOOK=$((SECONDS - START))
+if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary marked diff (text): skipped in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary marked diff (text): rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
+fi
+rm -rf "$D"
+# A name starting with `:` looked like git's status line in the listing, so the file was
+# never sized and was read whole (security review of 77fa561, 2026-10-12).
+D=$(make_repo feature/x)
+head -c 41943040 /dev/urandom > "$D/:big.bin" && git -C "$D" add ":(literal):big.bin" || die "could not stage :big.bin"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+TOOK=$((SECONDS - START))
+if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary named :big.bin: skipped in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary named :big.bin: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
+fi
+rm -rf "$D"
+
+echo "A long heredoc and a commit are judged well inside the hook's timeout (#73):"
+# A hook killed by its timeout lets the command run unchecked. A heredoc splits into a
+# segment per line, and the guard forked once or twice per segment: 64 KB took ~17s on
+# macOS before #73 and ~1.5s after. The bound is loose on purpose — this catches the
+# per-segment fork coming back, not a slow CI runner.
+D=$(make_repo feature/x)
+printf '%s\n' "$AKIA" > "$D/leak.txt"; git -C "$D" add leak.txt >/dev/null 2>&1 || die "could not stage the key"
+BODY=$(for i in $(seq 1 1600); do printf 'x_%04d = compute(value_%04d) + 1  # c\n' "$i" "$i"; done)
+CMD=$(printf 'cat > f.py <<EOF\n%s\nEOF\ngit add f.py && git commit -m x' "$BODY")
+[ "${#CMD}" -gt 60000 ] || die "the long command is only ${#CMD} bytes"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+      <<<"$(jq -n --arg c "$CMD" '{tool_input:{command:$c}}')" 2>/dev/null)
+TOOK=$((SECONDS - START))
+if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ 64 KB heredoc + commit: a verdict was reached (the staged key denied)\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ 64 KB heredoc + commit: no deny for the staged key\n'
+fi
+if [ "$TOOK" -le 8 ]; then
+  PASS=$((PASS+1)); printf '  ✅ 64 KB heredoc + commit: judged in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ 64 KB heredoc + commit: took %ss (bound 8s)\n' "$TOOK"
+fi
+rm -rf "$D"
+
+echo "A git read that fails is a deny, not a clean scan (2026-10-12):"
+# Every git read of the staged diff had its status dropped, so a git that failed was an
+# empty diff and the commit was allowed unscanned. The hook is run with a `git` that
+# fails (exit 128, saying so) when every word of $FAIL_ON is among its arguments.
+D=$(make_repo feature/x); SHIM=$(mktemp -d)
+REAL_GIT=$(command -v git)
+cat > "$SHIM/git" <<SH
+#!/bin/sh
+[ -n "\$FAIL_ON" ] || exec "$REAL_GIT" "\$@"
+for w in \$FAIL_ON; do case " \$* " in *"\$w"*) ;; *) exec "$REAL_GIT" "\$@" ;; esac; done
+[ -z "\$PARTIAL" ] || printf '1\t0\tpart'
+echo "git-said-\$FAIL_ON" >&2; exit 128
+SH
+chmod +x "$SHIM/git" || die "could not build the failing git"
+echo clean > "$D/a.py" && printf '\000\001bin' > "$D/b.bin" && git -C "$D" add a.py b.bin >/dev/null 2>&1 \
+  || die "could not stage the clean files"
+# guard_run <dir> <command> [env…] — the hook's stdout; rc in $GUARD_RC.
+guard_run() {
+  local d="$1" c="$2"; shift 2
+  GUARD_OUT=$(cd "$d" && CLAUDE_PROJECT_DIR="$d" env "$@" bash "$HOOK" \
+              <<<"$(jq -n --arg c "$c" '{tool_input:{command:$c}}')" 2>/dev/null); GUARD_RC=$?
+}
+# verdict <description> <expect deny|allow> [<text the output must hold>…]
+verdict() {
+  local desc="$1" expect="$2" got t; shift 2
+  if [[ $GUARD_RC -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$GUARD_RC"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$GUARD_OUT"; then got=deny; else got=allow; fi
+  for t in "$@"; do grep -qF -- "$t" <<<"$GUARD_OUT" || got="$got, without \"$t\""; done
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+guard_run "$D" "git commit -m x" PATH="$SHIM:$PATH"
+verdict "the stand-in git, failing nothing, allows a clean commit" allow
+for f in --raw --text --name-only --name-status; do
+  guard_run "$D" "git commit -m x" FAIL_ON="$f" PATH="$SHIM:$PATH"
+  verdict "git diff $f fails — denied, with git's error" deny "could not read what is staged" "git-said-$f"
+done
+# The size lookup reads its input from stdin, so a re-run for its error has nothing to
+# say; its status is the message.
+guard_run "$D" "git commit -m x" FAIL_ON="--batch-check=%(objectsize)" PATH="$SHIM:$PATH"
+verdict "git cat-file --batch-check fails — denied" deny "could not read what is staged" "batch-check exited 128"
+# The credential filter is a step too: an awk that fails there is a deny, not "nothing
+# found". The stand-in awk fails when its program reads the binaries' list.
+REAL_AWK=$(command -v awk)
+printf '#!/bin/sh\n[ -n "$FAIL_AWK" ] && case "$*" in *"of[n] = f"*) echo awk-said >&2; exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL_AWK" > "$SHIM/awk" \
+  && chmod +x "$SHIM/awk" || die "could not build the failing awk"
+guard_run "$D" "git commit -m x" FAIL_AWK=1 PATH="$SHIM:$PATH"
+verdict "the credential filter (awk) fails — denied" deny "could not read what is staged" "filtering the staged diff"
+# A git that dies mid-record: its partial record and the status record must not merge
+# into one the loop skips.
+guard_run "$D" "git commit -m x" FAIL_ON=--raw PARTIAL=1 PATH="$SHIM:$PATH"
+verdict "git diff --raw fails after partial output — denied, with its status" deny "--raw exited 128"
+rm -rf "$D"
+
+# The same, with a real git: a repo whose diff config git rejects (git commit fails there
+# too). Another repo in the same command holds a key; the deny names both.
+D=$(make_repo feature/x); O=$(make_repo feature/o)
+echo clean > "$D/a.py" && git -C "$D" add a.py && git -C "$D" config diff.renameLimit abc \
+  && printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$O/k.txt" && git -C "$O" add k.txt || die "could not build the two repos"
+guard_run "$D" "git -C $O commit -m a && git commit -m b"
+verdict "a repo git cannot diff, and a key in another — denied, naming both" deny \
+  "could not read what is staged" "In $D:" "In the repos it could read" "In $O:" "AWS access key"
+rm -rf "$D" "$O"
+
+# One read for the whole diff: a per-file pathspec of 14,000 files overran the argument
+# limit (exit 126) and denied a legitimate commit; before that, the credential check was
+# silently skipped. 9,000 files of 240-character paths is past the limit on macOS and
+# Linux; one of them holds a credential literal, which must still be found.
+D=$(make_repo feature/x); _long=$(printf 'd%.0s' $(seq 1 200))
+mkdir -p "$D/src/$_long" || die "could not build the large tree"
+for i in $(seq 1 9000); do echo "v = $i" > "$D/src/$_long/file_$i.py"; done
+echo 'password = "hunter2hunter2"' > "$D/src/$_long/file_9000.py"
+git -C "$D" add src >/dev/null 2>&1 || die "could not stage the large tree"
+guard_run "$D" "git commit -m x"
+verdict "9,000 staged files: read whole, the credential literal among them found" deny "hardcoded credential"
+grep -q 'could not read' <<<"$GUARD_OUT" && { FAIL=$((FAIL+1)); printf '  ❌ …and no read failed\n'; } \
+  || { PASS=$((PASS+1)); printf '  ✅ …and no read failed\n'; }
+rm -rf "$D"
+
+# The binaries' names reach the credential filter too: passed in the environment, a few
+# thousand of them overran Linux's 128 KB limit on one variable, awk never started, and
+# the check found nothing (/dg, 2026-10-12). 3,000 small binaries under a 60-character
+# directory is past it; a credential literal in a source file must still be found.
+D=$(make_repo feature/x); _dir=$(printf 'b%.0s' $(seq 1 60))
+mkdir -p "$D/assets/$_dir" || die "could not build the binary tree"
+for i in $(seq 1 3000); do printf '\000%s' "$i" > "$D/assets/$_dir/icon_$i.bin"; done
+echo 'password = "hunter2hunter2"' > "$D/app.py"
+git -C "$D" add . >/dev/null 2>&1 || die "could not stage the binary tree"
+guard_run "$D" "git commit -m x"
+verdict "3,000 staged binaries: the credential literal in source is still found" deny "hardcoded credential"
+rm -rf "$D"
+
+# git's file-name prefixes are the repo's to set (diff.dstPrefix, diff.noprefix); the
+# filter reads names from `+++ b/…`, so a test fixture's password stops being a test
+# file's under another prefix (/dg, 2026-10-12). The scan pins them.
+for cfg in "diff.dstPrefix x" "diff.noprefix true" "diff.mnemonicPrefix true"; do
+  D=$(make_repo feature/x); mkdir -p "$D/tests"
+  echo 'password = "hunter2hunter2"' > "$D/tests/fx.py" && git -C "$D" add tests && git -C "$D" config $cfg \
+    || die "could not build the $cfg fixture"
+  guard_run "$D" "git commit -m x"
+  verdict "with $cfg, a test fixture's password is still a test file's" allow
+  rm -rf "$D"
+done
+
+# A name with a space gets a trailing tab on its `+++ b/<path>` line; kept, it broke every
+# `$`-anchored file rule, and a prose page lost its exemption (/dg, 2026-10-12).
+for c in "allow|setup guide.md" "allow|test_login flow.py" "allow|notes on sign in.txt" "allow|my icon.bin" \
+         "allow|ünïcode notes.md" 'allow|say "hi".md' "deny|src/app main.py"; do
+  D=$(make_repo feature/x); f=${c#*|}; mkdir -p "$D/$(dirname "$f")"
+  { case "$f" in *.bin) printf '\000' ;; esac; echo 'password = "correcthorsebattery"'; } > "$D/$f" \
+    && git -C "$D" add . || die "could not stage $f"
+  guard_run "$D" "git commit -m x"
+  verdict "a credential-shaped line in \"$f\": ${c%%|*}" "${c%%|*}"
+  rm -rf "$D"
+done
+
+echo "A ~ or \$HOME commit target, from outside every repo (2026-10-12):"
+# `~` and `$HOME` were left unexpanded, so from a directory that is no repo the target
+# resolved nowhere and nothing was scanned. They are expanded now. Any other `$VAR` the
+# guard cannot expand stays unscanned here, by the owner's call: it is allowed, and the
+# repo's own git hook scans it if it runs one.
+H=$(cd "$(mktemp -d)" && pwd -P); R=$(make_repo feature/x); mv "$R" "$H/r"
+printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$H/r/k.txt" && git -C "$H/r" add k.txt || die "could not stage in \$HOME/r"
+for c in 'cd ~/r && git commit -m x' 'cd $HOME/r && git commit -m x' 'cd "$HOME/r" && git commit -m x' \
+         'cd ${HOME}/r && git commit -m x' 'git -C ~/r commit -m x'; do
+  guard_run "$H" "$c" HOME="$H"
+  verdict "$c — the key is found" deny "AWS access key"
+done
+guard_run "$H" 'cd "$REPO" && git commit -m x' HOME="$H"
+verdict 'cd "$REPO" && git commit, from outside every repo — allowed, unscanned (owner'"'"'s call)' allow
+rm -rf "$H"
+
+# No repo at all is not a failed read: nothing is staged anywhere yet, and what the
+# command itself stages is the git pre-commit hook's to scan (#71).
+N=$(cd "$(mktemp -d)" && pwd -P)
+guard_run "$N" "git init -q r && cd r && git commit --allow-empty -m x"
+verdict "a commit in a repo the command creates, from outside any repo, is allowed" allow
+rm -rf "$N" "$SHIM"
 
 echo
 echo "$PASS passed, $FAIL failed"

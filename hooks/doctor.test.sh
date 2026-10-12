@@ -26,14 +26,14 @@ mkrepo() {
   # expect for other reasons — the 2026-09-11 shape where a suite silently tested the
   # wrong copy. So it is checked, not assumed.
   cp "$H/git/pre-merge-commit" "$H/git/commit-msg" "$H/git/pre-rebase" "$H/git/post-merge" \
-     "$H/git/reference-transaction" "$d/.ai/hooks/" || die "could not copy the git hooks from $H/git"
+     "$H/git/reference-transaction" "$H/git/pre-commit" "$d/.ai/hooks/" || die "could not copy the git hooks from $H/git"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath .ai/hooks
   git -C "$d" config merge.ff false
   printf 'PROTECTED_BRANCHES=^main$\n' > "$d/.ai/flight-rules.conf"
-  # What every assertion assumes: a repo, and five hooks that are there to be broken.
+  # What every assertion assumes: a repo, and six hooks that are there to be broken.
   [ -d "$d/.git" ] || die "no .git in the fixture at $d"
-  for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction; do
+  for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
     [ -x "$d/.ai/hooks/$_h" ] || die "$_h missing or not executable in the fixture"
   done
   printf '%s' "$d"
@@ -81,6 +81,26 @@ D=$(mkrepo); chmod -x "$D/.ai/hooks/reference-transaction"
 say "$(rc "$D")" "1" "reference-transaction without +x → problem"
 rm -rf "$D"
 
+# The secret scan for commits (#71): without it, `git add f && git commit` is scanned by
+# nothing, and every other hook still reports healthy.
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
+say "$(rc "$D")" "1" "pre-commit missing → problem"
+say "$(has "$D" "pre-commit missing")" "0" "…names the hook"
+# A plugin upgrade cannot copy it in, so this line is how an upgraded project learns of
+# it — and it must say how. Following it must actually clear the problem.
+FIX=$(run "$D" | grep -o "cp '[^']*/git/pre-commit' '[^']*/' && chmod +x '[^']*'" | head -1)
+say "$([ -n "$FIX" ] && echo yes)" "yes" "…and gives the command that copies it in"
+(cd "$D" && eval "$FIX") >/dev/null 2>&1
+say "$(rc "$D")" "0" "…which, run, clears it"
+rm -rf "$D"
+# A doctor.sh copied in by hand, with no git/ beside it, printed a cp from a directory
+# that does not exist (/dg, 2026-10-08). It names flight-rules' hooks/git/ instead.
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"; mkdir -p "$D/lone"; cp "$DOCTOR" "$D/lone/doctor.sh"
+LONE=$(cd "$D" && HOME="$D/fakehome" bash "$D/lone/doctor.sh" 2>&1)
+say "$(grep -c "$D/lone/git" <<<"$LONE")" "0" "doctor with no git/ beside it prints no cp from there"
+say "$(grep -c "from flight-rules' hooks/git/" <<<"$LONE")" "1" "…and names where the hook comes from"
+rm -rf "$D"
+
 D=$(mkrepo); printf 'MERGE_NEEDS_INSTRUCTION=off\n' >> "$D/.ai/flight-rules.conf"
 say "$(has "$D" "no longer needs the user")" "0" "MERGE_NEEDS_INSTRUCTION=off is surfaced, not silent"
 rm -rf "$D"
@@ -115,6 +135,23 @@ say "$(rc "$D")" "1" "hooks replaced by no-op stubs → problem"
 say "$(has "$D" "does not look like")" "0" "…and says which"
 rm -rf "$D"
 
+# 1b. A project upgrading to 0.23.0 already had its own pre-commit (a linter). doctor
+#     called it a possible stub and never said where it goes (/dg, 2026-10-08).
+D=$(mkrepo)
+printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
+say "$(has "$D" "rename it pre-commit.local")" "0" "a foreign pre-commit → told about pre-commit.local"
+rm -rf "$D"
+
+# 1c. A pre-commit.local without its executable bit is skipped by the scan without a
+#     word, so the project's own linter stops running unnoticed (/dg, 2026-10-08).
+D=$(mkrepo)
+printf '#!/bin/sh\nexit 0\n' > "$D/.ai/hooks/pre-commit.local"
+say "$(rc "$D")" "1" "a non-executable pre-commit.local → problem"
+say "$(has "$D" "pre-commit.local is not executable")" "0" "…and says so"
+chmod +x "$D/.ai/hooks/pre-commit.local"
+say "$(rc "$D")" "0" "…and an executable one is fine"
+rm -rf "$D"
+
 # 2. settings.json wires a script that is not there. doctor grepped the file for the
 #    string `pre-commit-check.sh`, which a dangling path satisfies just as well.
 D=$(mkrepo); mkdir -p "$D/.claude"
@@ -131,6 +168,141 @@ rm -rf "$D"
 D=$(mkrepo); mkdir -p "$D/.claude"
 printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash \\"${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh\\""}]}]}}' > "$D/.claude/settings.json"
 say "$(rc "$D")" "0" "a plugin-rooted path is not reported as missing"
+rm -rf "$D"
+
+# 2c. A script wired from a prefix the regex did not list (#66). The optional prefix group
+#     knew `.ai/` and `${CLAUDE_PLUGIN_ROOT}/`, so `.claude/hooks/x.sh` was captured as
+#     `hooks/x.sh` and tested at the wrong place — three ❌ lines about files that
+#     existed and ran, in the layout hooks/README.md itself recommends. Seen 2026-10-04.
+D=$(mkrepo); mkdir -p "$D/.claude/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command",
+  "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.claude/hooks/x.sh\"'" } ] } ] } }
+JSON
+printf '#!/bin/sh\nexit 0\n' > "$D/.claude/hooks/x.sh"; chmod +x "$D/.claude/hooks/x.sh"
+say "$(rc "$D")" "0" "an existing .claude/hooks/ script is not reported as missing"
+say "$(has "$D" "does not exist")" "1" "…no dangling-path line at all"
+rm "$D/.claude/hooks/x.sh"
+say "$(rc "$D")" "1" "…and the same wiring with the script gone → problem"
+say "$(has "$D" "wires .claude/hooks/x.sh, which does not exist")" "0" "…naming the path as written, prefix included"
+rm -rf "$D"
+
+# 2e. A variable-prefixed path — the `R=$(git rev-parse --show-toplevel); … "$R/hooks/x.sh"`
+#     idiom this repo's own .claude/settings.json uses. 2c's fix captured the whole prefix,
+#     so `$R/hooks/x.sh` was read as `R/hooks/x.sh` and reported missing on the first
+#     doctor run after it merged (dev f86a990, 2026-10-04). A `$VAR/` prefix other than
+#     CLAUDE_PLUGIN_ROOT is taken to be the repo root, which is what the idiom means.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "bash -c 'R=$(git rev-parse --show-toplevel); exec bash \"$R/hooks/x.sh\"'" },
+  { "type": "command", "command": "bash -c 'R=$(git rev-parse --show-toplevel); exec bash \"${R}/hooks/y.sh\"'" } ] } ] } }
+JSON
+printf '#!/bin/sh\nexit 0\n' > "$D/hooks/x.sh"; cp "$D/hooks/x.sh" "$D/hooks/y.sh"; chmod +x "$D/hooks/x.sh" "$D/hooks/y.sh"
+say "$(has "$D" "does not exist")" "1" "\$R/ and \${R}/ prefixed scripts that exist are not reported"
+rm "$D/hooks/y.sh"
+say "$(has "$D" "wires hooks/y.sh, which does not exist")" "0" "…and a missing one is named by its repo-relative path"
+say "$(has "$D" "wires hooks/x.sh")" "1" "…while the one that exists stays silent"
+rm -rf "$D"
+
+# 2f. A `$VAR` prefix followed by more path, or by a closing quote: `$CLAUDE_PROJECT_DIR`
+#     is Claude Code's documented form, and both `"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`
+#     and `$CLAUDE_PROJECT_DIR/.claude/hooks/x.sh` were captured as the absolute
+#     `/.claude/hooks/x.sh` and reported missing, every day (/dg, 2026-10-08).
+D=$(mkrepo); mkdir -p "$D/.claude/hooks" "$D/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/a.sh" },
+  { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/b.sh" },
+  { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/c.sh\"" },
+  { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/d.sh" },
+  { "type": "command", "command": "bash \"$(git rev-parse --show-toplevel)\"/hooks/e.sh" } ] } ] } }
+JSON
+for f in .claude/hooks/a.sh .claude/hooks/b.sh .claude/hooks/c.sh .claude/hooks/d.sh hooks/e.sh; do
+  printf '#!/bin/sh\nexit 0\n' > "$D/$f"; chmod +x "$D/$f"
+done
+say "$(has "$D" "does not exist")" "1" "\$CLAUDE_PROJECT_DIR forms, quoted or not, that exist are not reported"
+rm "$D/.claude/hooks/a.sh" "$D/.claude/hooks/b.sh" "$D/.claude/hooks/c.sh" "$D/.claude/hooks/d.sh" "$D/hooks/e.sh"
+say "$(has "$D" "wires .claude/hooks/a.sh, which does not exist")" "0" "…a missing \"\$VAR\"/ one is named by its repo-relative path"
+say "$(has "$D" "wires .claude/hooks/b.sh, which does not exist")" "0" "…as is a missing \$VAR/.claude/ one"
+say "$(has "$D" "wires .claude/hooks/c.sh, which does not exist")" "0" "…and a missing \"\$VAR/…\" one"
+say "$(has "$D" "wires .claude/hooks/d.sh, which does not exist")" "0" "…and a missing \${VAR}/ one"
+say "$(has "$D" "wires hooks/e.sh, which does not exist")" "0" "…and a quoted \$(git rev-parse) one"
+rm -rf "$D"
+
+# 2g. `$HOME`, `${HOME}` and an unquoted `~` are the home directory, not the repo root:
+#     they were tested under the repo, so a hook missing from home passed when the repo
+#     happened to hold that path, and one present there was reported missing. A quoted
+#     path with a space was cut at the space and reported missing (/dg G2-5, 2026-10-08).
+#     A quoted wrapper and its hook read as one spaced path (/dg, 2026-10-12): either
+#     existing is enough.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/h/hooks" "$D/my dir/hooks" "$D/h/hooks" "$D/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "$HOME/h/hooks/a.sh" },
+  { "type": "command", "command": "bash \"${HOME}/h/hooks/b.sh\"" },
+  { "type": "command", "command": "~/h/hooks/c.sh" },
+  { "type": "command", "command": "bash ~/h/hooks/d.sh" },
+  { "type": "command", "command": "X=~/h/hooks/k.sh; bash \"$X\"" },
+  { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR/my dir/hooks/e.sh\"" },
+  { "type": "command", "command": "bash -c 'exec bash \"$CLAUDE_PROJECT_DIR/my dir/hooks/f.sh\"'" },
+  { "type": "command", "command": "bash './my dir/hooks/g.sh'" },
+  { "type": "command", "command": "bash \"my dir/hooks/m.sh\"" },
+  { "type": "command", "command": "bash -c '/usr/bin/env bash ./hooks/w1.sh'" },
+  { "type": "command", "command": "sh -c \"/usr/bin/env bash hooks/w2.sh\"" },
+  { "type": "command", "command": "bash -c '/usr/bin/timeout 5 $CLAUDE_PROJECT_DIR/hooks/w3.sh'" } ] } ] } }
+JSON
+for f in fakehome/h/hooks/a.sh fakehome/h/hooks/b.sh fakehome/h/hooks/c.sh fakehome/h/hooks/d.sh fakehome/h/hooks/k.sh \
+         "my dir/hooks/e.sh" "my dir/hooks/f.sh" "my dir/hooks/g.sh" "my dir/hooks/m.sh" hooks/w1.sh hooks/w2.sh hooks/w3.sh; do
+  printf '#!/bin/sh\nexit 0\n' > "$D/$f"; chmod +x "$D/$f"
+done
+say "$(rc "$D")" "0" "\$HOME, ~, spaced and wrapped paths that exist: doctor passes"
+say "$(has "$D" "does not exist")" "1" "…and reports none of them"
+rm "$D"/fakehome/h/hooks/*.sh "$D"/my\ dir/hooks/*.sh "$D"/hooks/w*.sh
+for f in a b c d k; do printf '#!/bin/sh\nexit 0\n' > "$D/h/hooks/$f.sh"; done   # the same paths under the repo
+say "$(has "$D" "wires ~/h/hooks/a.sh, which does not exist")" "0" "…a missing \$HOME/ one is named, though the repo has that path"
+say "$(has "$D" "wires ~/h/hooks/b.sh, which does not exist")" "0" "…as is a missing \"\${HOME}/…\" one"
+say "$(has "$D" "wires ~/h/hooks/c.sh, which does not exist")" "0" "…and a missing ~/ one"
+say "$(has "$D" "wires ~/h/hooks/d.sh, which does not exist")" "0" "…and a missing ~/ one after a word"
+say "$(has "$D" "wires ~/h/hooks/k.sh, which does not exist")" "0" "…and a missing ~/ one after ="
+say "$(has "$D" "wires my dir/hooks/e.sh, which does not exist")" "0" "…and a missing quoted path with a space, named whole"
+say "$(has "$D" "wires my dir/hooks/f.sh, which does not exist")" "0" "…and one inside bash -c '…'"
+say "$(has "$D" "wires ./my dir/hooks/g.sh, which does not exist")" "0" "…and a missing single-quoted one"
+say "$(has "$D" "wires my dir/hooks/m.sh, which does not exist")" "0" "…and one not starting at a root, / or ."
+say "$(has "$D" "wires dir/hooks/")" "1" "…never cut at the space"
+say "$(has "$D" "wires ./hooks/w1.sh, which does not exist")" "0" "…a missing hook behind a quoted wrapper is named by itself"
+say "$(has "$D" "wires hooks/w2.sh, which does not exist")" "1" "…but a last word not starting like a path is not split off"
+say "$(has "$D" "wires hooks/w3.sh, which does not exist")" "0" "…and a \$VAR one behind a wrapper is named from the root"
+rm -rf "$D"
+
+# 2h. A `$VAR` or `~` the shell never expands — inside single quotes, or `~` inside double
+#     quotes — means the hook never runs, so it is reported even where a file exists. As
+#     the home directory, `'$HOME/…'` was passed when the file was there (/dg, 2026-10-12);
+#     a `bash -c '$VAR/…'` script does expand, and is checked like any other.
+D=$(mkrepo); mkdir -p "$D/.claude/hooks" "$D/fakehome/h/hooks"
+cat > "$D/.claude/settings.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "'$CLAUDE_PROJECT_DIR'/.claude/hooks/q.sh" },
+  { "type": "command", "command": "'$CLAUDE_PROJECT_DIR/.claude/hooks/r.sh'" },
+  { "type": "command", "command": "bash '$HOME/h/hooks/s.sh'" },
+  { "type": "command", "command": "bash \"~/h/hooks/t.sh\"" },
+  { "type": "command", "command": "bash -c '$HOME/h/hooks/u.sh'" } ] } ] } }
+JSON
+for f in .claude/hooks/q.sh .claude/hooks/r.sh fakehome/h/hooks/s.sh fakehome/h/hooks/t.sh fakehome/h/hooks/u.sh; do
+  printf '#!/bin/sh\nexit 0\n' > "$D/$f"; chmod +x "$D/$f"
+done
+say "$(has "$D" "…/.claude/hooks/q.sh under a quoted \$VAR or ~, which the shell never expands")" "0" "'\$VAR'/… is reported, though the file exists"
+say "$(has "$D" "…/.claude/hooks/r.sh under a quoted \$VAR or ~, which the shell never expands")" "0" "…as is '\$VAR/…'"
+say "$(has "$D" "…/h/hooks/s.sh under a quoted \$VAR or ~, which the shell never expands")" "0" "…and '\$HOME/…'"
+say "$(has "$D" "…/h/hooks/t.sh under a quoted \$VAR or ~, which the shell never expands")" "0" "…and a double-quoted ~/…"
+say "$(has "$D" "u.sh")" "1" "…while bash -c '\$HOME/…', which its shell expands, passes"
+rm -rf "$D"
+
+# 2d. An absolute path is tested where it points, not under the repo root.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/elsewhere/hooks"
+printf '#!/bin/sh\nexit 0\n' > "$D/elsewhere/hooks/y.sh"; chmod +x "$D/elsewhere/hooks/y.sh"
+printf '{"hooks":{"SessionStart":[{"hooks":[{"command":"bash %s/elsewhere/hooks/y.sh"}]}]}}' "$D" > "$D/.claude/settings.json"
+say "$(has "$D" "does not exist")" "1" "an absolute path to an existing script is not reported as missing"
 rm -rf "$D"
 
 # 3. The plugin is listed and switched OFF. The check was a grep for the name.
@@ -211,6 +383,28 @@ D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"
 printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/fakehome/.claude/settings.json"
 printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash x/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
 say "$(has "$D" "runs twice")" "0" "plugin + local wiring → double-fire warning"
+rm -rf "$D"
+
+# The plugin can be enabled at PROJECT scope (#67): Claude Code then writes the
+# enabledPlugins key to <repo>/.claude/settings.local.json and nothing to ~/.claude.
+# doctor read only the user-level file and declared the guard absent in a repo where it
+# demonstrably ran — the one thing it must never say wrongly, because the "fix" a reader
+# reaches for is hand-wiring pre-commit-check.sh, which is the double-fire. Seen 2026-10-04.
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"
+printf '{}' > "$D/fakehome/.claude/settings.json"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/.claude/settings.local.json"
+say "$(has "$D" "agent guard via the plugin")" "0" "plugin enabled only in .claude/settings.local.json → wired"
+say "$(has "$D" "no agent guard wired")" "1" "…and not declared absent"
+rm -rf "$D"
+
+D=$(mkrepo); mkdir -p "$D/.claude"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":true},"hooks":{"PreToolUse":[{"hooks":[{"command":"bash x/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
+say "$(has "$D" "runs twice")" "0" "plugin enabled in .claude/settings.json + local wiring in the same file → double-fire warning"
+rm -rf "$D"
+
+D=$(mkrepo); mkdir -p "$D/.claude"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/.claude/settings.local.json"
+say "$(has "$D" "no agent guard wired")" "0" "a plugin disabled at project scope does not count as wired"
 rm -rf "$D"
 
 D=$(mkrepo); mkdir -p "$D/.claude/" "$D/.ai/hooks/agent"

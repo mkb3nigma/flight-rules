@@ -17,7 +17,8 @@
 #     writes MERGE_HEAD *after* pre-merge-commit runs, so the lookup never found
 #     the incoming commit and note-gated branches were never actually enforced.
 #     commit-msg runs with MERGE_HEAD present, so the check works there.
-#     See hooks/git/commit-msg — install BOTH or the gate is only half built.
+#     See the commit-msg hook alongside this one — install BOTH or the gate is only
+#     half built.
 #
 # Configuration — first match wins:
 #   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
@@ -32,7 +33,7 @@
 #    the incoming branch relax the very rule that judges it: a branch shipping
 #    `PR_ONLY_BRANCHES=^nothing$` could merge itself straight into main. Falling back
 #    to the default (not the working tree) when HEAD has no conf keeps that closed.
-#    See the longer note in hooks/git/commit-msg.
+#    See the longer note in the commit-msg hook alongside this one.
 #
 # Bypass (breaks the rules — emergencies only):  git merge --no-verify
 
@@ -102,5 +103,5 @@ if [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]]; then
     exit 1
 fi
 
-# Mechanism 2 (the note gate) lives in the commit-msg hook — see hooks/git/commit-msg.
+# Mechanism 2 (the note gate) lives in the commit-msg hook alongside this one.
 exit 0
