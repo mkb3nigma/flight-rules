@@ -536,7 +536,7 @@ CWD_NOW=""                      # the directory in effect: the `cd`s seen so far
 CWD_STACK=()                    # CWD_NOW at each open `(`, restored at its `)`
 CWD_NAIVE=""                    # the same, with every `cd` lasting forever (the old reading)
 SCAN_DIRS=()                    # where every commit is aimed, under the scoped reading
-CREATES_REPO=0                  # a segment runs `git init` or `git clone`
+CREATED="|"                     # directories a `git init`/`git clone` here creates, |-separated
 SCAN_ALSO=("")                  # every other directory the command could be committing in
 # Each directory once, by its spelling — every entry costs git calls in the scan, and a
 # heredoc'd script can carry hundreds of `cd` lines (/dg security pass, 2026-10-05).
@@ -568,8 +568,19 @@ while IFS= read -r _raw; do
   case "$_raw" in *git*) _seg=$(printf '%s' "$_raw" | sed -E "$NORM_SED") ;; *) _seg=$_raw ;; esac
   is_commit "$_seg" && { SCAN_DIRS+=("$_dir"); also "$_ndir"; }
   # A segment that IS `git init`/`git clone` — not one that mentions it (`echo git
-  # init`, a commit message) — creates a repo this command may then commit in.
-  [[ "$_seg" =~ ^[[:space:]]*git[[:space:]]+(init|clone)${E} ]] && CREATES_REPO=1
+  # init`, a commit message) — creates a repo this command may then commit in: where it
+  # runs (init), or a directory it names. Every word that is not an option counts, under
+  # both readings of the cds — more than git creates, never less; an option's value or a
+  # clone's URL is no directory a commit is aimed at (security review, 2026-10-12).
+  if [[ "$_seg" =~ ^[[:space:]]*git[[:space:]]+(init|clone)${E} ]]; then
+    [[ "${BASH_REMATCH[1]}" == init ]] && CREATED="$CREATED$_dir|$_ndir|"
+    read -ra _words <<<"$_seg"
+    for _w in "${_words[@]:2}"; do
+      case "$_w" in -*) continue ;; esac
+      _w=$(target_path "$_w")
+      CREATED="$CREATED$(rel_to "$_dir" "$_w")|$(rel_to "$_ndir" "$_w")|"
+    done
+  fi
   resolve_target "$_dir"
   # Another repo's branches are not ours to police, and a repo that turned the policy off
   # has none — but only for the segment aimed there, not for its neighbours.
@@ -840,8 +851,8 @@ for _sd in "${SCAN_DIRS[@]}" "${SCAN_ALSO[@]}"; do
     # is the git pre-commit hook's to scan (#71) — or the commit fails on its own.
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
       case "$_is_target:$_sd" in 1:*'$'*|1:*'`'*)
-        [[ $CREATES_REPO -eq 1 ]] || UNRESOLVED="$UNRESOLVED
-  $_sd" ;; esac
+        case "$CREATED" in *"|$_sd|"*) ;; *) UNRESOLVED="$UNRESOLVED
+  $_sd" ;; esac ;; esac
       continue
     fi
   fi
