@@ -1345,6 +1345,15 @@ guard_run "$H" 'cd "$REPO" && git status' HOME="$H"
 verdict "…but not a command that commits nothing" allow
 guard_run "$H" 'cd "$N" && git init -q && git commit --allow-empty -m x' HOME="$H"
 verdict "…nor one that creates the repo it commits in" allow
+guard_run "$H" 'git clone -q "$URL" "$N" && cd "$N" && git commit --allow-empty -m x' HOME="$H"
+verdict "…nor one that clones it" allow
+# The exemption is a command that runs `git init`/`git clone`, not text that mentions it
+# (security review of 1f3bec3, 2026-10-12).
+for c in 'echo git init; cd "$REPO" && git commit -m x' 'echo "git clone"; cd "$REPO" && git commit -m x' \
+         'cd "$REPO" && git commit -m "after git init"' 'git initx; cd "$REPO" && git commit -m x'; do
+  guard_run "$H" "$c" HOME="$H"
+  verdict "$c — still denied as unresolvable" deny "cannot resolve"
+done
 rm -rf "$H"
 
 # No repo at all is not a failed read: nothing is staged anywhere yet, and what the
