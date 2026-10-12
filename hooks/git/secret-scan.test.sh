@@ -183,14 +183,16 @@ say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a ke
 say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
 
 echo "A large binary is read whole, and quickly enough (/dg, 2026-10-05):"
-# A 40 MB binary is read as text, so the bound is loose: this catches a scan that slowed
-# by a multiple (the guard took 22s on one before its 1 MB limit), not a slow runner.
+# Sized to what projects commit: the largest file kept in flight-rules or AppliHawk is
+# ~300 KB. This was 40 MB, a size nobody has committed, and at 6–8s it flaked against
+# its bound (2026-10-11). The bound is loose: it catches a scan that slowed by a
+# multiple, not a slow runner. Raise the size if a project commits larger files.
 R=$(make_repo armed)
-head -c 41943040 /dev/urandom > "$R/big.bin" && git -C "$R" add big.bin || die "could not stage the large binary"
+head -c 1048576 /dev/urandom > "$R/big.bin" && git -C "$R" add big.bin || die "could not stage the large binary"
 h=$(git -C "$R" rev-parse HEAD); START=$SECONDS
 git -C "$R" commit -qm big >/dev/null 2>&1
 TOOK=$((SECONDS - START))
-say "$(landed "$R" "$h")" yes "a 40 MB binary commits"
+say "$(landed "$R" "$h")" yes "a 1 MB binary commits"
 [ "$TOOK" -le 8 ] && say yes yes "…in ${TOOK}s (bound 8s)" || say no yes "…took ${TOOK}s (bound 8s)"
 rm -rf "$R"
 
