@@ -679,8 +679,9 @@ scan_repo() {
   # the timeout (security review, 2026-10-12), and a `-diff` one makes a large text file
   # (a lockfile) look binary, which must still be read. Every staged file's size comes
   # from one `cat-file --batch-check`; only those over the limit are opened.
-  # In the diff a NUL becomes \001, which a shell variable can hold: the credential check
-  # below tells a binary by it, and the key patterns drop it. Every tool that reads those
+  # In the diff a NUL becomes \001, which a shell variable can hold: both scans below
+  # drop it from the line and read the rest (the credential check once told a binary by
+  # it and skipped the file — one planted byte, #76). Every tool that reads those
   # bytes runs in the C locale (as the git pre-commit hook does throughout): under UTF-8,
   # macOS tr stops at the first invalid byte and grep skips the line holding one (/dg,
   # 2026-10-05).
@@ -784,21 +785,22 @@ scan_repo() {
   PROSE_FILE_RE='(^|/)(docs?|locales?|i18n|translations?)/|\.(md|rst|txt)$'
   # The added lines of source files only, from the diff already read: each file's
   # `+++ b/<path>` names it (quoted when git escapes the name; a name with a space ends
-  # in a tab, which kept, broke every `$`-anchored rule). A binary — a file whose diff
-  # holds a NUL, now \001 — is left out: it is read for the key patterns above, not for
-  # this heuristic. Which files are binary was git's flag, so a `-diff` or `binary`
-  # attribute on source files hid them from it (security review, 2026-10-12). Lines are
-  # held per file until the file's end shows whether it was one.
+  # in a tab, which kept, broke every `$`-anchored rule). Which files are excluded is
+  # decided by NAME alone. A file was also left out when its diff held a NUL (read as
+  # \001) — "a binary" — first by git's flag, which a `-diff` attribute set, then by
+  # content; either way one planted control byte exempted a source file from this
+  # check while the key patterns above still saw it (#76, confirmed against the running
+  # hook 2026-10-12). Now the byte is dropped from the line and the line is scanned: a
+  # small binary with a credential-shaped string in it is reported like any other file,
+  # and nothing a file contains can switch its own scan off.
   NON_TEST_ADDED=$(set -o pipefail; printf '%s\n' "$STAGED_DIFF" \
     | TRE="$TEST_FILE_RE" PRE="$PROSE_FILE_RE" LC_ALL=C awk '
-    /^diff --git / { f++; h = 1; keep = 0; next }
+    /^diff --git / { h = 1; keep = 0; next }
     h && /^\+\+\+ / { p = substr($0, 5); sub(/\t$/, "", p); if (p ~ /^".*"$/) p = substr(p, 2, length(p) - 2)
                       sub(/^b\//, "", p); keep = p !~ ENVIRON["TRE"] && p !~ ENVIRON["PRE"]; next }
     /^@@/ { h = 0; next }
     h { next }
-    index($0, "\001") { bin[f] = 1 }
-    keep && /^\+/ { n++; line[n] = substr($0, 2); of[n] = f }
-    END { for (i = 1; i <= n; i++) if (!(of[i] in bin)) print line[i] }') \
+    keep && /^\+/ { l = substr($0, 2); gsub("\001", "", l); print l }') \
     || { read_failed $? "filtering the staged diff (awk)"; return; }
   if [[ -n "$NON_TEST_ADDED" ]]; then
     # Case-insensitive (PASSWORD, ApiKey), `=` or `:` (YAML/JSON), quoted key tolerated

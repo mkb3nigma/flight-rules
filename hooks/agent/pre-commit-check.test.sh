@@ -457,12 +457,13 @@ scan_case "a password at the root, commit from a subdirectory" deny "mkdir -p su
 # A `-diff` attribute makes a large TEXT file look binary to git; the 1 MB limit is for
 # real binaries only, so a lockfile marked -diff is still read.
 scan_case "a key in a 2 MB text file marked -diff" deny "echo '*.lock -diff' > .gitattributes && for i in \$(seq 1 40000); do echo 'line of a large generated lockfile entry'; done > big.lock && printf '%s\\n' \"\$AKIA\" >> big.lock && git add .gitattributes big.lock"
-# The credential check leaves binaries out; which files are binary was git's call, so a
+# The credential check left binaries out; which files were binary was git's call, so a
 # `-diff` or `binary` attribute on source files hid them from it (security review,
-# 2026-10-12). It is the content's call now: a NUL in the file's diff.
+# 2026-10-12), then the content's — and one planted NUL did the same (#76). Nothing a
+# file contains exempts it now; the exemptions are by name only.
 scan_case "a password in source marked -diff" deny "mkdir -p src && echo '*.py -diff' > .gitattributes && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add .gitattributes src/config.py"
 scan_case "a password in source marked binary" deny "mkdir -p src && echo '*.py binary' > .gitattributes && printf 'password = \"hunter2hunter2\"\n' > src/config.py && git add .gitattributes src/config.py"
-scan_case "a password-shaped string in a real binary is left alone" allow "mkdir -p src && printf '\000\001password = \"hunter2hunter2\"\n' > src/blob.dat && git add src/blob.dat"
+scan_case "a password-shaped string in a real binary is reported too" deny "mkdir -p src && printf '\000\001password = \"hunter2hunter2\"\n' > src/blob.dat && git add src/blob.dat"
 scan_case "a key inside a small binary"      deny "printf '\\000\\001%s\\000\\n' \"\$AKIA\" > k.dat && git add k.dat"
 # The key's position crossed with a payload past 64 KB: the git hook committed a key with
 # more than 64 KB of added text after it (/dg, 2026-10-08), and every large case here put
@@ -1293,7 +1294,7 @@ verdict "git cat-file --batch-check fails — denied" deny "could not read what 
 # The credential filter is a step too: an awk that fails there is a deny, not "nothing
 # found". The stand-in awk fails when its program reads the binaries' list.
 REAL_AWK=$(command -v awk)
-printf '#!/bin/sh\n[ -n "$FAIL_AWK" ] && case "$*" in *"of[n] = f"*) echo awk-said >&2; exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL_AWK" > "$SHIM/awk" \
+printf '#!/bin/sh\n[ -n "$FAIL_AWK" ] && case "$*" in *ENVIRON*) echo awk-said >&2; exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL_AWK" > "$SHIM/awk" \
   && chmod +x "$SHIM/awk" || die "could not build the failing awk"
 guard_run "$D" "git commit -m x" FAIL_AWK=1 PATH="$SHIM:$PATH"
 verdict "the credential filter (awk) fails — denied" deny "could not read what is staged" "filtering the staged diff"
@@ -1341,6 +1342,57 @@ guard_run "$D" "git commit -m x"
 verdict "3,000 staged binaries: the credential literal in source is still found" deny "hardcoded credential"
 rm -rf "$D"
 
+# A file was exempt from the credential heuristic when its diff held a NUL (read as
+# \001) — "a binary". So one planted control byte, visible in the diff but easy to miss,
+# muted the warning for everything else in that file, while the six key patterns still
+# fired (#76, confirmed against the running hook 2026-10-12). Nothing a file contains
+# switches its own scan off now: byte × payload, both scanners' bullets asserted.
+for byte in '\000' '\001'; do
+  for payload in "password = \"hunter2hunter2hunter2\"" "$AKIA"; do
+    case "$payload" in password*) want="hardcoded credential" ;; *) want="AWS access key" ;; esac
+    D=$(make_repo feature/x)
+    { echo "x = 1"; printf 'junk%bjunk\n' "$byte"; echo "$payload"; } > "$D/app.py"
+    git -C "$D" add app.py || die "could not stage the control-byte fixture"
+    guard_run "$D" "git commit -m x"
+    verdict "a $byte byte in the file does not hide \`${payload%% *}…\` from the scan" deny "$want"
+    rm -rf "$D"
+  done
+done
+# The byte's position, not only its value: inside the literal, inside the keyword, and
+# in a file exempt by name — dropped from the line, the literal and the keyword
+# reassemble; the name exemption is untouched by what the file holds (pre-review of
+# this change, 2026-10-12: value was crossed with payload, never with position).
+for byte in '\000' '\001'; do
+  D=$(make_repo feature/x); printf 'password = \"hunter2%bhunter2hunter2\"\n' "$byte" > "$D/app.py"
+  git -C "$D" add app.py || die "could not stage the split-literal fixture"
+  guard_run "$D" "git commit -m x"
+  verdict "a $byte inside the credential literal does not split it" deny "hardcoded credential"
+  rm -rf "$D"
+  D=$(make_repo feature/x); printf 'pass%bword = \"hunter2hunter2hunter2\"\n' "$byte" > "$D/app.py"
+  git -C "$D" add app.py || die "could not stage the split-keyword fixture"
+  guard_run "$D" "git commit -m x"
+  verdict "a $byte inside the keyword does not split it" deny "hardcoded credential"
+  rm -rf "$D"
+  D=$(make_repo feature/x); mkdir -p "$D/tests"; printf 'junk%bjunk\npassword = \"hunter2hunter2\"\n' "$byte" > "$D/tests/fx.py"
+  git -C "$D" add tests || die "could not stage the exempt-file fixture"
+  guard_run "$D" "git commit -m x"
+  verdict "a $byte in a test file: the name exemption still holds — allowed" allow
+  rm -rf "$D"
+done
+# And the cost of having no content-based exemption, pinned so it is a decision and not a
+# surprise: a small binary with a credential-shaped string in it is reported too. A real
+# binary with no such string is not — the ordinary case, paired with the deny above.
+D=$(make_repo feature/x); printf '\000\001PNG\000 password = \"hunter2hunter2\" \000\n' > "$D/img.png"
+git -C "$D" add img.png || die "could not stage the binary fixture"
+guard_run "$D" "git commit -m x"
+verdict "a binary holding a credential-shaped string is reported (no exemption to plant)" deny "hardcoded credential"
+rm -rf "$D"
+D=$(make_repo feature/x); printf '\000\001PNG\000\377\376 pixels \000\n' > "$D/img.png"; echo "x = 1" > "$D/app.py"
+git -C "$D" add . || die "could not stage the clean binary fixture"
+guard_run "$D" "git commit -m x"
+verdict "a binary with no credential-shaped string, beside clean source — allowed" allow
+rm -rf "$D"
+
 # git's file-name prefixes are the repo's to set (diff.dstPrefix, diff.noprefix); the
 # filter reads names from `+++ b/…`, so a test fixture's password stops being a test
 # file's under another prefix (/dg, 2026-10-12). The scan pins them.
@@ -1355,7 +1407,7 @@ done
 
 # A name with a space gets a trailing tab on its `+++ b/<path>` line; kept, it broke every
 # `$`-anchored file rule, and a prose page lost its exemption (/dg, 2026-10-12).
-for c in "allow|setup guide.md" "allow|test_login flow.py" "allow|notes on sign in.txt" "allow|my icon.bin" \
+for c in "allow|setup guide.md" "allow|test_login flow.py" "allow|notes on sign in.txt" "deny|my icon.bin" \
          "allow|ünïcode notes.md" 'allow|say "hi".md' "deny|src/app main.py"; do
   D=$(make_repo feature/x); f=${c#*|}; mkdir -p "$D/$(dirname "$f")"
   { case "$f" in *.bin) printf '\000' ;; esac; echo 'password = "correcthorsebattery"'; } > "$D/$f" \

@@ -361,7 +361,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   index as it stands before the command runs, so anything the same command stages is
   not in it; the git `pre-commit` hook is the scan that sees those. The repo's own diff
   settings — colour, an external diff, a textconv, a `-diff` attribute, `diff.relative`
-  — do not change what it reads. A real binary (a NUL in its first 8000 bytes) over
+  — do not change what it reads, and short of the size limit below nothing a file
+  contains exempts it: a NUL or `\001` used to mark a file "binary" and skip the
+  credential-literal check for it, so one planted byte muted the warning (#76). The
+  cost is that a small binary holding a quoted credential-shaped string is reported
+  too; `flight-rules: allow` has no line to sit on in a PNG, so a checked false
+  positive there is committed by the owner, whose own commands this guard does not
+  gate, or lives under a fixtures/ path. A real binary (a NUL in its first 8000 bytes) over
   1 MB is not read, because reading a large asset whole can outlast the hook's timeout
   and let the commit through unscanned; the git `pre-commit` hook reads those.
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
