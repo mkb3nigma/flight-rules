@@ -4,7 +4,7 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
-## 0.23.0 — 2026-10-08
+## 0.23.0 — 2026-10-12
 
 ### Upgrading — one step a plugin update cannot do
 
