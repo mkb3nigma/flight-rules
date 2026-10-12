@@ -36,7 +36,7 @@ fi
 touch "$LAST_RUN_FILE"
 
 # Is the enforcement actually installed? Silent when it is.
-DOCTOR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/doctor.sh"
+DOCTOR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/flight-rules-doctor.sh"
 if [ -x "$DOCTOR" ]; then
   PROBLEMS=$("$DOCTOR" --problems-only 2>/dev/null)
   if [ -n "$PROBLEMS" ]; then

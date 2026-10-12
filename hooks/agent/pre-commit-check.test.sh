@@ -208,7 +208,7 @@ conf_check() {
 
 # An inline comment on a value is ordinary config-file writing, not evasion. Until
 # 2026-09-11 the three `(.*)` parsers kept it, so the value became a regex that matches
-# nothing and the layer reading it silently stopped enforcing — while doctor.sh, which
+# nothing and the layer reading it silently stopped enforcing — while flight-rules-doctor.sh, which
 # DOES strip comments, printed ✅ for the same line. Four parsers, three behaviours.
 conf_check "trailing comment on the value"   deny  main 'git rm f' \
       'PROTECTED_BRANCHES=^main$   # trunk-based, no dev'
