@@ -316,7 +316,57 @@ say "$(rc "$D")" "1" "merge.ff unset → problem"
 say "$(has "$D" "fast-forward merge creates no commit")" "0" "…explains why"
 rm -rf "$D"
 
+echo "A hook that is present, executable, the right hook — and an older release's:"
+# A plugin update cannot touch the project's git hooks, so four of AppliHawk's sat at
+# 0.22.0 under a 0.23.0 plugin with every line green (2026-10-12). Byte-identical to an
+# older release in the plugin cache is stale beyond doubt; matching no release may be the
+# project's own adaptation. The fake HOME's cache holds one older release, 0.0.1.
+mkcache() {  # <repo> <hook>: a 0.0.1 release of <hook> in the fake plugin cache
+  mkdir -p "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git"
+  { cat "$H/git/$2"; echo "# flight-rules 0.0.1"; } > "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/$2"
+}
+D=$(mkrepo); mkcache "$D" commit-msg
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" "$D/.ai/hooks/commit-msg"
+say "$(rc "$D")" "1" "a copy identical to a cached older release → problem"
+say "$(has "$D" "commit-msg is the flight-rules 0.0.1 copy")" "0" "…naming the release it came from"
+say "$(has "$D" "to update: bash")" "0" "…and printing the sync command"
+SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]*' | sed 's/^to update: //' | head -1)
+say "$([ -n "$SYNC" ] && echo yes)" "yes" "…which can be lifted from the output"
+(cd "$D" && HOME="$D/fakehome" eval "$SYNC --stale-only") >/dev/null 2>&1
+say "$(rc "$D")" "0" "…and, run with --stale-only, clears it"
+say "$(has "$D" "to update:")" "1" "…after which no sync command is printed"
+rm -rf "$D"
+
+D=$(mkrepo); echo "# this project's own change" >> "$D/.ai/hooks/post-merge"
+say "$(rc "$D")" "0" "a copy matching no release is a warning, not a problem"
+say "$(has "$D" "post-merge differs from this flight-rules' copy")" "0" "…that names the hook"
+say "$(has "$D" "to update: bash")" "0" "…and still prints the sync command"
+rm -rf "$D"
+
+# Marked adapted, the project's own hook is accepted: a ⚠️ every session with no way to
+# accept it was the complaint (review, 2026-10-12).
+D=$(mkrepo); printf '# flight-rules: adapted\n# own change\n' >> "$D/.ai/hooks/post-merge"
+say "$(rc "$D")" "0" "a hook marked 'flight-rules: adapted' is not a problem"
+say "$(has "$D" "post-merge adapted here (marked")" "0" "…and is reported as adapted"
+say "$(has "$D" "post-merge differs from")" "1" "…not as differing"
+say "$(has "$D" "to update:")" "1" "…and no sync command is printed for it"
+rm -rf "$D"
+
+# The missing-hook line already gives a cp; the sync command covers it too.
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
+say "$(has "$D" "to update: bash")" "0" "a missing hook also prints the sync command"
+rm -rf "$D"
+
 echo "The conf — typos and bad values must not pass silently:"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "HOOK_SYNC=auto is a known key"
+say "$(has "$D" "HOOK_SYNC=auto")" "0" "…and is reported"
+say "$(has "$D" "unknown key")" "1" "…not as unknown"
+printf 'HOOK_SYNC=yes\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "HOOK_SYNC=yes is a warning, not a failure"
+say "$(has "$D" "neither auto nor report")" "0" "…saying what the values are"
+rm -rf "$D"
+
 D=$(mkrepo); printf 'PROTECTED_BRANCH=^main$\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "unknown key is a warning, not a failure"
 say "$(has "$D" "unknown key 'PROTECTED_BRANCH'")" "0" "…and is named"

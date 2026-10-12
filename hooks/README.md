@@ -98,6 +98,7 @@ with all five git hooks installed.
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
+| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones, then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the repo is touched, never mid-merge or mid-rebase, and the config is never rewritten. A hook you adapted on purpose carries a line `flight-rules: adapted` and is left alone and accepted. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
@@ -273,9 +274,9 @@ that the logic has exactly one home.
   does not print it, because an agent reads it too. **Already have a `pre-commit`** (a linter,
   lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
   scan and its exit status decides the commit. **Upgrading from 0.22.x:** a plugin
-  update cannot copy git hooks, so this one arrives only when you copy it in;
-  `flight-rules-doctor.sh` — run at session start — reports it missing with the exact `cp` command.
-  Tests: `secret-scan.test.sh`.
+  update cannot copy git hooks, so this one arrives only when you sync them in —
+  `install.sh --from`, below; `flight-rules-doctor.sh` — run at session start — reports
+  it missing and prints that command. Tests: `secret-scan.test.sh`.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
   unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
@@ -285,7 +286,24 @@ that the logic has exactly one home.
   block in the script before enabling.
 - **`install.sh`** — one-time per clone: `chmod` the hooks, set
   `core.hooksPath`, and set `merge.ff false` so the merge gate always fires
-  (a fast-forward merge would silently skip `pre-merge-commit`).
+  (a fast-forward merge would silently skip `pre-merge-commit`). It installs into
+  the directory the **local** `core.hooksPath` names, else `.ai/hooks/`, and writes
+  the path once, relative to the repo root, so every worktree resolves its own copy;
+  a path already set is never rewritten (an absolute one written from a worktree
+  outlived the worktree and left every checkout running no hooks).
+  **After a plugin update**, `bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git`
+  copies the six hooks and itself into the project first, then installs as usual —
+  the update refreshes the agent hooks but cannot touch these, which are the
+  project's committed files (AppliHawk ran four 0.22.0 hooks under a 0.23.0 plugin,
+  2026-10-12). `--stale-only` replaces only a copy byte-identical to some release in
+  the plugin cache, so a project's own adaptation is left alone and named — mark it
+  with a line `flight-rules: adapted` and doctor accepts it too; without the flag
+  every differing hook is replaced, except a `pre-commit` that is not flight-rules'
+  at all, which is refused with the rename that keeps it running. A copy that fails
+  is an exit, never a "synced" line. `flight-rules-doctor.sh` prints the command
+  whenever a hook is missing or behind, and `HOOK_SYNC=auto` in the conf has
+  `session-start.sh` run the `--stale-only` form itself. Either way the result is a
+  diff to review and commit. Tests: `install.test.sh`.
 
 ## Agent hook scripts (`agent/`)
 
@@ -353,13 +371,15 @@ Guards that fire on the assistant's own events, before git ever runs:
   protected branch ALLOWED from a feature branch, silently — the ref they name is read
   by splitting the command, and nothing announced the dependency.
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
-- **`flight-rules-doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
+- **`flight-rules-doctor.sh`** — is the enforcement actually installed, and current? Checks `core.hooksPath`,
   every hook's executable bit *and* that each one still contains the string that makes
-  it that hook (a present, executable stub enforces nothing), `merge.ff`, the guard's
-  parser, the conf's keys and regexes, that every script `.claude/settings.json` wires
-  exists, and that the guard is wired once and actually enabled — every one a state
-  that has failed silently before. `session-start.sh` runs it daily and prints only
-  problems.
+  it that hook (a present, executable stub enforces nothing), that each one is this
+  release's copy — byte-identical to an older cached release is ❌, differing from every
+  release is ⚠️ since it may be the project's own adaptation, and either prints the
+  `install.sh --from` command — `merge.ff`, the guard's parser, the conf's keys and
+  regexes, that every script `.claude/settings.json` wires exists, and that the guard
+  is wired once and actually enabled — every one a state that has failed silently
+  before. `session-start.sh` runs it daily and prints only problems.
   Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project, and again after
   a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged

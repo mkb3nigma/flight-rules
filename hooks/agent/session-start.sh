@@ -35,6 +35,37 @@ fi
 
 touch "$LAST_RUN_FILE"
 
+# HOOK_SYNC=auto: before asking whether the git hooks are current, make them so — for
+# the copies that are provably unmodified (byte-identical to some release in the
+# plugin cache) or missing. A plugin update cannot touch the project's committed hooks,
+# so AppliHawk ran 0.22.0 hooks under a 0.23.0 plugin and the only signal was a
+# CHANGELOG paragraph (2026-10-12). The owner opts in through the conf — a hook
+# rewriting committed files unasked is the surprise that gets guards switched off —
+# and still commits the result. A hook that matches no release is left alone: it may
+# be the project's own adaptation, and doctor names it below. Nothing runs when no
+# hooks are installed (that is the owner's install step, not an update) or when this
+# script was copied in by hand and has no git/ beside it to sync from. LOCAL config
+# only: a global core.hooksPath names a directory outside every repo, and following it
+# wrote the hooks there (review, 2026-10-12). Nor mid-merge or mid-rebase, where an
+# unattended write to a tracked file is what makes `--continue` refuse.
+HOOK_SYNC="$(conf_get HOOK_SYNC)"
+GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../git" 2>/dev/null && pwd)"
+if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
+   && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ] \
+   && ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 \
+   && ! git rev-parse -q --verify REBASE_HEAD >/dev/null 2>&1; then
+  SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only 2>&1); SYNC_RC=$?
+  if [ "$SYNC_RC" -ne 0 ]; then
+    echo "⚠️ flight-rules HOOK_SYNC=auto could not update the git hooks:"
+    echo "$SYNC_OUT" | sed 's/^/  /'
+    echo ""
+  elif echo "$SYNC_OUT" | grep -q '^   synced '; then
+    echo "🔁 flight-rules HOOK_SYNC=auto updated git hooks in this project — review the diff and commit it:"
+    echo "$SYNC_OUT" | grep -E '^   (synced |[a-z.-]+: )' | sed 's/^  //'
+    echo ""
+  fi
+fi
+
 # Is the enforcement actually installed? Silent when it is.
 DOCTOR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/flight-rules-doctor.sh"
 if [ -x "$DOCTOR" ]; then
