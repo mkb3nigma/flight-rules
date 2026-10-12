@@ -181,11 +181,25 @@ grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=
 # Wiring a path is not the same as wiring a FILE. Every script named in the settings is
 # checked for existence — a dangling path satisfies the grep above just as well as a real
 # one, and the hook then silently never runs.
+# A captured path, with its root marker, as a file to test and as a name to report.
+wired_file() { case "$1" in @ROOT@/*) printf '%s' "$ROOT/${1#@ROOT@/}" ;; @HOME@/*) printf '%s' "$HOME/${1#@HOME@/}" ;;
+                            /*) printf '%s' "$1" ;; *) printf '%s' "$ROOT/$1" ;; esac; }
+wired_name() { printf '%s' "$1" | sed 's#@ROOT@/##g; s#@HOME@/#~/#g'; }
 if [[ -f .claude/settings.json ]]; then
-  while IFS= read -r rel; do
-    [[ -z "$rel" ]] && continue
-    p="$rel"; [[ "$p" = /* ]] || p="$ROOT/$p"
-    [[ -f "$p" ]] || bad ".claude/settings.json wires $rel, which does not exist — that hook never runs"
+  while IFS= read -r cap; do
+    [[ -z "$cap" ]] && continue
+    case "$cap" in *@LITERAL@/*)
+      bad ".claude/settings.json wires …/${cap#*@LITERAL@/} under a quoted \$VAR or ~, which the shell never expands — that hook never runs"
+      continue ;; esac
+    # A quoted capture with a space is a path with a space in it, or a wrapper and its
+    # hook (`bash -c '/usr/bin/env bash ./hooks/x.sh'`); the text cannot tell them apart,
+    # so either one existing is enough. Missing, the hook is named: the last word when it
+    # starts like a path, else the whole.
+    tail="${cap##* }"
+    [[ "$tail" = @PLUGIN@/* ]] && continue
+    [[ -f "$(wired_file "$cap")" || -f "$(wired_file "$tail")" ]] && continue
+    case "$tail" in /*|.*|@*) [[ "$tail" = "$cap" ]] || cap="$tail" ;; esac
+    bad ".claude/settings.json wires $(wired_name "$cap"), which does not exist — that hook never runs"
     # The whole path before `hooks/` is captured, not a list of known prefixes: the list
     # knew `.ai/` and missed `.claude/`, so `.claude/hooks/x.sh` was tested as `hooks/x.sh`
     # and reported missing while it ran (#66). A root prefix is marked first, then
@@ -196,12 +210,26 @@ if [[ -f .claude/settings.json ]]; then
     # rather than reported as missing. A closing quote may sit between the prefix and
     # its `/` (`"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`); unmarked, those captured as
     # the absolute `/.claude/hooks/x.sh` and were reported missing (/dg, 2026-10-08).
+    # `$HOME`, `${HOME}` and a `~` the shell expands (unquoted, starting a word) are the
+    # home directory; tested under the repo, a hook missing from home passed whenever the
+    # repo held the same path. A `$VAR` or `~` inside single quotes, or `~` inside double
+    # quotes, is never expanded — except a `bash -c '…'` script, which its own shell
+    # expands — so that hook never runs, and is reported whatever exists. A quoted capture
+    # runs quote to quote, spaces included; unquoted, a space ends it, as it does for the
+    # shell (/dg G2-5, 2026-10-08; reviewed 2026-10-12).
   done < <(sed -E 's#\$\{?CLAUDE_PLUGIN_ROOT\}?(\\")?/#@PLUGIN@/#g
+                   s#-c '"'"'\$#-c '"'"'@DOLLAR@#g
+                   s#'"'"'\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'"'"'?/#'"'"'@LITERAL@/#g
+                   s#@DOLLAR@#$#g
+                   s#(\\"|'"'"')~/#\1@LITERAL@/#g
+                   s#\$\{?HOME\}?(\\")?/#@HOME@/#g
+                   s#(^|[^\\])"~/#\1"@HOME@/#g
+                   s#([ =;(|&])~/#\1@HOME@/#g
                    s#\$\(git rev-parse --show-toplevel\)(\\")?/#@ROOT@/#g
                    s#\$\{?[A-Za-z_][A-Za-z0-9_]*\}?(\\")?/#@ROOT@/#g' .claude/settings.json \
-           | grep -oE '(@[A-Z]+@/)?[A-Za-z0-9_./-]*hooks/[A-Za-z0-9_/-]*\.sh' \
-           | grep -v '^@PLUGIN@' \
-           | sed 's#^@ROOT@/##' | sort -u)
+           | grep -oE '\\"[A-Za-z0-9_./@ -]*hooks/[A-Za-z0-9_/ -]*\.sh\\"|'"'"'[A-Za-z0-9_./@ -]*hooks/[A-Za-z0-9_/ -]*\.sh'"'"'|(@[A-Z]+@/)?[A-Za-z0-9_./-]*hooks/[A-Za-z0-9_/-]*\.sh' \
+           | sed -E 's#^(\\"|'"'"')##; s#(\\"|'"'"')$##' \
+           | grep -v '^@PLUGIN@' | sort -u)
 fi
 if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
   warn "the flight-rules plugin is enabled AND .claude/settings.json wires a pre-commit-check.sh — the guard runs twice (drop the local wiring)"
