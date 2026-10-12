@@ -89,7 +89,7 @@ else
         # and the upgrade to 0.23.0 is when it meets this line; say where it goes.
         _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
         bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
-      elif grep -qE '^#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/$h"; then
+      elif grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/$h"; then
         # The project's own version, said so in the file: not compared with the release,
         # and never replaced by HOOK_SYNC=auto. Without the mark, an adapted hook drew a
         # ⚠️ into every session's context with no way to accept it (review, 2026-10-12).

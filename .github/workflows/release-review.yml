@@ -26,9 +26,16 @@ jobs:
             echo "::error::PR into main has no '## Adversarial review' section — run /dg origin/main...<sha> (pr-create step 2b) and put the verdict and dispositions in the body"
             exit 1
           fi
-          # The template's placeholder left in place is a skipped step that looks done.
-          if printf '%s\n' "$body" | grep -q '<the /dg verdict'; then
-            echo "::error::the Adversarial review section still holds the pr-create template's placeholder"
+          # A heading with nothing under it, or the template's placeholder left in
+          # place, is a skipped step that looks done (fix review, 2026-10-12): the
+          # section needs a line of its own text before the next heading.
+          filled=$(printf '%s\n' "$body" | awk '
+            /^## Adversarial review/ { in_s = 1; next }
+            in_s && /^## / { in_s = 0 }
+            in_s && /[^[:space:]]/ && !/<the \/dg verdict/ { n++ }
+            END { print n + 0 }')
+          if [ "$filled" -eq 0 ]; then
+            echo "::error::the Adversarial review section is empty or still holds the pr-create template's placeholder"
             exit 1
           fi
           echo "ok  Adversarial review section present and filled"

@@ -51,8 +51,8 @@ a project whose `commit-msg` is the 0.22.0 copy, every other hook current:
 | `HOOK_SYNC=auto` in the conf | ⚠️ unknown key | accepted |
 
 A hook that matches no release is ⚠️, since it may be your own adaptation. Add a
-comment line `# flight-rules: adapted` to it and doctor accepts it, and the sync leaves it alone; `/rules-sync` still shows
-its diff against each new release.
+comment line `# flight-rules: adapted` to it and doctor accepts it, and the sync leaves
+it alone; `/rules-sync` still shows its diff against each new release.
 
 **`install.sh` no longer rewrites `core.hooksPath`.** Re-run from a worktree, it wrote the
 worktree's absolute path into the shared repo config, so removing the worktree left
@@ -81,8 +81,9 @@ positive there is committed by you, or kept under a `fixtures/` path. A binary o
 
 **A release PR needs `/dg` on its whole diff.** `pr-create` step 2b: `/dg
 origin/main...<sha>` on the commit step 2a tested, with each finding's disposition in
-the PR body; a critical finding is yours to decide. The `release review` check fails a PR into
-`main` without an **Adversarial review** section, re-checked when the body is edited. `/dg` takes a `<base>...<head>` range for it.
+the PR body; a critical finding is yours to decide. The `release review` check fails a
+PR into `main` whose **Adversarial review** section is missing or empty, and re-checks
+when the body is edited. `/dg` takes a `<base>...<head>` range for it.
 Warrant: a data-loss bug in AppliHawk 0.16.0 that every per-branch gate had passed,
 found by `/dg` on the release diff (aa4ca42e, 2026-10-12).
 

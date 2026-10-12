@@ -34,8 +34,9 @@ Open a GitHub PR for the current feature branch. Project parameters:
   individually green, because five merges landed after the batch run and the integration
   branch was never tested whole.
 - A release PR also needs `/dg` on the **whole** diff, `origin/main...<sha>` — step 2b —
-  with the verdict and every finding's disposition in the PR body, and the `release review` check fails a PR
-  into `main` whose body has no **Adversarial review** section. Warrant: AppliHawk's
+  with the verdict and every finding's disposition in the PR body, and the `release
+  review` check fails a PR into `main` whose **Adversarial review** section is missing
+  or empty. Warrant: AppliHawk's
   0.16.0 was declared release-ready on 2026-10-11 with every branch past
   `/pre-merge-check` (which runs no AI review) and the suite green on the final
   integration commit; `/dg` on the 93-commit, 224-file diff the next day found a
@@ -122,8 +123,8 @@ branch from a local copy and opening a fresh PR against the correct base.
 2b. **Release PR only** — run `/dg origin/main...<sha>` on the commit 2a tested,
    preferring a pre-reviewer from a different model family (the skill says why), and
    name both shas in the verdict. Put the verdict and every finding's disposition in
-   the PR body under **Adversarial review** (the `release review` workflow checks it is there and filled, and re-checks on every body edit). The
-   assistant may decline a minor or important finding with its reason, where the
+   the PR body under **Adversarial review** (the `release review` workflow checks it is
+   there and not empty, and re-checks on every body edit). The assistant may decline a minor or important finding with its reason, where the
    owner reads it; a **critical** finding is the owner's to disposition — stop and
    ask. A finding applied arrives like any change, through a branch merged into
    `{INTEGRATION_BRANCH}`; then 2a runs again on the new tip, and `/dg` on the fix's

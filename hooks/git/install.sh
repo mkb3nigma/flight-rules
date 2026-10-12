@@ -105,7 +105,7 @@ if [ -n "$FROM" ]; then
             # A comment line of its own, `# flight-rules: adapted`: the phrase also sits in
             # this script's text, so an unanchored match took an edited install.sh as
             # marked by nobody (release review, 2026-10-12). Same pattern in doctor.
-            elif grep -qE '^#[[:space:]]*flight-rules: adapted' "$dst"; then
+            elif grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$dst"; then
                 echo "   $h: adapted here (marked flight-rules: adapted) — left alone"
                 LEFT=$((LEFT+1))
             else

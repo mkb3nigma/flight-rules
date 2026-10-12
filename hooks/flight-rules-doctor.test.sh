@@ -352,6 +352,10 @@ say "$(has "$D" "post-merge differs from")" "1" "…not as differing"
 say "$(has "$D" "to update:")" "1" "…and no sync command is printed for it"
 rm -rf "$D"
 
+# Indented, the comment line is still the mark.
+D=$(mkrepo); printf '  # flight-rules: adapted\n' >> "$D/.ai/hooks/post-merge"
+say "$(has "$D" "post-merge adapted here")" "0" "an indented '# flight-rules: adapted' is the mark too"
+rm -rf "$D"
 # The phrase inside a line of code is not the mark: only a comment line of its own is.
 D=$(mkrepo); printf 'echo "flight-rules: adapted"\n' >> "$D/.ai/hooks/post-merge"
 say "$(has "$D" "post-merge adapted here")" "1" "the phrase inside code is not the adapted mark"
