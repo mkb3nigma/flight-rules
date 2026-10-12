@@ -1349,6 +1349,20 @@ guard_run "$H" 'git clone -q "$URL" "$N" && cd "$N" && git commit --allow-empty 
 verdict "…nor one that clones it" allow
 # The exemption is a command that runs `git init`/`git clone`, not text that mentions it
 # (security review of 1f3bec3, 2026-10-12).
+# …and only for the directory it creates: a repo created elsewhere is no reason to skip
+# a commit aimed at an unresolvable one (security review of 34ab777, 2026-10-12).
+for c in 'git init -q "$N" && cd "$N" && git commit --allow-empty -m x' \
+         'git -C "$N" init -q && git -C "$N" commit --allow-empty -m x' \
+         'git clone -q -b main "$URL" "$N" && git -C "$N" commit --allow-empty -m x'; do
+  guard_run "$H" "$c" HOME="$H"
+  verdict "$c — allowed" allow
+done
+for c in 'git init -q /tmp/elsewhere; cd "$REPO" && git commit -m x' \
+         'git clone -q "$URL" "$OTHER"; cd "$REPO" && git commit -m x' \
+         'cd "$OTHER" && git init -q; cd "$REPO" && git commit -m x'; do
+  guard_run "$H" "$c" HOME="$H"
+  verdict "$c — denied" deny "cannot resolve"
+done
 for c in 'echo git init; cd "$REPO" && git commit -m x' 'echo "git clone"; cd "$REPO" && git commit -m x' \
          'cd "$REPO" && git commit -m "after git init"' 'git initx; cd "$REPO" && git commit -m x'; do
   guard_run "$H" "$c" HOME="$H"
