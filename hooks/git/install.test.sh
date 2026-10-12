@@ -208,6 +208,16 @@ say "$(grep -c 'post-merge: adapted here (marked' <<<"$OUT")" "1" "names it as a
 say "$(grep -c 'flight-rules: adapted' "$D/.ai/hooks/post-merge")" "1" "…and it is untouched"
 rm -rf "$D" "$P"
 
+echo "The marker is a comment line of its own, not the phrase anywhere:"
+# install.sh carries the phrase in its own text, so an edited copy was taken as
+# "marked by" nobody and never updated (release review, 2026-10-12).
+D=$(mkrepo); P=$(mkplugin); echo "# local tweak" >> "$D/.ai/hooks/install.sh"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "exit 0"
+say "$(grep -c 'install.sh: adapted here' <<<"$OUT")" "0" "an edited install.sh is not taken as marked adapted"
+say "$(grep -c 'install.sh: differs from every' <<<"$OUT")" "1" "…it is named as matching no release"
+rm -rf "$D" "$P"
+
 echo "Bad arguments fail loudly:"
 D=$(mkrepo); P=$(mkplugin)
 say "$(rc "$D" .ai/hooks/install.sh --from "$D/nowhere")" "1" "--from a missing directory"

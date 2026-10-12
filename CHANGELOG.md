@@ -19,8 +19,11 @@ behind:
 bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git --stale-only
 ```
 
-`--stale-only` replaces only a hook byte-identical to an older release in the plugin
-cache, and copies in a missing one. A hook you adapted is left alone and named. Review
+Run the **plugin's** `install.sh`, as above, not the copy in your `.ai/hooks/`: the
+0.23.0 copy there ignores `--from`, prints "✅ git hooks installed" and rewrites
+`core.hooksPath` absolute, which is the bug below. After this sync your copy is the
+0.24.0 one. `--stale-only` replaces only a hook byte-identical to an older release in the
+plugin cache, and copies in a missing one. A hook you adapted is left alone and named. Review
 the diff it leaves and commit it.
 
 **To make it automatic, opt in:** add `HOOK_SYNC=auto` to `.ai/flight-rules.conf`. The
@@ -47,8 +50,9 @@ a project whose `commit-msg` is the 0.22.0 copy, every other hook current:
 | `install.sh --from <plugin>/hooks/git --stale-only` | ignored, nothing synced | **commit-msg replaced**, diff left to commit |
 | `HOOK_SYNC=auto` in the conf | ⚠️ unknown key | accepted |
 
-A hook that matches no release is ⚠️, since it may be your own adaptation. Add a line
-`flight-rules: adapted` to it and doctor accepts it, and the sync leaves it alone.
+A hook that matches no release is ⚠️, since it may be your own adaptation. Add a
+comment line `# flight-rules: adapted` to it and doctor accepts it, and the sync leaves
+it alone; `/rules-sync` still shows its diff against each new release.
 
 **`install.sh` no longer rewrites `core.hooksPath`.** Re-run from a worktree, it wrote the
 worktree's absolute path into the shared repo config, so removing the worktree left
@@ -77,8 +81,9 @@ positive there is committed by you, or kept under a `fixtures/` path. A binary o
 
 **A release PR needs `/dg` on its whole diff.** `pr-create` step 2b: `/dg
 origin/main...<sha>` on the commit step 2a tested, with each finding's disposition in
-the PR body; a critical finding is yours to decide. CI refuses a PR into `main` without
-an **Adversarial review** section. `/dg` takes a `<base>...<head>` range for it.
+the PR body; a critical finding is yours to decide. The `release review` check fails a
+PR into `main` whose **Adversarial review** section is missing or empty, and re-checks
+when the body is edited. `/dg` takes a `<base>...<head>` range for it.
 Warrant: a data-loss bug in AppliHawk 0.16.0 that every per-branch gate had passed,
 found by `/dg` on the release diff (aa4ca42e, 2026-10-12).
 

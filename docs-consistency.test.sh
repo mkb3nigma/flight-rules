@@ -135,6 +135,17 @@ else
   ok "the bump can be committed on the integration branch directly"
 fi
 
+echo "The release review check the docs describe exists, and re-runs on a body edit:"
+# CLAUDE.md, pr-create and the CHANGELOG name a `release review` check (step 2b); a doc
+# promising a check no file runs is the drift this suite is for (fix review, 2026-10-12).
+RR=.github/workflows/release-review.yml
+if [ ! -f "$RR" ]; then bad "$RR is missing — step 2b's check does not run"
+else
+  grep -q 'edited' "$RR" && ok "$RR re-runs when the PR body is edited" || bad "$RR does not trigger on edited"
+  grep -q 'Adversarial review' "$RR" && ok "$RR checks the Adversarial review section" || bad "$RR does not look for the section"
+  grep -qE '\$\{\{[^}]*body' <(sed -n '/run: |/,$p' "$RR") && bad "$RR interpolates the PR body into a script" || ok "$RR reads the PR body through env only"
+fi
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

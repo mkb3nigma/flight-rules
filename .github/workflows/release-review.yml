@@ -1,0 +1,41 @@
+# A PR into main is a release, and a release carries /dg on the whole diff with every
+# finding's disposition (pr-create step 2b). The body is the only artifact that step
+# leaves, so its absence is checked here rather than trusted.
+#
+# Its own workflow, with `edited` among its triggers: under a bare `pull_request:` a
+# body fixed after a failure was never re-checked, and one emptied after a pass stayed
+# green (release review, 2026-10-12). The suites in tests.yml do not need to re-run on
+# a body edit, so they keep their own triggers.
+name: release review
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+jobs:
+  release-review:
+    runs-on: ubuntu-latest
+    # Read through env, never interpolated into the script: a PR body is
+    # attacker-written text.
+    env:
+      BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - name: The release PR body carries the adversarial review
+        run: |
+          body=$(printf '%s\n' "$BODY" | tr -d '\r')
+          if ! printf '%s\n' "$body" | grep -q '^## Adversarial review'; then
+            echo "::error::PR into main has no '## Adversarial review' section — run /dg origin/main...<sha> (pr-create step 2b) and put the verdict and dispositions in the body"
+            exit 1
+          fi
+          # A heading with nothing under it, or the template's placeholder left in
+          # place, is a skipped step that looks done (fix review, 2026-10-12): the
+          # section needs a line of its own text before the next heading.
+          filled=$(printf '%s\n' "$body" | awk '
+            /^## Adversarial review/ { in_s = 1; next }
+            in_s && /^## / { in_s = 0 }
+            in_s && /[^[:space:]]/ && !/<the \/dg verdict/ { n++ }
+            END { print n + 0 }')
+          if [ "$filled" -eq 0 ]; then
+            echo "::error::the Adversarial review section is empty or still holds the pr-create template's placeholder"
+            exit 1
+          fi
+          echo "ok  Adversarial review section present and filled"

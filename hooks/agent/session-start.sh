@@ -46,14 +46,18 @@ touch "$LAST_RUN_FILE"
 # hooks are installed (that is the owner's install step, not an update) or when this
 # script was copied in by hand and has no git/ beside it to sync from. LOCAL config
 # only: a global core.hooksPath names a directory outside every repo, and following it
-# wrote the hooks there (review, 2026-10-12). Nor mid-merge or mid-rebase, where an
+# wrote the hooks there (review, 2026-10-12). Nor mid-merge, -rebase, -cherry-pick or -revert (review, 2026-10-12), where an
 # unattended write to a tracked file is what makes `--continue` refuse.
 HOOK_SYNC="$(conf_get HOOK_SYNC)"
 GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../git" 2>/dev/null && pwd)"
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
    && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ] \
    && ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 \
-   && ! git rev-parse -q --verify REBASE_HEAD >/dev/null 2>&1; then
+   && ! git rev-parse -q --verify REBASE_HEAD >/dev/null 2>&1 \
+   && ! git rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1 \
+   && ! git rev-parse -q --verify REVERT_HEAD >/dev/null 2>&1 \
+   && [ ! -d "$(git rev-parse --git-path rebase-merge 2>/dev/null)" ] \
+   && [ ! -d "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]; then
   SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only 2>&1); SYNC_RC=$?
   if [ "$SYNC_RC" -ne 0 ]; then
     echo "⚠️ flight-rules HOOK_SYNC=auto could not update the git hooks:"

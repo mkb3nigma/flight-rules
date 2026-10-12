@@ -39,9 +39,9 @@ carrying one version bump, the full `{TEST_COMMANDS}` run on the exact commit be
 pushed (`pr-create` step 2a — the per-branch checks proved the pieces, not the sum), a
 `/dg` verdict on the whole `origin/main...<sha>` diff with each finding's disposition
 (step 2b — the one review with every piece in view at once: AppliHawk aa4ca42e,
-2026-10-12, a data-loss bug every branch gate had passed; CI refuses a PR into `main`
-without the section), and a summary of what the batch did — so the published history is
-releases, not a debugging session. Both branches are protected on GitHub (PR required
+2026-10-12, a data-loss bug every branch gate had passed; the `release review` check
+fails a PR into `main` without the section), and a summary of what the batch did — so
+the published history is releases, not a debugging session. Both branches are protected on GitHub (PR required
 on `main`, CI required on both, force-push and deletion blocked); admins are exempt, which
 is the emergency path for a genuine bug in a release, taken deliberately and reviewed hard.
 
