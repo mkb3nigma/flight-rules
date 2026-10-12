@@ -197,7 +197,7 @@ else
                               || ok "$key=$val" ;;
       HOOK_SYNC)
         case "$val" in
-          auto)   ok "$key=auto — the first session after a plugin update replaces git hooks that are byte-identical to an older release, and leaves the diff for you to commit" ;;
+          auto)   ok "$key=auto — the first session each day, and after a plugin update, replaces git hooks that are byte-identical to an older release, and leaves the diff for you to commit" ;;
           report) ok "$key=report" ;;
           *)      warn "$key='$val' is neither auto nor report — session-start treats it as report and syncs nothing" ;;
         esac ;;
