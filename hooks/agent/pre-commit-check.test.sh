@@ -1207,6 +1207,19 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary marked diff (text): rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
 fi
 rm -rf "$D"
+# A name starting with `:` looked like git's status line in the listing, so the file was
+# never sized and was read whole (security review of 77fa561, 2026-10-12).
+D=$(make_repo feature/x)
+head -c 41943040 /dev/urandom > "$D/:big.bin" && git -C "$D" add ":(literal):big.bin" || die "could not stage :big.bin"
+START=$SECONDS
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+TOOK=$((SECONDS - START))
+if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary named :big.bin: skipped in %ss (bound 8s)\n' "$TOOK"
+else
+  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary named :big.bin: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
+fi
+rm -rf "$D"
 
 echo "A long heredoc and a commit are judged well inside the hook's timeout (#73):"
 # A hook killed by its timeout lets the command run unchecked. A heredoc splits into a
@@ -1352,10 +1365,11 @@ for c in "allow|setup guide.md" "allow|test_login flow.py" "allow|notes on sign 
   rm -rf "$D"
 done
 
-echo "A commit target the scan cannot resolve, from outside every repo (2026-10-12):"
+echo "A ~ or \$HOME commit target, from outside every repo (2026-10-12):"
 # `~` and `$HOME` were left unexpanded, so from a directory that is no repo the target
-# resolved nowhere and nothing was scanned. They are expanded now; any other `$VAR` is
-# denied, unless the command creates the repo.
+# resolved nowhere and nothing was scanned. They are expanded now. Any other `$VAR` the
+# guard cannot expand stays unscanned here, by the owner's call: it is allowed, and the
+# repo's own git hook scans it if it runs one.
 H=$(cd "$(mktemp -d)" && pwd -P); R=$(make_repo feature/x); mv "$R" "$H/r"
 printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$H/r/k.txt" && git -C "$H/r" add k.txt || die "could not stage in \$HOME/r"
 for c in 'cd ~/r && git commit -m x' 'cd $HOME/r && git commit -m x' 'cd "$HOME/r" && git commit -m x' \
@@ -1364,34 +1378,7 @@ for c in 'cd ~/r && git commit -m x' 'cd $HOME/r && git commit -m x' 'cd "$HOME/
   verdict "$c — the key is found" deny "AWS access key"
 done
 guard_run "$H" 'cd "$REPO" && git commit -m x' HOME="$H"
-verdict 'cd "$REPO" && git commit — denied as unresolvable' deny "cannot resolve"
-guard_run "$H" 'cd "$REPO" && git status' HOME="$H"
-verdict "…but not a command that commits nothing" allow
-guard_run "$H" 'cd "$N" && git init -q && git commit --allow-empty -m x' HOME="$H"
-verdict "…nor one that creates the repo it commits in" allow
-guard_run "$H" 'git clone -q "$URL" "$N" && cd "$N" && git commit --allow-empty -m x' HOME="$H"
-verdict "…nor one that clones it" allow
-# The exemption is a command that runs `git init`/`git clone`, not text that mentions it
-# (security review of 1f3bec3, 2026-10-12).
-# …and only for the directory it creates: a repo created elsewhere is no reason to skip
-# a commit aimed at an unresolvable one (security review of 34ab777, 2026-10-12).
-for c in 'git init -q "$N" && cd "$N" && git commit --allow-empty -m x' \
-         'git -C "$N" init -q && git -C "$N" commit --allow-empty -m x' \
-         'git clone -q -b main "$URL" "$N" && git -C "$N" commit --allow-empty -m x'; do
-  guard_run "$H" "$c" HOME="$H"
-  verdict "$c — allowed" allow
-done
-for c in 'git init -q /tmp/elsewhere; cd "$REPO" && git commit -m x' \
-         'git clone -q "$URL" "$OTHER"; cd "$REPO" && git commit -m x' \
-         'cd "$OTHER" && git init -q; cd "$REPO" && git commit -m x'; do
-  guard_run "$H" "$c" HOME="$H"
-  verdict "$c — denied" deny "cannot resolve"
-done
-for c in 'echo git init; cd "$REPO" && git commit -m x' 'echo "git clone"; cd "$REPO" && git commit -m x' \
-         'cd "$REPO" && git commit -m "after git init"' 'git initx; cd "$REPO" && git commit -m x'; do
-  guard_run "$H" "$c" HOME="$H"
-  verdict "$c — still denied as unresolvable" deny "cannot resolve"
-done
+verdict 'cd "$REPO" && git commit, from outside every repo — allowed, unscanned (owner'"'"'s call)' allow
 rm -rf "$H"
 
 # No repo at all is not a failed read: nothing is staged anywhere yet, and what the

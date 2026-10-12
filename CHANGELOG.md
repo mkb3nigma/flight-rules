@@ -70,9 +70,9 @@ longer hides source files from the credential check or has a large binary read w
 The git
 hook reads those whole, wherever the key sits in them. If git cannot read what is
 staged, the command is denied with git's reason, not allowed unscanned. A `cd` or `-C`
-target written with `~` or `$HOME` is followed; one the guard cannot resolve (another
-`$VAR`), from outside every repo, is denied unless the command creates the repo — a
-loop over several repos run from their parent included: it now runs per repo. The
+target written with `~` or `$HOME` is followed. One written with any other `$VAR`, typed
+from outside every repo, is still not scanned by the guard; the repo's own git hook scans
+it. The
 credential check reads the diff once, so a commit of thousands of files is checked
 whole — it was skipped past the argument limit.
 

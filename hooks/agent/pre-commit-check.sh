@@ -536,7 +536,6 @@ CWD_NOW=""                      # the directory in effect: the `cd`s seen so far
 CWD_STACK=()                    # CWD_NOW at each open `(`, restored at its `)`
 CWD_NAIVE=""                    # the same, with every `cd` lasting forever (the old reading)
 SCAN_DIRS=()                    # where every commit is aimed, under the scoped reading
-CREATED="|"                     # directories a `git init`/`git clone` here creates, |-separated
 SCAN_ALSO=("")                  # every other directory the command could be committing in
 # Each directory once, by its spelling — every entry costs git calls in the scan, and a
 # heredoc'd script can carry hundreds of `cd` lines (/dg security pass, 2026-10-05).
@@ -567,20 +566,6 @@ while IFS= read -r _raw; do
   # per line inside the hook's timeout (#73).
   case "$_raw" in *git*) _seg=$(printf '%s' "$_raw" | sed -E "$NORM_SED") ;; *) _seg=$_raw ;; esac
   is_commit "$_seg" && { SCAN_DIRS+=("$_dir"); also "$_ndir"; }
-  # A segment that IS `git init`/`git clone` — not one that mentions it (`echo git
-  # init`, a commit message) — creates a repo this command may then commit in: where it
-  # runs (init), or a directory it names. Every word that is not an option counts, under
-  # both readings of the cds — more than git creates, never less; an option's value or a
-  # clone's URL is no directory a commit is aimed at (security review, 2026-10-12).
-  if [[ "$_seg" =~ ^[[:space:]]*git[[:space:]]+(init|clone)${E} ]]; then
-    [[ "${BASH_REMATCH[1]}" == init ]] && CREATED="$CREATED$_dir|$_ndir|"
-    read -ra _words <<<"$_seg"
-    for _w in "${_words[@]:2}"; do
-      case "$_w" in -*) continue ;; esac
-      _w=$(target_path "$_w")
-      CREATED="$CREATED$(rel_to "$_dir" "$_w")|$(rel_to "$_ndir" "$_w")|"
-    done
-  fi
   resolve_target "$_dir"
   # Another repo's branches are not ours to police, and a repo that turned the policy off
   # has none — but only for the segment aimed there, not for its neighbours.
@@ -701,13 +686,17 @@ scan_repo() {
   # 2026-10-05).
   local BINARY_SCAN_MAX=1048576 rec meta p skip_big=() paths=() blobs=() sizes rc="" i=0
   local RAW=("${SCAN_GIT[@]}" "${DIFF_RAW[@]}" --raw -z --no-abbrev --no-renames --diff-filter=d)
+  # Records alternate, `:oldmode newmode oldblob newblob status` then the path, and are
+  # told apart by position, not by the leading `:` — a path may start with one too.
+  meta=""
   while IFS= read -r -d '' rec; do
-    case "$rec" in
-      "/rc="*) rc=${rec#/rc=} ;;
-      :*) meta=$rec ;;
-      ?*) set -f; set -- $meta; set +f   # :oldmode newmode oldblob newblob status
-          [[ "$2" == 160000 ]] || { paths+=("$rec"); blobs+=("$4"); } ;;
-    esac
+    # The status record is never a path (no path starts with `/`) nor a status line; an
+    # empty record ends one git left half-written.
+    case "$rec" in "/rc="*) rc=${rec#/rc=}; continue ;; "") meta=""; continue ;; esac
+    if [[ -z "$meta" ]]; then meta=$rec; continue; fi
+    set -f; set -- $meta; set +f
+    [[ "$2" == 160000 ]] || { paths+=("$rec"); blobs+=("$4"); }
+    meta=""
   done < <("${RAW[@]}" 2>/dev/null; printf '\0/rc=%s\0' "$?")
   [[ "$rc" == 0 ]] || { read_failed "${rc:-?}" "git diff --cached --raw" "${RAW[@]}"; return; }
   if [[ ${#blobs[@]} -gt 0 ]]; then
@@ -839,7 +828,7 @@ scan_repo() {
 # own cwd, which is the repo being committed to in every realistic version of this.
 # Deliberately NOT applied to the branch policy: falling back there would judge the wrong
 # repo and deny legitimate work in the other direction.
-SCANNED="|"; N_SCANNED=0; ALL_FINDINGS=""; LABELLED_FINDINGS=""; SCAN_FELL_BACK=0; READ_FAILS=""; UNRESOLVED=""
+SCANNED="|"; N_SCANNED=0; ALL_FINDINGS=""; LABELLED_FINDINGS=""; SCAN_FELL_BACK=0; READ_FAILS=""
 _n_targets=${#SCAN_DIRS[@]}
 # Bounded, and closed when the bound is hit: a scan that runs past the hook's timeout is
 # killed, and a killed hook lets the command through unchecked. Of the 949 commands in
@@ -860,18 +849,12 @@ for _sd in "${SCAN_DIRS[@]}" "${SCAN_ALSO[@]}"; do
     # The note is about the COMMIT's target; a visited directory that resolves nowhere
     # adds nothing, the cwd is scanned anyway.
     [[ $_is_target -eq 1 ]] && SCAN_FELL_BACK=1
-    # No repo at all, not even the cwd. A commit aimed at a path this hook could not
-    # read — a `$VAR` or `$(…)` it does not expand — may be aimed at a repo holding a
-    # key, so it is denied: run from outside every repo, nothing else would scan it
-    # here (/dg, 2026-10-12). Otherwise there is nothing staged yet to read — a commit in
-    # a repo the command creates (`git init`, `git clone`) stages in that command, which
-    # is the git pre-commit hook's to scan (#71) — or the commit fails on its own.
-    if ! git rev-parse --git-dir >/dev/null 2>&1; then
-      case "$_is_target:$_sd" in 1:*'$'*|1:*'`'*)
-        case "$CREATED" in *"|$_sd|"*) ;; *) UNRESOLVED="$UNRESOLVED
-  $_sd" ;; esac ;; esac
-      continue
-    fi
+    # No repo at all, not even the cwd: nothing here to read. A commit aimed at a path
+    # this hook cannot expand (`cd "$PROJECT" && git commit`), typed from outside every
+    # repo, is not scanned by the guard — that repo's own git pre-commit hook scans it, if
+    # it runs one. Denying it was weighed and dropped (owner's call, 2026-10-12): it is a
+    # deliberate shape, and the guard assumes a competent developer, not an adversary.
+    "${SCAN_GIT[@]}" rev-parse --git-dir >/dev/null 2>&1 || continue
   fi
   _top=$("${SCAN_GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
   case "$SCANNED" in *"|$_top|"*) continue ;; esac
@@ -884,12 +867,6 @@ done
 # Name the repo when more than one was scanned, or the agent cannot tell which to fix.
 [[ $N_SCANNED -gt 1 ]] && ALL_FINDINGS="$LABELLED_FINDINGS"
 
-if [[ -n "$UNRESOLVED" ]]; then
-  deny "🔐 BLOCKED: this command commits in a directory the secret scan cannot resolve, run from outside any repo, so what it would commit was not scanned:$UNRESOLVED
-
-Run it from inside the repo, or name the repo by its path (\`cd /path/to/repo\` or \`git -C /path/to/repo\`). A loop over several repos: run the commit in each one by its path."
-  exit 0
-fi
 if [[ -n "$READ_FAILS" ]]; then
   deny "🔐 BLOCKED: the secret scan could not read what is staged, so the scan stopped there:$READ_FAILS
 ${LABELLED_FINDINGS:+
