@@ -102,11 +102,14 @@ if [ -n "$FROM" ]; then
             if ver=$(release_of "$dst"); then
                 echo "   $h: the flight-rules $ver copy — updating"
                 TO_COPY="$TO_COPY $h"
-            elif grep -q 'flight-rules: adapted' "$dst"; then
+            # A comment line of its own, `# flight-rules: adapted`: the phrase also sits in
+            # this script's text, so an unanchored match took an edited install.sh as
+            # marked by nobody (release review, 2026-10-12). Same pattern in doctor.
+            elif grep -qE '^#[[:space:]]*flight-rules: adapted' "$dst"; then
                 echo "   $h: adapted here (marked flight-rules: adapted) — left alone"
                 LEFT=$((LEFT+1))
             else
-                echo "   $h: differs from every flight-rules release in the plugin cache — left alone (adapted here? diff it against $src, and mark it 'flight-rules: adapted' if so)"
+                echo "   $h: differs from every flight-rules release in the plugin cache — left alone (adapted here? diff it against $src, and add a line '# flight-rules: adapted' if so)"
                 LEFT=$((LEFT+1))
             fi
         # 'PRIVATE KEY' is what makes a pre-commit flight-rules' — the same marker

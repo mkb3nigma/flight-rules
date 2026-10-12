@@ -250,6 +250,18 @@ say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-merge: the hook exits 0"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 rm -rf "$D"
+# Mid-cherry-pick too, not only merge and rebase (release review, 2026-10-12).
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
+git -C "$D" checkout -qb feature/p; echo p > "$D/f.txt"; git -C "$D" commit -qam "chore: p" --no-verify
+git -C "$D" checkout -q trunk; echo t > "$D/f.txt"; git -C "$D" commit -qam "chore: t" --no-verify
+git -C "$D" cherry-pick feature/p >/dev/null 2>&1
+[ -n "$(git -C "$D" rev-parse -q --verify CHERRY_PICK_HEAD)" ] || die "the cherry-pick did not stop on a conflict"
+OUT=$(PRUN)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-cherry-pick: the hook exits 0"
+say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
+say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
+rm -rf "$D"
 # A session-start.sh copied in by hand has no git/ beside it: silent on sync, still runs doctor.
 L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/hooks/agent"; cp "$HOOK" "$L/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/hooks/"
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"; git -C "$D" config --unset merge.ff

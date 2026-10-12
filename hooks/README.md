@@ -98,7 +98,7 @@ with all five git hooks installed.
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
-| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones, then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the repo is touched, never mid-merge or mid-rebase, and the config is never rewritten. A hook you adapted on purpose carries a line `flight-rules: adapted` and is left alone and accepted. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
+| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones, then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the repo is touched, never mid-merge or mid-rebase, and the config is never rewritten. A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
@@ -297,7 +297,7 @@ that the logic has exactly one home.
   project's committed files (AppliHawk ran four 0.22.0 hooks under a 0.23.0 plugin,
   2026-10-12). `--stale-only` replaces only a copy byte-identical to some release in
   the plugin cache, so a project's own adaptation is left alone and named — mark it
-  with a line `flight-rules: adapted` and doctor accepts it too; without the flag
+  with a line `# flight-rules: adapted` and doctor accepts it too; without the flag
   every differing hook is replaced, except a `pre-commit` that is not flight-rules'
   at all, which is refused with the rename that keeps it running. A copy that fails
   is an exit, never a "synced" line. `flight-rules-doctor.sh` prints the command
