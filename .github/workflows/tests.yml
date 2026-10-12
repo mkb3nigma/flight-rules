@@ -10,6 +10,24 @@ on:
     branches: [main, dev]
   pull_request:
 jobs:
+  # A PR into main is a release, and a release carries /dg on the whole diff with every
+  # finding's disposition (pr-create step 2b). The body is the only artifact that step
+  # leaves, so its absence is checked here rather than trusted. Read through env, never
+  # interpolated into the script: a PR body is attacker-written text.
+  release-review:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    env:
+      BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - name: The release PR body carries the adversarial review
+        run: |
+          if printf '%s\n' "$BODY" | grep -q '^## Adversarial review'; then
+            echo "ok  Adversarial review section present"
+          else
+            echo "::error::PR into main has no '## Adversarial review' section — run /dg origin/main...<sha> (pr-create step 2b) and put the verdict and dispositions in the body"
+            exit 1
+          fi
   test:
     strategy:
       fail-fast: false

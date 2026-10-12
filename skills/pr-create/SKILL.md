@@ -33,6 +33,17 @@ Open a GitHub PR for the current feature branch. Project parameters:
   release PR #191 went red on its first CI run on 2026-09-14 with every merged branch
   individually green, because five merges landed after the batch run and the integration
   branch was never tested whole.
+- A release PR also needs `/dg` on the **whole** diff, `origin/main...<sha>` — step 2b —
+  with the verdict and every finding's disposition in the PR body, and CI refuses a PR
+  into `main` whose body has no **Adversarial review** section. Warrant: AppliHawk's
+  0.16.0 was declared release-ready on 2026-10-11 with every branch past
+  `/pre-merge-check` (which runs no AI review) and the suite green on the final
+  integration commit; `/dg` on the 93-commit, 224-file diff the next day found a
+  data-loss bug — editing an action unlinked its contact, because a nested response
+  schema was a hand-copied subset of the full one and the component test's fixture was
+  shaped like the frontend type, not the API payload (fixed in AppliHawk aa4ca42e,
+  2026-10-12; private repo). Nothing had reviewed the release as a whole, and the whole
+  is the one review with every piece in view at once.
 - PR title in conventional-commit format — derived from the branch name unless the
   user supplies one as arguments.
 - Never force-push after opening a PR.
@@ -108,6 +119,19 @@ branch from a local copy and opening a fresh PR against the correct base.
    Per-branch checks prove each change in isolation; the release PR ships the **sum**.
    Nothing has tested the sum until something runs everything on the merged tree. A red
    offline run costs the same minutes as a red CI run and none of anyone's attention.
+2b. **Release PR only** — run `/dg origin/main...<sha>` on the commit 2a tested,
+   preferring a pre-reviewer from a different model family (the skill says why), and
+   name both shas in the verdict. Put the verdict and every finding's disposition in
+   the PR body under **Adversarial review** (CI checks the section is there). The
+   assistant may decline a minor or important finding with its reason, where the
+   owner reads it; a **critical** finding is the owner's to disposition — stop and
+   ask. A finding applied arrives like any change, through a branch merged into
+   `{INTEGRATION_BRANCH}`; then 2a runs again on the new tip, and `/dg` on the fix's
+   own diff only — the rest was reviewed, and that is the exit.
+
+   The same reasoning as 2a, for review instead of tests (the warrant is in the
+   constraint above): each branch was checked as a piece, and the release diff is the
+   one review with every piece in view at once.
 3. Summarize `git log <base>..HEAD` (one user-facing bullet per commit) and
    `git diff <base>...HEAD --stat` (files-changed summary), then create the PR:
 
@@ -130,6 +154,10 @@ gh pr create \
 
 ## Warnings
 <any ⚠️ items from /pre-merge-check, else "none">
+
+<RELEASE PRs ONLY — delete this section otherwise; on a release PR delete this line:>
+## Adversarial review
+<the /dg verdict on origin/main...<sha>, naming both shas, and each finding's disposition: applied (branch/commit), declined (reason), or — a critical — the owner's call, quoted>
 
 ## Testing
 - [ ] Happy path exercised
