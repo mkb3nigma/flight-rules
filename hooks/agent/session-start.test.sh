@@ -176,6 +176,89 @@ printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/p
 say "$(PRUN | grep -c 'flight-rules doctor')" "1" "…the first after an update, same day, does"
 rm -rf "$D" "$T"
 
+echo "HOOK_SYNC=auto brings a provably stale git hook up to date; anything else only reports:"
+# A plugin update cannot touch the project's committed git hooks: AppliHawk ran four
+# 0.22.0 hooks under a 0.23.0 plugin and the only signal was a CHANGELOG paragraph
+# (2026-10-12). Opted in through the conf, the first session after an update replaces a
+# copy that is byte-identical to an older release in the plugin cache and leaves the
+# diff to commit; a copy matching no release may be the project's own and is left to
+# doctor to name. The fake plugin is laid out as the cache has it, so session-start can
+# find hooks/git/ and the version beside itself.
+mkplugin() {
+  local t; t=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$t/.claude-plugin" "$t/hooks/agent" "$t/hooks/git"
+  cp "$HOOK" "$t/hooks/agent/" && cp "$H/../flight-rules-doctor.sh" "$t/hooks/" \
+    && cp "$H"/../git/pre-merge-commit "$H"/../git/commit-msg "$H"/../git/pre-rebase "$H"/../git/post-merge \
+          "$H"/../git/reference-transaction "$H"/../git/pre-commit "$H"/../git/install.sh "$t/hooks/git/" \
+    || die "could not lay out the fake plugin"
+  printf '{ "name": "flight-rules", "version": "9.9.9" }\n' > "$t/.claude-plugin/plugin.json"
+  printf '%s' "$t"
+}
+# stale <repo> <hook>: the project's copy is an older release's, and that release is in the cache.
+stale() {
+  mkdir -p "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git"
+  { cat "$H/../git/$2"; echo "# flight-rules 0.0.1"; } > "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/$2"
+  cp "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/$2" "$1/.ai/hooks/$2"
+}
+PRUN() { (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; }
+T=$(mkplugin); D=$(mkrepo); stale "$D" commit-msg; echo "# own" >> "$D/.ai/hooks/post-merge"
+printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+OUT=$(PRUN)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "the hook exits 0"
+say "$(grep -c 'HOOK_SYNC=auto updated git hooks' <<<"$OUT")" "1" "says it updated hooks"
+say "$(grep -c 'synced commit-msg (flight-rules 9.9.9)' <<<"$OUT")" "1" "…names the hook and the release"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "the stale commit-msg is now the plugin's"
+say "$(grep -c '# own' "$D/.ai/hooks/post-merge")" "1" "the adapted post-merge is untouched"
+say "$(grep -c 'post-merge differs from this' <<<"$OUT")" "1" "…and doctor names it on the same run"
+say "$(grep -c 'commit-msg is the flight-rules' <<<"$OUT")" "0" "doctor no longer reports the synced hook stale"
+rm -rf "$D"
+# Without the key: reported, not written.
+D=$(mkrepo); stale "$D" commit-msg
+OUT=$(PRUN)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "unset: the hook exits 0"
+say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "unset: nothing is synced"
+say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…and doctor reports the stale hook instead"
+rm -rf "$D"
+# auto with no hooks installed at all: that is the owner's install step, not a sync.
+D=$(mkrepo); git -C "$D" config --unset core.hooksPath; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+OUT=$(PRUN)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, no core.hooksPath: the hook exits 0"
+say "$(grep -c 'updated git hooks\|could not update' <<<"$OUT")" "0" "…syncs nothing and reports no failure"
+say "$(grep -c 'core.hooksPath is not set' <<<"$OUT")" "1" "…doctor says the hooks are not installed"
+rm -rf "$D"
+# A GLOBAL core.hooksPath only: `git config core.hooksPath` said "set", and the sync
+# wrote the hooks into ~/.githooks (review, 2026-10-12). Local config is the gate.
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" config --unset core.hooksPath; mkdir -p "$D/fakehome/githooks"
+printf '[core]\n\thooksPath = %s\n' "$D/fakehome/githooks" > "$D/fakehome/.gitconfig"
+OUT=$(PRUN)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, global hooksPath only: the hook exits 0"
+say "$(grep -c 'updated git hooks\|could not update' <<<"$OUT")" "0" "…syncs nothing and reports no failure"
+say "$(ls "$D/fakehome/githooks" | wc -l | tr -d ' ')" "0" "…and writes nothing into the global directory"
+# Doctor reads git's EFFECTIVE config, as git does: the global directory is where git
+# runs hooks from, and it lacks the flight-rules ones — the honest diagnosis.
+say "$(grep -c 'missing from' <<<"$OUT")" "6" "…while doctor reports the global directory as missing every hook"
+rm -rf "$D"
+# Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
+git -C "$D" checkout -qb feature/c; echo c > "$D/f.txt"; git -C "$D" commit -qam "chore: c" --no-verify
+git -C "$D" checkout -q trunk; echo t > "$D/f.txt"; git -C "$D" commit -qam "chore: t" --no-verify
+git -C "$D" merge --no-verify feature/c >/dev/null 2>&1   # conflicts on f.txt, MERGE_HEAD stays
+[ -n "$(git -C "$D" rev-parse -q --verify MERGE_HEAD)" ] || die "the merge did not stop on a conflict"
+OUT=$(PRUN)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-merge: the hook exits 0"
+say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
+say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
+rm -rf "$D"
+# A session-start.sh copied in by hand has no git/ beside it: silent on sync, still runs doctor.
+L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/hooks/agent"; cp "$HOOK" "$L/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/hooks/"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"; git -C "$D" config --unset merge.ff
+OUT=$( (cd "$D" && HOME="$D/fakehome" bash "$L/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "hand-wired, auto: the hook exits 0"
+say "$(grep -c 'updated git hooks\|could not update' <<<"$OUT")" "0" "…and says nothing about syncing"
+say "$(grep -c 'flight-rules doctor' <<<"$OUT")" "1" "…while doctor still runs"
+rm -rf "$D" "$L" "$T"
+
 echo "A detached-HEAD worktree has no branch and is skipped:"
 D=$(mkrepo)
 branch "$D" fix/merged merge
