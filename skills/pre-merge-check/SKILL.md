@@ -40,7 +40,9 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     between cleanups. Gate only suites the project keeps at zero errors; report
     known-debt suites explicitly instead of failing on them.
 6. **Secrets scan** — run the guard's own patterns over the added lines of
-   `git diff <dest>...HEAD`. Prefer the guard's live source: the first of
+   `git diff <dest>...HEAD`: the `+` lines inside hunks, as the guard's `ADDED` awk
+   selects them — a `grep -v '^+++'` header filter also drops an added line that
+   begins `++ ` (#77). Prefer the guard's live source: the first of
    `${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh`,
    `~/.claude/plugins/cache/*/flight-rules/*/hooks/agent/pre-commit-check.sh` (highest
    version), `.ai/hooks/agent/pre-commit-check.sh`, `hooks/agent/pre-commit-check.sh`
