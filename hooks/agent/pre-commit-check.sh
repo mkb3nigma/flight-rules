@@ -733,12 +733,15 @@ scan_repo() {
     else read_failed "$rc" "git diff --cached --name-only" "${NAMES[@]}"; fi
     return; }
 
-  # Added lines only, leading "+" stripped. Each file's `+++ b/path` header is dropped
-  # as its own step: the first version folded that into every pattern as `^\+[^+]`,
-  # which also demanded one character between the "+" and the secret — so an
-  # assignment at column zero, the commonest place for one, was never matched.
-  added_lines() { LC_ALL=C grep -aE '^\+' | LC_ALL=C grep -avE '^\+\+\+ ' | LC_ALL=C sed 's/^+//' | LC_ALL=C tr -d '\001'; }
-  ADDED=$(printf '%s\n' "$STAGED_DIFF" | added_lines)
+  # Added lines only, leading "+" stripped: the `+` lines inside a hunk. Everything from
+  # `diff --git` to the first `@@` is header, as in the git pre-commit hook. A filter on
+  # `^+++ ` instead also dropped an added line whose own text began `++ `, so a key on
+  # it was never scanned (#77). Nor `^\+[^+]` in every pattern, the first version: that
+  # demanded a character between the "+" and the secret, and missed column zero.
+  ADDED=$(set -o pipefail; printf '%s\n' "$STAGED_DIFF" \
+          | LC_ALL=C awk '/^diff --git /{h=1; next} /^@@/{h=0; next} !h && /^\+/{print substr($0,2)}' \
+          | LC_ALL=C tr -d '\001') \
+    || { read_failed $? "reading the added lines (awk | tr)"; return; }
   hit() { printf '%s\n' "$ADDED" | LC_ALL=C grep -aqE "$1"; }
 
   # .env file staged (matches .env, .env.local, path/.env — but not the documented

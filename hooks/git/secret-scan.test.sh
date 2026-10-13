@@ -127,7 +127,11 @@ allows "removing a line that held a key"     'echo "k=$AWS" > f && git add f && 
 blocks "editing an already-tracked .env"     'echo X=1 > .env.development && git add . && git commit -qm x --no-verify' 'echo Y=2 >> .env.development && git commit -qam y'
 blocks "a key written into a tracked .env"  'echo X=1 > .env.development && git add . && git commit -qm x --no-verify' 'echo "K=$AWS" >> .env.development && git commit -qam y'
 blocks "a .env symlink turned into a file" 'ln -s /dev/null .env && git add .env && git commit -qm x --no-verify' 'rm .env && echo X=1 > .env && git add .env && git commit -qm y'
-blocks "an added line that starts with ++" 'printf "++ %s\n" "$AWS" > f && git add f && git commit -qm x'
+# Each of the six key patterns, on a line whose own text begins "++ " — in the diff that
+# is "+++ …", the shape of a file header (#77).
+for v in AWS SK GHP SLACK GOOG PEM; do
+  blocks "an added line that starts with ++ ($v)" "printf '++ %s\\n' \"\$$v\" > f && git add f && git commit -qm x"
+done
 blocks "a key inside a small binary"    'printf "\000\001%s\000\n" "$AWS" > k.dat && git add k.dat && git commit -qm x'
 # The git hook has no timeout to outrun, so it reads every binary whole: it is the
 # backstop for what the agent guard's 1 MB limit skips. The key's position is crossed
