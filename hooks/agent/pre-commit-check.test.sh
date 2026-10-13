@@ -416,7 +416,8 @@ secret_check "flight-rules: allow trailer"    allow src/config.py 'password = "h
 secret_check "provider key in docs still caught" deny docs/setup.md "key: $AKIA"
 secret_check "provider key in locale still caught" deny locales/en.json '{"k": "sk-ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123"}'
 # An added line whose own text begins "++ " is "+++ …" in the diff — a file header's
-# shape, which the line filter dropped, so no pattern saw it (#77). Each of the six.
+# shape, which the line filter dropped, so no pattern saw it (#77). Each of the six;
+# the password literal is a control — its check already tracked the header.
 secret_check "++ line: AWS key"               deny  src/a.py "++ $AKIA"
 secret_check "++ line: sk-… key"              deny  src/a.py "++ $(printf 'sk-%s' ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123-AA)"
 secret_check "++ line: GitHub token"          deny  src/a.py "++ $(printf 'ghp_%s' Abc123Abc123Abc123Abc123Abc123Abc123)"
