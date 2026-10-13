@@ -415,6 +415,16 @@ secret_check "placeholder …-here"             allow src/config.py 'password = 
 secret_check "flight-rules: allow trailer"    allow src/config.py 'password = "hunter2hunter2"  # flight-rules: allow'
 secret_check "provider key in docs still caught" deny docs/setup.md "key: $AKIA"
 secret_check "provider key in locale still caught" deny locales/en.json '{"k": "sk-ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123"}'
+# An added line whose own text begins "++ " is "+++ …" in the diff — a file header's
+# shape, which the line filter dropped, so no pattern saw it (#77). Each of the six;
+# the password literal is a control — its check already tracked the header.
+secret_check "++ line: AWS key"               deny  src/a.py "++ $AKIA"
+secret_check "++ line: sk-… key"              deny  src/a.py "++ $(printf 'sk-%s' ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123-AA)"
+secret_check "++ line: GitHub token"          deny  src/a.py "++ $(printf 'ghp_%s' Abc123Abc123Abc123Abc123Abc123Abc123)"
+secret_check "++ line: Slack token"           deny  src/a.py "++ $(printf 'xox%s' b-123456789012-abcdefghijkl)"
+secret_check "++ line: Google key"            deny  src/a.py "++ $(printf 'AIza%s' SyAbc123Abc123Abc123Abc123Abc123Abc12)"
+secret_check "++ line: private key"           deny  key.pem  "++ $(printf -- '-----BEGIN %s PRIVATE KEY-----' RSA)"
+secret_check "++ line: password literal"      deny  src/a.py "++ $(printf 'pass%s = "%s"' word hunter2hunter2)"
 
 echo "The repo's own diff settings do not hide a staged key, and a .env leaving is not one entering:"
 # scan_case <desc> <expect> <setup> [<command>] — <setup> runs in the fixture repo before

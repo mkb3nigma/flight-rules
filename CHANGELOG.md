@@ -103,6 +103,11 @@ reported. `flight-rules: allow` has no line to sit on in a binary, so a checked 
 positive there is committed by you, or kept under a `fixtures/` path. A binary over
 1 MB is still not read by the agent guard; the git hook reads it for keys.
 
+**An added line starting `++ ` is scanned for keys (#77).** In the diff it reads
+`+++ …`, the shape of a file header, and the agent guard dropped it before the six key
+patterns ran: `++ AKIA…` was committed with the agent guard's leave. The git
+`pre-commit` hook already read it, and still refuses it.
+
 **A release PR needs `/dg` on its whole diff.** `pr-create` step 2b: `/dg
 origin/main...<sha>` on the commit step 2a tested, with each finding's disposition in
 the PR body; a critical finding is yours to decide. The `release review` check fails a
