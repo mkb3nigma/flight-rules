@@ -342,6 +342,25 @@ say "$(ctx <<<"$J" | grep -c 'Branch: fix/merged')" "1" "the worktree reminder i
 say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on the user's screen for it"
 rm -rf "$D"
 
+echo "Without jq, the python3 fallback does not run the project's own json.py:"
+# python3 puts the working directory — the project — first on its import path, so a
+# json.py there ran at session start (security review, 2026-10-13). Both SessionStart
+# hooks, each with the jq branch disabled in a copy so the fallback is what runs.
+NJ=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$NJ/hooks/agent" "$NJ/rules"
+sed 's/command -v jq >/command -v no-such-jq >/' "$HOOK" > "$NJ/hooks/agent/session-start.sh" \
+  && sed 's/command -v jq >/command -v no-such-jq >/' "$H/../session-start-rules.sh" > "$NJ/hooks/session-start-rules.sh" \
+  && cp "$H/../flight-rules-doctor.sh" "$NJ/hooks/" && cp "$H/../../rules/engineering-principles.md" "$NJ/rules/" \
+  || die "could not lay out the no-jq copy"
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+printf 'open("%s/PWNED", "w").write("x")\nfrom json import *\n' "$D" > "$D/json.py"
+J=$( (cd "$D" && HOME="$D/fakehome" bash "$NJ/hooks/agent/session-start.sh" 2>/dev/null) )
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "session-start.sh: the python3 fallback still prints the JSON"
+say "$([ -e "$D/PWNED" ] && echo ran || echo not)" "not" "…and the project's json.py did not run"
+J=$( (cd "$D" && bash "$NJ/hooks/session-start-rules.sh" 2>/dev/null) )
+say "$(jq -r '.hookSpecificOutput.additionalContext' <<<"$J" 2>/dev/null | grep -c 'Engineering Principles')" "1" "session-start-rules.sh: the fallback still injects the rules"
+say "$([ -e "$D/PWNED" ] && echo ran || echo not)" "not" "…and the project's json.py did not run"
+rm -rf "$D" "$NJ"
+
 echo "A detached-HEAD worktree has no branch and is skipped:"
 D=$(mkrepo)
 branch "$D" fix/merged merge

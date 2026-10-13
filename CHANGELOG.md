@@ -54,6 +54,12 @@ still gets everything. In a repo with no git hooks installed:
 | on your screen at session start | nothing | **the doctor message** |
 | doctor's `core.hooksPath` line | `(hooks/git/install.sh, …)` — a path inside the plugin | **the full command**, with the plugin's real path, that installs into `.ai/hooks/` |
 
+**A project's own `json.py` no longer runs at session start.** On a machine without
+`jq`, the session-start hooks build their JSON with `python3`, which imported modules
+from the project directory first, so a `json.py` in a cloned repo ran as code when a
+session opened. They now run Python isolated (`-I`). Reproduced on 0.23.0's
+`session-start-rules.sh` and fixed in both hooks.
+
 **Doctor reports a git hook that is behind, not only one that is missing.** Standing in
 a project whose `commit-msg` is the 0.22.0 copy, every other hook current:
 

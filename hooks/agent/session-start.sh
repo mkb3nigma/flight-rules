@@ -150,13 +150,15 @@ CONTEXT="$FOR_ASSISTANT"
 
 }$REMINDER"
 # JSON built by jq or python3, as session-start-rules.sh does. With neither, plain
-# stdout: the assistant still gets it, and the assistant is who relays it.
+# stdout: the assistant still gets it, and the assistant is who relays it. `-I`: this
+# runs in the project, and without it a json.py there is imported and run (security
+# review, 2026-10-13 — reproduced).
 if command -v jq >/dev/null 2>&1; then
   jq -n --arg u "$FOR_USER" --arg c "$CONTEXT" \
     '(if $u == "" then {} else {systemMessage: $u} end)
      + {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'
 elif command -v python3 >/dev/null 2>&1; then
-  python3 -c 'import json, sys
+  python3 -I -c 'import json, sys
 out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": sys.argv[2]}}
 if sys.argv[1]: out["systemMessage"] = sys.argv[1]
 print(json.dumps(out))' "$FOR_USER" "$CONTEXT"
