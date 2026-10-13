@@ -387,6 +387,15 @@ for scope in local global; do
   say "$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | jq -r 'has("systemMessage")')" "false" "…the next day either"
   rm -rf "$F"
 done
+# flight-rules' hooks at core.hooksPath = ~/…: read raw, the path was joined to the repo
+# root, the gate was not found there, and an adopted project got no screen.
+F=$(mkrepo); rm "$F/.ai/flight-rules.conf"; git -C "$F" config --unset merge.ff
+mkdir -p "$F/fakehome/hk"; cp "$F"/.ai/hooks/pre-* "$F"/.ai/hooks/commit-msg "$F"/.ai/hooks/post-merge "$F"/.ai/hooks/reference-transaction "$F/fakehome/hk/"
+git -C "$F" config core.hooksPath '~/hk'
+J=$(raw "$F")
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "flight-rules' hooks at ~/hk: adopted, the ❌ is on screen"
+say "$(ctx <<<"$J" | grep -c 'does not exist')" "0" "…and the assistant is not told the path is missing"
+rm -rf "$F"
 # Committed flight-rules hooks beside another tool's GLOBAL hooksPath: counting
 # .ai/hooks/ as adoption put a daily `cp` into that tool's directory on screen.
 F=$(mkrepo); git -C "$F" config --unset core.hooksPath; rm "$F/.ai/flight-rules.conf"

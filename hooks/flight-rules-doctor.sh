@@ -62,7 +62,9 @@ hook_marker() {
 }
 
 # ── 1. Git hooks: path set, directory present, every bare-named hook executable ──
-HOOKS_PATH=$(git config core.hooksPath 2>/dev/null || true)
+# --path: git expands a leading ~ in this value. Read raw, ~/x was joined to the repo
+# root and a working gate reported as "does not exist".
+HOOKS_PATH=$(git config --path core.hooksPath 2>/dev/null || true)
 if [[ -z "$HOOKS_PATH" ]]; then
   # A fresh plugin install lands here, and the bare "hooks/git/install.sh" this used to
   # print named a path inside the plugin that the user had no way to find (2026-10-13).

@@ -118,7 +118,7 @@ fr_hooks() { [ -f "$1/pre-merge-commit" ] && grep -q 'PR_ONLY' "$1/pre-merge-com
 HINT_FILE=""
 if [ -n "$DOCTOR_SCREEN" ]; then
   TOP=$(git rev-parse --show-toplevel 2>/dev/null)
-  HP=$(git config core.hooksPath 2>/dev/null)
+  HP=$(git config --path core.hooksPath 2>/dev/null)   # --path: git expands a leading ~
   case "$HP" in ""|/*) HP_DIR="$HP" ;; *) HP_DIR="$TOP/$HP" ;; esac
   if [ -z "$TOP" ]; then
     DOCTOR_SCREEN=""

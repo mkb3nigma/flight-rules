@@ -202,6 +202,15 @@ JSON
 say "$(rc "$D")" "1" "settings.json points at a missing script → problem"
 say "$(has "$D" "does not exist")" "0" "…and names the path"
 rm -rf "$D"
+# 1b. core.hooksPath = ~/… is a path git expands; read raw, doctor joined it to the
+#     repo root and reported a working gate as "does not exist — git runs NO hooks".
+D=$(mkrepo); mkdir -p "$D/fakehome"; mv "$D/.ai/hooks" "$D/fakehome/hk"
+git -C "$D" config core.hooksPath '~/hk'
+say "$(has "$D" "does not exist")" "1" "core.hooksPath=~/hk that exists: no dangling-path line"
+OUT=$(run "$D" | tail -n +2)
+say "$(grep -c 'missing from' <<<"$OUT")-$(grep -c '✅ core.hooksPath=' <<<"$OUT")" "0-1" "…every hook found there, in the same run that names the path as fine"
+say "$(has "$D" "core.hooksPath=$D/fakehome/hk")" "0" "…and the expanded path is named as fine"
+rm -rf "$D"
 
 # 2b. …but a ${CLAUDE_PLUGIN_ROOT} path points into the installed plugin, not into this
 #     repo, so it must not be reported as missing.
