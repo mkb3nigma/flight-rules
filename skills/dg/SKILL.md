@@ -42,11 +42,14 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    subject cold: no personas, no access to their findings. It enumerates correctness
    bugs, security issues, design weaknesses, and unstated assumptions with severity
    (critical/important/minor) and confidence. The brief asks it to end with the line
-   `PRE-REVIEW COMPLETE: <n> findings`; a run that exits non-zero or lacks that line is a
-   failure, whatever else it printed — a dead turn (quota, auth, timeout) can print text
-   that reads as a clean verdict (0.24.0 release review). On failure, continue without
-   it and say so in the header: `⚠️ unavailable — <why>`. If captured, brief both
-   personas: *"An independent senior reviewer flagged the following
+   `PRE-REVIEW COMPLETE: <n> findings`. The run counts only if the last non-empty line
+   of its final message — stdout alone (`codex exec -o <file>`), or a subagent's reply,
+   never a transcript that echoes the brief — is that line with a number for `<n>`, and
+   a CLI run also exits 0. Anything else is a failure, whatever else it printed: a dead
+   turn (quota, auth, timeout) can print text that reads as a clean verdict (0.24.0
+   release review), and a failed `codex exec` echoes the brief, marker and all, into
+   stderr. On failure, continue without it and say so in the header:
+   `⚠️ unavailable — <why>`. If captured, brief both personas: *"An independent senior reviewer flagged the following
    — agree, escalate, or dispute each point as you see fit."*
 
    **Prefer a reviewer from a different model family than the one running this skill,**
