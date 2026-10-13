@@ -99,8 +99,9 @@ Then start a new session in the project. The first one shows a `flight-rules doc
 message with the command that installs the git hooks (the merge gate and the secret
 scan) into `.ai/hooks/`; run it and commit `.ai/hooks/`. A plugin cannot do this step
 itself: the hooks are the project's own committed files, and Claude Code has no install
-event for a plugin to act on. Every other clone runs `bash .ai/hooks/install.sh` once —
-git config is per clone, and doctor says so there. (The message needs `jq` or
+event for a plugin to act on. Every other clone needs them wired once, because git config is
+per clone: its first session's doctor message prints the command (the plugin's
+`install.sh`, which wires the committed hooks without replacing them). (The message needs `jq` or
 `python3`; without either, doctor's findings reach only the assistant.)
 
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run

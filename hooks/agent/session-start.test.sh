@@ -368,7 +368,25 @@ rm -rf "$F"
 D=$(mkrepo); git -C "$D" config --unset merge.ff
 raw "$D" >/dev/null; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$(raw "$D" | usr | grep -c 'merge.ff')" "1" "a project using flight-rules: a ❌ is on screen again the next day"
+# From a subdirectory too: adoption is judged at the repo root, not the cwd.
+mkdir -p "$D/sub"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$( (cd "$D/sub" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) | usr | grep -c 'merge.ff')" "1" "…and from a subdirectory of it"
 rm -rf "$D"
+# Another tool's hooks (husky): any core.hooksPath counted as adoption, and the repo
+# got eight ❌ a day plus a command that wrote the gates into .husky/ (fix review,
+# 2026-10-13). The assistant is told; the screen never is.
+for scope in local global; do
+  F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q || die "git init failed in $F"
+  mkdir -p "$F/.husky" "$F/fakehome"; printf '#!/bin/sh\nnpx lint-staged\n' > "$F/.husky/pre-commit"
+  if [ "$scope" = local ]; then git -C "$F" config core.hooksPath .husky
+  else printf '[core]\n\thooksPath = %s\n' "$F/.husky" > "$F/fakehome/.gitconfig"; fi
+  J=$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) )
+  say "$(ctx <<<"$J" | grep -c 'missing from')" "5" "husky as $scope core.hooksPath: the assistant is told"
+  say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on screen"
+  rm -f "$F"/fakehome/.claude/hooks/.worktree-check-*
+  say "$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | jq -r 'has("systemMessage")')" "false" "…the next day either"
+  rm -rf "$F"
+done
 
 echo "The sync command reaches the screen only beside a ❌ about a hook copy:"
 # The ⚠️ that also asks for it is not shown, and a command next to an unrelated ❌ read
@@ -382,6 +400,13 @@ rm -rf "$D"
 D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
 say "$(raw "$D" | usr | grep -c 'to update: .*--stale-only')" "1" "a missing hook: the --stale-only sync command is on screen"
 rm -rf "$D"
+# The stale copy is the case this exists for (AppliHawk); the filter matches doctor's
+# wording, so a rewording that drops it fails here (fix review, 2026-10-13).
+D=$(mkrepo); stale "$D" commit-msg
+J=$(raw "$D")
+say "$(usr <<<"$J" | grep -c 'commit-msg is the flight-rules 0.0.1 copy')" "1" "a stale hook copy: the ❌ is on screen"
+say "$(usr <<<"$J" | grep -c 'to update: .*--stale-only')" "1" "…with the sync command"
+rm -rf "$D"
 
 echo "Without jq or python3, plain text for the assistant, and no claim the user saw it:"
 NJ=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$NJ/hooks/agent"; cp "$H/../flight-rules-doctor.sh" "$NJ/hooks/"
@@ -392,6 +417,12 @@ say "$(grep -c "merge.ff is 'unset'" <<<"$OUT")" "1" "the doctor line is in the 
 say "$(grep -cE "Already on the user's screen|user was shown" <<<"$OUT")" "0" "…without saying the user saw it"
 say "$(grep -c '^rc=0$' <<<"$OUT")" "1" "…and the hook exits 0"
 rm -rf "$D"
+# The once-ever hint is not spent by output that never reached the screen.
+F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q || die "git init failed in $F"
+(cd "$F" && HOME="$F/fakehome" bash "$NJ/hooks/agent/session-start.sh" >/dev/null 2>&1)
+rm -f "$F"/fakehome/.claude/hooks/.worktree-check-*
+say "$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | usr | grep -c 'core.hooksPath is not set')" "1" "a hint given as plain text is shown on the next JSON run"
+rm -rf "$F"
 # A python3 that fails — the macOS stub without Command Line Tools — falls back too.
 sed 's/command -v jq >/command -v no-such-jq >/; s/python3 -I -c /false /' "$HOOK" > "$NJ/hooks/agent/session-start.sh" || die "stub copy"
 D=$(mkrepo); git -C "$D" config --unset merge.ff

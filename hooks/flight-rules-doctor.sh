@@ -67,11 +67,14 @@ if [[ -z "$HOOKS_PATH" ]]; then
   # A fresh plugin install lands here, and the bare "hooks/git/install.sh" this used to
   # print named a path inside the plugin that the user had no way to find (2026-10-13).
   # With the plugin's own copy beside this script, print the command that installs.
-  # A clone of a project that already committed its hooks needs only its own install
-  # run: the plugin's --from would replace committed hooks the project adapted
-  # (pre-review, 2026-10-13). core.hooksPath and merge.ff are per-clone config.
-  if [[ -f "$ROOT/.ai/hooks/install.sh" ]]; then
-    bad "core.hooksPath is not set — this clone is not running the project's committed hooks. To install them: bash .ai/hooks/install.sh   (git config is per clone; it also sets merge.ff false)"
+  # A clone of a project that already committed its hooks needs them wired, not
+  # replaced: --from would overwrite hooks the project adapted (pre-review, 2026-10-13).
+  # The PLUGIN's install.sh does it, never the repo's own copy — a cloned repo can
+  # commit any script under that name, and this line is on the user's screen in
+  # flight-rules' voice (security review, 2026-10-13). core.hooksPath and merge.ff are
+  # per-clone config.
+  if [[ -f "$ROOT/.ai/hooks/pre-merge-commit" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .ai/hooks/. To wire them up: bash %q   (git config is per clone; it also sets merge.ff false. Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$GIT_HOOKS_SRC/install.sh")"
   elif [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
     bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %q --from %q   (it also sets merge.ff false; then commit .ai/hooks/)' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC")"
   else

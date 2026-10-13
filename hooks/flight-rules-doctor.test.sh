@@ -60,12 +60,18 @@ echo "A fresh repo is given a command that installs, not a path inside the plugi
 # The printed command is run as printed, and doctor afterwards is the proof it works.
 D=$(cd "$(mktemp -d)" && pwd -P); git -C "$D" init -q -b main || die "git init failed in $D"
 OUT=$(run "$D")
-# A clone of a project that committed its hooks: its own install, not the plugin's
-# --from, which would replace hooks the project adapted (pre-review, 2026-10-13).
+# A clone of a project that committed its hooks: wired by the PLUGIN's install.sh
+# without --from, which would replace hooks the project adapted (pre-review), and never
+# by the repo's own install.sh, which a cloned repo can make anything (security review,
+# 2026-10-13). The repo's copy here would print PLANTED if it were the one recommended.
 C=$(mkrepo); git -C "$C" config --unset core.hooksPath; git -C "$C" config --unset merge.ff
-cp "$H/git/install.sh" "$C/.ai/hooks/"; echo "# my own tweak" >> "$C/.ai/hooks/post-merge"
-say "$(has "$C" "To install them: bash .ai/hooks/install.sh")" "0" "a clone with committed hooks is told to run its own install.sh"
-(cd "$C" && bash .ai/hooks/install.sh >/dev/null 2>&1); say "$?" "0" "…which runs as printed"
+printf '#!/bin/bash\necho PLANTED > "%s/PLANTED"\n' "$C" > "$C/.ai/hooks/install.sh"
+echo "# my own tweak" >> "$C/.ai/hooks/post-merge"
+CMD=$(run "$C" | sed -n 's/.*To wire them up: \(bash .*\)   (git config is per clone.*/\1/p')
+say "$(printf '%s' "$CMD" | grep -c "$H/git/install.sh")" "1" "a clone with committed hooks is given the plugin's install.sh"
+say "$(printf '%s' "$CMD" | grep -c -- '--from\|\.ai/hooks/install.sh')" "0" "…not --from, and not the repo's own copy"
+[ -n "$CMD" ] && (cd "$C" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…which runs as printed"
+say "$([ -e "$C/PLANTED" ] && echo ran || echo not)" "not" "…without running the repo's install.sh"
 say "$(run "$C" | grep -cE 'core.hooksPath is not set|merge.ff is')" "0" "…and afterwards doctor reports neither"
 say "$(grep -c 'my own tweak' "$C/.ai/hooks/post-merge")" "1" "…with the project's adapted hook kept"
 rm -rf "$C"

@@ -391,8 +391,9 @@ Guards that fire on the assistant's own events, before git ever runs:
   a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
   so they get cleaned up. Doctor's ❌ problems, the command that fixes them, and a hook sync
   are printed as `systemMessage`, so they appear on the user's screen — in a project
-  that uses flight-rules (a local `core.hooksPath` or `.ai/flight-rules.conf`); any
-  other repo is shown the install hint once, and a directory outside a repo nothing.
+  that uses flight-rules (`.ai/flight-rules.conf` at the root, or flight-rules' hooks
+  installed or committed). A repo with no `core.hooksPath` is shown the install hint
+  once; one running another tool's hooks (husky), or a directory outside a repo, nothing.
   ⚠️ warnings never go on screen, since some are true by choice and would repeat daily.
   Everything goes to the assistant as `additionalContext` (with neither `jq` nor `python3`, plain stdout, which only the
   assistant sees). Reads

@@ -14,11 +14,15 @@
 # live 2.1.296 session, 2026-10-13: a plain-stdout marker reached the model and not the
 # screen, a systemMessage the screen and not the model).
 #
-# The screen is for projects that use flight-rules — a local core.hooksPath or a
-# .ai/flight-rules.conf. A plugin enabled for the whole account opens every repo, and a
-# daily ❌ there, or in a directory that is no repo at all, is the nag that gets it
-# switched off (fix review, 2026-10-13). A repo that has neither is shown the install
-# hint once, ever; outside a repo nothing is shown. The assistant gets all of it daily.
+# The screen is for projects that use flight-rules — a .ai/flight-rules.conf at the
+# repo root, or a flight-rules hook where git runs hooks or in .ai/hooks/. A plugin
+# enabled for the whole account opens every repo, and a daily ❌ there, or in a
+# directory that is no repo at all, is the nag that gets it switched off (fix review,
+# 2026-10-13). Any core.hooksPath counted as adoption at first, and a husky repo got
+# eight ❌ a day and a command that wrote the gates into .husky/ (fix review, same
+# day). A repo with no core.hooksPath at any scope is shown the install hint once,
+# ever; one whose hooks are someone else's, or no repo, is shown nothing. The
+# assistant gets all of it daily.
 
 PROJECT_ROOT=$(pwd)
 
@@ -106,12 +110,22 @@ $PROBLEMS"
 $(printf '%s\n' "$PROBLEMS" | grep -E "$_show")"
   fi
 fi
+# fr_hooks <dir>: does it hold flight-rules' gate? Its marker, as doctor's hook_marker.
+fr_hooks() { [ -f "$1/pre-merge-commit" ] && grep -q 'PR_ONLY' "$1/pre-merge-commit" 2>/dev/null; }
+HINT_FILE=""
 if [ -n "$DOCTOR_SCREEN" ]; then
-  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  TOP=$(git rev-parse --show-toplevel 2>/dev/null)
+  HP=$(git config core.hooksPath 2>/dev/null)
+  case "$HP" in ""|/*) HP_DIR="$HP" ;; *) HP_DIR="$TOP/$HP" ;; esac
+  if [ -z "$TOP" ]; then
     DOCTOR_SCREEN=""
-  elif [ -z "$(git config --local core.hooksPath 2>/dev/null)" ] && [ ! -f "$PROJECT_ROOT/.ai/flight-rules.conf" ]; then
-    HINT_FILE="$FLAG_DIR/.flight-rules-hinted-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')"
-    if [ -f "$HINT_FILE" ]; then DOCTOR_SCREEN=""; else touch "$HINT_FILE"; fi
+  elif [ -f "$TOP/.ai/flight-rules.conf" ] || fr_hooks "$TOP/.ai/hooks" || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
+    :   # adopted: shown daily
+  elif [ -n "$HP" ]; then
+    DOCTOR_SCREEN=""   # another tool's hooks; adopting flight-rules there is a choice
+  else
+    HINT_FILE="$FLAG_DIR/.flight-rules-hinted-$(printf '%s' "$TOP" | tr '/' '-')"
+    [ -f "$HINT_FILE" ] && { DOCTOR_SCREEN=""; HINT_FILE=""; }
   fi
 fi
 FOR_USER="$SYNC_MSG${SYNC_MSG:+${DOCTOR_SCREEN:+
@@ -179,18 +193,21 @@ CONTEXT="$FOR_ASSISTANT$NOTE${FOR_ASSISTANT:+${REMINDER:+
 # JSON built by jq or python3, as session-start-rules.sh does. With neither, plain
 # stdout: the assistant still gets it, and the assistant is who relays it. `-I`: this
 # runs in the project, and without it a json.py there is imported and run (security
-# review, 2026-10-13 — reproduced). A python3 that fails — macOS's stub without the
+# review, 2026-10-13 — reproduced). The once-ever hint is spent only when it went out
+# as JSON, i.e. reached the screen. A python3 that fails — macOS's stub without the
 # Command Line Tools exits non-zero with no output — falls back to plain text, not
 # to silence.
 if command -v jq >/dev/null 2>&1; then
   jq -n --arg u "$FOR_USER" --arg c "$CONTEXT" \
     '(if $u == "" then {} else {systemMessage: $u} end)
-     + {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'
+     + {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}' \
+    && { [ -z "$HINT_FILE" ] || touch "$HINT_FILE" 2>/dev/null; true; }
 elif command -v python3 >/dev/null 2>&1; then
   python3 -I -c 'import json, sys
 out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": sys.argv[2]}}
 if sys.argv[1]: out["systemMessage"] = sys.argv[1]
-print(json.dumps(out))' "$FOR_USER" "$CONTEXT" 2>/dev/null || printf '%s\n' "$PLAIN"
+print(json.dumps(out))' "$FOR_USER" "$CONTEXT" 2>/dev/null \
+    && { [ -z "$HINT_FILE" ] || touch "$HINT_FILE" 2>/dev/null; true; } || printf '%s\n' "$PLAIN"
 else
   printf '%s\n' "$PLAIN"
 fi
