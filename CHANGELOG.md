@@ -129,7 +129,8 @@ to end with `PRE-REVIEW COMPLETE: <n> findings`; a run whose final message does 
 end with that line, or a CLI run that exits non-zero, is reported as
 `⚠️ unavailable — <why>` once a same-family reviewer has failed the same check too.
 A failed Codex turn in this release's own review printed text that read as a clean
-verdict.
+verdict. Codex or any second model being unavailable is a warning in the header, never
+a reason to stop the review.
 
 ## 0.23.0 — 2026-10-12
 
