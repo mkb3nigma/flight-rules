@@ -64,7 +64,14 @@ hook_marker() {
 # ── 1. Git hooks: path set, directory present, every bare-named hook executable ──
 HOOKS_PATH=$(git config core.hooksPath 2>/dev/null || true)
 if [[ -z "$HOOKS_PATH" ]]; then
-  bad "core.hooksPath is not set — the merge gate is not installed (hooks/git/install.sh, or: git config core.hooksPath <dir>)"
+  # A fresh plugin install lands here, and the bare "hooks/git/install.sh" this used to
+  # print named a path inside the plugin that the user had no way to find (2026-10-13).
+  # With the plugin's own copy beside this script, print the command that installs.
+  if [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %q --from %q   (then commit .ai/hooks/)' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC")"
+  else
+    bad "core.hooksPath is not set — the merge gate is not installed (flight-rules' hooks/git/install.sh, or: git config core.hooksPath <dir>)"
+  fi
 else
   HOOKS_DIR="$HOOKS_PATH"; [[ "$HOOKS_DIR" = /* ]] || HOOKS_DIR="$ROOT/$HOOKS_DIR"
   if [[ ! -d "$HOOKS_DIR" ]]; then

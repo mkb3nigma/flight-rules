@@ -389,7 +389,11 @@ Guards that fire on the assistant's own events, before git ever runs:
   Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project, and again after
   a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
-  so they get cleaned up. Reads
+  so they get cleaned up. Doctor's ❌ problems, the command that fixes them, and a hook sync
+  are printed as `systemMessage`, so they appear on the user's screen; ⚠️ warnings do
+  not, since some are true by choice and would repeat daily. Everything goes to the
+  assistant as `additionalContext` (with neither `jq` nor `python3`, plain stdout, which only the
+  assistant sees). Reads
   `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
   A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
   reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.

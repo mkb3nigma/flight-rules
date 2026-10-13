@@ -55,6 +55,18 @@ say "$(rc "$D")" "1" "no core.hooksPath → problem"
 say "$(has "$D" "core.hooksPath is not set")" "0" "…and says so"
 rm -rf "$D"
 
+echo "A fresh repo is given a command that installs, not a path inside the plugin:"
+# The bare "hooks/git/install.sh" named nothing a fresh plugin user could run (2026-10-13).
+# The printed command is run as printed, and doctor afterwards is the proof it works.
+D=$(cd "$(mktemp -d)" && pwd -P); git -C "$D" init -q -b main || die "git init failed in $D"
+OUT=$(run "$D")
+CMD=$(printf '%s\n' "$OUT" | sed -n 's/.*To install them into \.ai\/hooks\/: \(bash .*--from [^ ]*\).*/\1/p')
+say "$([ -n "$CMD" ] && echo printed)" "printed" "no core.hooksPath → the full install command is printed"
+[ -n "$CMD" ] && (cd "$D" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…it runs as printed"
+say "$(run "$D" | grep -cE 'core.hooksPath is not set|missing from|merge.ff is')" "0" "…and afterwards doctor reports no hook or merge.ff problem"
+say "$(has "$D" "core.hooksPath=.ai/hooks")" "0" "…with the relative path installed"
+rm -rf "$D"
+
 D=$(mkrepo); git -C "$D" config core.hooksPath .ai/gone
 say "$(rc "$D")" "1" "hooksPath at a missing directory → problem"
 say "$(has "$D" "git runs NO hooks")" "0" "…and says git runs nothing"

@@ -1,8 +1,17 @@
 #!/bin/bash
 # Agent hook: Worktree Cleanup Reminder
 # Wire as a Claude Code SessionStart hook (see hooks/README.md).
-# Runs the stale-worktree check at most once per day (flag file); stdout is added
-# to the assistant's context for the session.
+# Runs the stale-worktree check at most once per day (flag file).
+#
+# Output is one JSON object. What the PERSON must act on — doctor's ❌ problems, a hook
+# sync — goes in `systemMessage`, which Claude Code shows the user; everything goes in
+# `additionalContext` for the assistant. Doctor's ⚠️ warnings stay off the screen: some
+# are true by choice (no conf in a main-only project) and could only be silenced by
+# changing the project, so on screen they would repeat daily until the plugin was
+# switched off (review, 2026-10-13). Plain stdout reaches the assistant only, so a
+# fresh plugin user was never shown the install command doctor printed (measured in a
+# live 2.1.296 session, 2026-10-13: a plain-stdout marker reached the model and not the
+# screen, a systemMessage the screen and not the model).
 
 PROJECT_ROOT=$(pwd)
 
@@ -50,6 +59,7 @@ touch "$LAST_RUN_FILE"
 # unattended write to a tracked file is what makes `--continue` refuse.
 HOOK_SYNC="$(conf_get HOOK_SYNC)"
 GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../git" 2>/dev/null && pwd)"
+SYNC_MSG=$(
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
    && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ] \
    && ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 \
@@ -69,20 +79,28 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     echo ""
   fi
 fi
+)
 
 # Is the enforcement actually installed? Silent when it is.
 DOCTOR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/flight-rules-doctor.sh"
+DOCTOR_HEAD="🩺 flight-rules doctor — the enforcement is not fully installed here:"
+DOCTOR_MSG=""; DOCTOR_SCREEN=""
 if [ -x "$DOCTOR" ]; then
   PROBLEMS=$("$DOCTOR" --problems-only 2>/dev/null)
-  if [ -n "$PROBLEMS" ]; then
-    echo "🩺 flight-rules doctor — the enforcement is not fully installed here:"
-    echo "$PROBLEMS"
-    echo ""
+  [ -n "$PROBLEMS" ] && DOCTOR_MSG="$DOCTOR_HEAD
+$PROBLEMS"
+  # On screen: the ❌ lines and the command that fixes them, only when there is a ❌.
+  if printf '%s\n' "$PROBLEMS" | grep -q '❌'; then
+    DOCTOR_SCREEN="$DOCTOR_HEAD
+$(printf '%s\n' "$PROBLEMS" | grep -E '❌|^[[:space:]]+to update:')"
   fi
 fi
+FOR_USER="$SYNC_MSG${SYNC_MSG:+${DOCTOR_SCREEN:+
+}}$DOCTOR_SCREEN"
 
 WORKTREES_DIR="$PROJECT_ROOT/$WORKTREE_DIR"
 
+REMINDER=$(
 if [ ! -d "$WORKTREES_DIR" ]; then
   exit 0
 fi
@@ -119,5 +137,30 @@ if [ -n "$STALE" ]; then
   echo "  git worktree remove $WORKTREE_DIR/<name>"
   echo "  git branch -d <branch-name>"
 fi
+)
 
+FOR_ASSISTANT="$SYNC_MSG${SYNC_MSG:+${DOCTOR_MSG:+
+}}$DOCTOR_MSG"
+[ -n "$FOR_ASSISTANT$REMINDER" ] || exit 0
+CONTEXT="$FOR_ASSISTANT"
+[ -n "$FOR_USER" ] && CONTEXT="$CONTEXT
+
+(The user was shown the sync result and the ❌ lines above at session start; the ⚠️ lines were not shown to them.)"
+[ -n "$REMINDER" ] && CONTEXT="${CONTEXT:+$CONTEXT
+
+}$REMINDER"
+# JSON built by jq or python3, as session-start-rules.sh does. With neither, plain
+# stdout: the assistant still gets it, and the assistant is who relays it.
+if command -v jq >/dev/null 2>&1; then
+  jq -n --arg u "$FOR_USER" --arg c "$CONTEXT" \
+    '(if $u == "" then {} else {systemMessage: $u} end)
+     + {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -c 'import json, sys
+out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": sys.argv[2]}}
+if sys.argv[1]: out["systemMessage"] = sys.argv[1]
+print(json.dumps(out))' "$FOR_USER" "$CONTEXT"
+else
+  printf '%s\n' "$CONTEXT"
+fi
 exit 0
