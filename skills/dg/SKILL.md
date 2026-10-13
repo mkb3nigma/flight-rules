@@ -41,8 +41,12 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
    subject cold: no personas, no access to their findings. It enumerates correctness
    bugs, security issues, design weaknesses, and unstated assumptions with severity
-   (critical/important/minor) and confidence. On failure, continue without it. If
-   captured, brief both personas: *"An independent senior reviewer flagged the following
+   (critical/important/minor) and confidence. The brief asks it to end with the line
+   `PRE-REVIEW COMPLETE: <n> findings`; a run that exits non-zero or lacks that line is a
+   failure, whatever else it printed — a dead turn (quota, auth, timeout) can print text
+   that reads as a clean verdict (0.24.0 release review). On failure, continue without
+   it and say so in the header: `⚠️ unavailable — <why>`. If captured, brief both
+   personas: *"An independent senior reviewer flagged the following
    — agree, escalate, or dispute each point as you see fit."*
 
    **Prefer a reviewer from a different model family than the one running this skill,**
@@ -101,7 +105,7 @@ place a long verdict turns back into paragraphs.
 
 ```markdown
 ## Review: <subject>
-> Pre-review: ✅ included | ⚠️ unavailable — skipped
+> Pre-review: ✅ included | ⚠️ unavailable — <why>
 
 ## Decisions waiting
 | # | Decision | Recommendation |
