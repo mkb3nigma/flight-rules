@@ -43,9 +43,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    bugs, security issues, design weaknesses, and unstated assumptions with severity
    (critical/important/minor) and confidence.
 
-   **A second model being unavailable never stops the review.** Codex (or whichever
-   cross-family reviewer the project wires) out of quota, not installed, or failing is
-   a warning: say so in the header, run the pre-review as a same-family subagent, and
+   **A second model being unavailable never stops the review.** A cross-family reviewer
+   the project wires (Codex, say) that is out of quota, missing, or failing is a
+   warning: say so in the header, run the pre-review as a same-family subagent, and
    keep going. Only the check below decides whether a run counts.
 
    The brief gives the line `PRE-REVIEW COMPLETE: <n> findings` and asks for it as the
@@ -64,9 +64,14 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    timeout) can print text that reads as a clean verdict (0.24.0 release review). A
    failed cross-family run is the warning above: note it and fall back to a same-family
    subagent under the same check; only if that fails too, continue without a
-   pre-review, with the header `⚠️ unavailable — <why>`. If captured, brief both personas: *"An independent senior
-   reviewer flagged the following — agree, escalate, or dispute each point as you see
-   fit."*
+   pre-review. The header's `Pre-review:` line is one of:
+   - `✅ <reviewer>` — it ran (name the model; a same-family one with none wired is
+     no warning);
+   - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
+   - `⚠️ unavailable — <why>` — no pre-review counted.
+
+   If captured, brief both personas: *"An independent senior reviewer flagged the
+   following — agree, escalate, or dispute each point as you see fit."*
 
    **Prefer a reviewer from a different model family than the one running this skill,**
    whenever the environment can reach one. The step is called *independent*, and a
@@ -127,7 +132,7 @@ place a long verdict turns back into paragraphs.
 
 ```markdown
 ## Review: <subject>
-> Pre-review: ✅ included — <reviewer> [⚠️ <cross-family reviewer> unavailable — <why>] | ⚠️ unavailable — <why>
+> Pre-review: <one of the three forms in step 2>
 
 ## Decisions waiting
 | # | Decision | Recommendation |
