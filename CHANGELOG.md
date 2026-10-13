@@ -128,6 +128,8 @@ found by `/dg` on the release diff (aa4ca42e, 2026-10-12).
 to end with `PRE-REVIEW COMPLETE: <n> findings`; a run whose final message does not
 end with that line, or a CLI run that exits non-zero, is reported as
 `⚠️ unavailable — <why>` once a same-family reviewer has failed the same check too.
+Codex or any second model being unavailable is a warning in the header, never a
+reason to stop the review.
 A failed Codex turn in this release's own review printed text that read as a clean
 verdict.
 

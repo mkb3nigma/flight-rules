@@ -41,10 +41,17 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
    subject cold: no personas, no access to their findings. It enumerates correctness
    bugs, security issues, design weaknesses, and unstated assumptions with severity
-   (critical/important/minor) and confidence. The brief gives the line
-   `PRE-REVIEW COMPLETE: <n> findings` and asks for it as the last line, verbatim and
-   unformatted, `<n>` a number and `findings` even for 0 or 1. The run counts only if
-   you read that line yourself as the last non-empty line of its final message:
+   (critical/important/minor) and confidence.
+
+   **A second model being unavailable never stops the review.** Codex (or whichever
+   cross-family reviewer the project wires) out of quota, not installed, or failing is
+   a warning: say so in the header, run the pre-review as a same-family subagent, and
+   keep going. Only the check below decides whether a run counts.
+
+   The brief gives the line `PRE-REVIEW COMPLETE: <n> findings` and asks for it as the
+   last line, verbatim and unformatted, `<n>` a number and `findings` even for 0 or 1.
+   The run counts only if you read that line yourself as the last non-empty line of its
+   final message:
    - a CLI's stdout, with stderr kept apart — a failed `codex exec` echoes the brief,
      marker and all, into stderr — and the CLI's exit status 0;
    - or the file `codex exec -o <file>` writes, at a fresh path each run (a failed run
@@ -55,9 +62,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
    Anything else is a failure, whatever else it printed: a dead turn (quota, auth,
    timeout) can print text that reads as a clean verdict (0.24.0 release review). A
-   failed cross-family run falls back to a same-family subagent under the same check
-   (below); only if that fails too, continue without it, with the header
-   `⚠️ unavailable — <why>`. If captured, brief both personas: *"An independent senior
+   failed cross-family run is the warning above: note it and fall back to a same-family
+   subagent under the same check; only if that fails too, continue without a
+   pre-review, with the header `⚠️ unavailable — <why>`. If captured, brief both personas: *"An independent senior
    reviewer flagged the following — agree, escalate, or dispute each point as you see
    fit."*
 
@@ -120,7 +127,7 @@ place a long verdict turns back into paragraphs.
 
 ```markdown
 ## Review: <subject>
-> Pre-review: ✅ included — <reviewer; why same-family, if it is> | ⚠️ unavailable — <why>
+> Pre-review: ✅ included — <reviewer> [⚠️ <cross-family reviewer> unavailable — <why>] | ⚠️ unavailable — <why>
 
 ## Decisions waiting
 | # | Decision | Recommendation |
