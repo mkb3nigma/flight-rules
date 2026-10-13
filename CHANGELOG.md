@@ -124,6 +124,13 @@ when the body is edited. `/dg` takes a `<base>...<head>` range for it.
 Warrant: a data-loss bug in AppliHawk 0.16.0 that every per-branch gate had passed,
 found by `/dg` on the release diff (aa4ca42e, 2026-10-12).
 
+**`/dg` no longer counts a dead pre-review as a clean one.** The pre-reviewer is asked
+to end with `PRE-REVIEW COMPLETE: <n> findings`; a run whose final message does not
+end with that line, or a CLI run that exits non-zero, is reported as
+`⚠️ unavailable — <why>` once a same-family reviewer has failed the same check too.
+A failed Codex turn in this release's own review printed text that read as a clean
+verdict.
+
 ## 0.23.0 — 2026-10-12
 
 ### Upgrading — one step a plugin update cannot do
