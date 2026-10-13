@@ -48,7 +48,9 @@ if command -v jq >/dev/null 2>&1; then
     '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:($h + "\n\n" + .)}}' \
     "$RULES"
 elif command -v python3 >/dev/null 2>&1; then
-  python3 - "$RULES" "$HEADER" <<'PY'
+  # -I: the hook runs in the project, and a json.py there was imported and run in
+  # place of the standard library's (security review, 2026-10-13 — reproduced).
+  python3 -I - "$RULES" "$HEADER" <<'PY'
 import json, sys
 text = open(sys.argv[1], encoding="utf-8").read()
 print(json.dumps({

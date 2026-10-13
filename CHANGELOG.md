@@ -41,6 +41,30 @@ Claude Code's own `/doctor`. Anything that calls it by path needs the new name.
 
 ### Behaviour changes
 
+**What needs you is shown to you.** The session-start check printed its findings as
+plain text, which Claude Code gives to the assistant and never puts on the screen; a
+fresh install or an update with a stale hook said nothing to the person who had to act.
+Doctor's ❌ problems, with the command that fixes them, and a hook sync now arrive as a
+message you see when the session starts, in a project that uses flight-rules
+(`.ai/flight-rules.conf` at the root, or flight-rules' hooks installed). A
+repo with no git hooks set up is shown the install hint once; one running another
+tool's hooks (husky), or a directory outside a repo, is shown nothing. ⚠️ warnings stay with the assistant only — some are true
+by choice, and on screen they would repeat every day. The assistant still gets
+everything. The sync command doctor prints is the `--stale-only` form, so running it as
+printed never replaces a hook you changed, and a clone of a project that committed its
+hooks is given the plugin's `install.sh` to wire them, never the repo's own copy. In a repo with no git hooks installed:
+
+| | 0.23.0 | 0.24.0 |
+|---|---|---|
+| on your screen at session start | nothing | **the doctor message** |
+| doctor's `core.hooksPath` line | `(hooks/git/install.sh, …)` — a path inside the plugin | **the full command**, with the plugin's real path, that installs into `.ai/hooks/` |
+
+**A project's own `json.py` no longer runs at session start.** On a machine without
+`jq`, the session-start hooks build their JSON with `python3`, which imported modules
+from the project directory first, so a `json.py` in a cloned repo ran as code when a
+session opened. They now run Python isolated (`-I`). Reproduced on 0.23.0's
+`session-start-rules.sh` and fixed in both hooks.
+
 **Doctor reports a git hook that is behind, not only one that is missing.** Standing in
 a project whose `commit-msg` is the 0.22.0 copy, every other hook current:
 

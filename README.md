@@ -95,6 +95,22 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 /plugin install flight-rules@flight-rules
 ```
 
+Then start a new session in the project. The first one shows a `flight-rules doctor`
+message with the command that installs the git hooks (the merge gate and the secret
+scan) into `.ai/hooks/`; run it and commit `.ai/hooks/`. A plugin cannot do this step
+itself: the hooks are the project's own committed files, and Claude Code has no install
+event for a plugin to act on. Every other clone needs them wired once, because git config is
+per clone: its first session's doctor message prints the command (the plugin's
+`install.sh`, which wires the committed hooks without replacing them). (The message needs `jq` or
+`python3`; without either, doctor's findings reach only the assistant.)
+
+**Updating:** `/plugin` → update, then start a new session — the session-start checks run
+only when one starts. If a git hook is behind the new release, that session's doctor
+message prints the sync command with `--stale-only`: it replaces only copies identical
+to an older release, and leaves a hook you changed alone and names it. To have it run on
+its own, set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each release's
+[CHANGELOG](CHANGELOG.md) entry starts with anything the update needs from you.
+
 **Any AI tool (rules, by pointer):** add one line to the project's rules entry point
 (CLAUDE.md, .cursorrules, `.ai/master-rules.md`, …):
 

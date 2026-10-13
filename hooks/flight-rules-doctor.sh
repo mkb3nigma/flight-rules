@@ -64,7 +64,29 @@ hook_marker() {
 # ── 1. Git hooks: path set, directory present, every bare-named hook executable ──
 HOOKS_PATH=$(git config core.hooksPath 2>/dev/null || true)
 if [[ -z "$HOOKS_PATH" ]]; then
-  bad "core.hooksPath is not set — the merge gate is not installed (hooks/git/install.sh, or: git config core.hooksPath <dir>)"
+  # A fresh plugin install lands here, and the bare "hooks/git/install.sh" this used to
+  # print named a path inside the plugin that the user had no way to find (2026-10-13).
+  # With the plugin's own copy beside this script, print the command that installs.
+  # A clone of a project that already committed its hooks needs them wired, not
+  # replaced: --from would overwrite hooks the project adapted (pre-review, 2026-10-13).
+  # The PLUGIN's install.sh does it, never the repo's own copy — a cloned repo can
+  # commit any script under that name, and this line is on the user's screen in
+  # flight-rules' voice (security review, 2026-10-13). core.hooksPath and merge.ff are
+  # per-clone config.
+  if [[ -f "$ROOT/.ai/hooks/pre-merge-commit" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+    # install.sh refuses a set missing any of the six (a 0.22.0 one has no pre-commit),
+    # so name the copy first rather than print a command that fails (fix review).
+    _cp=""
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
+      [[ -f "$ROOT/.ai/hooks/$h" ]] || _cp="$_cp$(printf 'cp %q %q/ && ' "$GIT_HOOKS_SRC/$h" "$ROOT/.ai/hooks")"
+    done
+    [[ -n "$_cp" ]] && _cp_note=" Commit the hooks it copies in, so the next clone has them."
+    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .ai/hooks/. To wire them up: %sbash %q   (git config is per clone; it also sets merge.ff false.%s Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$_cp" "$GIT_HOOKS_SRC/install.sh" "${_cp_note:-}")"
+  elif [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %q --from %q   (it also sets merge.ff false; then commit .ai/hooks/)' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC")"
+  else
+    bad "core.hooksPath is not set — the merge gate is not installed (flight-rules' hooks/git/install.sh, or: git config core.hooksPath <dir>)"
+  fi
 else
   HOOKS_DIR="$HOOKS_PATH"; [[ "$HOOKS_DIR" = /* ]] || HOOKS_DIR="$ROOT/$HOOKS_DIR"
   if [[ ! -d "$HOOKS_DIR" ]]; then
@@ -117,7 +139,10 @@ else
       fi
     done
     if [[ "${NEEDS_SYNC:-0}" -eq 1 ]]; then
-      printf '     to update: bash %q --from %q   (add --stale-only to touch only provably unmodified copies; HOOK_SYNC=auto in .ai/flight-rules.conf runs that in the first session each day and after an update)\n' \
+      # The --stale-only form is the one printed: this line reaches the user's screen
+      # without the ⚠️ beside it, and the bare form overwrote an unmarked adapted hook
+      # when run as printed (fix review, 2026-10-13 — reproduced).
+      printf '     to update: bash %q --from %q --stale-only   (replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace it. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
         "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"
     fi
     # The scan runs pre-commit.local only if it is executable, and skips it without a
