@@ -91,7 +91,9 @@ relative to the repo root.
 setting raw and joined `~/x` to the repo root, where git does not look: doctor called a
 working gate "does not exist — git runs NO hooks", session-start did not recognise the
 project as using flight-rules, and `install.sh` made a literal `~` directory in the
-repo and wrote the hooks there. They now read it as git does.
+repo and wrote the hooks there. They now read it as git does. A `~` path outside the
+repo is still not synced: `--stale-only`, and so `HOOK_SYNC=auto`, refuses it as
+outside this repository, as it does any absolute one.
 
 **A control byte no longer exempts a file from the credential check (#76).** The agent
 guard skipped its `password = "…"` heuristic for any file whose diff held a NUL, so one
