@@ -46,7 +46,7 @@ plain text, which Claude Code gives to the assistant and never puts on the scree
 fresh install or an update with a stale hook said nothing to the person who had to act.
 Doctor's ❌ problems, with the command that fixes them, and a hook sync now arrive as a
 message you see when the session starts, in a project that uses flight-rules
-(`.ai/flight-rules.conf` at the root, or flight-rules' hooks installed or committed). A
+(`.ai/flight-rules.conf` at the root, or flight-rules' hooks installed). A
 repo with no git hooks set up is shown the install hint once; one running another
 tool's hooks (husky), or a directory outside a repo, is shown nothing. ⚠️ warnings stay with the assistant only — some are true
 by choice, and on screen they would repeat every day. The assistant still gets

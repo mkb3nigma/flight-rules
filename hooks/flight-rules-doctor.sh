@@ -74,7 +74,13 @@ if [[ -z "$HOOKS_PATH" ]]; then
   # flight-rules' voice (security review, 2026-10-13). core.hooksPath and merge.ff are
   # per-clone config.
   if [[ -f "$ROOT/.ai/hooks/pre-merge-commit" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
-    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .ai/hooks/. To wire them up: bash %q   (git config is per clone; it also sets merge.ff false. Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$GIT_HOOKS_SRC/install.sh")"
+    # install.sh refuses a set missing any of the six (a 0.22.0 one has no pre-commit),
+    # so name the copy first rather than print a command that fails (fix review).
+    _cp=""
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
+      [[ -f "$ROOT/.ai/hooks/$h" ]] || _cp="$_cp$(printf 'cp %q .ai/hooks/ && ' "$GIT_HOOKS_SRC/$h")"
+    done
+    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .ai/hooks/. To wire them up: %sbash %q   (git config is per clone; it also sets merge.ff false. Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$_cp" "$GIT_HOOKS_SRC/install.sh")"
   elif [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
     bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %q --from %q   (it also sets merge.ff false; then commit .ai/hooks/)' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC")"
   else

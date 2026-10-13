@@ -75,6 +75,14 @@ say "$([ -e "$C/PLANTED" ] && echo ran || echo not)" "not" "…without running t
 say "$(run "$C" | grep -cE 'core.hooksPath is not set|merge.ff is')" "0" "…and afterwards doctor reports neither"
 say "$(grep -c 'my own tweak' "$C/.ai/hooks/post-merge")" "1" "…with the project's adapted hook kept"
 rm -rf "$C"
+# A 0.22.0-shaped set has no pre-commit, and install.sh refuses it: the printed
+# command copies the missing hook first, and then works (fix review, 2026-10-13).
+C=$(mkrepo); git -C "$C" config --unset core.hooksPath; rm "$C/.ai/hooks/pre-commit"
+CMD=$(run "$C" | sed -n 's/.*To wire them up: \(.*bash .*\)   (git config is per clone.*/\1/p')
+say "$(printf '%s' "$CMD" | grep -c 'cp .*pre-commit .ai/hooks/ && bash')" "1" "a committed set missing pre-commit: the copy comes first"
+[ -n "$CMD" ] && (cd "$C" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…and the command runs as printed"
+say "$(git -C "$C" config --local core.hooksPath)" ".ai/hooks" "…and wires the hooks"
+rm -rf "$C"
 
 # From a plugin directory with a space in its path — what %q quoting is for.
 P="$(cd "$(mktemp -d)" && pwd -P)/my plugin"; mkdir -p "$P/hooks" && cp "$DOCTOR" "$P/hooks/" && cp -R "$H/git" "$P/hooks/git" || die "could not lay out the spaced plugin"

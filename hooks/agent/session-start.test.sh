@@ -387,6 +387,20 @@ for scope in local global; do
   say "$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | jq -r 'has("systemMessage")')" "false" "…the next day either"
   rm -rf "$F"
 done
+# Committed flight-rules hooks beside another tool's GLOBAL hooksPath: counting
+# .ai/hooks/ as adoption put a daily `cp` into that tool's directory on screen.
+F=$(mkrepo); git -C "$F" config --unset core.hooksPath; rm "$F/.ai/flight-rules.conf"
+mkdir -p "$F/fakehome/githooks"; printf '[core]\n\thooksPath = %s\n' "$F/fakehome/githooks" > "$F/fakehome/.gitconfig"
+J=$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) )
+say "$(ctx <<<"$J" | grep -c 'missing from')" "6" "committed hooks + a foreign global hooksPath: the assistant is told"
+say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on screen"
+rm -rf "$F"
+# The hint is once per repository, not per worktree.
+F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q -b trunk && git -C "$F" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m base || die "repo in $F"
+git -C "$F" worktree add -q "$F/wt" -b other || die "worktree in $F"
+say "$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | usr | grep -c 'core.hooksPath is not set')" "1" "the hint is shown in the main checkout"
+say "$( (cd "$F/wt" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | jq -r 'has("systemMessage")')" "false" "…and not again in a worktree of it"
+rm -rf "$F"
 
 echo "The sync command reaches the screen only beside a ❌ about a hook copy:"
 # The ⚠️ that also asks for it is not shown, and a command next to an unrelated ❌ read
@@ -419,7 +433,9 @@ say "$(grep -c '^rc=0$' <<<"$OUT")" "1" "…and the hook exits 0"
 rm -rf "$D"
 # The once-ever hint is not spent by output that never reached the screen.
 F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q || die "git init failed in $F"
-(cd "$F" && HOME="$F/fakehome" bash "$NJ/hooks/agent/session-start.sh" >/dev/null 2>&1)
+FIRST=$( { (cd "$F" && HOME="$F/fakehome" bash "$NJ/hooks/agent/session-start.sh" 2>/dev/null); echo "rc=$?"; } )
+say "$(grep -c 'core.hooksPath is not set' <<<"$FIRST")" "1" "the plain-text run carried the hint"
+say "$(grep -c '^rc=0$' <<<"$FIRST")" "1" "…and exited 0"
 rm -f "$F"/fakehome/.claude/hooks/.worktree-check-*
 say "$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | usr | grep -c 'core.hooksPath is not set')" "1" "a hint given as plain text is shown on the next JSON run"
 rm -rf "$F"

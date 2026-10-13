@@ -15,7 +15,10 @@
 # screen, a systemMessage the screen and not the model).
 #
 # The screen is for projects that use flight-rules — a .ai/flight-rules.conf at the
-# repo root, or a flight-rules hook where git runs hooks or in .ai/hooks/. A plugin
+# repo root, or flight-rules' gate where git runs hooks from. (Committed .ai/hooks/ alone
+# is not adoption: beside another tool's global hooksPath it put a daily `cp` into that
+# tool's directory on screen — fix review, 2026-10-13. A clone of that kind has no
+# hooksPath and gets the once-ever hint, which is where its wire-up command belongs.) A plugin
 # enabled for the whole account opens every repo, and a daily ❌ there, or in a
 # directory that is no repo at all, is the nag that gets it switched off (fix review,
 # 2026-10-13). Any core.hooksPath counted as adoption at first, and a husky repo got
@@ -119,12 +122,15 @@ if [ -n "$DOCTOR_SCREEN" ]; then
   case "$HP" in ""|/*) HP_DIR="$HP" ;; *) HP_DIR="$TOP/$HP" ;; esac
   if [ -z "$TOP" ]; then
     DOCTOR_SCREEN=""
-  elif [ -f "$TOP/.ai/flight-rules.conf" ] || fr_hooks "$TOP/.ai/hooks" || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
+  elif [ -f "$TOP/.ai/flight-rules.conf" ] || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
     :   # adopted: shown daily
   elif [ -n "$HP" ]; then
     DOCTOR_SCREEN=""   # another tool's hooks; adopting flight-rules there is a choice
   else
-    HINT_FILE="$FLAG_DIR/.flight-rules-hinted-$(printf '%s' "$TOP" | tr '/' '-')"
+    # Keyed on the repository, not the worktree: per-session worktrees each got the
+    # "once-ever" hint (fix review, 2026-10-13).
+    _common=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+    HINT_FILE="$FLAG_DIR/.flight-rules-hinted-$(printf '%s' "${_common:-$TOP}" | tr '/' '-')"
     [ -f "$HINT_FILE" ] && { DOCTOR_SCREEN=""; HINT_FILE=""; }
   fi
 fi
