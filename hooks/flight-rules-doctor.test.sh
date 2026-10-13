@@ -207,7 +207,8 @@ rm -rf "$D"
 D=$(mkrepo); mkdir -p "$D/fakehome"; mv "$D/.ai/hooks" "$D/fakehome/hk"
 git -C "$D" config core.hooksPath '~/hk'
 say "$(has "$D" "does not exist")" "1" "core.hooksPath=~/hk that exists: no dangling-path line"
-say "$(has "$D" "missing from")" "1" "…every hook found there"
+OUT=$(run "$D" | tail -n +2)
+say "$(grep -c 'missing from' <<<"$OUT")-$(grep -c '✅ core.hooksPath=' <<<"$OUT")" "0-1" "…every hook found there, in the same run that names the path as fine"
 say "$(has "$D" "core.hooksPath=$D/fakehome/hk")" "0" "…and the expanded path is named as fine"
 rm -rf "$D"
 
