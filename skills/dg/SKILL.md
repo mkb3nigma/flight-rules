@@ -43,13 +43,14 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    bugs, security issues, design weaknesses, and unstated assumptions with severity
    (critical/important/minor) and confidence. The brief asks it to end with the line
    `PRE-REVIEW COMPLETE: <n> findings`. The run counts only if the last non-empty line
-   of its final message — stdout alone (`codex exec -o <file>`), or a subagent's reply,
-   never a transcript that echoes the brief — is that line with a number for `<n>`, and
-   a CLI run also exits 0. Anything else is a failure, whatever else it printed: a dead
-   turn (quota, auth, timeout) can print text that reads as a clean verdict (0.24.0
-   release review), and a failed `codex exec` echoes the brief, marker and all, into
-   stderr. On failure, continue without it and say so in the header:
-   `⚠️ unavailable — <why>`. If captured, brief both personas: *"An independent senior reviewer flagged the following
+   of its final message — a CLI's stdout with stderr kept apart, the file
+   `codex exec -o <file>` writes, or a subagent's reply; never a transcript that echoes
+   the brief — is that line with a number for `<n>`, and a CLI run also exits 0.
+   Anything else is a failure, whatever else it printed: a dead turn (quota, auth,
+   timeout) can print text that reads as a clean verdict (0.24.0 release review), and a
+   failed `codex exec` echoes the brief, marker and all, into stderr. On failure,
+   continue without it and say so in the header: `⚠️ unavailable — <why>`. If captured,
+   brief both personas: *"An independent senior reviewer flagged the following
    — agree, escalate, or dispute each point as you see fit."*
 
    **Prefer a reviewer from a different model family than the one running this skill,**
@@ -64,8 +65,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the pre-reviewer should be a different one — the roles swap freely depending on which
    assistant a project runs as its main. This file states only the preference; a project
    wires the concrete command in its extensions, e.g. from Claude Code
-   `cat <brief> <subject> | codex exec -s read-only -` (stdin, so a large diff is not
-   squeezed through one argument); from Codex, `claude -p "…"`.
+   `cat <brief> <subject> | codex exec -s read-only -o <out> - 2><err>` (stdin, so a
+   large diff is not squeezed through one argument; `<out>` holds the final message the
+   completion check reads, `<err>` the reason when it fails); from Codex, `claude -p "…"`.
 
    Same-family fallback is correct, and stays the default when no second model is
    reachable. A same-family pre-review still beats none — never skip the step for want
