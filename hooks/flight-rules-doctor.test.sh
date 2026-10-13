@@ -79,8 +79,9 @@ rm -rf "$C"
 # command copies the missing hook first, and then works (fix review, 2026-10-13).
 C=$(mkrepo); git -C "$C" config --unset core.hooksPath; rm "$C/.ai/hooks/pre-commit"
 CMD=$(run "$C" | sed -n 's/.*To wire them up: \(.*bash .*\)   (git config is per clone.*/\1/p')
-say "$(printf '%s' "$CMD" | grep -c 'cp .*pre-commit .ai/hooks/ && bash')" "1" "a committed set missing pre-commit: the copy comes first"
-[ -n "$CMD" ] && (cd "$C" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…and the command runs as printed"
+say "$(printf '%s' "$CMD" | grep -c 'cp .*pre-commit .*\.ai/hooks/ && bash')" "1" "a committed set missing pre-commit: the copy comes first"
+# From a subdirectory: the person runs it from wherever the session is (fix review).
+mkdir -p "$C/sub"; [ -n "$CMD" ] && (cd "$C/sub" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…and the command runs as printed, from a subdirectory"
 say "$(git -C "$C" config --local core.hooksPath)" ".ai/hooks" "…and wires the hooks"
 rm -rf "$C"
 
