@@ -4,6 +4,134 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.24.0 — 2026-10-12
+
+### Upgrading — once more by hand, then never again
+
+**Sync the git hooks after this update.** A plugin update refreshes the agent hooks
+but cannot touch your project's git hooks, which are committed files, and Claude Code
+has no install or update event a plugin could act on. AppliHawk updated to 0.23.0 and
+kept running four 0.22.0 hooks with nothing to say so. From this release the sync is
+one command, and doctor prints it with the real paths whenever a hook is missing or
+behind:
+
+```bash
+bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git --stale-only
+```
+
+Run the **plugin's** `install.sh`, as above, not the copy in your `.ai/hooks/`: the
+0.23.0 copy there ignores `--from`, prints "✅ git hooks installed" and rewrites
+`core.hooksPath` absolute, which is the bug below. After this sync your copy is the
+0.24.0 one. `--stale-only` replaces only a hook byte-identical to an older release in the
+plugin cache, and copies in a missing one. A hook you adapted is left alone and named. Review
+the diff it leaves and commit it.
+
+**To make it automatic, opt in:** add `HOOK_SYNC=auto` to `.ai/flight-rules.conf`. The
+first session each day, and the first after an update, then runs that command itself
+and tells you what to commit. It touches only a local `core.hooksPath` inside the repo,
+never mid-merge or mid-rebase, and never rewrites the path. The default is `report`,
+which writes nothing.
+
+**Start a new session after updating.** `/reload-plugins` swaps the agent guard, but
+the session-start hooks — the principles, doctor, the sync — run only when a session
+starts.
+
+**`hooks/doctor.sh` is now `hooks/flight-rules-doctor.sh`**, so it is not confused with
+Claude Code's own `/doctor`. Anything that calls it by path needs the new name.
+
+### Behaviour changes
+
+**What needs you is shown to you.** The session-start check printed its findings as
+plain text, which Claude Code gives to the assistant and never puts on the screen; a
+fresh install or an update with a stale hook said nothing to the person who had to act.
+Doctor's ❌ problems, with the command that fixes them, and a hook sync now arrive as a
+message you see when the session starts, in a project that uses flight-rules
+(`.ai/flight-rules.conf` at the root, or flight-rules' hooks installed). A
+repo with no git hooks set up is shown the install hint once; one running another
+tool's hooks (husky), or a directory outside a repo, is shown nothing. ⚠️ warnings stay with the assistant only — some are true
+by choice, and on screen they would repeat every day. The assistant still gets
+everything. The sync command doctor prints is the `--stale-only` form, so running it as
+printed never replaces a hook you changed, and a clone of a project that committed its
+hooks is given the plugin's `install.sh` to wire them, never the repo's own copy. In a repo with no git hooks installed:
+
+| | 0.23.0 | 0.24.0 |
+|---|---|---|
+| on your screen at session start | nothing | **the doctor message** |
+| doctor's `core.hooksPath` line | `(hooks/git/install.sh, …)` — a path inside the plugin | **the full command**, with the plugin's real path, that installs into `.ai/hooks/` |
+
+**A project's own `json.py` no longer runs at session start.** On a machine without
+`jq`, the session-start hooks build their JSON with `python3`, which imported modules
+from the project directory first, so a `json.py` in a cloned repo ran as code when a
+session opened. They now run Python isolated (`-I`). Reproduced on 0.23.0's
+`session-start-rules.sh` and fixed in both hooks.
+
+**Doctor reports a git hook that is behind, not only one that is missing.** Standing in
+a project whose `commit-msg` is the 0.22.0 copy, every other hook current:
+
+| | 0.23.0 | 0.24.0 |
+|---|---|---|
+| doctor's `commit-msg` line | ✅ installed and executable | **❌** is the flight-rules 0.22.0 copy |
+| `install.sh --from <plugin>/hooks/git --stale-only` | ignored, nothing synced | **commit-msg replaced**, diff left to commit |
+| `HOOK_SYNC=auto` in the conf | ⚠️ unknown key | accepted |
+
+A hook that matches no release is ⚠️, since it may be your own adaptation. Add a
+comment line `# flight-rules: adapted` to it and doctor accepts it, and the sync leaves
+it alone; `/rules-sync` still shows its diff against each new release.
+
+**`install.sh` no longer rewrites `core.hooksPath`.** Re-run from a worktree, it wrote the
+worktree's absolute path into the shared repo config, so removing the worktree left
+every checkout running no hooks. A path already set is kept; a fresh install writes it
+relative to the repo root.
+
+| Re-run `install.sh` in a worktree, `core.hooksPath=.ai/hooks` | 0.23.0 | 0.24.0 |
+|---|---|---|
+| `core.hooksPath` afterwards | `<worktree>/.ai/hooks`, absolute | `.ai/hooks`, unchanged |
+
+**`core.hooksPath = ~/…` is expanded.** Doctor, session-start and `install.sh` read the
+setting raw and joined `~/x` to the repo root, where git does not look: doctor called a
+working gate "does not exist — git runs NO hooks", session-start did not recognise the
+project as using flight-rules, and `install.sh` made a literal `~` directory in the
+repo and wrote the hooks there. They now read it as git does. A `~` path outside the
+repo is still not synced: `--stale-only`, and so `HOOK_SYNC=auto`, refuses it as
+outside this repository, as it does any absolute one.
+
+**A control byte no longer exempts a file from the credential check (#76).** The agent
+guard skipped its `password = "…"` heuristic for any file whose diff held a NUL, so one
+planted byte muted the warning for everything else in that file. The six key patterns
+were never affected. Staging, on a feature branch:
+
+| Staged file | 0.23.0 | 0.24.0 |
+|---|---|---|
+| `app.py`: a NUL on one line, `password = "…"` on another | allowed | **denied** |
+| the same with a `\001` byte | allowed | **denied** |
+| a small binary holding `password = "…"` | allowed | **denied** |
+
+The last row is the cost: a small binary with a quoted credential-shaped string is now
+reported. `flight-rules: allow` has no line to sit on in a binary, so a checked false
+positive there is committed by you, or kept under a `fixtures/` path. A binary over
+1 MB is still not read by the agent guard; the git hook reads it for keys.
+
+**An added line starting `++ ` is scanned for keys (#77).** In the diff it reads
+`+++ …`, the shape of a file header, and the agent guard dropped it before the six key
+patterns ran: `++ AKIA…` was committed with the agent guard's leave. The git
+`pre-commit` hook already read it, and still refuses it.
+
+**A release PR needs `/dg` on its whole diff.** `pr-create` step 2b: `/dg
+origin/main...<sha>` on the commit step 2a tested, with each finding's disposition in
+the PR body; a critical finding is yours to decide. The `release review` check fails a
+PR into `main` whose **Adversarial review** section is missing or empty, and re-checks
+when the body is edited. `/dg` takes a `<base>...<head>` range for it.
+Warrant: a data-loss bug in AppliHawk 0.16.0 that every per-branch gate had passed,
+found by `/dg` on the release diff (aa4ca42e, 2026-10-12).
+
+**`/dg` no longer counts a dead pre-review as a clean one.** The pre-reviewer is asked
+to end with `PRE-REVIEW COMPLETE: <n> findings`; a run whose final message does not
+end with that line, or a CLI run that exits non-zero, is reported as
+`⚠️ unavailable — <why>` once a same-family reviewer has failed the same check too.
+A failed Codex turn in this release's own review printed text that read as a clean
+verdict. Codex or any second model being unavailable is a warning in the header, never
+a reason to stop the review.
+
 ## 0.23.0 — 2026-10-12
 
 ### Upgrading — one step a plugin update cannot do

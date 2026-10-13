@@ -16,7 +16,7 @@ injects the principles; the rest you read once.
 | `{NOTE_GATED_BRANCHES}` | `dev` — a local merge needs a `pre-merge-check` note on the branch being merged |
 | `{INTEGRATION_BRANCH}` | `dev` — work integrates here; `main` is the released state |
 | `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
-| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/git/secret-scan.test.sh`, `hooks/doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
+| `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/git/secret-scan.test.sh`, `hooks/git/install.test.sh`, `hooks/flight-rules-doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
 Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/dev`,
 commit there; the owner pushes it. Then, **as the owner**, merge it into `dev` locally — stamp the
@@ -36,9 +36,12 @@ resolution. Merge, not rebase (owner's preference, 2026-10-05).
 
 **`main` moves at a release, not per change.** A promotion is one PR, `dev` → `main`,
 carrying one version bump, the full `{TEST_COMMANDS}` run on the exact commit being
-pushed (`pr-create` step 2a — the per-branch checks proved the pieces, not the sum), and
-a summary of what the batch did — so the published history is releases, not a debugging
-session. Both branches are protected on GitHub (PR required
+pushed (`pr-create` step 2a — the per-branch checks proved the pieces, not the sum), a
+`/dg` verdict on the whole `origin/main...<sha>` diff with each finding's disposition
+(step 2b — the one review with every piece in view at once: AppliHawk aa4ca42e,
+2026-10-12, a data-loss bug every branch gate had passed; the `release review` check
+fails a PR into `main` without the section), and a summary of what the batch did — so
+the published history is releases, not a debugging session. Both branches are protected on GitHub (PR required
 on `main`, CI required on both, force-push and deletion blocked); admins are exempt, which
 is the emergency path for a genuine bug in a release, taken deliberately and reviewed hard.
 
@@ -51,7 +54,10 @@ branch and a PR — `dev` is protected and the promotion PR's head *is* `dev`, s
 nowhere else to put it. Bump `.claude-plugin/plugin.json` and add the CHANGELOG entry on
 a `chore/release-<v>` branch, merge that to `dev`, then open the promotion PR: run
 `pr-create` step 2a first (every `{TEST_COMMANDS}` entry on the exact commit being
-pushed, reporting the sha), and `--base main`. That promotion is the one PR whose head is
+pushed, reporting the sha), then 2b (`/dg origin/main...<that sha>`, verdict and
+dispositions in the PR body; a critical finding is the owner's call; a finding applied
+arrives through a branch merged to `dev`, then 2a again on the new tip and `/dg` on the
+fix's own diff), and `--base main`. That promotion is the one PR whose head is
 a protected branch, which `pr-create`'s constraint names as its only exception.
 
 ## The skills run here too

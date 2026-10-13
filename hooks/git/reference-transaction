@@ -89,7 +89,7 @@ while read -r _old new ref; do
     [ "$PR_ONLY_RE" = "off" ] && continue
 
     # PROTECTED_BRANCHES=off is the opt-out the README, the agent guard's own block
-    # message and doctor.sh all name. It used to disable only the agent guard, so a
+    # message and flight-rules-doctor.sh all name. It used to disable only the agent guard, so a
     # project that took the documented opt-out still had git refusing every move here,
     # citing PR_ONLY_BRANCHES — a key its owner never set. PR-only is a subset of
     # protected: if nothing is protected, nothing is PR-only.

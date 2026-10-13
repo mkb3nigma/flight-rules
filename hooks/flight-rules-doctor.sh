@@ -6,7 +6,7 @@
 # a conf key misspelled so the hook falls back to its default without a word, a
 # local copy of the guard running beside the plugin's.
 #
-# Usage: hooks/doctor.sh [--problems-only]
+# Usage: hooks/flight-rules-doctor.sh [--problems-only]
 #   Prints one line per check (✅ / ⚠️ / ❌). Exit 1 if any ❌. --problems-only
 #   suppresses the ✅ lines (what session-start.sh uses, so a healthy repo is silent).
 #
@@ -20,8 +20,29 @@ warn() { WARN=$((WARN+1)); printf '  ⚠️  %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$1"; }
 
 GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/git"   # the copies shipped beside this script
+SRC_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+  "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { bad "not inside a git repository"; exit 1; }
 cd "$ROOT" || exit 1
+
+# Which flight-rules release shipped this exact file? Searches the plugin cache and
+# prints the version directory's name, or nothing. The same function sits in
+# hooks/git/install.sh, which repairs what this one reports; keep them in step.
+release_of() {
+  local f="$1" c found=""
+  for c in "${HOME:-}"/.claude/plugins/cache/*/flight-rules/*/hooks/git/"$(basename "$f")"; do
+    [[ -f "$c" ]] || continue
+    cmp -s "$f" "$c" && found="$found$(basename "$(cd "$(dirname "$c")/../.." && pwd)")
+"
+  done
+  [[ -n "$found" ]] || return 1
+  # A hook unchanged across releases matches several; the newest is the honest answer
+  # (AppliHawk's pre-merge-commit was 0.20.1's, 0.21.1's and 0.22.0's at once). Only
+  # dotted-numeric names are ordered — a sha or "latest" as a directory name is not a
+  # number and must not sort as the largest one.
+  local best; best=$(printf '%s' "$found" | grep -E '^[0-9]+(\.[0-9]+)+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+  if [[ -n "$best" ]]; then printf '%s' "$best"; else printf '%s' "$found" | head -1; fi
+}
 
 # A hook that is present, executable and EMPTY passes every other check here while
 # enforcing nothing. doctor already content-checks the agent guard (for a pre-conf copy);
@@ -41,9 +62,33 @@ hook_marker() {
 }
 
 # ── 1. Git hooks: path set, directory present, every bare-named hook executable ──
-HOOKS_PATH=$(git config core.hooksPath 2>/dev/null || true)
+# --path: git expands a leading ~ in this value. Read raw, ~/x was joined to the repo
+# root and a working gate reported as "does not exist".
+HOOKS_PATH=$(git config --path core.hooksPath 2>/dev/null || true)
 if [[ -z "$HOOKS_PATH" ]]; then
-  bad "core.hooksPath is not set — the merge gate is not installed (hooks/git/install.sh, or: git config core.hooksPath <dir>)"
+  # A fresh plugin install lands here, and the bare "hooks/git/install.sh" this used to
+  # print named a path inside the plugin that the user had no way to find (2026-10-13).
+  # With the plugin's own copy beside this script, print the command that installs.
+  # A clone of a project that already committed its hooks needs them wired, not
+  # replaced: --from would overwrite hooks the project adapted (pre-review, 2026-10-13).
+  # The PLUGIN's install.sh does it, never the repo's own copy — a cloned repo can
+  # commit any script under that name, and this line is on the user's screen in
+  # flight-rules' voice (security review, 2026-10-13). core.hooksPath and merge.ff are
+  # per-clone config.
+  if [[ -f "$ROOT/.ai/hooks/pre-merge-commit" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+    # install.sh refuses a set missing any of the six (a 0.22.0 one has no pre-commit),
+    # so name the copy first rather than print a command that fails (fix review).
+    _cp=""
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
+      [[ -f "$ROOT/.ai/hooks/$h" ]] || _cp="$_cp$(printf 'cp %q %q/ && ' "$GIT_HOOKS_SRC/$h" "$ROOT/.ai/hooks")"
+    done
+    [[ -n "$_cp" ]] && _cp_note=" Commit the hooks it copies in, so the next clone has them."
+    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .ai/hooks/. To wire them up: %sbash %q   (git config is per clone; it also sets merge.ff false.%s Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$_cp" "$GIT_HOOKS_SRC/install.sh" "${_cp_note:-}")"
+  elif [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %q --from %q   (it also sets merge.ff false; then commit .ai/hooks/)' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC")"
+  else
+    bad "core.hooksPath is not set — the merge gate is not installed (flight-rules' hooks/git/install.sh, or: git config core.hooksPath <dir>)"
+  fi
 else
   HOOKS_DIR="$HOOKS_PATH"; [[ "$HOOKS_DIR" = /* ]] || HOOKS_DIR="$ROOT/$HOOKS_DIR"
   if [[ ! -d "$HOOKS_DIR" ]]; then
@@ -54,9 +99,10 @@ else
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
         # A plugin upgrade cannot copy git hooks into a project, so a hook added in a
         # release (pre-commit, 0.23.0) arrives as this line; say where to copy it from.
-        # A doctor.sh copied in by hand has no git/ beside it to copy from.
+        # A flight-rules-doctor.sh copied in by hand has no git/ beside it to copy from.
         if [[ -f "$GIT_HOOKS_SRC/$h" ]]; then
           bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from this flight-rules: cp '$GIT_HOOKS_SRC/$h' '$HOOKS_PATH/' && chmod +x '$HOOKS_PATH/$h'"
+          NEEDS_SYNC=1
         else
           bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from flight-rules' hooks/git/ and chmod +x it"
         fi
@@ -67,10 +113,40 @@ else
         # and the upgrade to 0.23.0 is when it meets this line; say where it goes.
         _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
         bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
+      elif grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/$h"; then
+        # The project's own version, said so in the file: not compared with the release,
+        # and never replaced by HOOK_SYNC=auto. Without the mark, an adapted hook drew a
+        # ⚠️ into every session's context with no way to accept it (review, 2026-10-12).
+        ok "$h adapted here (marked flight-rules: adapted) — not compared with this release; /rules-sync shows its diff against each new one"
+      elif [[ -f "$GIT_HOOKS_SRC/$h" ]] && ! cmp -s "$HOOKS_DIR/$h" "$GIT_HOOKS_SRC/$h"; then
+        # Present, executable, the right hook — and not this release's. A plugin update
+        # cannot touch it, so four hooks sat at 0.22.0 under a 0.23.0 plugin with every
+        # line above green (AppliHawk, 2026-10-12). Byte-identical to an older cached
+        # release is a stale copy, no doubt about it; matching no release may be the
+        # project's own adaptation, which is a question, not a problem.
+        if _ver=$(release_of "$HOOKS_DIR/$h"); then
+          if [[ -n "$SRC_VERSION" && "$_ver" == "$SRC_VERSION" ]]; then
+            # The copy IS the current release's; this doctor runs from a checkout whose
+            # hooks/git has moved on since. Only a checkout can show this, never the plugin.
+            warn "$h is the released $_ver copy, and this flight-rules checkout carries unreleased changes to it"
+          else
+            bad "$h is the flight-rules $_ver copy — this flight-rules is ${SRC_VERSION:-newer}, so the hook running here is behind the one you installed"
+          fi
+        else
+          warn "$h differs from this flight-rules' copy (${SRC_VERSION:-hooks/git/$h}) — adapted here on purpose, or a stale copy? diff it against $GIT_HOOKS_SRC/$h; if adapted, add a line '# flight-rules: adapted' to it and this stops"
+        fi
+        NEEDS_SYNC=1
       else
         ok "$h installed and executable"
       fi
     done
+    if [[ "${NEEDS_SYNC:-0}" -eq 1 ]]; then
+      # The --stale-only form is the one printed: this line reaches the user's screen
+      # without the ⚠️ beside it, and the bare form overwrote an unmarked adapted hook
+      # when run as printed (fix review, 2026-10-13 — reproduced).
+      printf '     to update: bash %q --from %q --stale-only   (replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace it. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
+        "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"
+    fi
     # The scan runs pre-commit.local only if it is executable, and skips it without a
     # word otherwise — a project's linter would stop running unnoticed.
     if [[ -f "$HOOKS_DIR/pre-commit.local" && ! -x "$HOOKS_DIR/pre-commit.local" ]]; then
@@ -92,7 +168,7 @@ else bad "neither jq nor python3 on PATH — the agent guard will deny every git
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 CONF=".ai/flight-rules.conf"
-KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION'
+KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
 else
@@ -146,6 +222,12 @@ else
       MERGE_NEEDS_INSTRUCTION)
         [[ "$val" == "off" ]] && warn "$key=off — a merge into a protected branch no longer needs the user's say-so (recorded in each merge commit's Merge-authorisation trailer)" \
                               || ok "$key=$val" ;;
+      HOOK_SYNC)
+        case "$val" in
+          auto)   ok "$key=auto — the first session each day, and after a plugin update, replaces git hooks that are byte-identical to an older release, and leaves the diff for you to commit" ;;
+          report) ok "$key=report" ;;
+          *)      warn "$key='$val' is neither auto nor report — session-start treats it as report and syncs nothing" ;;
+        esac ;;
       *) ok "$key=$val" ;;
     esac
   done < "$CONF"

@@ -72,7 +72,22 @@ one, report ✖ if: a step it replaces or inserts after no longer exists upstrea
 parameters (those live in the conf only — the hooks never read an extension); a rule it
 overrides has since become a hook.
 Then `.ai/flight-rules.conf`: the hooks ignore unknown keys, so a typo silently falls
-back to the default. ✖ any key outside the six that `hooks/doctor.sh` lists in `KNOWN` — read it rather than hard-coding a count. An absent key is NOT an error: every one has a default, and `NOTE_GATED_BRANCHES` is deliberately absent in the playbook itself.
+back to the default. ✖ any key outside those `hooks/flight-rules-doctor.sh` lists in `KNOWN` — read it rather than hard-coding a count. An absent key is NOT an error: every one has a default, and `NOTE_GATED_BRANCHES` is deliberately absent in the playbook itself.
+
+## Step 3c — The git hooks
+The project's `.ai/hooks/` (or whatever `core.hooksPath` names) is a copy too, and the
+one a plugin update can never refresh: AppliHawk ran four 0.22.0 hooks under a 0.23.0
+plugin with nothing but a CHANGELOG paragraph to say so (2026-10-12). Run
+`bash {PLAYBOOK_PATH}/hooks/flight-rules-doctor.sh` and carry its hook lines into the
+report: ❌ a copy byte-identical to an older release (stale, no question), ⚠️ one that
+matches no release (adapted here, or stale — show the diff and ask). The fix is the
+command doctor prints, `install.sh --from {PLAYBOOK_PATH}/hooks/git`, with
+`--stale-only` to leave adaptations untouched. A hook marked `# flight-rules: adapted`
+shows ✅ in doctor — the mark silences the daily check, not this one: show its diff
+against `{PLAYBOOK_PATH}/hooks/git/` on every sync, so an upstream fix to a hook the
+project adapted is folded in by hand rather than lost. It writes a diff the owner commits; with
+`HOOK_SYNC=auto` in the conf, `session-start.sh` runs the `--stale-only` form at the
+first session after an update, so a project that sets it should rarely show ❌ here.
 
 ## Step 4 — Report (do not auto-apply)
 Print a per-file summary:

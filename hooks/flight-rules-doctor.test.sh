@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Tests for doctor.sh — each case is an install state that has silently failed
-# for real. Run: ./doctor.test.sh (no args, no network; builds throwaway repos).
+# Tests for flight-rules-doctor.sh — each case is an install state that has silently failed
+# for real. Run: ./flight-rules-doctor.test.sh (no args, no network; builds throwaway repos).
 set -uo pipefail
 H="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOCTOR="$H/doctor.sh"
+DOCTOR="$H/flight-rules-doctor.sh"
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
@@ -55,6 +55,46 @@ say "$(rc "$D")" "1" "no core.hooksPath → problem"
 say "$(has "$D" "core.hooksPath is not set")" "0" "…and says so"
 rm -rf "$D"
 
+echo "A fresh repo is given a command that installs, not a path inside the plugin:"
+# The bare "hooks/git/install.sh" named nothing a fresh plugin user could run (2026-10-13).
+# The printed command is run as printed, and doctor afterwards is the proof it works.
+D=$(cd "$(mktemp -d)" && pwd -P); git -C "$D" init -q -b main || die "git init failed in $D"
+OUT=$(run "$D")
+# A clone of a project that committed its hooks: wired by the PLUGIN's install.sh
+# without --from, which would replace hooks the project adapted (pre-review), and never
+# by the repo's own install.sh, which a cloned repo can make anything (security review,
+# 2026-10-13). The repo's copy here would print PLANTED if it were the one recommended.
+C=$(mkrepo); git -C "$C" config --unset core.hooksPath; git -C "$C" config --unset merge.ff
+printf '#!/bin/bash\necho PLANTED > "%s/PLANTED"\n' "$C" > "$C/.ai/hooks/install.sh"
+echo "# my own tweak" >> "$C/.ai/hooks/post-merge"
+CMD=$(run "$C" | sed -n 's/.*To wire them up: \(bash .*\)   (git config is per clone.*/\1/p')
+say "$(printf '%s' "$CMD" | grep -c "$H/git/install.sh")" "1" "a clone with committed hooks is given the plugin's install.sh"
+say "$(printf '%s' "$CMD" | grep -c -- '--from\|\.ai/hooks/install.sh')" "0" "…not --from, and not the repo's own copy"
+[ -n "$CMD" ] && (cd "$C" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…which runs as printed"
+say "$([ -e "$C/PLANTED" ] && echo ran || echo not)" "not" "…without running the repo's install.sh"
+say "$(run "$C" | grep -cE 'core.hooksPath is not set|merge.ff is')" "0" "…and afterwards doctor reports neither"
+say "$(grep -c 'my own tweak' "$C/.ai/hooks/post-merge")" "1" "…with the project's adapted hook kept"
+rm -rf "$C"
+# A 0.22.0-shaped set has no pre-commit, and install.sh refuses it: the printed
+# command copies the missing hook first, and then works (fix review, 2026-10-13).
+C=$(mkrepo); git -C "$C" config --unset core.hooksPath; rm "$C/.ai/hooks/pre-commit"
+CMD=$(run "$C" | sed -n 's/.*To wire them up: \(.*bash .*\)   (git config is per clone.*/\1/p')
+say "$(printf '%s' "$CMD" | grep -c 'cp .*pre-commit .*\.ai/hooks/ && bash')" "1" "a committed set missing pre-commit: the copy comes first"
+# From a subdirectory: the person runs it from wherever the session is (fix review).
+mkdir -p "$C/sub"; [ -n "$CMD" ] && (cd "$C/sub" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…and the command runs as printed, from a subdirectory"
+say "$(git -C "$C" config --local core.hooksPath)" ".ai/hooks" "…and wires the hooks"
+rm -rf "$C"
+
+# From a plugin directory with a space in its path — what %q quoting is for.
+P="$(cd "$(mktemp -d)" && pwd -P)/my plugin"; mkdir -p "$P/hooks" && cp "$DOCTOR" "$P/hooks/" && cp -R "$H/git" "$P/hooks/git" || die "could not lay out the spaced plugin"
+OUT=$(cd "$D" && HOME="$D/fakehome" bash "$P/hooks/flight-rules-doctor.sh" 2>&1)
+CMD=$(printf '%s\n' "$OUT" | sed -n 's/.*To install them into \.ai\/hooks\/: \(bash .*\)   (it also sets.*/\1/p')
+say "$([ -n "$CMD" ] && echo printed)" "printed" "no core.hooksPath → the full install command is printed"
+[ -n "$CMD" ] && (cd "$D" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…it runs as printed, from a path with a space"
+say "$(run "$D" | grep -cE 'core.hooksPath is not set|missing from|merge.ff is')" "0" "…and afterwards doctor reports no hook or merge.ff problem"
+say "$(has "$D" "core.hooksPath=.ai/hooks")" "0" "…with the relative path installed"
+rm -rf "$D" "$(dirname "$P")"
+
 D=$(mkrepo); git -C "$D" config core.hooksPath .ai/gone
 say "$(rc "$D")" "1" "hooksPath at a missing directory → problem"
 say "$(has "$D" "git runs NO hooks")" "0" "…and says git runs nothing"
@@ -71,7 +111,7 @@ rm -rf "$D"
 
 # Without this one, cherry-pick / revert / branch -f / update-ref and a CONFLICTED
 # merge all reach a PR-only branch unguarded — and every other hook still reports
-# healthy, which is the exact "looks installed" failure doctor.sh exists to catch.
+# healthy, which is the exact "looks installed" failure flight-rules-doctor.sh exists to catch.
 D=$(mkrepo); rm "$D/.ai/hooks/reference-transaction"
 say "$(rc "$D")" "1" "reference-transaction missing → problem"
 say "$(has "$D" "reference-transaction missing")" "0" "…names the hook"
@@ -93,10 +133,10 @@ say "$([ -n "$FIX" ] && echo yes)" "yes" "…and gives the command that copies i
 (cd "$D" && eval "$FIX") >/dev/null 2>&1
 say "$(rc "$D")" "0" "…which, run, clears it"
 rm -rf "$D"
-# A doctor.sh copied in by hand, with no git/ beside it, printed a cp from a directory
+# A flight-rules-doctor.sh copied in by hand, with no git/ beside it, printed a cp from a directory
 # that does not exist (/dg, 2026-10-08). It names flight-rules' hooks/git/ instead.
-D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"; mkdir -p "$D/lone"; cp "$DOCTOR" "$D/lone/doctor.sh"
-LONE=$(cd "$D" && HOME="$D/fakehome" bash "$D/lone/doctor.sh" 2>&1)
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"; mkdir -p "$D/lone"; cp "$DOCTOR" "$D/lone/flight-rules-doctor.sh"
+LONE=$(cd "$D" && HOME="$D/fakehome" bash "$D/lone/flight-rules-doctor.sh" 2>&1)
 say "$(grep -c "$D/lone/git" <<<"$LONE")" "0" "doctor with no git/ beside it prints no cp from there"
 say "$(grep -c "from flight-rules' hooks/git/" <<<"$LONE")" "1" "…and names where the hook comes from"
 rm -rf "$D"
@@ -161,6 +201,15 @@ cat > "$D/.claude/settings.json" <<'JSON'
 JSON
 say "$(rc "$D")" "1" "settings.json points at a missing script → problem"
 say "$(has "$D" "does not exist")" "0" "…and names the path"
+rm -rf "$D"
+# 1b. core.hooksPath = ~/… is a path git expands; read raw, doctor joined it to the
+#     repo root and reported a working gate as "does not exist — git runs NO hooks".
+D=$(mkrepo); mkdir -p "$D/fakehome"; mv "$D/.ai/hooks" "$D/fakehome/hk"
+git -C "$D" config core.hooksPath '~/hk'
+say "$(has "$D" "does not exist")" "1" "core.hooksPath=~/hk that exists: no dangling-path line"
+OUT=$(run "$D" | tail -n +2)
+say "$(grep -c 'missing from' <<<"$OUT")-$(grep -c '✅ core.hooksPath=' <<<"$OUT")" "0-1" "…every hook found there, in the same run that names the path as fine"
+say "$(has "$D" "core.hooksPath=$D/fakehome/hk")" "0" "…and the expanded path is named as fine"
 rm -rf "$D"
 
 # 2b. …but a ${CLAUDE_PLUGIN_ROOT} path points into the installed plugin, not into this
@@ -316,7 +365,79 @@ say "$(rc "$D")" "1" "merge.ff unset → problem"
 say "$(has "$D" "fast-forward merge creates no commit")" "0" "…explains why"
 rm -rf "$D"
 
+echo "A hook that is present, executable, the right hook — and an older release's:"
+# A plugin update cannot touch the project's git hooks, so four of AppliHawk's sat at
+# 0.22.0 under a 0.23.0 plugin with every line green (2026-10-12). Byte-identical to an
+# older release in the plugin cache is stale beyond doubt; matching no release may be the
+# project's own adaptation. The fake HOME's cache holds one older release, 0.0.1.
+mkcache() {  # <repo> <hook>: a 0.0.1 release of <hook> in the fake plugin cache
+  mkdir -p "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git"
+  { cat "$H/git/$2"; echo "# flight-rules 0.0.1"; } > "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/$2"
+}
+D=$(mkrepo); mkcache "$D" commit-msg
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" "$D/.ai/hooks/commit-msg"
+say "$(rc "$D")" "1" "a copy identical to a cached older release → problem"
+say "$(has "$D" "commit-msg is the flight-rules 0.0.1 copy")" "0" "…naming the release it came from"
+say "$(has "$D" "to update: bash")" "0" "…and printing the sync command"
+SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]* --stale-only' | sed 's/^to update: //' | head -1)
+say "$([ -n "$SYNC" ] && echo yes)" "yes" "…which can be lifted from the output, in its --stale-only form"
+(cd "$D" && HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1
+say "$(rc "$D")" "0" "…and, run as printed, clears it"
+say "$(has "$D" "to update:")" "1" "…after which no sync command is printed"
+rm -rf "$D"
+
+D=$(mkrepo); echo "# this project's own change" >> "$D/.ai/hooks/post-merge"
+say "$(rc "$D")" "0" "a copy matching no release is a warning, not a problem"
+say "$(has "$D" "post-merge differs from this flight-rules' copy")" "0" "…that names the hook"
+say "$(has "$D" "to update: bash")" "0" "…and still prints the sync command"
+rm -rf "$D"
+
+# Marked adapted, the project's own hook is accepted: a ⚠️ every session with no way to
+# accept it was the complaint (review, 2026-10-12).
+D=$(mkrepo); printf '# flight-rules: adapted\n# own change\n' >> "$D/.ai/hooks/post-merge"
+say "$(rc "$D")" "0" "a hook marked 'flight-rules: adapted' is not a problem"
+say "$(has "$D" "post-merge adapted here (marked")" "0" "…and is reported as adapted"
+say "$(has "$D" "post-merge differs from")" "1" "…not as differing"
+say "$(has "$D" "to update:")" "1" "…and no sync command is printed for it"
+rm -rf "$D"
+
+# Indented, the comment line is still the mark.
+D=$(mkrepo); printf '  # flight-rules: adapted\n' >> "$D/.ai/hooks/post-merge"
+say "$(has "$D" "post-merge adapted here")" "0" "an indented '# flight-rules: adapted' is the mark too"
+rm -rf "$D"
+# The phrase inside a line of code is not the mark: only a comment line of its own is.
+D=$(mkrepo); printf 'echo "flight-rules: adapted"\n' >> "$D/.ai/hooks/post-merge"
+say "$(has "$D" "post-merge adapted here")" "1" "the phrase inside code is not the adapted mark"
+say "$(has "$D" "post-merge differs from")" "0" "…the hook is reported as differing"
+rm -rf "$D"
+
+# The printed command, run as printed, keeps an unmarked adapted hook beside a stale one:
+# the bare form overwrote it, and on screen the ⚠️ that would have warned is not shown
+# (fix review, 2026-10-13 — reproduced).
+D=$(mkrepo); mkcache "$D" commit-msg
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" "$D/.ai/hooks/commit-msg"
+echo "# my own tweak" >> "$D/.ai/hooks/post-merge"
+SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]* --stale-only' | sed 's/^to update: //' | head -1)
+[ -n "$SYNC" ] && (cd "$D" && HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1; say "$?" "0" "stale + adapted: the printed command runs"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$H/git/commit-msg" && echo synced)" "synced" "…replaces the stale hook"
+say "$(grep -c 'my own tweak' "$D/.ai/hooks/post-merge")" "1" "…and keeps the adapted one"
+rm -rf "$D"
+
+# The missing-hook line already gives a cp; the sync command covers it too.
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
+say "$(has "$D" "to update: bash")" "0" "a missing hook also prints the sync command"
+rm -rf "$D"
+
 echo "The conf — typos and bad values must not pass silently:"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "HOOK_SYNC=auto is a known key"
+say "$(has "$D" "HOOK_SYNC=auto")" "0" "…and is reported"
+say "$(has "$D" "unknown key")" "1" "…not as unknown"
+printf 'HOOK_SYNC=yes\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "HOOK_SYNC=yes is a warning, not a failure"
+say "$(has "$D" "neither auto nor report")" "0" "…saying what the values are"
+rm -rf "$D"
+
 D=$(mkrepo); printf 'PROTECTED_BRANCH=^main$\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "unknown key is a warning, not a failure"
 say "$(has "$D" "unknown key 'PROTECTED_BRANCH'")" "0" "…and is named"

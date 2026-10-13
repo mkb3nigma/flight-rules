@@ -86,7 +86,7 @@ whitespace, so a `#` inside a value (`^feature#1$`) is kept.
 That last part was a documented claim before it was a true one. Until 2026-09-11 the
 three hook parsers captured to end-of-line, so a trailing comment became part of the
 regex, the value matched nothing, and the layer reading it stopped enforcing in silence
-— while `doctor.sh`, which *did* strip comments, printed ✅ for the same line. One
+— while `flight-rules-doctor.sh`, which *did* strip comments, printed ✅ for the same line. One
 trailing comment on `PR_ONLY_BRANCHES` let a direct commit land on a PR-only `main`
 with all five git hooks installed.
 
@@ -98,6 +98,7 @@ with all five git hooks installed.
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
+| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones, then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the repo is touched, never mid-merge or mid-rebase, and the config is never rewritten. A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
@@ -273,9 +274,9 @@ that the logic has exactly one home.
   does not print it, because an agent reads it too. **Already have a `pre-commit`** (a linter,
   lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
   scan and its exit status decides the commit. **Upgrading from 0.22.x:** a plugin
-  update cannot copy git hooks, so this one arrives only when you copy it in;
-  `doctor.sh` — run at session start — reports it missing with the exact `cp` command.
-  Tests: `secret-scan.test.sh`.
+  update cannot copy git hooks, so this one arrives only when you sync them in —
+  `install.sh --from`, below; `flight-rules-doctor.sh` — run at session start — reports
+  it missing and prints that command. Tests: `secret-scan.test.sh`.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
   unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
@@ -285,7 +286,24 @@ that the logic has exactly one home.
   block in the script before enabling.
 - **`install.sh`** — one-time per clone: `chmod` the hooks, set
   `core.hooksPath`, and set `merge.ff false` so the merge gate always fires
-  (a fast-forward merge would silently skip `pre-merge-commit`).
+  (a fast-forward merge would silently skip `pre-merge-commit`). It installs into
+  the directory the **local** `core.hooksPath` names, else `.ai/hooks/`, and writes
+  the path once, relative to the repo root, so every worktree resolves its own copy;
+  a path already set is never rewritten (an absolute one written from a worktree
+  outlived the worktree and left every checkout running no hooks).
+  **After a plugin update**, `bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git`
+  copies the six hooks and itself into the project first, then installs as usual —
+  the update refreshes the agent hooks but cannot touch these, which are the
+  project's committed files (AppliHawk ran four 0.22.0 hooks under a 0.23.0 plugin,
+  2026-10-12). `--stale-only` replaces only a copy byte-identical to some release in
+  the plugin cache, so a project's own adaptation is left alone and named — mark it
+  with a line `# flight-rules: adapted` and doctor accepts it too; without the flag
+  every differing hook is replaced, except a `pre-commit` that is not flight-rules'
+  at all, which is refused with the rename that keeps it running. A copy that fails
+  is an exit, never a "synced" line. `flight-rules-doctor.sh` prints the command
+  whenever a hook is missing or behind, and `HOOK_SYNC=auto` in the conf has
+  `session-start.sh` run the `--stale-only` form itself. Either way the result is a
+  diff to review and commit. Tests: `install.test.sh`.
 
 ## Agent hook scripts (`agent/`)
 
@@ -343,7 +361,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   index as it stands before the command runs, so anything the same command stages is
   not in it; the git `pre-commit` hook is the scan that sees those. The repo's own diff
   settings — colour, an external diff, a textconv, a `-diff` attribute, `diff.relative`
-  — do not change what it reads. A real binary (a NUL in its first 8000 bytes) over
+  — do not change what it reads, and short of the size limit below nothing a file
+  contains exempts it: a NUL or `\001` used to mark a file "binary" and skip the
+  credential-literal check for it, so one planted byte muted the warning (#76). The
+  cost is that a small binary holding a quoted credential-shaped string is reported
+  too; `flight-rules: allow` has no line to sit on in a PNG, so a checked false
+  positive there is committed by the owner, whose own commands this guard does not
+  gate, or lives under a fixtures/ path. A real binary (a NUL in its first 8000 bytes) over
   1 MB is not read, because reading a large asset whole can outlast the hook's timeout
   and let the commit through unscanned; the git `pre-commit` hook reads those.
   Needs `jq` or `python3`; with neither it denies git commands with an install hint
@@ -353,17 +377,26 @@ Guards that fire on the assistant's own events, before git ever runs:
   protected branch ALLOWED from a feature branch, silently — the ref they name is read
   by splitting the command, and nothing announced the dependency.
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
-- **`doctor.sh`** — is the enforcement actually installed? Checks `core.hooksPath`,
+- **`flight-rules-doctor.sh`** — is the enforcement actually installed, and current? Checks `core.hooksPath`,
   every hook's executable bit *and* that each one still contains the string that makes
-  it that hook (a present, executable stub enforces nothing), `merge.ff`, the guard's
-  parser, the conf's keys and regexes, that every script `.claude/settings.json` wires
-  exists, and that the guard is wired once and actually enabled — every one a state
-  that has failed silently before. `session-start.sh` runs it daily and prints only
-  problems.
-  Tests: `doctor.test.sh`.
+  it that hook (a present, executable stub enforces nothing), that each one is this
+  release's copy — byte-identical to an older cached release is ❌, differing from every
+  release is ⚠️ since it may be the project's own adaptation, and either prints the
+  `install.sh --from` command — `merge.ff`, the guard's parser, the conf's keys and
+  regexes, that every script `.claude/settings.json` wires exists, and that the guard
+  is wired once and actually enabled — every one a state that has failed silently
+  before. `session-start.sh` runs it daily and prints only problems.
+  Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project, and again after
-  a plugin update, runs `doctor.sh` and lists worktrees whose branches are already merged
-  so they get cleaned up. Reads
+  a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
+  so they get cleaned up. Doctor's ❌ problems, the command that fixes them, and a hook sync
+  are printed as `systemMessage`, so they appear on the user's screen — in a project
+  that uses flight-rules (`.ai/flight-rules.conf` at the root, or flight-rules' hooks
+  installed). A repo with no `core.hooksPath` is shown the install hint
+  once; one running another tool's hooks (husky), or a directory outside a repo, nothing.
+  ⚠️ warnings never go on screen, since some are true by choice and would repeat daily.
+  Everything goes to the assistant as `additionalContext` (with neither `jq` nor `python3`, plain stdout, which only the
+  assistant sees). Reads
   `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
   A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
   reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.
@@ -429,7 +462,7 @@ protected PR-only `main`:
 | `git merge`, `git cherry-pick`, `git revert` | **allowed** |
 | `git branch -f main …`, `git update-ref refs/heads/main …` | **allowed** |
 
-`git merge feature/x` was confirmed moving `main` with no layer objecting. `doctor.sh`
+`git merge feature/x` was confirmed moving `main` with no layer objecting. `flight-rules-doctor.sh`
 reports this at session start — naming `core.hooksPath` and `merge.ff` with the commands
 to fix both — so the state is loud, not silent. **Run `install.sh`.** With the git hooks
 present, `reference-transaction` refuses every one of those.
