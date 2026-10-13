@@ -390,9 +390,11 @@ Guards that fire on the assistant's own events, before git ever runs:
 - **`session-start.sh`** — SessionStart banner: once a day per project, and again after
   a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
   so they get cleaned up. Doctor's ❌ problems, the command that fixes them, and a hook sync
-  are printed as `systemMessage`, so they appear on the user's screen; ⚠️ warnings do
-  not, since some are true by choice and would repeat daily. Everything goes to the
-  assistant as `additionalContext` (with neither `jq` nor `python3`, plain stdout, which only the
+  are printed as `systemMessage`, so they appear on the user's screen — in a project
+  that uses flight-rules (a local `core.hooksPath` or `.ai/flight-rules.conf`); any
+  other repo is shown the install hint once, and a directory outside a repo nothing.
+  ⚠️ warnings never go on screen, since some are true by choice and would repeat daily.
+  Everything goes to the assistant as `additionalContext` (with neither `jq` nor `python3`, plain stdout, which only the
   assistant sees). Reads
   `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
   A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and

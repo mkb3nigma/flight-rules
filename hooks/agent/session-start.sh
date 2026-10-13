@@ -3,7 +3,8 @@
 # Wire as a Claude Code SessionStart hook (see hooks/README.md).
 # Runs the stale-worktree check at most once per day (flag file).
 #
-# Output is one JSON object. What the PERSON must act on — doctor's ❌ problems, a hook
+# Output is one JSON object (plain text only when neither jq nor python3 can build it,
+# see the end). What the PERSON must act on — doctor's ❌ problems, a hook
 # sync — goes in `systemMessage`, which Claude Code shows the user; everything goes in
 # `additionalContext` for the assistant. Doctor's ⚠️ warnings stay off the screen: some
 # are true by choice (no conf in a main-only project) and could only be silenced by
@@ -12,6 +13,12 @@
 # fresh plugin user was never shown the install command doctor printed (measured in a
 # live 2.1.296 session, 2026-10-13: a plain-stdout marker reached the model and not the
 # screen, a systemMessage the screen and not the model).
+#
+# The screen is for projects that use flight-rules — a local core.hooksPath or a
+# .ai/flight-rules.conf. A plugin enabled for the whole account opens every repo, and a
+# daily ❌ there, or in a directory that is no repo at all, is the nag that gets it
+# switched off (fix review, 2026-10-13). A repo that has neither is shown the install
+# hint once, ever; outside a repo nothing is shown. The assistant gets all of it daily.
 
 PROJECT_ROOT=$(pwd)
 
@@ -89,10 +96,22 @@ if [ -x "$DOCTOR" ]; then
   PROBLEMS=$("$DOCTOR" --problems-only 2>/dev/null)
   [ -n "$PROBLEMS" ] && DOCTOR_MSG="$DOCTOR_HEAD
 $PROBLEMS"
-  # On screen: the ❌ lines and the command that fixes them, only when there is a ❌.
+  # On screen: the ❌ lines, and the sync command only beside a ❌ about a hook copy —
+  # the ⚠️ that also asks for it is not shown, and a bare command next to an unrelated
+  # ❌ read as an instruction with no reason (fix review, 2026-10-13).
   if printf '%s\n' "$PROBLEMS" | grep -q '❌'; then
+    _show='❌'
+    printf '%s\n' "$PROBLEMS" | grep -qE '❌ .*(copy —|missing from)' && _show='❌|^[[:space:]]+to update:'
     DOCTOR_SCREEN="$DOCTOR_HEAD
-$(printf '%s\n' "$PROBLEMS" | grep -E '❌|^[[:space:]]+to update:')"
+$(printf '%s\n' "$PROBLEMS" | grep -E "$_show")"
+  fi
+fi
+if [ -n "$DOCTOR_SCREEN" ]; then
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    DOCTOR_SCREEN=""
+  elif [ -z "$(git config --local core.hooksPath 2>/dev/null)" ] && [ ! -f "$PROJECT_ROOT/.ai/flight-rules.conf" ]; then
+    HINT_FILE="$FLAG_DIR/.flight-rules-hinted-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')"
+    if [ -f "$HINT_FILE" ]; then DOCTOR_SCREEN=""; else touch "$HINT_FILE"; fi
   fi
 fi
 FOR_USER="$SYNC_MSG${SYNC_MSG:+${DOCTOR_SCREEN:+
@@ -142,17 +161,27 @@ fi
 FOR_ASSISTANT="$SYNC_MSG${SYNC_MSG:+${DOCTOR_MSG:+
 }}$DOCTOR_MSG"
 [ -n "$FOR_ASSISTANT$REMINDER" ] || exit 0
-CONTEXT="$FOR_ASSISTANT"
-[ -n "$FOR_USER" ] && CONTEXT="$CONTEXT
+PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 
-(The user was shown the sync result and the ❌ lines above at session start; the ⚠️ lines were not shown to them.)"
-[ -n "$REMINDER" ] && CONTEXT="${CONTEXT:+$CONTEXT
+}}$REMINDER"
+# Said only on the JSON branches: with plain text the user saw nothing, and the
+# assistant is the relay (pre-review, 2026-10-13).
+SHOWN=""
+[ -n "$SYNC_MSG" ] && SHOWN="the hook-sync result"
+[ -n "$DOCTOR_SCREEN" ] && SHOWN="${SHOWN:+$SHOWN and }doctor's ❌ lines"
+NOTE=""
+[ -n "$SHOWN" ] && NOTE="
 
-}$REMINDER"
+(Already on the user's screen at session start: $SHOWN. Anything else above was not shown to them.)"
+CONTEXT="$FOR_ASSISTANT$NOTE${FOR_ASSISTANT:+${REMINDER:+
+
+}}$REMINDER"
 # JSON built by jq or python3, as session-start-rules.sh does. With neither, plain
 # stdout: the assistant still gets it, and the assistant is who relays it. `-I`: this
 # runs in the project, and without it a json.py there is imported and run (security
-# review, 2026-10-13 — reproduced).
+# review, 2026-10-13 — reproduced). A python3 that fails — macOS's stub without the
+# Command Line Tools exits non-zero with no output — falls back to plain text, not
+# to silence.
 if command -v jq >/dev/null 2>&1; then
   jq -n --arg u "$FOR_USER" --arg c "$CONTEXT" \
     '(if $u == "" then {} else {systemMessage: $u} end)
@@ -161,8 +190,8 @@ elif command -v python3 >/dev/null 2>&1; then
   python3 -I -c 'import json, sys
 out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": sys.argv[2]}}
 if sys.argv[1]: out["systemMessage"] = sys.argv[1]
-print(json.dumps(out))' "$FOR_USER" "$CONTEXT"
+print(json.dumps(out))' "$FOR_USER" "$CONTEXT" 2>/dev/null || printf '%s\n' "$PLAIN"
 else
-  printf '%s\n' "$CONTEXT"
+  printf '%s\n' "$PLAIN"
 fi
 exit 0

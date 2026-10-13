@@ -60,12 +60,25 @@ echo "A fresh repo is given a command that installs, not a path inside the plugi
 # The printed command is run as printed, and doctor afterwards is the proof it works.
 D=$(cd "$(mktemp -d)" && pwd -P); git -C "$D" init -q -b main || die "git init failed in $D"
 OUT=$(run "$D")
-CMD=$(printf '%s\n' "$OUT" | sed -n 's/.*To install them into \.ai\/hooks\/: \(bash .*--from [^ ]*\).*/\1/p')
+# A clone of a project that committed its hooks: its own install, not the plugin's
+# --from, which would replace hooks the project adapted (pre-review, 2026-10-13).
+C=$(mkrepo); git -C "$C" config --unset core.hooksPath; git -C "$C" config --unset merge.ff
+cp "$H/git/install.sh" "$C/.ai/hooks/"; echo "# my own tweak" >> "$C/.ai/hooks/post-merge"
+say "$(has "$C" "To install them: bash .ai/hooks/install.sh")" "0" "a clone with committed hooks is told to run its own install.sh"
+(cd "$C" && bash .ai/hooks/install.sh >/dev/null 2>&1); say "$?" "0" "…which runs as printed"
+say "$(run "$C" | grep -cE 'core.hooksPath is not set|merge.ff is')" "0" "…and afterwards doctor reports neither"
+say "$(grep -c 'my own tweak' "$C/.ai/hooks/post-merge")" "1" "…with the project's adapted hook kept"
+rm -rf "$C"
+
+# From a plugin directory with a space in its path — what %q quoting is for.
+P="$(cd "$(mktemp -d)" && pwd -P)/my plugin"; mkdir -p "$P/hooks" && cp "$DOCTOR" "$P/hooks/" && cp -R "$H/git" "$P/hooks/git" || die "could not lay out the spaced plugin"
+OUT=$(cd "$D" && HOME="$D/fakehome" bash "$P/hooks/flight-rules-doctor.sh" 2>&1)
+CMD=$(printf '%s\n' "$OUT" | sed -n 's/.*To install them into \.ai\/hooks\/: \(bash .*\)   (it also sets.*/\1/p')
 say "$([ -n "$CMD" ] && echo printed)" "printed" "no core.hooksPath → the full install command is printed"
-[ -n "$CMD" ] && (cd "$D" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…it runs as printed"
+[ -n "$CMD" ] && (cd "$D" && eval "$CMD" >/dev/null 2>&1); say "$?" "0" "…it runs as printed, from a path with a space"
 say "$(run "$D" | grep -cE 'core.hooksPath is not set|missing from|merge.ff is')" "0" "…and afterwards doctor reports no hook or merge.ff problem"
 say "$(has "$D" "core.hooksPath=.ai/hooks")" "0" "…with the relative path installed"
-rm -rf "$D"
+rm -rf "$D" "$(dirname "$P")"
 
 D=$(mkrepo); git -C "$D" config core.hooksPath .ai/gone
 say "$(rc "$D")" "1" "hooksPath at a missing directory → problem"
@@ -342,10 +355,10 @@ cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg
 say "$(rc "$D")" "1" "a copy identical to a cached older release → problem"
 say "$(has "$D" "commit-msg is the flight-rules 0.0.1 copy")" "0" "…naming the release it came from"
 say "$(has "$D" "to update: bash")" "0" "…and printing the sync command"
-SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]*' | sed 's/^to update: //' | head -1)
-say "$([ -n "$SYNC" ] && echo yes)" "yes" "…which can be lifted from the output"
-(cd "$D" && HOME="$D/fakehome" eval "$SYNC --stale-only") >/dev/null 2>&1
-say "$(rc "$D")" "0" "…and, run with --stale-only, clears it"
+SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]* --stale-only' | sed 's/^to update: //' | head -1)
+say "$([ -n "$SYNC" ] && echo yes)" "yes" "…which can be lifted from the output, in its --stale-only form"
+(cd "$D" && HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1
+say "$(rc "$D")" "0" "…and, run as printed, clears it"
 say "$(has "$D" "to update:")" "1" "…after which no sync command is printed"
 rm -rf "$D"
 
@@ -372,6 +385,18 @@ rm -rf "$D"
 D=$(mkrepo); printf 'echo "flight-rules: adapted"\n' >> "$D/.ai/hooks/post-merge"
 say "$(has "$D" "post-merge adapted here")" "1" "the phrase inside code is not the adapted mark"
 say "$(has "$D" "post-merge differs from")" "0" "…the hook is reported as differing"
+rm -rf "$D"
+
+# The printed command, run as printed, keeps an unmarked adapted hook beside a stale one:
+# the bare form overwrote it, and on screen the ⚠️ that would have warned is not shown
+# (fix review, 2026-10-13 — reproduced).
+D=$(mkrepo); mkcache "$D" commit-msg
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" "$D/.ai/hooks/commit-msg"
+echo "# my own tweak" >> "$D/.ai/hooks/post-merge"
+SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]* --stale-only' | sed 's/^to update: //' | head -1)
+[ -n "$SYNC" ] && (cd "$D" && HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1; say "$?" "0" "stale + adapted: the printed command runs"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$H/git/commit-msg" && echo synced)" "synced" "…replaces the stale hook"
+say "$(grep -c 'my own tweak' "$D/.ai/hooks/post-merge")" "1" "…and keeps the adapted one"
 rm -rf "$D"
 
 # The missing-hook line already gives a cp; the sync command covers it too.

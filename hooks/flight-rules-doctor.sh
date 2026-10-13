@@ -67,8 +67,13 @@ if [[ -z "$HOOKS_PATH" ]]; then
   # A fresh plugin install lands here, and the bare "hooks/git/install.sh" this used to
   # print named a path inside the plugin that the user had no way to find (2026-10-13).
   # With the plugin's own copy beside this script, print the command that installs.
-  if [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
-    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %q --from %q   (then commit .ai/hooks/)' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC")"
+  # A clone of a project that already committed its hooks needs only its own install
+  # run: the plugin's --from would replace committed hooks the project adapted
+  # (pre-review, 2026-10-13). core.hooksPath and merge.ff are per-clone config.
+  if [[ -f "$ROOT/.ai/hooks/install.sh" ]]; then
+    bad "core.hooksPath is not set — this clone is not running the project's committed hooks. To install them: bash .ai/hooks/install.sh   (git config is per clone; it also sets merge.ff false)"
+  elif [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %q --from %q   (it also sets merge.ff false; then commit .ai/hooks/)' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC")"
   else
     bad "core.hooksPath is not set — the merge gate is not installed (flight-rules' hooks/git/install.sh, or: git config core.hooksPath <dir>)"
   fi
@@ -124,7 +129,10 @@ else
       fi
     done
     if [[ "${NEEDS_SYNC:-0}" -eq 1 ]]; then
-      printf '     to update: bash %q --from %q   (add --stale-only to touch only provably unmodified copies; HOOK_SYNC=auto in .ai/flight-rules.conf runs that in the first session each day and after an update)\n' \
+      # The --stale-only form is the one printed: this line reaches the user's screen
+      # without the ⚠️ beside it, and the bare form overwrote an unmarked adapted hook
+      # when run as printed (fix review, 2026-10-13 — reproduced).
+      printf '     to update: bash %q --from %q --stale-only   (replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace it. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
         "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"
     fi
     # The scan runs pre-commit.local only if it is executable, and skips it without a

@@ -21,12 +21,16 @@ command -v jq >/dev/null 2>&1 || { echo "  ❌ harness: jq is required to read t
 
 # The hook prints one JSON object: systemMessage for the person, additionalContext for
 # the assistant. ctx reads the assistant's text out of it, usr the person's; an `rc=N`
-# line a caller appends passes through. Output that is not the JSON becomes a HARNESS
-# line WITHOUT the text, so no presence assertion can match on it.
+# line a caller appends passes through. Output that is not exactly one JSON object —
+# trailing text, two objects — is what Claude Code would not parse, and becomes a
+# HARNESS line WITHOUT the text, so no presence assertion can match on it (pre-review,
+# 2026-10-13: `jq -e .` accepted two concatenated objects).
+one_object() { [ "$(jq -s 'length == 1 and (.[0] | type == "object")' <<<"$1" 2>/dev/null)" = true ]; }
 decode() {
   local in body; in=$(cat); body=$(grep -v '^rc=' <<<"$in")
   if [ -n "$body" ]; then
-    jq -er "$1" <<<"$body" 2>/dev/null || { jq -e . <<<"$body" >/dev/null 2>&1 || echo 'HARNESS: the hook printed something that is not JSON'; }
+    if one_object "$body"; then jq -r "$1 // empty" <<<"$body"
+    else echo 'HARNESS: the hook printed something that is not one JSON object'; fi
   fi
   grep '^rc=' <<<"$in"; return 0
 }
@@ -188,7 +192,10 @@ printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/p
 D=$(mkrepo); git -C "$D" config --unset merge.ff   # a problem for doctor to report
 PRUN() { (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null) | ctx; }
 say "$(PRUN | grep -c 'flight-rules doctor')" "1" "the first session of the day runs doctor"
-say "$(PRUN | grep -c 'flight-rules doctor')" "0" "…the second, same version, does not"
+# Paired with the exit status: "does not" is also what a hook that died prints.
+SECOND=$( { (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null); echo "rc=$?"; } | ctx)
+say "$(grep -c 'flight-rules doctor' <<<"$SECOND")" "0" "…the second, same version, does not"
+say "$(grep -c '^rc=0$' <<<"$SECOND")" "1" "…and exits 0 doing so"
 printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"
 say "$(PRUN | grep -c 'flight-rules doctor')" "1" "…the first after an update, same day, does"
 rm -rf "$D" "$T"
@@ -315,11 +322,11 @@ echo "What the person must act on is shown to them, not only to the assistant:"
 # install command (live 2.1.296 session, 2026-10-13). systemMessage is what the screen shows.
 D=$(mkrepo); git -C "$D" config --unset merge.ff
 J=$(raw "$D")
-say "$(jq -e . <<<"$J" >/dev/null 2>&1 && echo json)" "json" "the output is one JSON object"
+say "$(one_object "$J" && echo json)" "json" "the output is one JSON object"
 say "$(usr <<<"$J" | grep -c 'flight-rules doctor')" "1" "doctor's finding is in the user's message"
 say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "…with the problem line itself"
 say "$(ctx <<<"$J" | grep -c 'merge.ff')" "1" "…and in the assistant's context"
-say "$(ctx <<<"$J" | grep -c 'The user was shown the sync result')" "1" "…which says the user has already seen it"
+say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: doctor's ❌ lines")" "1" "…which says the user has already seen it"
 rm -rf "$D"
 # A ⚠️ alone stays off the screen: no conf is a choice in a main-only project, and a
 # warning only the project can silence would repeat every day (review, 2026-10-13).
@@ -341,6 +348,57 @@ J=$(raw "$D")
 say "$(ctx <<<"$J" | grep -c 'Branch: fix/merged')" "1" "the worktree reminder is in the assistant's context"
 say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on the user's screen for it"
 rm -rf "$D"
+
+echo "The screen is for projects that use flight-rules:"
+# A plugin enabled for the whole account opens every repo; a daily ❌ there, or in a
+# directory that is no repo, is the nag that gets it switched off (fix review, 2026-10-13).
+N=$(cd "$(mktemp -d)" && pwd -P)
+J=$( (cd "$N" && HOME="$N/fakehome" bash "$HOOK" 2>/dev/null) )
+say "$(ctx <<<"$J" | grep -c 'not inside a git repository')" "1" "outside a repo: the assistant is told"
+say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on screen"
+rm -rf "$N"
+F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q || die "git init failed in $F"
+J=$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) )
+say "$(usr <<<"$J" | grep -c 'core.hooksPath is not set')" "1" "a repo without flight-rules: the install hint is shown once"
+rm -f "$F"/fakehome/.claude/hooks/.worktree-check-*    # the next day
+J=$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) )
+say "$(ctx <<<"$J" | grep -c 'core.hooksPath is not set')" "1" "…the next day the assistant is still told"
+say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and the screen is not"
+rm -rf "$F"
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+raw "$D" >/dev/null; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(raw "$D" | usr | grep -c 'merge.ff')" "1" "a project using flight-rules: a ❌ is on screen again the next day"
+rm -rf "$D"
+
+echo "The sync command reaches the screen only beside a ❌ about a hook copy:"
+# The ⚠️ that also asks for it is not shown, and a command next to an unrelated ❌ read
+# as an instruction with no reason (fix review, 2026-10-13).
+D=$(mkrepo); git -C "$D" config --unset merge.ff; echo "# my own tweak" >> "$D/.ai/hooks/post-merge"
+J=$(raw "$D")
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "unrelated ❌ beside an adapted ⚠️: the ❌ is on screen"
+say "$(usr <<<"$J" | grep -c 'to update:')" "0" "…the sync command is not"
+say "$(ctx <<<"$J" | grep -c 'to update:')" "1" "…the assistant has it"
+rm -rf "$D"
+D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
+say "$(raw "$D" | usr | grep -c 'to update: .*--stale-only')" "1" "a missing hook: the --stale-only sync command is on screen"
+rm -rf "$D"
+
+echo "Without jq or python3, plain text for the assistant, and no claim the user saw it:"
+NJ=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$NJ/hooks/agent"; cp "$H/../flight-rules-doctor.sh" "$NJ/hooks/"
+sed 's/command -v jq >/command -v no-such-jq >/; s/command -v python3 >/command -v no-such-py >/' "$HOOK" > "$NJ/hooks/agent/session-start.sh" || die "no-tools copy"
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+OUT=$( { (cd "$D" && HOME="$D/fakehome" bash "$NJ/hooks/agent/session-start.sh" 2>/dev/null); echo "rc=$?"; } )
+say "$(grep -c "merge.ff is 'unset'" <<<"$OUT")" "1" "the doctor line is in the plain text"
+say "$(grep -cE "Already on the user's screen|user was shown" <<<"$OUT")" "0" "…without saying the user saw it"
+say "$(grep -c '^rc=0$' <<<"$OUT")" "1" "…and the hook exits 0"
+rm -rf "$D"
+# A python3 that fails — the macOS stub without Command Line Tools — falls back too.
+sed 's/command -v jq >/command -v no-such-jq >/; s/python3 -I -c /false /' "$HOOK" > "$NJ/hooks/agent/session-start.sh" || die "stub copy"
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+OUT=$( { (cd "$D" && HOME="$D/fakehome" bash "$NJ/hooks/agent/session-start.sh" 2>/dev/null); echo "rc=$?"; } )
+say "$(grep -c "merge.ff is 'unset'" <<<"$OUT")" "1" "a failing python3: the plain text still comes out"
+say "$(grep -c '^rc=0$' <<<"$OUT")" "1" "…and the hook exits 0"
+rm -rf "$D" "$NJ"
 
 echo "Without jq, the python3 fallback does not run the project's own json.py:"
 # python3 puts the working directory — the project — first on its import path, so a

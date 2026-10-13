@@ -45,9 +45,13 @@ Claude Code's own `/doctor`. Anything that calls it by path needs the new name.
 plain text, which Claude Code gives to the assistant and never puts on the screen; a
 fresh install or an update with a stale hook said nothing to the person who had to act.
 Doctor's ❌ problems, with the command that fixes them, and a hook sync now arrive as a
-message you see when the session starts. ⚠️ warnings stay with the assistant only —
-some are true by choice, and on screen they would repeat every day. The assistant
-still gets everything. In a repo with no git hooks installed:
+message you see when the session starts, in a project that uses flight-rules (a local
+`core.hooksPath` or `.ai/flight-rules.conf`). Any other repo is shown the install hint
+once; outside a repo, nothing. ⚠️ warnings stay with the assistant only — some are true
+by choice, and on screen they would repeat every day. The assistant still gets
+everything. The sync command doctor prints is the `--stale-only` form, so running it as
+printed never replaces a hook you changed, and a clone of a project that committed its
+hooks is told to run its own `.ai/hooks/install.sh`. In a repo with no git hooks installed:
 
 | | 0.23.0 | 0.24.0 |
 |---|---|---|

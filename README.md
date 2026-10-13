@@ -99,12 +99,15 @@ Then start a new session in the project. The first one shows a `flight-rules doc
 message with the command that installs the git hooks (the merge gate and the secret
 scan) into `.ai/hooks/`; run it and commit `.ai/hooks/`. A plugin cannot do this step
 itself: the hooks are the project's own committed files, and Claude Code has no install
-event for a plugin to act on.
+event for a plugin to act on. Every other clone runs `bash .ai/hooks/install.sh` once —
+git config is per clone, and doctor says so there. (The message needs `jq` or
+`python3`; without either, doctor's findings reach only the assistant.)
 
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run
 only when one starts. If a git hook is behind the new release, that session's doctor
-message prints the sync command; to have it run on its own, set `HOOK_SYNC=auto` in
-`.ai/flight-rules.conf` (see [Parameters](#parameters)). Each release's
+message prints the sync command with `--stale-only`: it replaces only copies identical
+to an older release, and leaves a hook you changed alone and names it. To have it run on
+its own, set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each release's
 [CHANGELOG](CHANGELOG.md) entry starts with anything the update needs from you.
 
 **Any AI tool (rules, by pointer):** add one line to the project's rules entry point
