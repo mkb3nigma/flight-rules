@@ -189,6 +189,12 @@ say "$(head -1 <<<"$OUT")" "0" "…an install exits 0"
 say "$([ -e "$D/~" ] && echo made || echo none)" "none" "…and makes no literal ~ directory in the repo"
 say "$(same "$D/fakehome/hk/commit-msg" "$P/hooks/git/commit-msg")" "same" "…it installs into the expanded directory"
 rm -rf "$D" "$P"
+# …and with HOME outside the repo, ~/hk is outside it: --stale-only refuses as such.
+D=$(mkrepo); P=$(mkplugin); O=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$O/hk"; cp "$D"/.ai/hooks/* "$O/hk/"; git -C "$D" config core.hooksPath '~/hk'
+OUT=$(cd "$D" && HOME="$O" bash "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only 2>&1); RC=$?
+say "$RC" "1" "a local hooksPath of ~/hk outside the repo: --stale-only refuses"
+say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository, not as missing"
+rm -rf "$D" "$P" "$O"
 D=$(mkrepo); P=$(mkplugin); git -C "$D" config core.hooksPath .ai/gone
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "a hooksPath that does not exist: --stale-only refuses rather than re-pointing"
