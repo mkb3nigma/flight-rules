@@ -37,8 +37,10 @@ done
 # The directory git runs hooks from. LOCAL config only: the global one can name a
 # directory outside every repo (~/.githooks), and a sync that followed it wrote seven
 # files there and pointed this repo at them (review, 2026-10-12). A relative value is
-# resolved against this checkout — a worktree's own copy, as git resolves it.
-HOOKS_PATH=$(git config --local core.hooksPath 2>/dev/null || true)
+# resolved against this checkout — a worktree's own copy, as git resolves it. --path,
+# because git expands a leading ~: read raw, ~/x was joined to the repo root and an
+# install wrote the hooks into a literal "~" directory there.
+HOOKS_PATH=$(git config --local --path core.hooksPath 2>/dev/null || true)
 HOOKS_DIR="$REPO_ROOT/.ai/hooks"; PATH_IS_SET=0
 if [ -n "$HOOKS_PATH" ]; then
     PATH_IS_SET=1

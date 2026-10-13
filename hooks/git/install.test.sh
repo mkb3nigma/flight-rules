@@ -174,6 +174,19 @@ OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "a local hooksPath outside the repo: --stale-only refuses"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…and says so"
 rm -rf "$D" "$P" "$OUT_DIR"
+# A local core.hooksPath of ~/… is a path git expands. Read raw, it was joined to the
+# repo root: --stale-only said the directory did not exist, and an install created a
+# literal "~" directory in the repo and wrote the hooks there. (The fixture's HOME is
+# inside the repo, so ~/hk counts as inside it here.)
+D=$(mkrepo); P=$(mkplugin); mkdir -p "$D/fakehome/hk"; cp "$D"/.ai/hooks/* "$D/fakehome/hk/"; git -C "$D" config core.hooksPath '~/hk'
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "a local hooksPath of ~/hk: --stale-only syncs"
+say "$(grep -c 'does not exist' <<<"$OUT")" "0" "…without calling the directory missing"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "…an install exits 0"
+say "$([ -e "$D/~" ] && echo made || echo none)" "none" "…and makes no literal ~ directory in the repo"
+say "$(same "$D/fakehome/hk/commit-msg" "$P/hooks/git/commit-msg")" "same" "…it installs into the expanded directory"
+rm -rf "$D" "$P"
 D=$(mkrepo); P=$(mkplugin); git -C "$D" config core.hooksPath .ai/gone
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "a hooksPath that does not exist: --stale-only refuses rather than re-pointing"
