@@ -91,7 +91,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    wires the concrete command for whichever CLI it has in its extensions. The command:
    - **names no model.** Which model a CLI runs is the user's choice, made in that CLI's
      own config, and with none there the CLI's default follows its releases. A pin
-     anywhere goes stale, the config included — when a configured model is refused, the
+     anywhere can go stale, the config included — when a configured model is refused, the
      run fails and the warning above names the config line: a `model = "gpt-5.5"` pin in
      `~/.codex/config.toml` failed Codex pre-reviews on 2026-09-09 (*"does not exist or
      you do not have access to it"*) and 2026-10-16 (*"not supported when using Codex
