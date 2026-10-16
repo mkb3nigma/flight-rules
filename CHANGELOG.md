@@ -16,19 +16,21 @@ the skill's text never reaches it. AppliHawk's did not pass on first check: it p
 
 ### `/dg`: a contract for any reviewer CLI, not a Codex recipe
 
-0.24.0 named no vendor for the independent pre-review, but its completion check and its
-only example were written in Codex terms, so wiring another CLI meant guessing. 0.24.1
+0.24.0 named no vendor for the independent pre-review, but its completion check was
+written in Codex terms and its only worked example was a Codex command (beside a bare
+`claude -p "…"`), so wiring another CLI meant guessing. 0.24.1
 states what any wired command must do:
 
 - **name no model** — the choice stays in the CLI's own config, or its default. A pinned
   `gpt-5.5` failed Codex pre-reviews with "does not exist" and "not supported"
   (2026-09-09, 2026-10-16);
 - **set effort to `high`** where the CLI has the setting, else say so in the header;
-- **run with no tools**, MCP and plugin tools included — `claude -p --tools ""` still
+- **run read-only, or with no tools** where the CLI has no read-only mode — and no tools
+  means none from MCP servers or plugins either: `claude -p --tools ""` still
   loaded 42 MCP tools, Gmail among them, until `--strict-mcp-config`;
 - **feed the input the way the CLI reads it** — `agy -p` 1.4.0 ignores piped stdin;
-- **keep the final message apart from stderr**, and read success from the marker line,
-  never from exit 0 or a status field: `agy` returned `"status":"SUCCESS"`, exit 0 and an
+- **keep the final message apart from stderr**, and count a run only on the marker line
+  and exit 0 together — never on exit 0 or a status field alone: `agy` returned `"status":"SUCCESS"`, exit 0 and an
   empty reply on a denied tool call;
 - **report the model that ran.** A same-family or unreported model counts, under a new
   header form, `✅ <reviewer> (<model>, not cross-family)` — `agy` also serves Claude
