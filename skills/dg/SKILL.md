@@ -87,27 +87,36 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the pre-reviewer should be a different one — the roles swap freely depending on which
    assistant a project runs as its main. This file states only the preference; a project
    wires the concrete command for whichever CLI it has in its extensions. The command:
-   - **names no model.** The CLI's own config, else its default, picks one. A pinned
-     model is retired under you: a `model = "gpt-5.5"` pin in `~/.codex/config.toml`
-     failed Codex pre-reviews on 2026-09-09 and 2026-10-16 (`gpt-5.2-codex` the same way
-     on 2026-05-20);
-   - **sets effort to `high`** with the CLI's own flag, so a review never runs at a
-     `medium` default. Level names have outlived model names; an unknown one fails the
-     run, which is the warning above, not a broken review;
+   - **names no model.** Which model a CLI runs is the user's choice, made in that CLI's
+     own config; the command leaves it there so it survives the model's retirement.
+     A pin in a command or extension goes stale: a `model = "gpt-5.5"` pin in
+     `~/.codex/config.toml` failed Codex pre-reviews on 2026-09-09 (*"does not exist or
+     you do not have access to it"*) and 2026-10-16 (*"not supported when using Codex
+     with a ChatGPT account"*), `gpt-5.2-codex` the same way on 2026-05-20;
+   - **sets effort to `high`** with the CLI's own flag where it has one, so a review
+     never runs at a `medium` default. Where it has none, say so in the header. An
+     unknown level failed loudly in `codex` and `agy` (2026-10-16), which is the warning
+     above; a CLI that may ignore it silently is treated as having none;
    - **runs read-only, or tells the reviewer to use no tools** where the CLI has no
      read-only mode — a denied tool call in headless mode is a dead turn;
    - **feeds the brief and subject the way the CLI reads them** — `agy -p` ignored
-     piped stdin and answered nothing (agy 1.4.0, 2026-10-16);
+     piped stdin and answered nothing (agy 1.4.0, 2026-10-16). A CLI that takes the
+     prompt only as an argument gets a large range split by subsystem, as in step 1;
    - **keeps the final message and stderr apart**, for the completion check;
    - **reports the model that actually ran** in the header, read from the CLI's output
-     or log. A CLI is not a family: `agy` also serves Claude models.
+     or log, else `model unreported`. A CLI is not a family: `agy` also serves Claude
+     models. A model of the same family as the one running this skill, or one
+     unreported, makes the run the same-family form of the header, not `✅ <reviewer>`
+     as cross-family.
 
    E.g. from Claude Code:
    `out=$(mktemp) err=$(mktemp);`
    `cat <brief> <subject> | codex exec -s read-only -c model_reasoning_effort=high -o "$out" - 2>"$err"`
    (stdin, so a large diff is not squeezed through one argument; `$out`, fresh each run,
    holds the final message the completion check reads, `$err` the reason it failed, and
-   its `model:` line the model that ran); from Codex, `claude -p "…"`.
+   its `model:` line the model that ran). From Codex:
+   `cat <brief> <subject> | claude -p --effort high --tools "" --output-format json > "$out" 2>"$err"`
+   (`.result` is the final message, the keys of `.modelUsage` the model that ran).
 
    Same-family fallback is correct, and stays the default when no second model is
    reachable. A same-family pre-review still beats none — never skip the step for want
