@@ -57,7 +57,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
      stdout, an output file written at a fresh path each run (a failed run leaves an old
      file as it was), or the reply field of the CLI's JSON — never from exit status or a
      status field alone: `agy -p` returned `"status":"SUCCESS"`, exit 0 and an empty
-     reply when a tool it reached for was denied (2026-10-16);
+     reply when a tool it reached for was denied (agy 1.4.0, 2026-10-16);
    - or a subagent's own reply. A subagent that wraps a CLI does not count: handed the
      brief, it can write the line itself over a dead run. Read the CLI's output and
      exit status directly, or treat the run as failed.
@@ -97,7 +97,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - **runs read-only, or tells the reviewer to use no tools** where the CLI has no
      read-only mode — a denied tool call in headless mode is a dead turn;
    - **feeds the brief and subject the way the CLI reads them** — `agy -p` ignored
-     piped stdin and answered nothing (2026-10-16);
+     piped stdin and answered nothing (agy 1.4.0, 2026-10-16);
    - **keeps the final message and stderr apart**, for the completion check;
    - **reports the model that actually ran** in the header, read from the CLI's output
      or log. A CLI is not a family: `agy` also serves Claude models.
