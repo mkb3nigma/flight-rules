@@ -69,6 +69,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    pre-review. The header's `Pre-review:` line is one of:
    - `✅ <reviewer>` — it ran (name the model; a same-family one with none wired is
      no warning);
+   - `✅ <reviewer> (<model>, not cross-family)` — a wired CLI ran, but on a
+     same-family or unreported model (see the command's last point below);
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
@@ -88,8 +90,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    assistant a project runs as its main. This file states only the preference; a project
    wires the concrete command for whichever CLI it has in its extensions. The command:
    - **names no model.** Which model a CLI runs is the user's choice, made in that CLI's
-     own config; the command leaves it there so it survives the model's retirement.
-     A pin in a command or extension goes stale: a `model = "gpt-5.5"` pin in
+     own config, and with none there the CLI's default follows its releases. A pin
+     anywhere goes stale, the config included — when a configured model is refused, the
+     run fails and the warning above names the config line: a `model = "gpt-5.5"` pin in
      `~/.codex/config.toml` failed Codex pre-reviews on 2026-09-09 (*"does not exist or
      you do not have access to it"*) and 2026-10-16 (*"not supported when using Codex
      with a ChatGPT account"*), `gpt-5.2-codex` the same way on 2026-05-20;
@@ -98,16 +101,18 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
      unknown level failed loudly in `codex` and `agy` (2026-10-16), which is the warning
      above; a CLI that may ignore it silently is treated as having none;
    - **runs read-only, or tells the reviewer to use no tools** where the CLI has no
-     read-only mode — a denied tool call in headless mode is a dead turn;
+     read-only mode — a denied tool call in headless mode is a dead turn. No tools means
+     none from MCP servers or plugins either: `claude -p --tools ""` still loaded 42
+     MCP tools, Gmail among them, until `--strict-mcp-config` (2026-10-16);
    - **feeds the brief and subject the way the CLI reads them** — `agy -p` ignored
      piped stdin and answered nothing (agy 1.4.0, 2026-10-16). A CLI that takes the
      prompt only as an argument gets a large range split by subsystem, as in step 1;
    - **keeps the final message and stderr apart**, for the completion check;
    - **reports the model that actually ran** in the header, read from the CLI's output
      or log, else `model unreported`. A CLI is not a family: `agy` also serves Claude
-     models. A model of the same family as the one running this skill, or one
-     unreported, makes the run the same-family form of the header, not `✅ <reviewer>`
-     as cross-family.
+     models. A run whose model is the same family as the one running this skill, or
+     unreported, counts but not as cross-family: `✅ <reviewer> (<model>, not
+     cross-family)`.
 
    E.g. from Claude Code:
    `out=$(mktemp) err=$(mktemp);`
@@ -115,7 +120,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    (stdin, so a large diff is not squeezed through one argument; `$out`, fresh each run,
    holds the final message the completion check reads, `$err` the reason it failed, and
    its `model:` line the model that ran). From Codex:
-   `cat <brief> <subject> | claude -p --effort high --tools "" --output-format json > "$out" 2>"$err"`
+   `cat <brief> <subject> | claude -p --effort high --tools "" --strict-mcp-config --output-format json > "$out" 2>"$err"`
    (`.result` is the final message, the keys of `.modelUsage` the model that ran).
 
    Same-family fallback is correct, and stays the default when no second model is
@@ -159,7 +164,7 @@ place a long verdict turns back into paragraphs.
 
 ```markdown
 ## Review: <subject>
-> Pre-review: <one of the three forms in step 2>
+> Pre-review: <one of the forms in step 2>
 
 ## Decisions waiting
 | # | Decision | Recommendation |
