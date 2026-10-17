@@ -449,6 +449,7 @@ printf 'DG_COMIC=sometimes\nDG_COMIC_PR=yes\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "a bad comic value is a warning, not a failure"
 say "$(has "$D" "DG_COMIC='sometimes' is neither always nor never")" "0" "…naming DG_COMIC's values"
 say "$(has "$D" "DG_COMIC_PR='yes' is not never, ask or always")" "0" "…and DG_COMIC_PR's"
+say "$(has "$D" "treats it as never and keeps the comic out of PRs")" "0" "…falling back to never, the opt-in default"
 rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCH=^main$\n' > "$D/.ai/flight-rules.conf"

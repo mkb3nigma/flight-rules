@@ -236,7 +236,7 @@ else
       DG_COMIC_PR)
         case "$val" in
           never|ask|always) ok "$key=$val" ;;
-          *) warn "$key='$val' is not never, ask or always — /dg treats it as ask" ;;
+          *) warn "$key='$val' is not never, ask or always — /dg treats it as never and keeps the comic out of PRs" ;;
         esac ;;
       *) ok "$key=$val" ;;
     esac

@@ -207,17 +207,18 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the verdict reached only the PR body, and the comic was never offered (2026-10-17).
 
 6. **Comic strip, last** — two settings in `.ai/flight-rules.conf`, read like every
-   other key there (unset or no conf: the default):
+   other key there (unset, no conf, or any other value: the default — `flight-rules-doctor.sh`
+   warns about the value):
    - `DG_COMIC` — `always` (default) or `never`. With `always` the reply ends with the
      comic as ASCII art, never offered: an offer at the end of a step list was skipped
      (2026-10-17). With `never` there is no comic and no banter score anywhere.
-   - `DG_COMIC_PR` — `never`, `ask` (default) or `always`: whether the comic goes into
-     the PR when the review is for one (`pr-create` 2b, or the person says so). `ask`
-     puts *"Add the comic to the PR? (y/N)"* as the reply's last line; `always` adds it
-     under `## Comic` after the review section; `never` keeps it out. Nothing else
-     carries it, or the banter score, into a PR, issue or commit: the owner added both
-     for levity, and not every reader shares the taste (2026-10-17). Ignored when
-     `DG_COMIC=never`.
+   - `DG_COMIC_PR` — `never` (default), `ask` or `always`: whether the comic, banter
+     score included, goes into the PR when the review is for one (`pr-create` 2b, or the
+     person says so). Strictly opt-in: `never` keeps it out without asking; `ask` puts
+     *"Add the comic to the PR? (y/N)"* as the reply's last line; `always` adds it as
+     `### Comic` at the end of the PR's review section. Nothing else carries the comic
+     or the score into a PR, issue or commit: the owner added both for levity, and not
+     every reader shares the taste (2026-10-17). Ignored when `DG_COMIC=never`.
 
    The comic: up to 8 panels of the best banter, at least one per round, in a block
    fenced with more backticks than any run inside it (a quoted ` ``` ` would close a
@@ -314,7 +315,7 @@ Add the comic to the PR? (y/N)
 The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
 with `DG_COMIC_PR=ask` on a review that is for a PR. `## Verdict` ends at Recommended
 Actions, so wherever a PR body takes "the verdict", it takes neither the comic nor the
-round tables' BANTER lines.
+round tables' BANTER lines; the comic follows only by `DG_COMIC_PR`.
 
 **Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
 measure of the work, and it lives in the comic, after the findings, because it decides

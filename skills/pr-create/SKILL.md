@@ -130,10 +130,13 @@ branch from a local copy and opening a fresh PR against the correct base.
    preferring a pre-reviewer from a different model family (the skill says why; one
    that is unavailable is a warning in the verdict's header, not a reason to stop), and
    name both shas in the verdict. `/dg` ends its turn with the verdict; dispositions
-   follow the owner's reply. Put the verdict (it ends at Recommended Actions) and every
-   finding's disposition in the PR body under **Adversarial review** — no round tables
-   or banter. The comic goes in only as the project's `DG_COMIC_PR` says (`/dg` step 6;
-   default: ask). The `release review` workflow checks the section is there and not
+   follow the owner's reply. Put the `## Review` header lines, the verdict (it ends at
+   Recommended Actions) and every finding's disposition in the PR body under
+   **Adversarial review**, each of the verdict's headings one level down (`###`, `####`)
+   — a `##` inside the section ends it, and the check below then finds it empty. No
+   round tables or banter. The comic, banter score included, goes in only as the
+   project's `DG_COMIC_PR` says (`/dg` step 6; default `never`), as `### Comic` at the
+   section's end. The `release review` workflow checks the section is there and not
    empty, and re-checks on every body edit. The assistant may decline a minor or important finding with its reason, where the
    owner reads it; a **critical** finding is the owner's to disposition — stop and
    ask. A finding applied arrives like any change, through a branch merged into
@@ -168,7 +171,10 @@ gh pr create \
 
 <RELEASE PRs ONLY — delete this section otherwise; on a release PR delete this line:>
 ## Adversarial review
-<the /dg verdict on origin/main...<sha> — through Recommended Actions, no banter — naming both shas, and each finding's disposition: applied (branch/commit), declined (reason), or — a critical — the owner's call, quoted>
+<the /dg verdict on origin/main...<sha> — its header lines, then the verdict through Recommended Actions with every heading one level down, no banter — naming both shas, and each finding's disposition: applied (branch/commit), declined (reason), or — a critical — the owner's call, quoted>
+<ONLY if DG_COMIC_PR is always, or ask and the owner said yes — delete this line otherwise:>
+### Comic
+<the ASCII comic from /dg, its fence and banter score included>
 
 ## Testing
 - [ ] Happy path exercised
