@@ -4,6 +4,81 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.25.0 — 2026-10-17
+
+### Upgrading — sync the git hooks; this one is a security fix
+
+`hooks/git/pre-commit` changed, and a plugin update cannot touch your project's git
+hooks. With `HOOK_SYNC=auto` the first session after the update syncs them (unless a
+merge, rebase, `git am`, cherry-pick or revert is in progress, which it now says). With
+the default `report`, doctor names the stale hook and prints the command:
+
+```bash
+bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git --stale-only
+```
+
+Then commit the diff. Doctor may also warn, new in this release, that a command or skill
+of yours shadows a flight-rules skill — read the warning before deleting anything.
+
+### Fixed
+
+- **A ref named `MERGE_HEAD` switched the secret scan off.** `pre-commit` skips its scan
+  while a merge is being concluded, and decided that with `git rev-parse --verify
+  MERGE_HEAD` — which also resolves a branch or tag of that name. With one, every commit
+  went unscanned and nothing was said; a staged AWS key committed (AppliHawk's security
+  review, 2026-10-17, reproduced). 0.25.0 tests git's `MERGE_HEAD` file, skips only
+  when it names a commit `HEAD` lacks — a leftover naming `HEAD` or an ancestor makes
+  an ordinary commit, and is scanned — and prints "secret scan skipped" every time it
+  skips, so a leftover file is seen too.
+  `session-start.sh` had the same lookup for `MERGE_HEAD`, `CHERRY_PICK_HEAD` and
+  `REVERT_HEAD`: a ref so named skipped `HOOK_SYNC`; it tests the files now.
+- **A leftover `REBASE_HEAD` blocked `HOOK_SYNC=auto` for good, silently.** git leaves
+  that file after some rebases; AppliHawk's dated from March 2026, so under 0.24.1 its
+  hooks never synced and nothing was printed while doctor called them stale. A rebase in
+  progress is the `rebase-merge` or `rebase-apply` directory, which was already checked.
+  The sync now also waits out a stopped `git am` (named as such, not "a rebase") and a
+  half-done multi-commit cherry-pick or revert (`sequencer/todo`), and every skip says
+  why, with the command to run once it is finished.
+- **A headless session spent the day's on-screen message.** The first session each day
+  set the flag even when it was `claude -p` — a scripted `/dg` pre-review, CI — so that
+  day's doctor ❌ reached no screen and the attended sessions after it stayed quiet.
+  With `CLAUDE_CODE_SESSION_ATTENDED=0` (set by `claude -p`; observed on Claude Code
+  2.1.301, undocumented) doctor still runs but the flag is left. Unset keeps 0.24.1's
+  behaviour.
+
+### Added
+
+- **Doctor names a command or skill that shadows a plugin skill.** A
+  `~/.claude/commands/dg.md` (or a project `.claude/` one, or a skill of the same name)
+  is what `/dg` runs; AppliHawk's, a copy from 2026-06-11, ran in place of every later
+  `/dg` with nothing said. A pointer at `skills/<name>/SKILL.md` or a wrapper that hands
+  over to `flight-rules:<name>` is not a shadow.
+- **`/dg` dependency CVE scan**, from upstream dinesh-gilfoyle: the ecosystem's own audit
+  where installed, else OSV.dev, at the reviewed head. It reaches the network, says so,
+  and can be declined; it never installs a tool, and a scan that did not run is reported
+  "not run", never clean.
+- **`/dg` banter score and comic strip**, from upstream. Every verdict now reaches you
+  and ends with the comic drawn as text, and `/dg` stops there: nothing is applied, even
+  inside `pr-create` 2b, until you reply. Upstream offers the comic instead, and this
+  release's own review skipped that offer. The comic is ASCII art and holds the banter
+  score. Two settings in `.ai/flight-rules.conf` control it per project: `DG_COMIC`
+  (`always`, the default, or `never`) and `DG_COMIC_PR` (`never`, the default, `ask` or
+  `always`) for whether a PR gets the comic and its score — strictly opt-in; this repo
+  sets `always`. `flight-rules-doctor.sh` checks both values. A PR body never carries
+  the round tables' banter.
+  An HTML page or PNG of the comic is made only on request and stays local; every value
+  in the page is escaped and the template carries a Content-Security-Policy. `/rules-sync` now
+  reports a copied skill's missing companion files with the `cp` that adds them, so a
+  project that copied `/dg` in learns it lacks the template.
+
+### Changed — `/dg`
+
+- Round 1 is blind: the pre-review reaches the personas from round 2.
+- Personas are told research only, do not edit; Gilfoyle no longer must find a
+  critical or important issue.
+- Finding tables carry Location, and persona tables Verified? and Fix.
+- An empty `/dg` also reviews untracked files.
+
 ## 0.24.1 — 2026-10-16
 
 ### Upgrading

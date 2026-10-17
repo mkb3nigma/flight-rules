@@ -168,7 +168,7 @@ else bad "neither jq nor python3 on PATH — the agent guard will deny every git
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 CONF=".ai/flight-rules.conf"
-KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC'
+KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC DG_COMIC DG_COMIC_PR'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
 else
@@ -227,6 +227,16 @@ else
           auto)   ok "$key=auto — the first session each day, and after a plugin update, replaces git hooks that are byte-identical to an older release, and leaves the diff for you to commit" ;;
           report) ok "$key=report" ;;
           *)      warn "$key='$val' is neither auto nor report — session-start treats it as report and syncs nothing" ;;
+        esac ;;
+      DG_COMIC)
+        case "$val" in
+          always|never) ok "$key=$val" ;;
+          *) warn "$key='$val' is neither always nor never — /dg treats it as always and ends every verdict with the comic" ;;
+        esac ;;
+      DG_COMIC_PR)
+        case "$val" in
+          never|ask|always) ok "$key=$val" ;;
+          *) warn "$key='$val' is not never, ask or always — /dg treats it as never and keeps the comic out of PRs" ;;
         esac ;;
       *) ok "$key=$val" ;;
     esac
@@ -323,6 +333,30 @@ elif [[ $LOCAL_WIRED -eq 1 ]]; then
   fi
 else
   warn "no agent guard wired: neither the plugin nor .claude/settings.json runs pre-commit-check.sh — only the git hooks are protecting you"
+fi
+
+# ── 5. No command or skill of the user's or project's own shadows a plugin skill ──
+# One named like a plugin skill is what `/dg` runs, and the plugin's stays unreached:
+# AppliHawk's ~/.claude/commands/dg.md, a copy from 2026-06-11, ran in place of every
+# release's /dg after it with nothing said (2026-10-13). A file that points at a
+# skills/<name>/SKILL.md (a project's copy-in, or this repo's own pointers) or hands over
+# to `flight-rules:<name>` (AppliHawk's wrappers, flagged on the first real run,
+# 2026-10-17) is no shadow. Only with the plugin on: off, its skills are not in use.
+SKILLS_SRC="$(cd "${GIT_HOOKS_SRC%/git}/../skills" 2>/dev/null && pwd)"   # resolved before the cd to $ROOT
+if [[ $PLUGIN_ON -eq 1 && -n "$SKILLS_SRC" ]]; then
+  for _s in "$SKILLS_SRC"/*/SKILL.md; do
+    [[ -f "$_s" ]] || continue
+    _n=$(basename "$(dirname "$_s")")
+    for _f in "$HOME/.claude/commands/$_n.md" "$HOME/.claude/skills/$_n/SKILL.md" \
+              ".claude/commands/$_n.md" ".claude/skills/$_n/SKILL.md"; do
+      [[ -f "$_f" ]] || continue
+      grep -qF -e "skills/$_n/SKILL.md" -e "flight-rules:$_n" "$_f" && continue
+      # Not ${_f/#$HOME/~}: bash 5 tilde-expands that replacement back to $HOME, and
+      # escaping it prints "\~" on bash 3.2 (Ubuntu CI, 2026-10-17).
+      case "$_f" in "$HOME"/*) _f="~/${_f#"$HOME"/}" ;; esac
+      warn "$_f shadows flight-rules' /$_n — /$_n runs that file, not this release's skill; delete or rename it if it is an old copy (/flight-rules:$_n reaches the plugin's either way)"
+    done
+  done
 fi
 
 echo

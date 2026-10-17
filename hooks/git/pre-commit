@@ -16,7 +16,7 @@
 # warn an agent, and wrong often enough that blocking every human commit on it would
 # be the kind of "safety" block this playbook avoids.
 #
-# A merge being concluded (MERGE_HEAD present) is not scanned. Its staged diff is the
+# A merge being concluded (see the MERGE_HEAD test below) is not scanned. Its staged diff is the
 # whole incoming branch, and re-scanning it blocks the merge on lines nobody is writing
 # now. Those commits were scanned when they were made only if this hook was installed
 # and not bypassed then — not for history from before it, or a --no-verify commit. The
@@ -42,7 +42,27 @@ export LC_ALL=C
 LOCAL_HOOK="$(dirname "$0")/pre-commit.local"
 run_local() { [ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"; exit 0; }
 
-git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && run_local "$@"
+# Concluding a merge is not re-scanned: the incoming commits were scanned when they were
+# made. The marker is git's MERGE_HEAD FILE — `rev-parse --verify MERGE_HEAD` also
+# resolves a branch or tag of that name, and one switched the scan off for every
+# commit with nothing said (AppliHawk review, 2026-10-17). The skip is said every
+# time, so a MERGE_HEAD left behind is seen rather than trusted. And it must bring in a
+# commit HEAD lacks: git drops a parent HEAD already contains, so a leftover file naming
+# HEAD or an ancestor made an ordinary, unscanned commit (release /dg, 2026-10-17).
+MERGE_MARKER=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
+merges_something() {
+    while read -r m; do
+        [ -n "$m" ] || continue
+        # Exit 1 is "not an ancestor"; any other failure (no such object) is no proof
+        # of a merge, so the scan runs.
+        git merge-base --is-ancestor "$m" HEAD 2>/dev/null; [ $? -eq 1 ] && return 0
+    done < "$MERGE_MARKER"
+    return 1
+}
+if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
+    echo "pre-commit: concluding a merge ($MERGE_MARKER present) — secret scan skipped; the merged commits were scanned when made. Not merging? \`git status\` shows what git thinks; \`git merge --abort\` clears it." >&2
+    run_local "$@"
+fi
 
 # Every flag here stops repo config from changing what `git diff` prints, which would
 # leave the `^+` match below with nothing to see: --no-color (color.diff=always),

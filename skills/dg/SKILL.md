@@ -32,11 +32,66 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 1. **Determine what to review** — file path → read it in full; a `<base>...<head>`
    range → `git diff <base>...<head>`, naming the exact shas reviewed in the verdict;
-   description/question → gather relevant context first; empty → `git diff HEAD`, then
-   `git diff --staged`, else stop and say so. Extract round count if present (default
-   5). A range too large for one pass (read `--stat` first) is reviewed by subsystem,
+   description/question → gather relevant context first; empty → `git diff HEAD`
+   (staged and unstaged) plus every file `git ls-files --others --exclude-standard`
+   lists, read in full — a new file nobody has added yet is in no diff — else stop and
+   say so. Extract round count if present (default 5). A range too large for one pass (read `--stat` first) is reviewed by subsystem,
    one run each, and the verdicts are merged — a subsystem left out is named as such,
    never silently skipped.
+
+   **Dependency scan** — when the subject is code, audit its dependency files for known
+   CVEs with the ecosystem's own tool, which maps versions to advisories and covers
+   transitive dependencies.
+
+   *What leaves the machine.* Every audit below except two sends the project's package
+   names and versions to a remote service — the registry (`npm`, `yarn`, `pnpm`,
+   `composer`), PyPI or OSV (`pip-audit`), vuln.go.dev (`govulncheck`), and the OSV and
+   NVD fallback. `cargo audit` and `bundle audit` download an advisory database and send
+   no names. A project whose package names must not leave the machine says so in its
+   extensions; the scan then runs only those two and reports the rest as not run.
+
+   *Which revision.* Scan the files at the reviewed head, not whatever is checked out:
+   for a range whose head is not `HEAD`, scan a detached worktree of it (`git worktree
+   add --detach <tmp> <head>`, removed after), or report the scan as not run. A clean
+   result for the checkout's lockfile, filed under the reviewed sha, vouches for code
+   nobody reviewed.
+
+   | File | Audit |
+   |---|---|
+   | `package-lock.json` / `pnpm-lock.yaml` | `npm audit --package-lock-only --json` / `pnpm audit --json` |
+   | `yarn.lock` | `yarn audit --json` (Yarn 1) / `yarn npm audit --json` (Yarn 2+) |
+   | `requirements.txt`, every version pinned | `pip-audit -r requirements.txt --no-deps --disable-pip --format=json` |
+   | `poetry.lock` / `uv.lock` / `Pipfile.lock` | export pinned requirements with the project's tool (`poetry export -f requirements.txt`, `uv export --format requirements-txt`, `pipenv requirements`), then the row above |
+   | `go.mod` | `govulncheck ./...` |
+   | `Gemfile.lock` | `bundle audit check --update` |
+   | `Cargo.lock` | `cargo audit` |
+   | `composer.lock` | `composer audit --format=json` |
+   | `pom.xml` / `build.gradle(.kts)` / `gradle.lockfile` | the OWASP dependency-check plugin, only if the build already applies it |
+
+   `pip-audit` with no arguments audits the Python environment it runs in, not the
+   project — a clean answer about the wrong packages — and `-r` without `--no-deps
+   --disable-pip` resolves through pip, which can run a package's build code. So a
+   `requirements.txt` with unpinned versions, or a `pyproject.toml` with no lockfile, is
+   `⚠️ not run — unpinned`. `--no-deps` also means only the listed packages are
+   audited: a `requirements.txt` that is not a full resolution (one written by
+   `pip-compile`, `pip freeze` or a lockfile export — a hand-written one lists direct
+   dependencies only) is `⚠️ partial — listed packages only, transitive not audited`,
+   never clean; one you cannot tell apart is partial. A dependency file no row covers is `⚠️ not run — no mapped
+   audit for <file>`, never `n/a`.
+
+   Only a tool already installed — never install one for the review: an unpinned
+   download run on the spot is the supply-chain risk the scan exists to find. With no
+   tool, query [OSV.dev](https://osv.dev) per pinned package (`curl -s -X POST
+   https://api.osv.dev/v1/query -d '{"package":{"name":"<pkg>","ecosystem":"<npm|PyPI|Go|Maven|crates.io|RubyGems|Packagist|NuGet>"},"version":"<v>"}'`),
+   and read a critical one's CVSS from NVD
+   (`https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=<CVE>`). Each result is one
+   finding: `<package>@<version>`, the CVE, its CVSS as the tool, OSV or NVD gives it —
+   else `CVSS: none published`, never an estimate — and the version that fixes it. The
+   results get their own verdict section and reach both personas from round 2, as the
+   pre-review does: given to Gilfoyle in round 1 they would land in "Gilfoyle only",
+   credited to someone who found none of them. A scan that did not run is `⚠️ not run —
+   <why>` in the header, never "clean": a missing tool or a refused request that reads as
+   no CVEs is the silent pass §2 forbids.
 
 2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
    subject cold: no personas, no access to their findings. It enumerates correctness
@@ -74,8 +129,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
-   If captured, brief both personas: *"An independent senior reviewer flagged the
-   following — agree, escalate, or dispute each point as you see fit."*
+   If captured, the personas get it from round 2 on, not in round 1: *"An independent
+   senior reviewer flagged the following — agree, escalate, or dispute each point as
+   you see fit."* Briefed before their first look, they review the pre-reviewer's list
+   instead of the subject, and the verdict's pre-review-only section — what neither
+   persona found alone — cannot be filled honestly.
 
    **Prefer a reviewer from a different model family than the one running this skill,**
    whenever the environment can reach one. The step is called *independent*, and a
@@ -129,6 +187,10 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 3. **Spawn two persona agents** (or simulate both voices sequentially if subagents are
    unavailable): Dinesh and Gilfoyle each review the subject independently in round 1.
+   Every persona brief says: *"Research only — read the subject and produce your
+   review. Do NOT edit any files."* A persona subagent has the full toolset, and a
+   reviewer that fixes what it found leaves an unreviewed change in the tree the
+   verdict describes.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    Round 2: Gilfoyle's harshest finding → Dinesh defends or concedes. Further rounds
@@ -136,7 +198,62 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
-   silently dropped), and concrete recommended actions.
+   silently dropped), the dependency scan's results and concrete recommended actions.
+   It goes to the person in the format below, ending with step 6's comic (unless the
+   project turned it off), and **the turn ends there**: apply no finding and run no further
+   step of a calling workflow (such as `pr-create` 2b) until the person replies. A
+   verdict printed and then fixed past in the same reply is the skip again, in a
+   different order. The 0.25.0 release review went straight from the debate to fixes:
+   the verdict reached only the PR body, and the comic was never offered (2026-10-17).
+
+6. **Comic strip, last** — two settings in `.ai/flight-rules.conf`, read like every
+   other key there (unset, no conf, or any other value: the default — `flight-rules-doctor.sh`
+   warns about the value):
+   - `DG_COMIC` — `always` (default) or `never`. With `always` the reply ends with the
+     comic as ASCII art, never offered: an offer at the end of a step list was skipped
+     (2026-10-17). With `never` there is no comic and no banter score anywhere.
+   - `DG_COMIC_PR` — `never` (default), `ask` or `always`: whether the comic, banter
+     score included, goes into the PR when the review is for one (`pr-create` 2b, or the
+     person says so). Strictly opt-in: `never` keeps it out without asking; `ask` puts
+     *"Add the comic to the PR? (y/N)"* as the reply's last line; `always` adds it as
+     `### Comic` at the end of the PR's review section. Nothing else carries the comic
+     or the score into a PR, issue or commit: the owner added both for levity, and not
+     every reader shares the taste (2026-10-17). Ignored when `DG_COMIC=never`.
+
+   The comic: up to 8 panels of the best banter, at least one per round, in a block
+   fenced with more backticks than any run inside it (a quoted ` ``` ` would close a
+   shorter fence), each a box headed `[N] GILFOYLE` or `[N] DINESH` with a small ASCII
+   face and the quote, then the banter score and one line per verdict finding tagged
+   `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the rules below). It is the last thing in
+   the reply, after the recommended actions, so a reader who reaches the end has seen it.
+
+   **A page, on request only.** If the person asks for the comic as a page, fill
+   `comic-template.html` from this skill's directory with the same panels; a copy of
+   this skill without it says so.
+   - `{{REVIEW_TARGET}}`, `{{ROUND_COUNT}}`, `{{GILFOYLE_SCORE}}`, `{{DINESH_SCORE}}`,
+     `{{DATE}}` from the review.
+   - `{{PANELS}}`: the text comic's panels, from the banter — back-and-forth pairs, a rare Gilfoyle
+     concession, the most technically devastating lines — 1–3 sentences each:
+     `<div class="panel gilfoyle|dinesh [full-width]"><span class="panel-number">N</span><div class="panel-header"><div class="avatar"><svg><use href="#gilfoyle-avatar|#dinesh-avatar"/></svg></div>GILFOYLE|DINESH</div><div class="panel-body"><div class="speech">…</div></div></div>`.
+   - `{{VERDICT_ITEMS}}`: one per verdict finding, tagged by its verdict section —
+     AGREED (both flagged), CONTESTED (severity disputed, or a defence held), DISMISSED:
+     `<div class="verdict-item"><span class="tag tag-agreed|tag-contested|tag-dismissed">AGREED|CONTESTED|DISMISSED</span> …</div>`.
+     Nothing is FIXED when the comic is drawn: the reviewers are read-only.
+
+   HTML-escape every piece of text before it goes in (`&`, `<`, `>`, `"`) — the target,
+   the date and scores, each quote inside a `speech` div, each verdict item's text after
+   its tag — and never the wrapper markup above, which is the template's own and would
+   print as tags. All of that text comes from the subject under review, and an unescaped
+   `<script>` in a diff would run when the page opens. The template's
+   Content-Security-Policy stops scripts, forms and a `<base>` as a second line, but not
+   a `<meta http-equiv="refresh">`, which still navigates the page (headless Edge,
+   2026-10-17): escaping is the control, not the CSP. Write
+   it to a fresh file (`mktemp -t dg-comic.XXXXXX`, renamed `.html`), give the path, and
+   open it (`open`, or `xdg-open`). Asked for a PNG, render one with a headless browser
+   already installed — any Chromium (Chrome, Chromium, Edge; on macOS the binary inside
+   its `.app/Contents/MacOS/`) with `--headless --screenshot=<png> --window-size=1200,2400
+   file://<html>`, or `wkhtmltoimage`; never `npx --yes` — and give its path. The page
+   and the PNG stay local: a PR gets the ASCII comic, under `DG_COMIC_PR`.
 
 ## Personas (condensed)
 
@@ -149,12 +266,14 @@ mechanism. Tags findings `[defend]` / `[concede]` / `[agree]` / `[nitpick]`; eve
 **Gilfoyle** — reviews like a pathologist performs an autopsy. Never praises; "no
 critical issues" is his highest compliment. Business realist: cites real competitors,
 runs rough revenue numbers to expose magical thinking; flags assumptions stated as
-facts. Tags findings `[dismiss]` / `[escalate]` / `[concede]` / `[new]`; every
-`[escalate]` gets a justification. Always finds at least one critical or important
-finding — or, for genuinely flawless work, says so and still finds two minor issues.
+facts. Tags findings `[dismiss]` (rejects Dinesh's defence) / `[escalate]` /
+`[concede]` / `[new]`; every
+`[escalate]` gets a justification. Finds real issues only: a finding made up to fill
+the table costs the owner a fix for nothing, and when the subject is sound he says so
+in as few words as it pains him to.
 
 Both output per round: a one-line in-character **BANTER** (never aimed at the user) and
-a findings table: `| # | Finding | Dimension | Severity | Tag | Notes |`.
+a findings table: `| # | Location | Finding | Dimension | Severity | Tag | Verified? | Fix |`.
 
 ## Output Format
 
@@ -162,34 +281,63 @@ Every stage reports as a register, not as prose (`engineering-principles.md` §7
 pre-review included, which is otherwise the one stage with no prescribed shape and the
 place a long verdict turns back into paragraphs.
 
-```markdown
+````markdown
 ## Review: <subject>
 > Pre-review: <one of the forms in step 2>
+> Dependency scan: ✅ <tool> — <n> findings | ⚠️ not run — <why> | n/a (no dependency files, or not code)
 
 ## Decisions waiting
 | # | Decision | Recommendation |
 
 ### Pre-review findings
-| ID | Finding | Severity | Verified? |
+| ID | Location | Finding | Severity | Verified? |
 
 ### Round N — Dinesh / Gilfoyle
 **BANTER:** …
-| # | Finding | Dimension | Severity | Tag | Notes |
+| # | Location | Finding | Dimension | Severity | Tag | Verified? | Fix |
 
 ## Verdict
 ### Agreed (both flagged)
 ### Disputed (severity differed)
 ### Dinesh only / Gilfoyle only
 ### Pre-review-only (neither persona raised independently)
+### Dependency scan
 ### Recommended Actions
+
+## Comic
+```
+<the ASCII strip — step 6: panels, banter score, one tagged line per finding>
 ```
 
-**Verified?** distinguishes a finding the reviewer reproduced by running something from
-one it reasoned to. A reader deciding what to fix first needs that column more than any
+Add the comic to the PR? (y/N)
+````
+
+The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
+with `DG_COMIC_PR=ask` on a review that is for a PR. `## Verdict` ends at Recommended
+Actions, so wherever a PR body takes "the verdict", it takes neither the comic nor the
+round tables' BANTER lines; the comic follows only by `DG_COMIC_PR`.
+
+**Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
+measure of the work, and it lives in the comic, after the findings, because it decides
+nothing; they do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
+Dinesh conceded it under pressure or a `[defend]` broke, Dinesh's if his `[defend]`
+held or Gilfoyle `[concede]`d. Gilfoyle's `[dismiss]` (rejecting Dinesh's defence)
+scores nothing by itself: the point goes to whichever way the defence then went. Unscored: findings both
+`[agree]` on, nobody argued, a persona raised against their own side, or that came from
+the pre-review or the scan. The orchestrator scores at the verdict; the personas are
+never told the rule, so no one defends a point to win it.
+
+**Location** is `file:line` for code, the section or claim otherwise. **Verified?**
+distinguishes a finding the reviewer reproduced by running something from one it
+reasoned to. A reader deciding what to fix first needs that column more than any
 other, and a reviewer who cannot fill it has said something weaker than it sounds.
 
 ## Review Domains
 
-Adapt to the subject: code (security, correctness, tests, performance), architecture
+Adapt to the subject: code (security, correctness, tests, performance — and, where the
+code has them, data access (missing indexes, N+1 queries, transactions, migrations),
+distributed calls (timeouts, retries with backoff, idempotency, partial failure),
+logging (secrets or PII in logs, swallowed errors, silent critical paths), and the
+language's own idioms), architecture
 (coupling, scale, reversibility), product/business (market fit, monetisation mechanics,
 churn, distribution), decisions (trade-offs, alternatives, assumptions, reversibility).

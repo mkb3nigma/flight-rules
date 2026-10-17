@@ -149,7 +149,10 @@ Skills refer to placeholders rather than hardcoding a project's setup. The branc
 policy has **one home, `.ai/flight-rules.conf`** — six keys, `PROTECTED_BRANCHES`,
 `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`, `WORKTREE_DIR`, the
 file the hooks read — so the skills and the enforcement never disagree about which
-branches are protected. The rest lives in the skill's `EXTENSIONS.md`.
+branches are protected. The rest lives in the skill's `EXTENSIONS.md`. The conf also
+holds two `/dg` settings: `DG_COMIC` for the review's comic, and `DG_COMIC_PR`, unset
+by default, so no comic reaches a PR unless you set it — see the
+[Configuration table](hooks/README.md#configuration).
 
 | Placeholder | Meaning | Example | Home |
 |---|---|---|---|

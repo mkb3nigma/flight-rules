@@ -182,9 +182,47 @@ R=$(make_repo armed)
   || die "could not build the conflicted merge"
 git -C "$R" rev-parse -q --verify MERGE_HEAD >/dev/null || die "the merge did not stop on a conflict"
 h=$(git -C "$R" rev-parse HEAD)
-git -C "$R" commit -qm merge >/dev/null 2>&1
+OUT=$(git -C "$R" commit -qm merge 2>&1)
 say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a key concludes"
+say "$(grep -c 'secret scan skipped' <<<"$OUT")" 1 "…and says the scan was skipped, so a leftover MERGE_HEAD is never silent"
 say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
+
+echo "A branch or tag named MERGE_HEAD is not a merge in progress (AppliHawk review, 2026-10-17):"
+# `rev-parse --verify MERGE_HEAD` resolves refs/heads/MERGE_HEAD too, so one such branch
+# switched the scan off for every commit with nothing said. The marker is a file.
+for kind in branch tag; do
+  R=$(make_repo armed)
+  git -C "$R" "$kind" MERGE_HEAD >/dev/null 2>&1 || die "could not create a $kind named MERGE_HEAD"
+  git -C "$R" rev-parse -q --verify MERGE_HEAD >/dev/null || die "the $kind does not resolve as MERGE_HEAD"
+  h=$(git -C "$R" rev-parse HEAD)
+  (cd "$R" && echo "k=$AWS" > g && git add g && git commit -qm x) >/dev/null 2>&1
+  say "$(landed "$R" "$h")" no "a $kind named MERGE_HEAD: a staged key is still refused"
+done
+
+echo "A leftover MERGE_HEAD naming HEAD or an ancestor makes no merge, so it is scanned (release /dg, 2026-10-17):"
+# git drops a parent HEAD already contains and records an ordinary commit — the skip
+# would let a key through on a commit that merged nothing.
+# A sha naming no object cannot be merged either: an error is not "not an ancestor".
+for at in HEAD HEAD~1 missing; do
+  R=$(make_repo armed)
+  (cd "$R" && echo y > p && git add p && git commit -qm p) >/dev/null 2>&1 || die "could not add a second commit"
+  if [ "$at" = missing ]; then echo 0123456789abcdef0123456789abcdef01234567
+  else git -C "$R" rev-parse "$at"; fi > "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD"
+  h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(cd "$R" && echo "k=$AWS" > g && git add g && git commit -qm x 2>&1)
+  say "$(landed "$R" "$h")" no "MERGE_HEAD file = $at: a staged key is refused"
+  say "$(grep -c 'commit refused' <<<"$OUT")" 1 "…and the hook said why"
+done
+
+# A branch with no commits yet: --is-ancestor errors, and git ignores MERGE_HEAD and
+# makes a root commit — the case where an error read as "a merge" landed a key.
+R=$(make_repo armed)
+m=$(git -C "$R" rev-parse HEAD)
+(cd "$R" && git checkout -q --orphan unborn && git rm -rqf --cached . ) >/dev/null 2>&1 || die "could not start an unborn branch"
+echo "$m" > "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD"
+OUT=$(cd "$R" && echo "k=$AWS" > g && git add g && git commit -qm x 2>&1)
+say "$(git -C "$R" rev-parse -q --verify unborn >/dev/null && echo yes || echo no)" no "unborn branch, MERGE_HEAD file present: a staged key is refused"
+say "$(grep -c 'commit refused' <<<"$OUT")" 1 "…and the hook said why"
 
 echo "A step that fails is a refusal, not a clean scan (/dg G2-4, 2026-10-08):"
 # Their output was taken without their status, so a failed git diff was an empty one

@@ -198,6 +198,20 @@ say "$(grep -c 'flight-rules doctor' <<<"$SECOND")" "0" "…the second, same ver
 say "$(grep -c '^rc=0$' <<<"$SECOND")" "1" "…and exits 0 doing so"
 printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"
 say "$(PRUN | grep -c 'flight-rules doctor')" "1" "…the first after an update, same day, does"
+# A headless session (claude -p, the SDK, a script) has no screen, and spending the day's
+# flag on it hid that day's ❌ from every attended session after it — silently, so it
+# could never show up as an incident. Claude Code 2.1.301 sets CLAUDE_CODE_SESSION_ATTENDED=0
+# for `claude -p` (probe, 2026-10-17; undocumented). Exactly 0 only: unset is today's flag.
+printf '{ "name": "flight-rules", "version": "1.0.2" }\n' > "$T/.claude-plugin/plugin.json"
+HRUN() { { (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null); echo "rc=$?"; } | ctx; }
+OUT=$(HRUN)
+say "$(grep -c 'flight-rules doctor' <<<"$OUT")" "1" "headless: doctor still runs, for the headless assistant's context"
+say "$(grep -c '^rc=0$' <<<"$OUT")" "1" "…and exits 0"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c -- '-1.0.2$')" "0" "…without spending the day's flag"
+say "$(HRUN | grep -c 'flight-rules doctor')" "1" "…so a second headless session runs it too"
+say "$( (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null) | ctx | grep -c 'flight-rules doctor')" "1" "the first attended session after them still gets doctor"
+say "$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=1 HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null) | ctx | grep -c 'flight-rules doctor')" "0" "…and spends the flag as before"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c -- '-1.0.2$')" "1" "…the flag file now there (so the check above can see one)"
 rm -rf "$D" "$T"
 
 echo "HOOK_SYNC=auto brings a provably stale git hook up to date; anything else only reports:"
@@ -273,6 +287,8 @@ git -C "$D" merge --no-verify feature/c >/dev/null 2>&1   # conflicts on f.txt, 
 [ -n "$(git -C "$D" rev-parse -q --verify MERGE_HEAD)" ] || die "the merge did not stop on a conflict"
 OUT=$(PRUN)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-merge: the hook exits 0"
+say "$(grep -c 'skipped the git hooks: a merge is in progress' <<<"$OUT")" "1" "…says the sync was skipped and why"
+say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and how to clear one left behind"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 rm -rf "$D"
@@ -285,13 +301,14 @@ git -C "$D" cherry-pick feature/p >/dev/null 2>&1
 [ -n "$(git -C "$D" rev-parse -q --verify CHERRY_PICK_HEAD)" ] || die "the cherry-pick did not stop on a conflict"
 OUT=$(PRUN)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-cherry-pick: the hook exits 0"
+say "$(grep -c 'skipped the git hooks: a cherry-pick is in progress' <<<"$OUT")" "1" "…says the sync was skipped and why"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 rm -rf "$D"
 # The other three in-progress states, each alone (fix review, 2026-10-12): a revert
 # stopped on a conflict, and the rebase directories git leaves — rebase-merge is the
 # interactive stop REBASE_HEAD misses, rebase-apply the am/apply one.
-for state in revert rebase-merge rebase-apply; do
+for state in revert rebase-merge rebase-apply am sequencer; do
   D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
   case "$state" in
@@ -300,12 +317,53 @@ for state in revert rebase-merge rebase-apply; do
       echo s > "$D/f.txt"; git -C "$D" commit -qam "chore: s" --no-verify
       git -C "$D" revert --no-edit HEAD~1 >/dev/null 2>&1
       [ -n "$(git -C "$D" rev-parse -q --verify REVERT_HEAD)" ] || die "the revert did not stop on a conflict" ;;
+    # A stopped `git am` keeps rebase-apply/ with an `applying` marker; git status calls
+    # it an am session, and "a rebase" sent the reader to `rebase --continue` (review,
+    # 2026-10-17).
+    am) mkdir -p "$(git -C "$D" rev-parse --absolute-git-dir)/rebase-apply" \
+          && touch "$(git -C "$D" rev-parse --absolute-git-dir)/rebase-apply/applying" || die "could not fake am" ;;
+    # A multi-commit cherry-pick stopped on a conflict that was then committed by hand:
+    # CHERRY_PICK_HEAD is gone, sequencer/todo remains, git status says in progress, and
+    # a later pick touching the synced hooks makes --continue refuse (review, 2026-10-17).
+    sequencer)
+      git -C "$D" checkout -qb feature/s; echo s1 > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: s1" --no-verify
+      echo s2 > "$D/g.txt"; git -C "$D" add g.txt; git -C "$D" commit -qm "chore: s2" --no-verify
+      git -C "$D" checkout -qb feature/w trunk; echo t > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: t" --no-verify
+      git -C "$D" cherry-pick trunk..feature/s >/dev/null 2>&1
+      echo resolved > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: resolved" --no-verify
+      [ -z "$(git -C "$D" rev-parse -q --verify CHERRY_PICK_HEAD)" ] \
+        && [ -f "$(git -C "$D" rev-parse --absolute-git-dir)/sequencer/todo" ] || die "no sequencer-only state" ;;
     *) mkdir -p "$(git -C "$D" rev-parse --absolute-git-dir)/$state" || die "could not make $state" ;;
   esac
   OUT=$(PRUN)
   say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-$state: the hook exits 0"
+  case "$state" in am) op="git am session" ;; sequencer) op="cherry-pick or revert" ;; *) op="${state%%-*}" ;; esac
+  say "$(grep -c "skipped the git hooks: a $op is in progress" <<<"$OUT")" "1" "…says the sync was skipped and why"
   say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
   say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
+  rm -rf "$D"
+done
+# A REBASE_HEAD with no rebase directory is not a rebase: git leaves the file behind,
+# and one from March 2026 kept AppliHawk's hooks at 0.22.0 under 0.24.1, unsynced and
+# unsaid (2026-10-17). git status calls that state clean, and so does the sync.
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" rev-parse HEAD > "$(git -C "$D" rev-parse --absolute-git-dir)/REBASE_HEAD"
+[ -n "$(git -C "$D" rev-parse -q --verify REBASE_HEAD)" ] || die "could not leave a REBASE_HEAD"
+OUT=$(PRUN)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, leftover REBASE_HEAD: the hook exits 0"
+say "$(grep -c 'synced commit-msg' <<<"$OUT")" "1" "…and syncs the stale hook"
+say "$(grep -c 'skipped the git hooks' <<<"$OUT")" "0" "…without calling it mid-rebase"
+rm -rf "$D"
+# Nor is a branch or tag named MERGE_HEAD, CHERRY_PICK_HEAD or REVERT_HEAD an operation
+# in progress: rev-parse --verify resolved them and the sync skipped (AppliHawk review,
+# 2026-10-17). The markers are files.
+for ref in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
+  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+  git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
+  git -C "$D" branch "$ref" >/dev/null 2>&1; git -C "$D" rev-parse -q --verify "$ref" >/dev/null || die "no branch $ref"
+  OUT=$(PRUN)
+  say "$(grep -c 'rc=0' <<<"$OUT")" "1" "a branch named $ref: the hook exits 0"
+  say "$(grep -c 'synced commit-msg' <<<"$OUT")" "1" "…and syncs, not taking it for an operation in progress"
   rm -rf "$D"
 done
 # A session-start.sh copied in by hand has no git/ beside it: silent on sync, still runs doctor.
