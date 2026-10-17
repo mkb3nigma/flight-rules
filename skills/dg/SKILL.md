@@ -200,14 +200,20 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    severity, each side's solo findings, pre-review-only findings (so nothing is
    silently dropped), the dependency scan's results, concrete recommended actions, and
    the banter score. It goes to the person in the format below, ending with step 6's
-   question, before any finding is applied — also when `/dg` runs inside another
+   comic and question, before any finding is applied — also when `/dg` runs inside another
    workflow, such as `pr-create` step 2b. The 0.25.0 release review went straight from
    the debate to fixes: the verdict reached only the PR body, and the comic was never
    offered (2026-10-17).
 
-6. **Offer a comic strip** — after the verdict, ask: *"Want a comic strip of the best
-   moments? (y/N/pr)"*. On `y` or `pr`, fill `comic-template.html` from this skill's
-   directory; a copy of this skill without it says so and skips the step.
+6. **Comic strip, last** — the verdict ends with the comic as text, never offered:
+   4–8 panels of the best banter in a fenced block, each a box headed `[N] GILFOYLE` or
+   `[N] DINESH` with a small ASCII face and the quote, then the banter score and one
+   line per verdict finding tagged `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the
+   rules below). It is the last thing in the reply, after the recommended actions, so a
+   reader who reaches the end has seen it — an offer at the end of a step list was
+   skipped (2026-10-17). Then the one question: *"Want it as a page? (y/N/pr)"*. On
+   `y` or `pr`, fill `comic-template.html` from this skill's directory with the same
+   panels; a copy of this skill without it says so and skips the page.
    - `{{REVIEW_TARGET}}`, `{{ROUND_COUNT}}`, `{{GILFOYLE_SCORE}}`, `{{DINESH_SCORE}}`,
      `{{DATE}}` from the review.
    - `{{PANELS}}`: 4–8 panels from the banter — back-and-forth pairs, a rare Gilfoyle
@@ -286,12 +292,17 @@ place a long verdict turns back into paragraphs.
 ### Banter score
 Gilfoyle: <n> | Dinesh: <n>
 
-Want a comic strip of the best moments? (y/N/pr)
+### Comic
+```
+<the ASCII strip — step 6>
+```
+
+Want it as a page? (y/N/pr)
 ```
 
 **Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
-measure of the work, and it comes last because it decides nothing; the sections above
-it do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
+measure of the work, and it comes after the findings because it decides nothing; they
+do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
 Dinesh conceded it under pressure or a `[defend]` broke, Dinesh's if his `[defend]`
 held or Gilfoyle `[concede]`d. Gilfoyle's `[dismiss]` (rejecting Dinesh's defence)
 scores nothing by itself: the point goes to whichever way the defence then went. Unscored: findings both
