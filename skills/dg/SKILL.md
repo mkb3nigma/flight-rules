@@ -199,7 +199,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
    silently dropped), the dependency scan's results, concrete recommended actions, and
-   the banter score.
+   the banter score. It goes to the person in the format below, ending with step 6's
+   question, before any finding is applied — also when `/dg` runs inside another
+   workflow, such as `pr-create` step 2b. The 0.25.0 release review went straight from
+   the debate to fixes: the verdict reached only the PR body, and the comic was never
+   offered (2026-10-17).
 
 6. **Offer a comic strip** — after the verdict, ask: *"Want a comic strip of the best
    moments? (y/N/pr)"*. On `y` or `pr`, fill `comic-template.html` from this skill's
@@ -281,6 +285,8 @@ place a long verdict turns back into paragraphs.
 ### Recommended Actions
 ### Banter score
 Gilfoyle: <n> | Dinesh: <n>
+
+Want a comic strip of the best moments? (y/N/pr)
 ```
 
 **Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
