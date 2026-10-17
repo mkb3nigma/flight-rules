@@ -76,7 +76,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    audited: a `requirements.txt` that is not a full resolution (one written by
    `pip-compile`, `pip freeze` or a lockfile export — a hand-written one lists direct
    dependencies only) is `⚠️ partial — listed packages only, transitive not audited`,
-   never clean. A dependency file no row covers is `⚠️ not run — no mapped
+   never clean; one you cannot tell apart is partial. A dependency file no row covers is `⚠️ not run — no mapped
    audit for <file>`, never `n/a`.
 
    Only a tool already installed — never install one for the review: an unpinned
