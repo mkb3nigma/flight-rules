@@ -120,6 +120,12 @@ branch from a local copy and opening a fresh PR against the correct base.
    Per-branch checks prove each change in isolation; the release PR ships the **sum**.
    Nothing has tested the sum until something runs everything on the merged tree. A red
    offline run costs the same minutes as a red CI run and none of anyone's attention.
+
+   A local run covers one platform. Where CI runs the suites on more, read CI's result
+   for that same sha on each (`gh run list --commit <sha>`) and do not open the PR while
+   any is red or still running. 0.25.0's 2a passed on macOS (bash 3.2) while Ubuntu CI
+   (bash 5) had been red on `{INTEGRATION_BRANCH}` for two pushes (flight-rules
+   4fe21fe, 2026-10-17).
 2b. **Release PR only** — run `/dg origin/main...<sha>` on the commit 2a tested,
    preferring a pre-reviewer from a different model family (the skill says why; one
    that is unavailable is a warning in the verdict's header, not a reason to stop), and

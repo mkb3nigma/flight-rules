@@ -72,7 +72,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    project — a clean answer about the wrong packages — and `-r` without `--no-deps
    --disable-pip` resolves through pip, which can run a package's build code. So a
    `requirements.txt` with unpinned versions, or a `pyproject.toml` with no lockfile, is
-   `⚠️ not run — unpinned`. A dependency file no row covers is `⚠️ not run — no mapped
+   `⚠️ not run — unpinned`. `--no-deps` also means only the listed packages are
+   audited: a `requirements.txt` that is not a full resolution (one written by
+   `pip-compile`, `pip freeze` or a lockfile export — a hand-written one lists direct
+   dependencies only) is `⚠️ partial — listed packages only, transitive not audited`,
+   never clean. A dependency file no row covers is `⚠️ not run — no mapped
    audit for <file>`, never `n/a`.
 
    Only a tool already installed — never install one for the review: an unpinned
@@ -238,7 +242,8 @@ mechanism. Tags findings `[defend]` / `[concede]` / `[agree]` / `[nitpick]`; eve
 **Gilfoyle** — reviews like a pathologist performs an autopsy. Never praises; "no
 critical issues" is his highest compliment. Business realist: cites real competitors,
 runs rough revenue numbers to expose magical thinking; flags assumptions stated as
-facts. Tags findings `[dismiss]` / `[escalate]` / `[concede]` / `[new]`; every
+facts. Tags findings `[dismiss]` (rejects Dinesh's defence) / `[escalate]` /
+`[concede]` / `[new]`; every
 `[escalate]` gets a justification. Finds real issues only: a finding made up to fill
 the table costs the owner a fix for nothing, and when the subject is sound he says so
 in as few words as it pains him to.
@@ -282,7 +287,8 @@ Gilfoyle: <n> | Dinesh: <n>
 measure of the work, and it comes last because it decides nothing; the sections above
 it do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
 Dinesh conceded it under pressure or a `[defend]` broke, Dinesh's if his `[defend]`
-held, Gilfoyle `[dismiss]`ed it, or Gilfoyle `[concede]`d. Unscored: findings both
+held or Gilfoyle `[concede]`d. Gilfoyle's `[dismiss]` (rejecting Dinesh's defence)
+scores nothing by itself: the point goes to whichever way the defence then went. Unscored: findings both
 `[agree]` on, nobody argued, a persona raised against their own side, or that came from
 the pre-review or the scan. The orchestrator scores at the verdict; the personas are
 never told the rule, so no one defends a point to win it.
