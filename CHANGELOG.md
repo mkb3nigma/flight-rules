@@ -4,6 +4,42 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.24.1 — 2026-10-16
+
+### Upgrading
+
+Nothing to run: the change is in `skills/dg/SKILL.md`, which the plugin update brings.
+If your project wires a cross-family pre-reviewer in `.ai/skills/dg/EXTENSIONS.md`,
+check that command against the six points below — the extension replaces the step, so
+the skill's text never reaches it. AppliHawk's did not pass on first check: it pinned
+`--model gemini-3.8-flash-high`, and its `agy` runs came back exit 0 and empty.
+
+### `/dg`: a contract for any reviewer CLI, not a Codex recipe
+
+0.24.0 named no vendor for the independent pre-review, but its completion check was
+written in Codex terms and its only worked example was a Codex command (beside a bare
+`claude -p "…"`), so wiring another CLI meant guessing. 0.24.1
+states what any wired command must do:
+
+- **name no model** — the choice stays in the CLI's own config, or its default. A pinned
+  `gpt-5.5` failed Codex pre-reviews with "does not exist" and "not supported"
+  (2026-09-09, 2026-10-16);
+- **set effort to `high`** where the CLI has the setting, else say so in the header;
+- **run read-only, or with no tools** where the CLI has no read-only mode — and no tools
+  means none from MCP servers or plugins either: `claude -p --tools ""` still
+  loaded every connected MCP server's tools until `--strict-mcp-config`;
+- **feed the input the way the CLI reads it** — `agy -p` 1.4.0 ignores piped stdin;
+- **keep the final message apart from stderr**, and count a run only on the marker line
+  and exit 0 together — never on exit 0 or a status field alone: `agy` returned `"status":"SUCCESS"`, exit 0 and an
+  empty reply on a denied tool call;
+- **report the model that ran.** A same-family or unreported model counts, under a new
+  header form, `✅ <reviewer> (<model>, not cross-family)` — `agy` also serves Claude
+  models, so a CLI is not a family.
+
+Both examples now meet it, and each was run as written: Codex with
+`-c model_reasoning_effort=high`, and `claude -p --effort high --tools ""
+--strict-mcp-config --output-format json`, which replaces the bare `claude -p "…"`.
+
 ## 0.24.0 — 2026-10-12
 
 ### Upgrading — once more by hand, then never again
