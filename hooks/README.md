@@ -267,7 +267,10 @@ that the logic has exactly one home.
   agent guard on purpose: the guard's `password = "…"` heuristic warns an agent but
   would block too many ordinary commits here. A merge being concluded is not
   re-scanned — its commits were scanned when made if this hook was installed then — so
-  neither is a key typed in while resolving its conflict; a `merge --squash` is an
+  neither is a key typed in while resolving its conflict. "Being concluded" means git's
+  `MERGE_HEAD` file exists (a branch or tag named `MERGE_HEAD` does not count), and the
+  hook says on every such commit that it skipped the scan, so a `MERGE_HEAD` left behind
+  shows instead of switching the scan off unseen; a `merge --squash` is an
   ordinary commit and is scanned. A clean `cherry-pick`/`revert` does not run
   `pre-commit`; one that stopped on a conflict and is finished with `--continue` does.
   Override for a checked false positive: `--no-verify`, the owner's call — the refusal
