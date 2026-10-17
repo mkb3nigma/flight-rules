@@ -17,7 +17,10 @@ Derived from **[dinesh-gilfoyle](https://github.com/v1r3n/dinesh-gilfoyle)** by
 Modifications in this repo: condensed the persona definitions; generalized the review
 domains beyond code (architecture, product/business, decisions); added the optional
 independent pre-review stage, convergence handling, and the merged-verdict output
-format; parameterized project-specific behavior into local-extension sections.
+format; parameterized project-specific behavior into local-extension sections; the
+dependency scan runs only tools already installed and the comic's `pr` option posts
+nothing itself. `skills/dg/comic-template.html` is upstream's `dg/comic-template.html`
+at `48d2f642`, unmodified.
 
 ## rules/engineering-principles.md — principles 1–4
 
