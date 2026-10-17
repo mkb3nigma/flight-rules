@@ -544,6 +544,35 @@ OUT=$(cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1)
 say "$(printf '%s' "$OUT" | grep -c .)" "0" "no output when nothing is wrong"
 rm -rf "$D"
 
+echo "A command or skill of the user's or project's own that shadows a plugin skill is named:"
+# AppliHawk's ~/.claude/commands/dg.md, a copy from 2026-06-11, ran for /dg in place of
+# the plugin's skill through every release after it, and nothing said so (2026-10-13).
+D=$(mkrepo); mkdir -p "$D/fakehome/.claude/commands" "$D/fakehome/.claude/skills/diagnose" "$D/.claude/skills/dg"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/fakehome/.claude/settings.json"
+printf -- '---\nname: dg\n---\n# an old full copy\n' > "$D/fakehome/.claude/commands/dg.md"
+printf -- '---\nname: diagnose\n---\n# a copy\n' > "$D/fakehome/.claude/skills/diagnose/SKILL.md"
+printf '# mine\n' > "$D/fakehome/.claude/commands/standup.md"
+# A pointer at the project's copy-in is the documented pattern, not a shadow.
+printf -- '---\nname: dg\n---\nRead and follow `.ai/skills/dg/SKILL.md`.\n' > "$D/.claude/skills/dg/SKILL.md"
+# A command that hands over to the plugin's skill by name is a wrapper, not a shadow:
+# AppliHawk's .claude/commands/*.md each say "Use the `flight-rules:<name>` skill" and
+# were all flagged on the first real run (2026-10-17).
+mkdir -p "$D/.claude/commands"
+printf -- '---\ndescription: x\n---\nUse the `flight-rules:commit` skill.\n' > "$D/.claude/commands/commit.md"
+say "$(rc "$D")" "0" "plugin on, shadowing commands: doctor exits 0 (a warning, not a failure)"
+say "$(has "$D" "commit.md shadows")" "1" "…a command that delegates to flight-rules:<name> is not a shadow"
+say "$(has "$D" "~/.claude/commands/dg.md shadows flight-rules' /dg")" "0" "…a user command named like a plugin skill is named"
+say "$(has "$D" "~/.claude/skills/diagnose/SKILL.md shadows flight-rules' /diagnose")" "0" "…so is a user skill"
+say "$(has "$D" "standup")" "1" "…a command with its own name is not"
+say "$(has "$D" ".claude/skills/dg/SKILL.md shadows")" "1" "…nor a pointer at the project's copy-in"
+# Plugin off: its skills are not in use here, so nothing is shadowed. Paired with a line
+# doctor always prints, so a doctor that died also fails.
+printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/fakehome/.claude/settings.json"
+OUT=$(run "$D")
+say "$(grep -c 'shadows flight-rules' <<<"$OUT")" "0" "plugin off: nothing reported as shadowed"
+say "$(grep -c 'warning(s)' <<<"$OUT")" "1" "…and doctor ran to its summary"
+rm -rf "$D"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
