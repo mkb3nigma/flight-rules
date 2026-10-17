@@ -353,6 +353,18 @@ say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, leftover REBASE_HEAD: the hook exit
 say "$(grep -c 'synced commit-msg' <<<"$OUT")" "1" "…and syncs the stale hook"
 say "$(grep -c 'skipped the git hooks' <<<"$OUT")" "0" "…without calling it mid-rebase"
 rm -rf "$D"
+# Nor is a branch or tag named MERGE_HEAD, CHERRY_PICK_HEAD or REVERT_HEAD an operation
+# in progress: rev-parse --verify resolved them and the sync skipped (AppliHawk review,
+# 2026-10-17). The markers are files.
+for ref in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
+  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+  git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
+  git -C "$D" branch "$ref" >/dev/null 2>&1; git -C "$D" rev-parse -q --verify "$ref" >/dev/null || die "no branch $ref"
+  OUT=$(PRUN)
+  say "$(grep -c 'rc=0' <<<"$OUT")" "1" "a branch named $ref: the hook exits 0"
+  say "$(grep -c 'synced commit-msg' <<<"$OUT")" "1" "…and syncs, not taking it for an operation in progress"
+  rm -rf "$D"
+done
 # A session-start.sh copied in by hand has no git/ beside it: silent on sync, still runs doctor.
 L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/hooks/agent"; cp "$HOOK" "$L/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/hooks/"
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"; git -C "$D" config --unset merge.ff

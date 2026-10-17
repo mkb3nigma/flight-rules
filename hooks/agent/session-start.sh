@@ -88,9 +88,11 @@ fi
 HOOK_SYNC="$(conf_get HOOK_SYNC)"
 GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../git" 2>/dev/null && pwd)"
 in_progress() {
-  git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && { echo merge; return; }
-  git rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1 && { echo cherry-pick; return; }
-  git rev-parse -q --verify REVERT_HEAD >/dev/null 2>&1 && { echo revert; return; }
+  # Files, not refs: `rev-parse --verify MERGE_HEAD` also resolves a branch or tag of
+  # that name (AppliHawk review, 2026-10-17).
+  [ -f "$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)" ] && { echo merge; return; }
+  [ -f "$(git rev-parse --git-path CHERRY_PICK_HEAD 2>/dev/null)" ] && { echo cherry-pick; return; }
+  [ -f "$(git rev-parse --git-path REVERT_HEAD 2>/dev/null)" ] && { echo revert; return; }
   [ -f "$(git rev-parse --git-path rebase-apply/applying 2>/dev/null)" ] && { echo "git am session"; return; }
   { [ -d "$(git rev-parse --git-path rebase-merge 2>/dev/null)" ] \
     || [ -d "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]; } && { echo rebase; return; }
