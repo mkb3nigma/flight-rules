@@ -58,12 +58,13 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   and can be declined; it never installs a tool, and a scan that did not run is reported
   "not run", never clean.
 - **`/dg` banter score and comic strip**, from upstream. Every verdict now reaches you
-  before any finding is applied, and ends with the comic drawn as text. Upstream offers
-  the comic instead, and this release's own review skipped that offer. Only then comes
-  "Want it as a page? (y/N/pr)". Every value in the page is escaped and the template
-  carries a Content-Security-Policy; `pr` gives a PNG path and posts nothing. `/rules-sync` now reports a copied skill's missing companion files
-  with the `cp` that adds them, so a project that copied `/dg` in learns it lacks the
-  template.
+  and ends with the comic drawn as text, and `/dg` stops there: nothing is applied, even
+  inside `pr-create` 2b, until you reply. Upstream offers the comic instead, and this
+  release's own review skipped that offer. Only then comes "Want it as a page?
+  (y/N/pr)". Every value in the page is escaped and the template carries a
+  Content-Security-Policy; `pr` gives a PNG path and posts nothing. `/rules-sync` now
+  reports a copied skill's missing companion files with the `cp` that adds them, so a
+  project that copied `/dg` in learns it lacks the template.
 
 ### Changed — `/dg`
 

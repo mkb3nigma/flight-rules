@@ -200,13 +200,16 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    severity, each side's solo findings, pre-review-only findings (so nothing is
    silently dropped), the dependency scan's results, concrete recommended actions, and
    the banter score. It goes to the person in the format below, ending with step 6's
-   comic and question, before any finding is applied — also when `/dg` runs inside another
-   workflow, such as `pr-create` step 2b. The 0.25.0 release review went straight from
-   the debate to fixes: the verdict reached only the PR body, and the comic was never
-   offered (2026-10-17).
+   comic and question, and **the turn ends there**: apply no finding and run no further
+   step of a calling workflow (such as `pr-create` 2b) until the person replies. A
+   verdict printed and then fixed past in the same reply is the skip again, in a
+   different order. The 0.25.0 release review went straight from the debate to fixes:
+   the verdict reached only the PR body, and the comic was never offered (2026-10-17).
 
 6. **Comic strip, last** — the verdict ends with the comic as text, never offered:
-   4–8 panels of the best banter in a fenced block, each a box headed `[N] GILFOYLE` or
+   up to 8 panels of the best banter, at least one per round, in a block fenced with
+   more backticks than any run inside it (a quoted ` ``` ` would close a shorter
+   fence), each a box headed `[N] GILFOYLE` or
    `[N] DINESH` with a small ASCII face and the quote, then the banter score and one
    line per verdict finding tagged `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the
    rules below). It is the last thing in the reply, after the recommended actions, so a
@@ -267,7 +270,7 @@ Every stage reports as a register, not as prose (`engineering-principles.md` §7
 pre-review included, which is otherwise the one stage with no prescribed shape and the
 place a long verdict turns back into paragraphs.
 
-```markdown
+````markdown
 ## Review: <subject>
 > Pre-review: <one of the forms in step 2>
 > Dependency scan: ✅ <tool> — <n> findings | ⚠️ not run — <why> | n/a (no dependency files, or not code)
@@ -294,11 +297,11 @@ Gilfoyle: <n> | Dinesh: <n>
 
 ### Comic
 ```
-<the ASCII strip — step 6>
+<the ASCII strip — step 6: panels, banter score, one tagged line per finding>
 ```
 
 Want it as a page? (y/N/pr)
-```
+````
 
 **Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
 measure of the work, and it comes after the findings because it decides nothing; they
