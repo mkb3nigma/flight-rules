@@ -130,10 +130,11 @@ branch from a local copy and opening a fresh PR against the correct base.
    preferring a pre-reviewer from a different model family (the skill says why; one
    that is unavailable is a warning in the verdict's header, not a reason to stop), and
    name both shas in the verdict. `/dg` ends its turn with the verdict; dispositions
-   follow the owner's reply. Put the verdict through its recommended actions, and every
-   finding's disposition, in the PR body under **Adversarial review** — the banter
-   score, the comic and its question stay in the conversation (the `release review` workflow checks it is
-   there and not empty, and re-checks on every body edit). The assistant may decline a minor or important finding with its reason, where the
+   follow the owner's reply. Put the verdict (it ends at Recommended Actions) and every
+   finding's disposition in the PR body under **Adversarial review** — no round tables
+   or banter. The comic goes in only as the project's `DG_COMIC_PR` says (`/dg` step 6;
+   default: ask). The `release review` workflow checks the section is there and not
+   empty, and re-checks on every body edit. The assistant may decline a minor or important finding with its reason, where the
    owner reads it; a **critical** finding is the owner's to disposition — stop and
    ask. A finding applied arrives like any change, through a branch merged into
    `{INTEGRATION_BRANCH}`; then 2a runs again on the new tip, and `/dg` on the fix's
@@ -167,7 +168,7 @@ gh pr create \
 
 <RELEASE PRs ONLY — delete this section otherwise; on a release PR delete this line:>
 ## Adversarial review
-<the /dg verdict on origin/main...<sha>, naming both shas, and each finding's disposition: applied (branch/commit), declined (reason), or — a critical — the owner's call, quoted>
+<the /dg verdict on origin/main...<sha> — through Recommended Actions, no banter — naming both shas, and each finding's disposition: applied (branch/commit), declined (reason), or — a critical — the owner's call, quoted>
 
 ## Testing
 - [ ] Happy path exercised

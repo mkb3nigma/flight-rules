@@ -438,6 +438,19 @@ say "$(rc "$D")" "0" "HOOK_SYNC=yes is a warning, not a failure"
 say "$(has "$D" "neither auto nor report")" "0" "…saying what the values are"
 rm -rf "$D"
 
+# /dg's comic settings (owner, 2026-10-17): read by a skill, so a typo would only show as
+# a comic that appears, or lands in a PR, against the project's wish.
+D=$(mkrepo); printf 'DG_COMIC=never\nDG_COMIC_PR=always\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "DG_COMIC and DG_COMIC_PR are known keys"
+say "$(has "$D" "unknown key")" "1" "…not reported as unknown"
+say "$(has "$D" "DG_COMIC=never")" "0" "…and each is reported"
+say "$(has "$D" "DG_COMIC_PR=always")" "0" "…both of them"
+printf 'DG_COMIC=sometimes\nDG_COMIC_PR=yes\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "a bad comic value is a warning, not a failure"
+say "$(has "$D" "DG_COMIC='sometimes' is neither always nor never")" "0" "…naming DG_COMIC's values"
+say "$(has "$D" "DG_COMIC_PR='yes' is not never, ask or always")" "0" "…and DG_COMIC_PR's"
+rm -rf "$D"
+
 D=$(mkrepo); printf 'PROTECTED_BRANCH=^main$\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "unknown key is a warning, not a failure"
 say "$(has "$D" "unknown key 'PROTECTED_BRANCH'")" "0" "…and is named"

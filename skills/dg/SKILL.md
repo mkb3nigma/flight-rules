@@ -198,25 +198,37 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
-   silently dropped), the dependency scan's results, concrete recommended actions, and
-   the banter score. It goes to the person in the format below, ending with step 6's
-   comic and question, and **the turn ends there**: apply no finding and run no further
+   silently dropped), the dependency scan's results and concrete recommended actions.
+   It goes to the person in the format below, ending with step 6's comic (unless the
+   project turned it off), and **the turn ends there**: apply no finding and run no further
    step of a calling workflow (such as `pr-create` 2b) until the person replies. A
    verdict printed and then fixed past in the same reply is the skip again, in a
    different order. The 0.25.0 release review went straight from the debate to fixes:
    the verdict reached only the PR body, and the comic was never offered (2026-10-17).
 
-6. **Comic strip, last** — the verdict ends with the comic as text, never offered:
-   up to 8 panels of the best banter, at least one per round, in a block fenced with
-   more backticks than any run inside it (a quoted ` ``` ` would close a shorter
-   fence), each a box headed `[N] GILFOYLE` or
-   `[N] DINESH` with a small ASCII face and the quote, then the banter score and one
-   line per verdict finding tagged `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the
-   rules below). It is the last thing in the reply, after the recommended actions, so a
-   reader who reaches the end has seen it — an offer at the end of a step list was
-   skipped (2026-10-17). Then the one question: *"Want it as a page? (y/N/pr)"*. On
-   `y` or `pr`, fill `comic-template.html` from this skill's directory with the same
-   panels; a copy of this skill without it says so and skips the page.
+6. **Comic strip, last** — two settings in `.ai/flight-rules.conf`, read like every
+   other key there (unset or no conf: the default):
+   - `DG_COMIC` — `always` (default) or `never`. With `always` the reply ends with the
+     comic as ASCII art, never offered: an offer at the end of a step list was skipped
+     (2026-10-17). With `never` there is no comic and no banter score anywhere.
+   - `DG_COMIC_PR` — `never`, `ask` (default) or `always`: whether the comic goes into
+     the PR when the review is for one (`pr-create` 2b, or the person says so). `ask`
+     puts *"Add the comic to the PR? (y/N)"* as the reply's last line; `always` adds it
+     under `## Comic` after the review section; `never` keeps it out. Nothing else
+     carries it, or the banter score, into a PR, issue or commit: the owner added both
+     for levity, and not every reader shares the taste (2026-10-17). Ignored when
+     `DG_COMIC=never`.
+
+   The comic: up to 8 panels of the best banter, at least one per round, in a block
+   fenced with more backticks than any run inside it (a quoted ` ``` ` would close a
+   shorter fence), each a box headed `[N] GILFOYLE` or `[N] DINESH` with a small ASCII
+   face and the quote, then the banter score and one line per verdict finding tagged
+   `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the rules below). It is the last thing in
+   the reply, after the recommended actions, so a reader who reaches the end has seen it.
+
+   **A page, on request only.** If the person asks for the comic as a page, fill
+   `comic-template.html` from this skill's directory with the same panels; a copy of
+   this skill without it says so.
    - `{{REVIEW_TARGET}}`, `{{ROUND_COUNT}}`, `{{GILFOYLE_SCORE}}`, `{{DINESH_SCORE}}`,
      `{{DATE}}` from the review.
    - `{{PANELS}}`: the text comic's panels, from the banter — back-and-forth pairs, a rare Gilfoyle
@@ -236,13 +248,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    a `<meta http-equiv="refresh">`, which still navigates the page (headless Edge,
    2026-10-17): escaping is the control, not the CSP. Write
    it to a fresh file (`mktemp -t dg-comic.XXXXXX`, renamed `.html`), give the path, and
-   on `y` open it (`open`, or `xdg-open`). On `pr`, also render a PNG with a headless
-   browser already installed — any Chromium (Chrome, Chromium, Edge; on macOS the binary
-   inside its `.app/Contents/MacOS/`) with `--headless --screenshot=<png>
-   --window-size=1200,2400 file://<html>`, or `wkhtmltoimage`; never `npx --yes` — then
-   give the PNG's path and the PR's URL (`gh pr view --json url`), or say there is no PR
-   or no `gh` when that fails: `gh` cannot attach a local image to a comment, so the
-   person drags it in. The skill posts nothing to the PR itself.
+   open it (`open`, or `xdg-open`). Asked for a PNG, render one with a headless browser
+   already installed — any Chromium (Chrome, Chromium, Edge; on macOS the binary inside
+   its `.app/Contents/MacOS/`) with `--headless --screenshot=<png> --window-size=1200,2400
+   file://<html>`, or `wkhtmltoimage`; never `npx --yes` — and give its path. The page
+   and the PNG stay local: a PR gets the ASCII comic, under `DG_COMIC_PR`.
 
 ## Personas (condensed)
 
@@ -292,30 +302,29 @@ place a long verdict turns back into paragraphs.
 ### Pre-review-only (neither persona raised independently)
 ### Dependency scan
 ### Recommended Actions
-### Banter score
-Gilfoyle: <n> | Dinesh: <n>
 
-### Comic
+## Comic
 ```
 <the ASCII strip — step 6: panels, banter score, one tagged line per finding>
 ```
 
-Want it as a page? (y/N/pr)
+Add the comic to the PR? (y/N)
 ````
 
+The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
+with `DG_COMIC_PR=ask` on a review that is for a PR. `## Verdict` ends at Recommended
+Actions, so wherever a PR body takes "the verdict", it takes neither the comic nor the
+round tables' BANTER lines.
+
 **Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
-measure of the work, and it comes after the findings because it decides nothing; they
-do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
+measure of the work, and it lives in the comic, after the findings, because it decides
+nothing; they do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
 Dinesh conceded it under pressure or a `[defend]` broke, Dinesh's if his `[defend]`
 held or Gilfoyle `[concede]`d. Gilfoyle's `[dismiss]` (rejecting Dinesh's defence)
 scores nothing by itself: the point goes to whichever way the defence then went. Unscored: findings both
 `[agree]` on, nobody argued, a persona raised against their own side, or that came from
 the pre-review or the scan. The orchestrator scores at the verdict; the personas are
 never told the rule, so no one defends a point to win it.
-
-The banter score and the comic are for the person running the review. Neither goes into
-a PR, issue, commit or anything else others read unless that person asks: the owner
-added them for levity, and not every reader shares the taste (2026-10-17).
 
 **Location** is `file:line` for code, the section or claim otherwise. **Verified?**
 distinguishes a finding the reviewer reproduced by running something from one it

@@ -19,8 +19,10 @@ domains beyond code (architecture, product/business, decisions); added the optio
 independent pre-review stage, convergence handling, and the merged-verdict output
 format; parameterized project-specific behavior into local-extension sections; the
 dependency scan runs only tools already installed; the comic is drawn as text at the
-end of every verdict rather than offered, and its `pr` option posts nothing itself.
-`skills/dg/comic-template.html` is upstream's `dg/comic-template.html` at `48d2f642`, with a Content-Security-Policy meta tag added (no script, form or
+end of every verdict rather than offered, governed per project by `DG_COMIC` and
+`DG_COMIC_PR`, and the HTML page is made only on request.
+`skills/dg/comic-template.html` is upstream's `dg/comic-template.html` at `48d2f642`,
+with a Content-Security-Policy meta tag added (no script, form or
 `<base>` in a page filled from the subject under review; a meta refresh still
 navigates, so escaping stays the control), the FIXED tag renamed AGREED, and "Final
 Score" renamed "Banter Score".
