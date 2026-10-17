@@ -32,11 +32,39 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 1. **Determine what to review** — file path → read it in full; a `<base>...<head>`
    range → `git diff <base>...<head>`, naming the exact shas reviewed in the verdict;
-   description/question → gather relevant context first; empty → `git diff HEAD`, then
-   `git diff --staged`, else stop and say so. Extract round count if present (default
-   5). A range too large for one pass (read `--stat` first) is reviewed by subsystem,
+   description/question → gather relevant context first; empty → `git diff HEAD`
+   (staged and unstaged) plus every file `git ls-files --others --exclude-standard`
+   lists, read in full — a new file nobody has added yet is in no diff — else stop and
+   say so. Extract round count if present (default 5). A range too large for one pass (read `--stat` first) is reviewed by subsystem,
    one run each, and the verdicts are merged — a subsystem left out is named as such,
    never silently skipped.
+
+   **Dependency scan** — when the subject is code, find the project's dependency files
+   and run the ecosystem's own audit, which already maps versions to CVEs and covers
+   transitive dependencies:
+
+   | File | Audit |
+   |---|---|
+   | `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml` | `npm audit --json` / `yarn audit --json` / `pnpm audit --json` |
+   | `requirements.txt` / `pyproject.toml` | `pip-audit --format=json` |
+   | `go.mod` | `govulncheck ./...` |
+   | `Gemfile.lock` | `bundle audit check` |
+   | `Cargo.lock` | `cargo audit` |
+   | `composer.lock` | `composer audit --format=json` |
+   | `pom.xml` / `build.gradle` | the OWASP dependency-check plugin, only if the build already applies it |
+
+   Only a tool already installed — never install one for the review: an unpinned
+   download run on the spot is the supply-chain risk the scan exists to find. With no
+   tool, query [OSV.dev](https://osv.dev) per pinned package (`curl -s -X POST
+   https://api.osv.dev/v1/query -d '{"package":{"name":"<pkg>","ecosystem":"<npm|PyPI|Go|Maven|crates.io|RubyGems|Packagist|NuGet>"},"version":"<v>"}'`),
+   and for a critical one read its CVSS score and vector from NVD
+   (`https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=<CVE>`). Both send package
+   names and versions off the machine; a project that must not do so says so in its
+   extensions, and the scan is reported as skipped. The results go to Gilfoyle as
+   round-1 input, one finding each: `<package>@<version>`, the CVE, CVSS, and the
+   version that fixes it. A scan that did not run is `⚠️ not run — <why>` in the
+   header, never "clean": a missing tool or a refused request that reads as no CVEs is
+   the silent pass §2 forbids.
 
 2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
    subject cold: no personas, no access to their findings. It enumerates correctness
@@ -74,8 +102,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
-   If captured, brief both personas: *"An independent senior reviewer flagged the
-   following — agree, escalate, or dispute each point as you see fit."*
+   If captured, the personas get it from round 2 on, not in round 1: *"An independent
+   senior reviewer flagged the following — agree, escalate, or dispute each point as
+   you see fit."* Briefed before their first look, they review the pre-reviewer's list
+   instead of the subject, and the verdict's pre-review-only section — what neither
+   persona found alone — cannot be filled honestly.
 
    **Prefer a reviewer from a different model family than the one running this skill,**
    whenever the environment can reach one. The step is called *independent*, and a
@@ -129,6 +160,10 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 3. **Spawn two persona agents** (or simulate both voices sequentially if subagents are
    unavailable): Dinesh and Gilfoyle each review the subject independently in round 1.
+   Every persona brief says: *"Research only — read the subject and produce your
+   review. Do NOT edit any files."* A persona subagent has the full toolset, and a
+   reviewer that fixes what it found leaves an unreviewed change in the tree the
+   verdict describes.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    Round 2: Gilfoyle's harshest finding → Dinesh defends or concedes. Further rounds
@@ -136,7 +171,30 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
-   silently dropped), and concrete recommended actions.
+   silently dropped), concrete recommended actions, and the score.
+
+6. **Offer a comic strip** — after the verdict, ask: *"Want a comic strip of the best
+   moments? (y/N/pr)"*. On `y` or `pr`, fill `comic-template.html` from this skill's
+   directory; a copy of this skill without it says so and skips the step.
+   - `{{REVIEW_TARGET}}`, `{{ROUND_COUNT}}`, `{{GILFOYLE_SCORE}}`, `{{DINESH_SCORE}}`,
+     `{{DATE}}` from the review.
+   - `{{PANELS}}`: 4–8 panels from the banter — back-and-forth pairs, a rare Gilfoyle
+     concession, the most technically devastating lines — 1–3 sentences each:
+     `<div class="panel gilfoyle|dinesh [full-width]"><span class="panel-number">N</span><div class="panel-header"><div class="avatar"><svg><use href="#gilfoyle-avatar|#dinesh-avatar"/></svg></div>GILFOYLE|DINESH</div><div class="panel-body"><div class="speech">…</div></div></div>`.
+   - `{{VERDICT_ITEMS}}`: one per verdict finding,
+     `<div class="verdict-item"><span class="tag tag-fixed|tag-contested|tag-dismissed">FIXED|CONTESTED|DISMISSED</span> …</div>`.
+
+   HTML-escape every value before it goes in (`&`, `<`, `>`, `"`) — the target, each
+   quote, each verdict item, not only the banter: all of it comes from the subject under
+   review, and a `<script>` in a diff would run when the page opens. The template's
+   Content-Security-Policy blocks scripts as a second line, not a reason to skip this. Write
+   it to a fresh file (`mktemp -t dg-comic.XXXXXX`, renamed `.html`), give the path, and
+   on `y` open it (`open`, or `xdg-open`). On `pr`, also render a PNG with a headless
+   browser already installed — any Chromium (Chrome, Chromium, Edge; on macOS the binary
+   inside its `.app/Contents/MacOS/`) with `--headless --screenshot=<png>
+   --window-size=1200,2400 file://<html>`, or `wkhtmltoimage`; never `npx --yes` — then give the PNG's path and the PR's
+   URL (`gh pr view --json url`): `gh` cannot attach a local image to a comment, so the
+   person drags it in. The skill posts nothing to the PR itself.
 
 ## Personas (condensed)
 
@@ -150,11 +208,12 @@ mechanism. Tags findings `[defend]` / `[concede]` / `[agree]` / `[nitpick]`; eve
 critical issues" is his highest compliment. Business realist: cites real competitors,
 runs rough revenue numbers to expose magical thinking; flags assumptions stated as
 facts. Tags findings `[dismiss]` / `[escalate]` / `[concede]` / `[new]`; every
-`[escalate]` gets a justification. Always finds at least one critical or important
-finding — or, for genuinely flawless work, says so and still finds two minor issues.
+`[escalate]` gets a justification. Finds real issues only: a finding made up to fill
+the table costs the owner a fix for nothing, and when the subject is sound he says so
+in as few words as it pains him to.
 
 Both output per round: a one-line in-character **BANTER** (never aimed at the user) and
-a findings table: `| # | Finding | Dimension | Severity | Tag | Notes |`.
+a findings table: `| # | Location | Finding | Dimension | Severity | Tag | Verified? | Fix |`.
 
 ## Output Format
 
@@ -165,16 +224,17 @@ place a long verdict turns back into paragraphs.
 ```markdown
 ## Review: <subject>
 > Pre-review: <one of the forms in step 2>
+> Dependency scan: ✅ <tool> — <n> findings | ⚠️ not run — <why> | n/a (no dependency files, or not code)
 
 ## Decisions waiting
 | # | Decision | Recommendation |
 
 ### Pre-review findings
-| ID | Finding | Severity | Verified? |
+| ID | Location | Finding | Severity | Verified? |
 
 ### Round N — Dinesh / Gilfoyle
 **BANTER:** …
-| # | Finding | Dimension | Severity | Tag | Notes |
+| # | Location | Finding | Dimension | Severity | Tag | Verified? | Fix |
 
 ## Verdict
 ### Agreed (both flagged)
@@ -182,14 +242,26 @@ place a long verdict turns back into paragraphs.
 ### Dinesh only / Gilfoyle only
 ### Pre-review-only (neither persona raised independently)
 ### Recommended Actions
+### Score
+Gilfoyle: <n> | Dinesh: <n>
 ```
 
-**Verified?** distinguishes a finding the reviewer reproduced by running something from
-one it reasoned to. A reader deciding what to fix first needs that column more than any
+**Score** is a tongue-in-cheek tally of who won each finding that was argued: a
+finding Dinesh conceded or that ended `[escalate]` is Gilfoyle's, one he held with a
+`[defend]` Gilfoyle could not break, or that Gilfoyle `[dismiss]`ed, is Dinesh's. It
+comes last because it decides nothing — the sections above it do.
+
+**Location** is `file:line` for code, the section or claim otherwise. **Verified?**
+distinguishes a finding the reviewer reproduced by running something from one it
+reasoned to. A reader deciding what to fix first needs that column more than any
 other, and a reviewer who cannot fill it has said something weaker than it sounds.
 
 ## Review Domains
 
-Adapt to the subject: code (security, correctness, tests, performance), architecture
+Adapt to the subject: code (security, correctness, tests, performance — and, where the
+code has them, data access (missing indexes, N+1 queries, transactions, migrations),
+distributed calls (timeouts, retries with backoff, idempotency, partial failure),
+logging (secrets or PII in logs, swallowed errors, silent critical paths), and the
+language's own idioms), architecture
 (coupling, scale, reversibility), product/business (market fit, monetisation mechanics,
 churn, distribution), decisions (trade-offs, alternatives, assumptions, reversibility).
