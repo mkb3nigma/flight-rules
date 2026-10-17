@@ -32,9 +32,10 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 1. **Determine what to review** — file path → read it in full; a `<base>...<head>`
    range → `git diff <base>...<head>`, naming the exact shas reviewed in the verdict;
-   description/question → gather relevant context first; empty → `git diff HEAD`, then
-   `git diff --staged`, else stop and say so. Extract round count if present (default
-   5). A range too large for one pass (read `--stat` first) is reviewed by subsystem,
+   description/question → gather relevant context first; empty → `git diff HEAD`
+   (staged and unstaged) plus every file `git ls-files --others --exclude-standard`
+   lists, read in full — a new file nobody has added yet is in no diff — else stop and
+   say so. Extract round count if present (default 5). A range too large for one pass (read `--stat` first) is reviewed by subsystem,
    one run each, and the verdicts are merged — a subsystem left out is named as such,
    never silently skipped.
 
@@ -74,8 +75,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
-   If captured, brief both personas: *"An independent senior reviewer flagged the
-   following — agree, escalate, or dispute each point as you see fit."*
+   If captured, the personas get it from round 2 on, not in round 1: *"An independent
+   senior reviewer flagged the following — agree, escalate, or dispute each point as
+   you see fit."* Briefed before their first look, they review the pre-reviewer's list
+   instead of the subject, and the verdict's pre-review-only section — what neither
+   persona found alone — cannot be filled honestly.
 
    **Prefer a reviewer from a different model family than the one running this skill,**
    whenever the environment can reach one. The step is called *independent*, and a
@@ -129,6 +133,10 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 3. **Spawn two persona agents** (or simulate both voices sequentially if subagents are
    unavailable): Dinesh and Gilfoyle each review the subject independently in round 1.
+   Every persona brief says: *"Research only — read the subject and produce your
+   review. Do NOT edit any files."* A persona subagent has the full toolset, and a
+   reviewer that fixes what it found leaves an unreviewed change in the tree the
+   verdict describes.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    Round 2: Gilfoyle's harshest finding → Dinesh defends or concedes. Further rounds
@@ -150,11 +158,12 @@ mechanism. Tags findings `[defend]` / `[concede]` / `[agree]` / `[nitpick]`; eve
 critical issues" is his highest compliment. Business realist: cites real competitors,
 runs rough revenue numbers to expose magical thinking; flags assumptions stated as
 facts. Tags findings `[dismiss]` / `[escalate]` / `[concede]` / `[new]`; every
-`[escalate]` gets a justification. Always finds at least one critical or important
-finding — or, for genuinely flawless work, says so and still finds two minor issues.
+`[escalate]` gets a justification. Finds real issues only: a finding made up to fill
+the table costs the owner a fix for nothing, and when the subject is sound he says so
+in as few words as it pains him to.
 
 Both output per round: a one-line in-character **BANTER** (never aimed at the user) and
-a findings table: `| # | Finding | Dimension | Severity | Tag | Notes |`.
+a findings table: `| # | Location | Finding | Dimension | Severity | Tag | Verified? | Fix |`.
 
 ## Output Format
 
@@ -170,11 +179,11 @@ place a long verdict turns back into paragraphs.
 | # | Decision | Recommendation |
 
 ### Pre-review findings
-| ID | Finding | Severity | Verified? |
+| ID | Location | Finding | Severity | Verified? |
 
 ### Round N — Dinesh / Gilfoyle
 **BANTER:** …
-| # | Finding | Dimension | Severity | Tag | Notes |
+| # | Location | Finding | Dimension | Severity | Tag | Verified? | Fix |
 
 ## Verdict
 ### Agreed (both flagged)
@@ -184,12 +193,17 @@ place a long verdict turns back into paragraphs.
 ### Recommended Actions
 ```
 
-**Verified?** distinguishes a finding the reviewer reproduced by running something from
-one it reasoned to. A reader deciding what to fix first needs that column more than any
+**Location** is `file:line` for code, the section or claim otherwise. **Verified?**
+distinguishes a finding the reviewer reproduced by running something from one it
+reasoned to. A reader deciding what to fix first needs that column more than any
 other, and a reviewer who cannot fill it has said something weaker than it sounds.
 
 ## Review Domains
 
-Adapt to the subject: code (security, correctness, tests, performance), architecture
+Adapt to the subject: code (security, correctness, tests, performance — and, where the
+code has them, data access (missing indexes, N+1 queries, transactions, migrations),
+distributed calls (timeouts, retries with backoff, idempotency, partial failure),
+logging (secrets or PII in logs, swallowed errors, silent critical paths), and the
+language's own idioms), architecture
 (coupling, scale, reversibility), product/business (market fit, monetisation mechanics,
 churn, distribution), decisions (trade-offs, alternatives, assumptions, reversibility).
