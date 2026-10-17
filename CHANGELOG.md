@@ -26,8 +26,10 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   while a merge is being concluded, and decided that with `git rev-parse --verify
   MERGE_HEAD` — which also resolves a branch or tag of that name. With one, every commit
   went unscanned and nothing was said; a staged AWS key committed (AppliHawk's security
-  review, 2026-10-17, reproduced). 0.25.0 tests git's `MERGE_HEAD` file, and prints
-  "secret scan skipped" every time it skips, so a leftover file is seen too.
+  review, 2026-10-17, reproduced). 0.25.0 tests git's `MERGE_HEAD` file, skips only
+  when it names a commit `HEAD` lacks — a leftover naming `HEAD` or an ancestor makes
+  an ordinary commit, and is scanned — and prints "secret scan skipped" every time it
+  skips, so a leftover file is seen too.
   `session-start.sh` had the same lookup for `MERGE_HEAD`, `CHERRY_PICK_HEAD` and
   `REVERT_HEAD`: a ref so named skipped `HOOK_SYNC`; it tests the files now.
 - **A leftover `REBASE_HEAD` blocked `HOOK_SYNC=auto` for good, silently.** git leaves
@@ -57,8 +59,9 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   "not run", never clean.
 - **`/dg` banter score and comic strip** (y/N/pr), from upstream. Every value in the page
   is escaped and the template carries a Content-Security-Policy; `pr` gives a PNG path
-  and posts nothing. `/rules-sync` now syncs a copied skill's other files, so a project's
-  copied `/dg` gets the template.
+  and posts nothing. `/rules-sync` now reports a copied skill's missing companion files
+  with the `cp` that adds them, so a project that copied `/dg` in learns it lacks the
+  template.
 
 ### Changed — `/dg`
 

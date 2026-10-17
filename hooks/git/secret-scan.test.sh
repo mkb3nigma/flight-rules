@@ -199,6 +199,31 @@ for kind in branch tag; do
   say "$(landed "$R" "$h")" no "a $kind named MERGE_HEAD: a staged key is still refused"
 done
 
+echo "A leftover MERGE_HEAD naming HEAD or an ancestor makes no merge, so it is scanned (release /dg, 2026-10-17):"
+# git drops a parent HEAD already contains and records an ordinary commit — the skip
+# would let a key through on a commit that merged nothing.
+# A sha naming no object cannot be merged either: an error is not "not an ancestor".
+for at in HEAD HEAD~1 missing; do
+  R=$(make_repo armed)
+  (cd "$R" && echo y > p && git add p && git commit -qm p) >/dev/null 2>&1 || die "could not add a second commit"
+  if [ "$at" = missing ]; then echo 0123456789abcdef0123456789abcdef01234567
+  else git -C "$R" rev-parse "$at"; fi > "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD"
+  h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(cd "$R" && echo "k=$AWS" > g && git add g && git commit -qm x 2>&1)
+  say "$(landed "$R" "$h")" no "MERGE_HEAD file = $at: a staged key is refused"
+  say "$(grep -c 'commit refused' <<<"$OUT")" 1 "…and the hook said why"
+done
+
+# A branch with no commits yet: --is-ancestor errors, and git ignores MERGE_HEAD and
+# makes a root commit — the case where an error read as "a merge" landed a key.
+R=$(make_repo armed)
+m=$(git -C "$R" rev-parse HEAD)
+(cd "$R" && git checkout -q --orphan unborn && git rm -rqf --cached . ) >/dev/null 2>&1 || die "could not start an unborn branch"
+echo "$m" > "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD"
+OUT=$(cd "$R" && echo "k=$AWS" > g && git add g && git commit -qm x 2>&1)
+say "$(git -C "$R" rev-parse -q --verify unborn >/dev/null && echo yes || echo no)" no "unborn branch, MERGE_HEAD file present: a staged key is refused"
+say "$(grep -c 'commit refused' <<<"$OUT")" 1 "…and the hook said why"
+
 echo "A step that fails is a refusal, not a clean scan (/dg G2-4, 2026-10-08):"
 # Their output was taken without their status, so a failed git diff was an empty one
 # and the commit went through unscanned. git runs a hook with its own directory first
