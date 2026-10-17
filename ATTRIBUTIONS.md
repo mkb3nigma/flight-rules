@@ -20,8 +20,10 @@ independent pre-review stage, convergence handling, and the merged-verdict outpu
 format; parameterized project-specific behavior into local-extension sections; the
 dependency scan runs only tools already installed and the comic's `pr` option posts
 nothing itself. `skills/dg/comic-template.html` is upstream's `dg/comic-template.html`
-at `48d2f642`, with one Content-Security-Policy meta tag added so no script can run in
-a page filled from the subject under review.
+at `48d2f642`, with a Content-Security-Policy meta tag added (no script, form or
+`<base>` in a page filled from the subject under review; a meta refresh still
+navigates, so escaping stays the control), the FIXED tag renamed AGREED, and "Final
+Score" renamed "Banter Score".
 
 ## rules/engineering-principles.md — principles 1–4
 

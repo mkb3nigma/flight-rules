@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- flight-rules: the page is filled from the subject under review, so no script may run in it, escaping missed or not. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:">
+<!-- flight-rules: filled from the subject under review — no script, form or <base> runs, escaping missed or not. A meta refresh still navigates; escaping is the control. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:">
 <title>Dinesh vs Gilfoyle — {{REVIEW_TARGET}}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -256,7 +256,7 @@
     flex-shrink: 0;
   }
 
-  .tag-fixed { background: #2ecc71; color: #000; }
+  .tag-agreed { background: #2ecc71; color: #000; }
   .tag-contested { background: #f39c12; color: #000; }
   .tag-dismissed { background: #95a5a6; color: #000; }
 
@@ -355,7 +355,7 @@
   </div>
 
   <div class="score-card">
-    <h2>Final Score</h2>
+    <h2>Banter Score</h2>
     <div class="score-row">
       <div class="score-player gilfoyle-score">
         <div class="name">Gilfoyle</div>
