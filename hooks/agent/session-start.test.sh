@@ -293,7 +293,7 @@ rm -rf "$D"
 # The other three in-progress states, each alone (fix review, 2026-10-12): a revert
 # stopped on a conflict, and the rebase directories git leaves — rebase-merge is the
 # interactive stop REBASE_HEAD misses, rebase-apply the am/apply one.
-for state in revert rebase-merge rebase-apply; do
+for state in revert rebase-merge rebase-apply am sequencer; do
   D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
   case "$state" in
@@ -302,11 +302,28 @@ for state in revert rebase-merge rebase-apply; do
       echo s > "$D/f.txt"; git -C "$D" commit -qam "chore: s" --no-verify
       git -C "$D" revert --no-edit HEAD~1 >/dev/null 2>&1
       [ -n "$(git -C "$D" rev-parse -q --verify REVERT_HEAD)" ] || die "the revert did not stop on a conflict" ;;
+    # A stopped `git am` keeps rebase-apply/ with an `applying` marker; git status calls
+    # it an am session, and "a rebase" sent the reader to `rebase --continue` (review,
+    # 2026-10-17).
+    am) mkdir -p "$(git -C "$D" rev-parse --absolute-git-dir)/rebase-apply" \
+          && touch "$(git -C "$D" rev-parse --absolute-git-dir)/rebase-apply/applying" || die "could not fake am" ;;
+    # A multi-commit cherry-pick stopped on a conflict that was then committed by hand:
+    # CHERRY_PICK_HEAD is gone, sequencer/todo remains, git status says in progress, and
+    # a later pick touching the synced hooks makes --continue refuse (review, 2026-10-17).
+    sequencer)
+      git -C "$D" checkout -qb feature/s; echo s1 > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: s1" --no-verify
+      echo s2 > "$D/g.txt"; git -C "$D" add g.txt; git -C "$D" commit -qm "chore: s2" --no-verify
+      git -C "$D" checkout -qb feature/w trunk; echo t > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: t" --no-verify
+      git -C "$D" cherry-pick trunk..feature/s >/dev/null 2>&1
+      echo resolved > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: resolved" --no-verify
+      [ -z "$(git -C "$D" rev-parse -q --verify CHERRY_PICK_HEAD)" ] \
+        && [ -f "$(git -C "$D" rev-parse --absolute-git-dir)/sequencer/todo" ] || die "no sequencer-only state" ;;
     *) mkdir -p "$(git -C "$D" rev-parse --absolute-git-dir)/$state" || die "could not make $state" ;;
   esac
   OUT=$(PRUN)
   say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-$state: the hook exits 0"
-  say "$(grep -c "skipped the git hooks: a ${state%%-*} is in progress" <<<"$OUT")" "1" "…says the sync was skipped and why"
+  case "$state" in am) op="git am session" ;; sequencer) op="cherry-pick or revert" ;; *) op="${state%%-*}" ;; esac
+  say "$(grep -c "skipped the git hooks: a $op is in progress" <<<"$OUT")" "1" "…says the sync was skipped and why"
   say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
   say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
   rm -rf "$D"

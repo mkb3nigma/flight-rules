@@ -74,15 +74,21 @@ touch "$LAST_RUN_FILE"
 # is said, with the command for afterwards: silent, it read as "current". A rebase is
 # in progress when git's rebase-merge or rebase-apply directory exists, as git status
 # decides it; REBASE_HEAD is not a test of that, and one left over from March 2026 kept
-# AppliHawk's hooks at 0.22.0 under 0.24.1 with nothing said (2026-10-17).
+# AppliHawk's hooks at 0.22.0 under 0.24.1 with nothing said (2026-10-17). git status
+# also counts a stopped `git am` (rebase-apply/applying, named as such so nobody runs
+# `rebase --continue` on it) and a multi-commit cherry-pick or revert whose conflict
+# was committed by hand — CHERRY_PICK_HEAD gone, sequencer/todo left, and a later pick
+# touching the synced hooks makes `--continue` refuse (review, 2026-10-17).
 HOOK_SYNC="$(conf_get HOOK_SYNC)"
 GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../git" 2>/dev/null && pwd)"
 in_progress() {
   git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && { echo merge; return; }
   git rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1 && { echo cherry-pick; return; }
   git rev-parse -q --verify REVERT_HEAD >/dev/null 2>&1 && { echo revert; return; }
+  [ -f "$(git rev-parse --git-path rebase-apply/applying 2>/dev/null)" ] && { echo "git am session"; return; }
   { [ -d "$(git rev-parse --git-path rebase-merge 2>/dev/null)" ] \
-    || [ -d "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]; } && echo rebase
+    || [ -d "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]; } && { echo rebase; return; }
+  [ -f "$(git rev-parse --git-path sequencer/todo 2>/dev/null)" ] && echo "cherry-pick or revert"
 }
 SYNC_MSG=$(
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \

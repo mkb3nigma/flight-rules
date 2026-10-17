@@ -39,32 +39,55 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    one run each, and the verdicts are merged — a subsystem left out is named as such,
    never silently skipped.
 
-   **Dependency scan** — when the subject is code, find the project's dependency files
-   and run the ecosystem's own audit, which already maps versions to CVEs and covers
-   transitive dependencies:
+   **Dependency scan** — when the subject is code, audit its dependency files for known
+   CVEs with the ecosystem's own tool, which maps versions to advisories and covers
+   transitive dependencies.
+
+   *What leaves the machine.* Every audit below except two sends the project's package
+   names and versions to a remote service — the registry (`npm`, `yarn`, `pnpm`,
+   `composer`), PyPI or OSV (`pip-audit`), vuln.go.dev (`govulncheck`), and the OSV and
+   NVD fallback. `cargo audit` and `bundle audit` download an advisory database and send
+   no names. A project whose package names must not leave the machine says so in its
+   extensions; the scan then runs only those two and reports the rest as not run.
+
+   *Which revision.* Scan the files at the reviewed head, not whatever is checked out:
+   for a range whose head is not `HEAD`, scan a detached worktree of it (`git worktree
+   add --detach <tmp> <head>`, removed after), or report the scan as not run. A clean
+   result for the checkout's lockfile, filed under the reviewed sha, vouches for code
+   nobody reviewed.
 
    | File | Audit |
    |---|---|
-   | `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml` | `npm audit --json` / `yarn audit --json` / `pnpm audit --json` |
-   | `requirements.txt` / `pyproject.toml` | `pip-audit --format=json` |
+   | `package-lock.json` / `pnpm-lock.yaml` | `npm audit --package-lock-only --json` / `pnpm audit --json` |
+   | `yarn.lock` | `yarn audit --json` (Yarn 1) / `yarn npm audit --json` (Yarn 2+) |
+   | `requirements.txt`, every version pinned | `pip-audit -r requirements.txt --no-deps --disable-pip --format=json` |
+   | `poetry.lock` / `uv.lock` / `Pipfile.lock` | export pinned requirements with the project's tool (`poetry export -f requirements.txt`, `uv export --format requirements-txt`, `pipenv requirements`), then the row above |
    | `go.mod` | `govulncheck ./...` |
-   | `Gemfile.lock` | `bundle audit check` |
+   | `Gemfile.lock` | `bundle audit check --update` |
    | `Cargo.lock` | `cargo audit` |
    | `composer.lock` | `composer audit --format=json` |
-   | `pom.xml` / `build.gradle` | the OWASP dependency-check plugin, only if the build already applies it |
+   | `pom.xml` / `build.gradle(.kts)` / `gradle.lockfile` | the OWASP dependency-check plugin, only if the build already applies it |
+
+   `pip-audit` with no arguments audits the Python environment it runs in, not the
+   project — a clean answer about the wrong packages — and `-r` without `--no-deps
+   --disable-pip` resolves through pip, which can run a package's build code. So a
+   `requirements.txt` with unpinned versions, or a `pyproject.toml` with no lockfile, is
+   `⚠️ not run — unpinned`. A dependency file no row covers is `⚠️ not run — no mapped
+   audit for <file>`, never `n/a`.
 
    Only a tool already installed — never install one for the review: an unpinned
    download run on the spot is the supply-chain risk the scan exists to find. With no
    tool, query [OSV.dev](https://osv.dev) per pinned package (`curl -s -X POST
    https://api.osv.dev/v1/query -d '{"package":{"name":"<pkg>","ecosystem":"<npm|PyPI|Go|Maven|crates.io|RubyGems|Packagist|NuGet>"},"version":"<v>"}'`),
-   and for a critical one read its CVSS score and vector from NVD
-   (`https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=<CVE>`). Both send package
-   names and versions off the machine; a project that must not do so says so in its
-   extensions, and the scan is reported as skipped. The results go to Gilfoyle as
-   round-1 input, one finding each: `<package>@<version>`, the CVE, CVSS, and the
-   version that fixes it. A scan that did not run is `⚠️ not run — <why>` in the
-   header, never "clean": a missing tool or a refused request that reads as no CVEs is
-   the silent pass §2 forbids.
+   and read a critical one's CVSS from NVD
+   (`https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=<CVE>`). Each result is one
+   finding: `<package>@<version>`, the CVE, its CVSS as the tool, OSV or NVD gives it —
+   else `CVSS: none published`, never an estimate — and the version that fixes it. The
+   results get their own verdict section and reach both personas from round 2, as the
+   pre-review does: given to Gilfoyle in round 1 they would land in "Gilfoyle only",
+   credited to someone who found none of them. A scan that did not run is `⚠️ not run —
+   <why>` in the header, never "clean": a missing tool or a refused request that reads as
+   no CVEs is the silent pass §2 forbids.
 
 2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
    subject cold: no personas, no access to their findings. It enumerates correctness
@@ -171,7 +194,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
-   silently dropped), concrete recommended actions, and the score.
+   silently dropped), the dependency scan's results, concrete recommended actions, and
+   the banter score.
 
 6. **Offer a comic strip** — after the verdict, ask: *"Want a comic strip of the best
    moments? (y/N/pr)"*. On `y` or `pr`, fill `comic-template.html` from this skill's
@@ -181,19 +205,26 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `{{PANELS}}`: 4–8 panels from the banter — back-and-forth pairs, a rare Gilfoyle
      concession, the most technically devastating lines — 1–3 sentences each:
      `<div class="panel gilfoyle|dinesh [full-width]"><span class="panel-number">N</span><div class="panel-header"><div class="avatar"><svg><use href="#gilfoyle-avatar|#dinesh-avatar"/></svg></div>GILFOYLE|DINESH</div><div class="panel-body"><div class="speech">…</div></div></div>`.
-   - `{{VERDICT_ITEMS}}`: one per verdict finding,
-     `<div class="verdict-item"><span class="tag tag-fixed|tag-contested|tag-dismissed">FIXED|CONTESTED|DISMISSED</span> …</div>`.
+   - `{{VERDICT_ITEMS}}`: one per verdict finding, tagged by its verdict section —
+     AGREED (both flagged), CONTESTED (severity disputed, or a defence held), DISMISSED:
+     `<div class="verdict-item"><span class="tag tag-agreed|tag-contested|tag-dismissed">AGREED|CONTESTED|DISMISSED</span> …</div>`.
+     Nothing is FIXED when the comic is drawn: the reviewers are read-only.
 
-   HTML-escape every value before it goes in (`&`, `<`, `>`, `"`) — the target, each
-   quote, each verdict item, not only the banter: all of it comes from the subject under
-   review, and a `<script>` in a diff would run when the page opens. The template's
-   Content-Security-Policy blocks scripts as a second line, not a reason to skip this. Write
+   HTML-escape every piece of text before it goes in (`&`, `<`, `>`, `"`) — the target,
+   the date and scores, each quote inside a `speech` div, each verdict item's text after
+   its tag — and never the wrapper markup above, which is the template's own and would
+   print as tags. All of that text comes from the subject under review, and an unescaped
+   `<script>` in a diff would run when the page opens. The template's
+   Content-Security-Policy stops scripts, forms and a `<base>` as a second line, but not
+   a `<meta http-equiv="refresh">`, which still navigates the page (headless Edge,
+   2026-10-17): escaping is the control, not the CSP. Write
    it to a fresh file (`mktemp -t dg-comic.XXXXXX`, renamed `.html`), give the path, and
    on `y` open it (`open`, or `xdg-open`). On `pr`, also render a PNG with a headless
    browser already installed — any Chromium (Chrome, Chromium, Edge; on macOS the binary
    inside its `.app/Contents/MacOS/`) with `--headless --screenshot=<png>
-   --window-size=1200,2400 file://<html>`, or `wkhtmltoimage`; never `npx --yes` — then give the PNG's path and the PR's
-   URL (`gh pr view --json url`): `gh` cannot attach a local image to a comment, so the
+   --window-size=1200,2400 file://<html>`, or `wkhtmltoimage`; never `npx --yes` — then
+   give the PNG's path and the PR's URL (`gh pr view --json url`), or say there is no PR
+   or no `gh` when that fails: `gh` cannot attach a local image to a comment, so the
    person drags it in. The skill posts nothing to the PR itself.
 
 ## Personas (condensed)
@@ -241,15 +272,20 @@ place a long verdict turns back into paragraphs.
 ### Disputed (severity differed)
 ### Dinesh only / Gilfoyle only
 ### Pre-review-only (neither persona raised independently)
+### Dependency scan
 ### Recommended Actions
-### Score
+### Banter score
 Gilfoyle: <n> | Dinesh: <n>
 ```
 
-**Score** is a tongue-in-cheek tally of who won each finding that was argued: a
-finding Dinesh conceded or that ended `[escalate]` is Gilfoyle's, one he held with a
-`[defend]` Gilfoyle could not break, or that Gilfoyle `[dismiss]`ed, is Dinesh's. It
-comes last because it decides nothing — the sections above it do.
+**Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
+measure of the work, and it comes last because it decides nothing; the sections above
+it do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
+Dinesh conceded it under pressure or a `[defend]` broke, Dinesh's if his `[defend]`
+held, Gilfoyle `[dismiss]`ed it, or Gilfoyle `[concede]`d. Unscored: findings both
+`[agree]` on, nobody argued, a persona raised against their own side, or that came from
+the pre-review or the scan. The orchestrator scores at the verdict; the personas are
+never told the rule, so no one defends a point to win it.
 
 **Location** is `file:line` for code, the section or claim otherwise. **Verified?**
 distinguishes a finding the reviewer reproduced by running something from one it

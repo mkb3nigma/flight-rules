@@ -26,7 +26,7 @@ derivation), then run `/upstream-check`.
 > `dinesh-agent.md`, `gilfoyle-agent.md` and `comic-template.html` at `48d2f642` — still
 > upstream HEAD — were read against `skills/dg/`. Taken: no finding quota, research-only
 > persona briefs, file:line and fix per finding, the wider review domains, the dependency
-> CVE scan, the score and the comic strip. Not taken: the "continue?" prompt at the round
+> CVE scan, the banter score and the comic strip. Not taken: the "continue?" prompt at the round
 > cap (owner's call). What changed in the taking is in `ATTRIBUTIONS.md`. The pin stays.
 
 > **Baseline note:** pins were initialised on 2026-07-22 to each source's then-current
