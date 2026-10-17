@@ -198,6 +198,20 @@ say "$(grep -c 'flight-rules doctor' <<<"$SECOND")" "0" "…the second, same ver
 say "$(grep -c '^rc=0$' <<<"$SECOND")" "1" "…and exits 0 doing so"
 printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"
 say "$(PRUN | grep -c 'flight-rules doctor')" "1" "…the first after an update, same day, does"
+# A headless session (claude -p, the SDK, a script) has no screen, and spending the day's
+# flag on it hid that day's ❌ from every attended session after it — silently, so it
+# could never show up as an incident. Claude Code 2.1.301 sets CLAUDE_CODE_SESSION_ATTENDED=0
+# for `claude -p` (probe, 2026-10-17; undocumented). Exactly 0 only: unset is today's flag.
+printf '{ "name": "flight-rules", "version": "1.0.2" }\n' > "$T/.claude-plugin/plugin.json"
+HRUN() { { (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null); echo "rc=$?"; } | ctx; }
+OUT=$(HRUN)
+say "$(grep -c 'flight-rules doctor' <<<"$OUT")" "1" "headless: doctor still runs, for the headless assistant's context"
+say "$(grep -c '^rc=0$' <<<"$OUT")" "1" "…and exits 0"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c -- '-1.0.2$')" "0" "…without spending the day's flag"
+say "$(HRUN | grep -c 'flight-rules doctor')" "1" "…so a second headless session runs it too"
+say "$( (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null) | ctx | grep -c 'flight-rules doctor')" "1" "the first attended session after them still gets doctor"
+say "$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=1 HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>/dev/null) | ctx | grep -c 'flight-rules doctor')" "0" "…and spends the flag as before"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c -- '-1.0.2$')" "1" "…the flag file now there (so the check above can see one)"
 rm -rf "$D" "$T"
 
 echo "HOOK_SYNC=auto brings a provably stale git hook up to date; anything else only reports:"

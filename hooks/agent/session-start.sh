@@ -56,7 +56,13 @@ if [ -f "$LAST_RUN_FILE" ]; then
   exit 0
 fi
 
-touch "$LAST_RUN_FILE"
+# A headless session (claude -p, the SDK, a script) has no screen. Spending the flag on
+# it hid that day's ❌ from every attended session after it, and silently — the miss
+# could never surface as an incident (owner, 2026-10-17). It still runs, for its own
+# assistant's context. Claude Code sets CLAUDE_CODE_SESSION_ATTENDED=0 for `claude -p`
+# (probe on 2.1.301, 2026-10-17); the variable is undocumented, so only an exact 0
+# counts — unset, or renamed away, is the old once-a-day behaviour, never worse.
+[ "${CLAUDE_CODE_SESSION_ATTENDED-}" = "0" ] || touch "$LAST_RUN_FILE"
 
 # HOOK_SYNC=auto: before asking whether the git hooks are current, make them so — for
 # the copies that are provably unmodified (byte-identical to some release in the
