@@ -62,7 +62,8 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   inside `pr-create` 2b, until you reply. Upstream offers the comic instead, and this
   release's own review skipped that offer. Only then comes "Want it as a page?
   (y/N/pr)". Every value in the page is escaped and the template carries a
-  Content-Security-Policy; `pr` gives a PNG path and posts nothing. `/rules-sync` now
+  Content-Security-Policy; `pr` gives a PNG path and posts nothing. The score and the
+  comic stay in the conversation: neither goes into a PR unless you ask. `/rules-sync` now
   reports a copied skill's missing companion files with the `cp` that adds them, so a
   project that copied `/dg` in learns it lacks the template.
 

@@ -130,9 +130,9 @@ branch from a local copy and opening a fresh PR against the correct base.
    preferring a pre-reviewer from a different model family (the skill says why; one
    that is unavailable is a warning in the verdict's header, not a reason to stop), and
    name both shas in the verdict. `/dg` ends its turn with the verdict; dispositions
-   follow the owner's reply. Put the verdict through its banter score, and every
-   finding's disposition, in the PR body under **Adversarial review** — the comic and
-   its question stay in the conversation (the `release review` workflow checks it is
+   follow the owner's reply. Put the verdict through its recommended actions, and every
+   finding's disposition, in the PR body under **Adversarial review** — the banter
+   score, the comic and its question stay in the conversation (the `release review` workflow checks it is
    there and not empty, and re-checks on every body edit). The assistant may decline a minor or important finding with its reason, where the
    owner reads it; a **critical** finding is the owner's to disposition — stop and
    ask. A finding applied arrives like any change, through a branch merged into

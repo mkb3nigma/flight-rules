@@ -219,7 +219,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    panels; a copy of this skill without it says so and skips the page.
    - `{{REVIEW_TARGET}}`, `{{ROUND_COUNT}}`, `{{GILFOYLE_SCORE}}`, `{{DINESH_SCORE}}`,
      `{{DATE}}` from the review.
-   - `{{PANELS}}`: 4–8 panels from the banter — back-and-forth pairs, a rare Gilfoyle
+   - `{{PANELS}}`: the text comic's panels, from the banter — back-and-forth pairs, a rare Gilfoyle
      concession, the most technically devastating lines — 1–3 sentences each:
      `<div class="panel gilfoyle|dinesh [full-width]"><span class="panel-number">N</span><div class="panel-header"><div class="avatar"><svg><use href="#gilfoyle-avatar|#dinesh-avatar"/></svg></div>GILFOYLE|DINESH</div><div class="panel-body"><div class="speech">…</div></div></div>`.
    - `{{VERDICT_ITEMS}}`: one per verdict finding, tagged by its verdict section —
@@ -312,6 +312,10 @@ scores nothing by itself: the point goes to whichever way the defence then went.
 `[agree]` on, nobody argued, a persona raised against their own side, or that came from
 the pre-review or the scan. The orchestrator scores at the verdict; the personas are
 never told the rule, so no one defends a point to win it.
+
+The banter score and the comic are for the person running the review. Neither goes into
+a PR, issue, commit or anything else others read unless that person asks: the owner
+added them for levity, and not every reader shares the taste (2026-10-17).
 
 **Location** is `file:line` for code, the section or claim otherwise. **Verified?**
 distinguishes a finding the reviewer reproduced by running something from one it
