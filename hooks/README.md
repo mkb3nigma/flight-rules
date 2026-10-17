@@ -384,8 +384,10 @@ Guards that fire on the assistant's own events, before git ever runs:
   release is ⚠️ since it may be the project's own adaptation, and either prints the
   `install.sh --from` command — `merge.ff`, the guard's parser, the conf's keys and
   regexes, that every script `.claude/settings.json` wires exists, and that the guard
-  is wired once and actually enabled — every one a state that has failed silently
-  before. `session-start.sh` runs it daily and prints only problems.
+  is wired once and actually enabled, and — with the plugin on — that no command or
+  skill of the user's or project's own, named like a plugin skill, runs in its place
+  (⚠️; a pointer or a `flight-rules:<name>` wrapper is fine) — every one a state that has
+  failed silently before. `session-start.sh` runs it daily and prints only problems.
   Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project, and again after
   a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged

@@ -325,6 +325,27 @@ else
   warn "no agent guard wired: neither the plugin nor .claude/settings.json runs pre-commit-check.sh — only the git hooks are protecting you"
 fi
 
+# ── 5. No command or skill of the user's or project's own shadows a plugin skill ──
+# One named like a plugin skill is what `/dg` runs, and the plugin's stays unreached:
+# AppliHawk's ~/.claude/commands/dg.md, a copy from 2026-06-11, ran in place of every
+# release's /dg after it with nothing said (2026-10-13). A file that points at a
+# skills/<name>/SKILL.md (a project's copy-in, or this repo's own pointers) or hands over
+# to `flight-rules:<name>` (AppliHawk's wrappers, flagged on the first real run,
+# 2026-10-17) is no shadow. Only with the plugin on: off, its skills are not in use.
+SKILLS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../skills" 2>/dev/null && pwd)"
+if [[ $PLUGIN_ON -eq 1 && -n "$SKILLS_SRC" ]]; then
+  for _s in "$SKILLS_SRC"/*/SKILL.md; do
+    [[ -f "$_s" ]] || continue
+    _n=$(basename "$(dirname "$_s")")
+    for _f in "$HOME/.claude/commands/$_n.md" "$HOME/.claude/skills/$_n/SKILL.md" \
+              ".claude/commands/$_n.md" ".claude/skills/$_n/SKILL.md"; do
+      [[ -f "$_f" ]] || continue
+      grep -qF -e "skills/$_n/SKILL.md" -e "flight-rules:$_n" "$_f" && continue
+      warn "${_f/#$HOME/~} shadows flight-rules' /$_n — /$_n runs that file, not this release's skill; delete or rename it if it is an old copy (/flight-rules:$_n reaches the plugin's either way)"
+    done
+  done
+fi
+
 echo
 if [[ $FAIL -gt 0 ]]; then printf '%d problem(s), %d warning(s)\n' "$FAIL" "$WARN"; exit 1; fi
 [[ $QUIET -eq 1 && $WARN -eq 0 ]] || printf 'enforcement installed: %d warning(s)\n' "$WARN"
