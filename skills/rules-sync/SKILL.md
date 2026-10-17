@@ -44,8 +44,8 @@ Match by path/basename:
 - `.ai/skills/<name>/<file>` ↔ `{PLAYBOOK_PATH}/skills/<name>/<file>` — the files a
   copied-in skill reads from its own directory (today `dg/comic-template.html`). One
   upstream has and the copy lacks is **Available-but-not-adopted** with its `cp`
-  command: the copied SKILL.md looks for it beside itself, and without it `/dg` skips
-  the comic.
+  command: the copied SKILL.md looks for it beside itself, and without it `/dg` cannot
+  make the comic's page (`y`/`pr`); the text comic needs no file.
 - `.ai/skills/<name>/EXTENSIONS.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md`
   (the recommended model — the project holds only a delta, so there is nothing to
   diff line-by-line; see Step 3b)
