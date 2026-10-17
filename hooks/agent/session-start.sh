@@ -56,7 +56,8 @@ if [ -f "$LAST_RUN_FILE" ]; then
   exit 0
 fi
 
-# A headless session (claude -p, the SDK, a script) has no screen. Spending the flag on
+# A headless session (`claude -p`, observed; other callers only if they set the variable
+# below) has no screen. Spending the flag on
 # it hid that day's ❌ from every attended session after it, and silently — the miss
 # could never surface as an incident (owner, 2026-10-17). It still runs, for its own
 # assistant's context. Claude Code sets CLAUDE_CODE_SESSION_ATTENDED=0 for `claude -p`
@@ -84,7 +85,14 @@ fi
 # also counts a stopped `git am` (rebase-apply/applying, named as such so nobody runs
 # `rebase --continue` on it) and a multi-commit cherry-pick or revert whose conflict
 # was committed by hand — CHERRY_PICK_HEAD gone, sequencer/todo left, and a later pick
-# touching the synced hooks makes `--continue` refuse (review, 2026-10-17).
+# touching the synced hooks makes `--continue` refuse (review, 2026-10-17). And a
+# `git bisect`, which git status also reports: a synced hook on the commit under test
+# made the next `bisect good` refuse to check out (final release /dg, 2026-10-17).
+#
+# A headless session syncs too: the synced hook protects the clone at once, which a
+# headless-only setup would otherwise never get. Its "commit the diff" reaches no
+# screen, though, so an attended session that finds the hook directory changed and
+# uncommitted says so (final release /dg, 2026-10-17).
 HOOK_SYNC="$(conf_get HOOK_SYNC)"
 GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../git" 2>/dev/null && pwd)"
 in_progress() {
@@ -96,7 +104,8 @@ in_progress() {
   [ -f "$(git rev-parse --git-path rebase-apply/applying 2>/dev/null)" ] && { echo "git am session"; return; }
   { [ -d "$(git rev-parse --git-path rebase-merge 2>/dev/null)" ] \
     || [ -d "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]; } && { echo rebase; return; }
-  [ -f "$(git rev-parse --git-path sequencer/todo 2>/dev/null)" ] && echo "cherry-pick or revert"
+  [ -f "$(git rev-parse --git-path sequencer/todo 2>/dev/null)" ] && { echo "cherry-pick or revert"; return; }
+  [ -f "$(git rev-parse --git-path BISECT_LOG 2>/dev/null)" ] && echo bisect
 }
 SYNC_MSG=$(
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
@@ -118,6 +127,14 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     echo "🔁 flight-rules HOOK_SYNC=auto updated git hooks in this project — review the diff and commit it:"
     echo "$SYNC_OUT" | grep -E '^   (synced |[a-z.-]+: )' | sed 's/^  //'
     echo ""
+  elif [ "${CLAUDE_CODE_SESSION_ATTENDED-}" != "0" ]; then
+    _top=$(git rev-parse --show-toplevel 2>/dev/null)
+    _changed=$(git -C "$_top" status --short -- "$(git config --local core.hooksPath)" 2>/dev/null)
+    if [ -n "$_changed" ]; then
+      echo "📝 flight-rules: the git hooks have changes nobody has committed — a headless session's HOOK_SYNC=auto may have written them unseen. Review the diff and commit it:"
+      printf '%s\n' "$_changed" | sed 's/^/  /'
+      echo ""
+    fi
   fi
 fi
 )

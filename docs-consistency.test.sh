@@ -144,6 +144,20 @@ else
   grep -q 'edited' "$RR" && ok "$RR re-runs when the PR body is edited" || bad "$RR does not trigger on edited"
   grep -q 'Adversarial review' "$RR" && ok "$RR checks the Adversarial review section" || bad "$RR does not look for the section"
   grep -qE '\$\{\{[^}]*body' <(sed -n '/run: |/,$p' "$RR") && bad "$RR interpolates the PR body into a script" || ok "$RR reads the PR body through env only"
+  # The check's own awk, run on pr-create's template: an untouched template, or a
+  # section holding only the comic, must count as empty (final release /dg,
+  # 2026-10-17: the comic slot's placeholder lines passed an untouched template).
+  PROG=$(sed -n "/| awk '\$/,/END {/p" "$RR" | sed -e '1d' -e "\$s/')\$//")
+  TPL=$(sed -n "/--body \"\$(cat <<'EOF'/,/^EOF\$/p" skills/pr-create/SKILL.md)
+  filled() { printf '%s\n' "$1" | awk "$PROG" 2>/dev/null; }
+  if [ -z "$PROG" ] || [ -z "$TPL" ]; then bad "could not extract $RR's awk or pr-create's template"
+  else
+    [ "$(filled "$TPL")" = 0 ] && ok "$RR fails pr-create's untouched template" || bad "$RR passes pr-create's untouched template (counted $(filled "$TPL"))"
+    COMIC=$(printf '## Adversarial review\n### Comic\n````\n[1] DINESH\n````\n## Testing\n')
+    [ "$(filled "$COMIC")" = 0 ] && ok "…and a section holding only the comic" || bad "$RR passes a section holding only the comic"
+    FULL=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n| V1 | x | minor | Applied |\n### Comic\n````\nx\n````\n## Testing\n')
+    [ "$(filled "$FULL")" = 3 ] && ok "…while a filled one counts, demoted headings and all" || bad "$RR miscounts a filled section ($(filled "$FULL"), want 3)"
+  fi
 fi
 
 echo

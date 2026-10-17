@@ -49,6 +49,9 @@ run_local() { [ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"; exit 0; }
 # time, so a MERGE_HEAD left behind is seen rather than trusted. And it must bring in a
 # commit HEAD lacks: git drops a parent HEAD already contains, so a leftover file naming
 # HEAD or an ancestor made an ordinary, unscanned commit (release /dg, 2026-10-17).
+# For a leftover the advice is to delete the file: `git merge --abort` runs
+# `reset --merge`, which threw away the staged work beside it, exit 0 (final release
+# /dg, 2026-10-17).
 MERGE_MARKER=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
 merges_something() {
     while read -r m; do
@@ -60,7 +63,7 @@ merges_something() {
     return 1
 }
 if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
-    echo "pre-commit: concluding a merge ($MERGE_MARKER present) — secret scan skipped; the merged commits were scanned when made. Not merging? \`git status\` shows what git thinks; \`git merge --abort\` clears it." >&2
+    echo "pre-commit: concluding a merge ($MERGE_MARKER present) — secret scan skipped; the merged commits were scanned when made. Not merging? \`git status\` shows what git thinks; a leftover is cleared by \`rm '$MERGE_MARKER'\`, which keeps what you staged — \`git merge --abort\` would discard it." >&2
     run_local "$@"
 fi
 

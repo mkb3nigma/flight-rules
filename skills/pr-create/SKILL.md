@@ -122,17 +122,20 @@ branch from a local copy and opening a fresh PR against the correct base.
    offline run costs the same minutes as a red CI run and none of anyone's attention.
 
    A local run covers one platform. Where CI runs the suites on more, read CI's result
-   for that same sha on each (`gh run list --commit <sha>`) and do not open the PR while
-   any is red or still running. 0.25.0's 2a passed on macOS (bash 3.2) while Ubuntu CI
+   for that same sha on each (`gh run list --commit <full sha>` — a short sha matches no
+   run, and an empty list has nothing red in it; the final 0.25.0 review) and do not
+   open the PR while any is red or still running, or while fewer runs are listed than
+   CI starts for a push. 0.25.0's 2a passed on macOS (bash 3.2) while Ubuntu CI
    (bash 5) had been red on `{INTEGRATION_BRANCH}` for two pushes (flight-rules
    4fe21fe, 2026-10-17).
 2b. **Release PR only** — run `/dg origin/main...<sha>` on the commit 2a tested,
    preferring a pre-reviewer from a different model family (the skill says why; one
    that is unavailable is a warning in the verdict's header, not a reason to stop), and
    name both shas in the verdict. `/dg` ends its turn with the verdict; dispositions
-   follow the owner's reply. Put the `## Review` header lines, the verdict (it ends at
+   follow the owner's reply. Put the `> Pre-review:` / `> Dependency scan:` lines, the verdict (it ends at
    Recommended Actions) and every finding's disposition in the PR body under
-   **Adversarial review**, each of the verdict's headings one level down (`###`, `####`)
+   **Adversarial review**, each of the verdict's headings one level down (`###`, `####`;
+   the review's own `## Review` title too)
    — a `##` inside the section ends it, and the check below then finds it empty. No
    round tables or banter. The comic, banter score included, goes in only as the
    project's `DG_COMIC_PR` says (`/dg` step 6; default `never`), as `### Comic` at the

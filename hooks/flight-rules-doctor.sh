@@ -342,7 +342,7 @@ fi
 # skills/<name>/SKILL.md (a project's copy-in, or this repo's own pointers) or hands over
 # to `flight-rules:<name>` (AppliHawk's wrappers, flagged on the first real run,
 # 2026-10-17) is no shadow. Only with the plugin on: off, its skills are not in use.
-SKILLS_SRC="$(cd "${GIT_HOOKS_SRC%/git}/../skills" 2>/dev/null && pwd)"   # resolved before the cd to $ROOT
+SKILLS_SRC="$(cd "${GIT_HOOKS_SRC%/git}/../skills" 2>/dev/null && pwd)"   # GIT_HOOKS_SRC was made absolute before the cd to $ROOT
 if [[ $PLUGIN_ON -eq 1 && -n "$SKILLS_SRC" ]]; then
   for _s in "$SKILLS_SRC"/*/SKILL.md; do
     [[ -f "$_s" ]] || continue

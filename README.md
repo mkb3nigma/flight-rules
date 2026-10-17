@@ -146,9 +146,9 @@ flavor stays in the project.** Two ways to consume, in order of preference:
 ## Parameters
 
 Skills refer to placeholders rather than hardcoding a project's setup. The branch
-policy has **one home, `.ai/flight-rules.conf`** — six keys, `PROTECTED_BRANCHES`,
-`PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`, `WORKTREE_DIR`, the
-file the hooks read — so the skills and the enforcement never disagree about which
+policy has **one home, `.ai/flight-rules.conf`**, the file the hooks read —
+`PROTECTED_BRANCHES`, `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`,
+`WORKTREE_DIR`, `MERGE_NEEDS_INSTRUCTION` — so the skills and the enforcement never disagree about which
 branches are protected. The rest lives in the skill's `EXTENSIONS.md`. The conf also
 holds two `/dg` settings: `DG_COMIC` for the review's comic, and `DG_COMIC_PR`, unset
 by default, so no comic reaches a PR unless you set it — see the

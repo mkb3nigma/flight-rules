@@ -187,6 +187,24 @@ say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a ke
 say "$(grep -c 'secret scan skipped' <<<"$OUT")" 1 "…and says the scan was skipped, so a leftover MERGE_HEAD is never silent"
 say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
 
+echo "The skip's advice for a leftover MERGE_HEAD keeps the staged work (final release /dg, 2026-10-17):"
+# `git merge --abort` was the advice, and on a leftover it reverted a staged edit and
+# deleted a staged new file, exit 0. Follow the command the message gives instead.
+R=$(make_repo armed)
+( cd "$R" && git checkout -qb other && echo o > o && git add o && git commit -qm o --no-verify \
+  && git checkout -q feature ) >/dev/null 2>&1 || die "could not build a side branch"
+git -C "$R" rev-parse other > "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD"
+echo edited > "$R/t"; echo new > "$R/n"; git -C "$R" add t n >/dev/null 2>&1 || die "could not stage"
+# The hook run as git would run it, without committing: the staged work must outlive it.
+OUT=$(cd "$R" && "$R/.hooks/pre-commit" 2>&1)
+say "$(grep -c 'secret scan skipped' <<<"$OUT")" 1 "a leftover MERGE_HEAD naming a side commit: the skip is said"
+say "$(grep -c 'merge --abort` clears' <<<"$OUT")" 0 "…without advising git merge --abort"
+CMD=$(sed -n "s/.*cleared by \`\(rm '[^']*'\)\`.*/\1/p" <<<"$OUT")
+say "$([ -n "$CMD" ] && echo given || echo missing)" given "…giving an rm of the marker file instead"
+(cd "$R" && eval "$CMD")
+say "$(git -C "$R" diff --cached --name-only | grep -cxE 't|n')" 2 "…which leaves the staged edit and new file staged"
+say "$([ -f "$(git -C "$R" rev-parse --git-path MERGE_HEAD)" ] && echo present || echo gone)" gone "…and clears the marker"
+
 echo "A branch or tag named MERGE_HEAD is not a merge in progress (AppliHawk review, 2026-10-17):"
 # `rev-parse --verify MERGE_HEAD` resolves refs/heads/MERGE_HEAD too, so one such branch
 # switched the scan off for every commit with nothing said. The marker is a file.
