@@ -184,8 +184,10 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `{{VERDICT_ITEMS}}`: one per verdict finding,
      `<div class="verdict-item"><span class="tag tag-fixed|tag-contested|tag-dismissed">FIXED|CONTESTED|DISMISSED</span> …</div>`.
 
-   HTML-escape every quote before it goes in (`&`, `<`, `>`, `"`): banter quotes the
-   code under review, and a `<script>` in a diff would run when the page opens. Write
+   HTML-escape every value before it goes in (`&`, `<`, `>`, `"`) — the target, each
+   quote, each verdict item, not only the banter: all of it comes from the subject under
+   review, and a `<script>` in a diff would run when the page opens. The template's
+   Content-Security-Policy blocks scripts as a second line, not a reason to skip this. Write
    it to a fresh file (`mktemp -t dg-comic.XXXXXX`, renamed `.html`), give the path, and
    on `y` open it (`open`, or `xdg-open`). On `pr`, also render a PNG with a headless
    browser already installed — any Chromium (Chrome, Chromium, Edge; on macOS the binary
