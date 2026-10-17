@@ -168,7 +168,7 @@ else bad "neither jq nor python3 on PATH — the agent guard will deny every git
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 CONF=".ai/flight-rules.conf"
-KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC'
+KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC DG_COMIC DG_COMIC_PR'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
 else
@@ -227,6 +227,16 @@ else
           auto)   ok "$key=auto — the first session each day, and after a plugin update, replaces git hooks that are byte-identical to an older release, and leaves the diff for you to commit" ;;
           report) ok "$key=report" ;;
           *)      warn "$key='$val' is neither auto nor report — session-start treats it as report and syncs nothing" ;;
+        esac ;;
+      DG_COMIC)
+        case "$val" in
+          always|never) ok "$key=$val" ;;
+          *) warn "$key='$val' is neither always nor never — /dg treats it as always and ends every verdict with the comic" ;;
+        esac ;;
+      DG_COMIC_PR)
+        case "$val" in
+          never|ask|always) ok "$key=$val" ;;
+          *) warn "$key='$val' is not never, ask or always — /dg treats it as never and keeps the comic out of PRs" ;;
         esac ;;
       *) ok "$key=$val" ;;
     esac

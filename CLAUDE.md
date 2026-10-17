@@ -7,7 +7,9 @@ injects the principles; the rest you read once.
 
 ## Parameters
 
-`.ai/flight-rules.conf` is the single home for the branch policy. Summary:
+`.ai/flight-rules.conf` is the single home for the branch policy. It also sets
+`DG_COMIC_PR=always`: this repo's release PRs carry the `/dg` comic, to show it in use
+(the default elsewhere is `never` — `hooks/README.md` → Configuration). Summary:
 
 | Parameter | Value |
 |---|---|

@@ -60,9 +60,14 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
 - **`/dg` banter score and comic strip**, from upstream. Every verdict now reaches you
   and ends with the comic drawn as text, and `/dg` stops there: nothing is applied, even
   inside `pr-create` 2b, until you reply. Upstream offers the comic instead, and this
-  release's own review skipped that offer. Only then comes "Want it as a page?
-  (y/N/pr)". Every value in the page is escaped and the template carries a
-  Content-Security-Policy; `pr` gives a PNG path and posts nothing. `/rules-sync` now
+  release's own review skipped that offer. The comic is ASCII art and holds the banter
+  score. Two settings in `.ai/flight-rules.conf` control it per project: `DG_COMIC`
+  (`always`, the default, or `never`) and `DG_COMIC_PR` (`never`, the default, `ask` or
+  `always`) for whether a PR gets the comic and its score — strictly opt-in; this repo
+  sets `always`. `flight-rules-doctor.sh` checks both values. A PR body never carries
+  the round tables' banter.
+  An HTML page or PNG of the comic is made only on request and stays local; every value
+  in the page is escaped and the template carries a Content-Security-Policy. `/rules-sync` now
   reports a copied skill's missing companion files with the `cp` that adds them, so a
   project that copied `/dg` in learns it lacks the template.
 
