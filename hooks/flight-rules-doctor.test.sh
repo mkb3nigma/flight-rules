@@ -565,6 +565,13 @@ say "$(has "$D" "~/.claude/commands/dg.md shadows flight-rules' /dg")" "0" "…a
 say "$(has "$D" "~/.claude/skills/diagnose/SKILL.md shadows flight-rules' /diagnose")" "0" "…so is a user skill"
 say "$(has "$D" "standup")" "1" "…a command with its own name is not"
 say "$(has "$D" ".claude/skills/dg/SKILL.md shadows")" "1" "…nor a pointer at the project's copy-in"
+# Run by a relative path from a subdirectory: doctor cds to the repo root, and a plugin
+# path resolved after that came back empty, so the check was skipped unsaid (release /dg,
+# 2026-10-17).
+mkdir -p "$D/plug" "$D/a/b"; cp -R "$H" "$D/plug/hooks"; cp -R "$H/../skills" "$D/plug/skills"
+OUT=$(cd "$D/a/b" && HOME="$D/fakehome" bash ../../plug/hooks/flight-rules-doctor.sh 2>&1)
+say "$(grep -c "commands/dg.md shadows" <<<"$OUT")" "1" "…also when doctor is run by a relative path from a subdirectory"
+rm -rf "$D/plug" "$D/a"
 # Plugin off: its skills are not in use here, so nothing is shadowed. Paired with a line
 # doctor always prints, so a doctor that died also fails.
 printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/fakehome/.claude/settings.json"

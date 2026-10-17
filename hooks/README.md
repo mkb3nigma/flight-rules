@@ -268,7 +268,9 @@ that the logic has exactly one home.
   would block too many ordinary commits here. A merge being concluded is not
   re-scanned — its commits were scanned when made if this hook was installed then — so
   neither is a key typed in while resolving its conflict. "Being concluded" means git's
-  `MERGE_HEAD` file exists (a branch or tag named `MERGE_HEAD` does not count), and the
+  `MERGE_HEAD` file exists and names a commit `HEAD` does not already contain (a branch
+  or tag named `MERGE_HEAD` does not count, nor a leftover file naming `HEAD` or an
+  ancestor, from which git makes an ordinary commit), and the
   hook says on every such commit that it skipped the scan, so a `MERGE_HEAD` left behind
   shows instead of switching the scan off unseen; a `merge --squash` is an
   ordinary commit and is scanned. A clean `cherry-pick`/`revert` does not run

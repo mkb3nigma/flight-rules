@@ -46,9 +46,18 @@ run_local() { [ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"; exit 0; }
 # made. The marker is git's MERGE_HEAD FILE — `rev-parse --verify MERGE_HEAD` also
 # resolves a branch or tag of that name, and one switched the scan off for every
 # commit with nothing said (AppliHawk review, 2026-10-17). The skip is said every
-# time, so a MERGE_HEAD left behind is seen rather than trusted.
+# time, so a MERGE_HEAD left behind is seen rather than trusted. And it must bring in a
+# commit HEAD lacks: git drops a parent HEAD already contains, so a leftover file naming
+# HEAD or an ancestor made an ordinary, unscanned commit (release /dg, 2026-10-17).
 MERGE_MARKER=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
-if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ]; then
+merges_something() {
+    while read -r m; do
+        [ -n "$m" ] || continue
+        git merge-base --is-ancestor "$m" HEAD 2>/dev/null || return 0
+    done < "$MERGE_MARKER"
+    return 1
+}
+if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
     echo "pre-commit: concluding a merge ($MERGE_MARKER present) — secret scan skipped; the merged commits were scanned when made. Not merging? \`git status\` shows what git thinks; \`git merge --abort\` clears it." >&2
     run_local "$@"
 fi

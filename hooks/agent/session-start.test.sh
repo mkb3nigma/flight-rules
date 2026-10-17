@@ -288,6 +288,7 @@ git -C "$D" merge --no-verify feature/c >/dev/null 2>&1   # conflicts on f.txt, 
 OUT=$(PRUN)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-merge: the hook exits 0"
 say "$(grep -c 'skipped the git hooks: a merge is in progress' <<<"$OUT")" "1" "…says the sync was skipped and why"
+say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and how to clear one left behind"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 rm -rf "$D"
