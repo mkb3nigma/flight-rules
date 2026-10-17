@@ -41,6 +41,11 @@ the sync is reproducible.
 Match by path/basename:
 - `{LOCAL_RULES_DIRS}/<name>.md` ↔ `{PLAYBOOK_PATH}/rules/<name>.md`
 - `.ai/skills/<name>/SKILL.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md` (copy-in)
+- `.ai/skills/<name>/<file>` ↔ `{PLAYBOOK_PATH}/skills/<name>/<file>` — the files a
+  copied-in skill reads from its own directory (today `dg/comic-template.html`). One
+  upstream has and the copy lacks is **Available-but-not-adopted** with its `cp`
+  command: the copied SKILL.md looks for it beside itself, and without it `/dg` skips
+  the comic.
 - `.ai/skills/<name>/EXTENSIONS.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md`
   (the recommended model — the project holds only a delta, so there is nothing to
   diff line-by-line; see Step 3b)
