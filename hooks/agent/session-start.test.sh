@@ -273,6 +273,7 @@ git -C "$D" merge --no-verify feature/c >/dev/null 2>&1   # conflicts on f.txt, 
 [ -n "$(git -C "$D" rev-parse -q --verify MERGE_HEAD)" ] || die "the merge did not stop on a conflict"
 OUT=$(PRUN)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-merge: the hook exits 0"
+say "$(grep -c 'skipped the git hooks: a merge is in progress' <<<"$OUT")" "1" "…says the sync was skipped and why"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 rm -rf "$D"
@@ -285,6 +286,7 @@ git -C "$D" cherry-pick feature/p >/dev/null 2>&1
 [ -n "$(git -C "$D" rev-parse -q --verify CHERRY_PICK_HEAD)" ] || die "the cherry-pick did not stop on a conflict"
 OUT=$(PRUN)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-cherry-pick: the hook exits 0"
+say "$(grep -c 'skipped the git hooks: a cherry-pick is in progress' <<<"$OUT")" "1" "…says the sync was skipped and why"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 rm -rf "$D"
@@ -304,10 +306,22 @@ for state in revert rebase-merge rebase-apply; do
   esac
   OUT=$(PRUN)
   say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-$state: the hook exits 0"
+  say "$(grep -c "skipped the git hooks: a ${state%%-*} is in progress" <<<"$OUT")" "1" "…says the sync was skipped and why"
   say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
   say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
   rm -rf "$D"
 done
+# A REBASE_HEAD with no rebase directory is not a rebase: git leaves the file behind,
+# and one from March 2026 kept AppliHawk's hooks at 0.22.0 under 0.24.1, unsynced and
+# unsaid (2026-10-17). git status calls that state clean, and so does the sync.
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" rev-parse HEAD > "$(git -C "$D" rev-parse --absolute-git-dir)/REBASE_HEAD"
+[ -n "$(git -C "$D" rev-parse -q --verify REBASE_HEAD)" ] || die "could not leave a REBASE_HEAD"
+OUT=$(PRUN)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, leftover REBASE_HEAD: the hook exits 0"
+say "$(grep -c 'synced commit-msg' <<<"$OUT")" "1" "…and syncs the stale hook"
+say "$(grep -c 'skipped the git hooks' <<<"$OUT")" "0" "…without calling it mid-rebase"
+rm -rf "$D"
 # A session-start.sh copied in by hand has no git/ beside it: silent on sync, still runs doctor.
 L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/hooks/agent"; cp "$HOOK" "$L/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/hooks/"
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"; git -C "$D" config --unset merge.ff
