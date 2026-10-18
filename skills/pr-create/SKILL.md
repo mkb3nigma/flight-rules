@@ -122,10 +122,11 @@ branch from a local copy and opening a fresh PR against the correct base.
    offline run costs the same minutes as a red CI run and none of anyone's attention.
 
    A local run covers one platform. Where CI runs the suites on more, read CI's result
-   for that same sha on each (`gh run list --commit <full sha>` — a short sha matches no
-   run, and an empty list has nothing red in it; the final 0.25.0 review) and do not
-   open the PR while any is red or still running, or while fewer runs are listed than
-   CI starts for a push. 0.25.0's 2a passed on macOS (bash 3.2) while Ubuntu CI
+   for that same sha (`gh run list --commit <full sha>` — a short sha matches no run,
+   and an empty list has nothing red in it; the final 0.25.0 review). It lists workflow
+   runs, not platforms: a matrix of OSes is one run, its conclusion covering every job
+   (`gh run view <id>` names each). Open the PR only when each workflow CI runs on a
+   push is listed for that sha, completed and green — none listed means not yet. 0.25.0's 2a passed on macOS (bash 3.2) while Ubuntu CI
    (bash 5) had been red on `{INTEGRATION_BRANCH}` for two pushes (flight-rules
    4fe21fe, 2026-10-17).
 2b. **Release PR only** — run `/dg origin/main...<sha>` on the commit 2a tested,

@@ -248,7 +248,7 @@ say "$(usr <<<"$J" | grep -c 'synced commit-msg')" "1" "…on the user's screen 
 say "$(grep -c 'synced commit-msg (flight-rules 9.9.9)' <<<"$OUT")" "1" "…names the hook and the release"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "the stale commit-msg is now the plugin's"
 say "$(grep -c '# own' "$D/.ai/hooks/post-merge")" "1" "the adapted post-merge is untouched"
-say "$(grep -c 'changes nobody has committed' <<<"$OUT")" "0" "…and the sync's own notice is not repeated as uncommitted changes"
+say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and the sync's own notice is not repeated as uncommitted changes"
 say "$(grep -c 'post-merge differs from this' <<<"$OUT")" "1" "…and doctor names it on the same run"
 say "$(grep -c 'commit-msg is the flight-rules' <<<"$OUT")" "0" "doctor no longer reports the synced hook stale"
 rm -rf "$D"
@@ -259,15 +259,15 @@ D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
 OUT=$( { (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
 say "$(grep -c 'synced commit-msg' <<<"$OUT")" "1" "headless, auto: the stale hook is synced"
-say "$(grep -c 'changes nobody has committed' <<<"$OUT")" "0" "…and headless is not told twice"
+say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and headless is not told twice"
 J=$( (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(ctx <<<"$J" | grep -c 'rc=0')" "1" "the attended session after it exits 0"
 say "$(ctx <<<"$J" | grep -c 'updated git hooks')" "0" "…finds nothing left to sync"
-say "$(usr <<<"$J" | grep -c 'changes nobody has committed')" "1" "…and says on screen the hooks have uncommitted changes"
+say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…and says on screen the hooks have uncommitted changes"
 say "$(usr <<<"$J" | grep -c 'M .ai/hooks/commit-msg')" "1" "…naming the file"
 git -C "$D" add .ai/hooks && git -C "$D" commit -qm "chore: synced" --no-verify
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
-say "$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) | usr | grep -c 'changes nobody has committed')" "0" "…and once committed, says nothing"
+say "$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) | usr | grep -c 'git hooks have uncommitted changes')" "0" "…and once committed, says nothing"
 rm -rf "$D"
 # Without the key: reported, not written.
 D=$(mkrepo); stale "$D" commit-msg

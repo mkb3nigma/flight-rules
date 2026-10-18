@@ -29,8 +29,10 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   review, 2026-10-17, reproduced). 0.25.0 tests git's `MERGE_HEAD` file, skips only
   when it names a commit `HEAD` lacks — a leftover naming `HEAD` or an ancestor makes
   an ordinary commit, and is scanned — and prints "secret scan skipped" every time it
-  skips, so a leftover file is seen too. For a leftover it advises deleting the file,
-  which keeps what you staged — not `git merge --abort`, which discards it.
+  skips, so a leftover file is seen too. The message names the commit being merged in;
+  for a leftover it gives the `rm` of the file if the commit stops, or `git reset --soft
+  HEAD@{1}` if it went through — both keep what you staged, where the `git merge --abort`
+  it first advised discards it.
   `session-start.sh` had the same lookup for `MERGE_HEAD`, `CHERRY_PICK_HEAD` and
   `REVERT_HEAD`: a ref so named skipped `HOOK_SYNC`; it tests the files now.
 - **A leftover `REBASE_HEAD` blocked `HOOK_SYNC=auto` for good, silently.** git leaves
@@ -45,10 +47,10 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   day's doctor ❌ reached no screen and the attended sessions after it stayed quiet.
   With `CLAUDE_CODE_SESSION_ATTENDED=0` (set by `claude -p`; observed on Claude Code
   2.1.301, undocumented) doctor still runs but the flag is left, so headless sessions
-  run it every time. Unset keeps 0.24.1's behaviour. A headless session still syncs the
+  run it until an attended session has that day. Unset keeps 0.24.1's behaviour. A headless session still syncs the
   hooks under `HOOK_SYNC=auto`, so the clone is protected at once; its "commit the
   diff" reached no screen, so an attended session now says on screen when the hook
-  directory has uncommitted changes.
+  directory has uncommitted changes (yours count too).
 
 ### Added
 

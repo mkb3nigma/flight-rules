@@ -131,7 +131,7 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     _top=$(git rev-parse --show-toplevel 2>/dev/null)
     _changed=$(git -C "$_top" status --short -- "$(git config --local core.hooksPath)" 2>/dev/null)
     if [ -n "$_changed" ]; then
-      echo "📝 flight-rules: the git hooks have changes nobody has committed — a headless session's HOOK_SYNC=auto may have written them unseen. Review the diff and commit it:"
+      echo "📝 flight-rules: the git hooks have uncommitted changes — yours, or a headless session's HOOK_SYNC=auto, whose notice no one saw. \`git diff\` to check; commit what should stay:"
       printf '%s\n' "$_changed" | sed 's/^/  /'
       echo ""
     fi

@@ -51,19 +51,23 @@ run_local() { [ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"; exit 0; }
 # HEAD or an ancestor made an ordinary, unscanned commit (release /dg, 2026-10-17).
 # For a leftover the advice is to delete the file: `git merge --abort` runs
 # `reset --merge`, which threw away the staged work beside it, exit 0 (final release
-# /dg, 2026-10-17).
+# /dg, 2026-10-17). The path is absolute and shell-quoted, so it pastes from any
+# directory (`update-ref -d MERGE_HEAD` refuses a pseudoref on git 2.56). Usually the
+# commit goes through and git deletes the file itself, so the message also gives the
+# undo for that, and names the commit being merged in (fix /dg, 2026-10-18).
 MERGE_MARKER=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
 merges_something() {
     while read -r m; do
         [ -n "$m" ] || continue
         # Exit 1 is "not an ancestor"; any other failure (no such object) is no proof
         # of a merge, so the scan runs.
-        git merge-base --is-ancestor "$m" HEAD 2>/dev/null; [ $? -eq 1 ] && return 0
+        git merge-base --is-ancestor "$m" HEAD 2>/dev/null; [ $? -eq 1 ] && { MERGED=$m; return 0; }
     done < "$MERGE_MARKER"
     return 1
 }
 if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
-    echo "pre-commit: concluding a merge ($MERGE_MARKER present) — secret scan skipped; the merged commits were scanned when made. Not merging? \`git status\` shows what git thinks; a leftover is cleared by \`rm '$MERGE_MARKER'\`, which keeps what you staged — \`git merge --abort\` would discard it." >&2
+    _rm=$(printf %q "$(git rev-parse --absolute-git-dir)/MERGE_HEAD")
+    echo "pre-commit: concluding a merge of ${MERGED:0:12} ($MERGE_MARKER present) — secret scan skipped; the merged commits were scanned when made. Not merging? \`git status\` shows what git thinks. If the commit stops here, \`rm $_rm\` clears the leftover and keeps what you staged (\`git merge --abort\` would discard it); if it goes through, \`git reset --soft HEAD@{1}\` undoes it and keeps what you staged." >&2
     run_local "$@"
 fi
 
