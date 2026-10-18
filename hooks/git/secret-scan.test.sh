@@ -187,35 +187,31 @@ say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a ke
 say "$(grep -c 'secret scan skipped' <<<"$OUT")" 1 "…and says the scan was skipped, so a leftover MERGE_HEAD is never silent"
 say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
 
-echo "The skip's advice for a leftover MERGE_HEAD keeps the staged work (final release /dg, 2026-10-17):"
-# `git merge --abort` was the advice, and on a leftover it reverted a staged edit and
-# deleted a staged new file, exit 0. Both commands the message gives now are followed,
-# from a subdirectory, through a real `git commit` (fix /dg, 2026-10-18): one that stops
-# after pre-commit (an empty message), and one that goes through and is undone.
-for how in stops lands; do
+echo "The skip names the commit coming in and prescribes no command (final release /dg, 2026-10-17/18):"
+# It cannot tell a real merge from a leftover, and each command it offered was wrong in
+# one: `git merge --abort` discarded staged work beside a leftover; `rm` of the marker,
+# after a real merge a gate refused, landed the branch past that gate. Both shapes, through
+# a real `git commit`: a leftover (it goes through) and a real merge commit-msg refuses.
+for how in leftover refused; do
   R=$(make_repo armed)
-  ( cd "$R" && git checkout -qb other && echo o > o && git add o && git commit -qm o --no-verify \
-    && git checkout -q feature && mkdir sub && echo s > sub/s && git add sub && git commit -qm s --no-verify ) \
-    >/dev/null 2>&1 || die "could not build a side branch"
-  side=$(git -C "$R" rev-parse other); h=$(git -C "$R" rev-parse HEAD)
-  echo "$side" > "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD"
-  echo edited > "$R/t"; echo new > "$R/n"; git -C "$R" add t n >/dev/null 2>&1 || die "could not stage"
-  if [ "$how" = stops ]; then
-    OUT=$(cd "$R/sub" && git commit -q -m '' 2>&1)
-    say "$(git -C "$R" rev-parse HEAD)" "$h" "a leftover MERGE_HEAD, the commit stops after pre-commit: nothing committed"
-    say "$(grep -c "concluding a merge of ${side:0:12}" <<<"$OUT")" 1 "…the skip names the commit it would merge"
-    say "$(grep -c 'merge --abort` clears' <<<"$OUT")" 0 "…without advising git merge --abort"
-    CMD=$(sed -n 's/.*If the commit stops here, `\(rm [^`]*\)`.*/\1/p' <<<"$OUT")
+  if [ "$how" = leftover ]; then
+    ( cd "$R" && git checkout -qb other && echo o > o && git add o && git commit -qm o --no-verify \
+      && git checkout -q feature ) >/dev/null 2>&1 || die "could not build a side branch"
+    in=$(git -C "$R" rev-parse other)
+    echo "$in" > "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD"
+    echo new > "$R/n"; git -C "$R" add n >/dev/null 2>&1 || die "could not stage"
   else
-    OUT=$(cd "$R/sub" && git commit -q -m x 2>&1)
-    say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "a leftover MERGE_HEAD, the commit goes through: it merged $side"
-    CMD=$(sed -n 's/.*if it goes through, `\([^`]*\)`.*/\1/p' <<<"$OUT")
+    printf '#!/bin/sh\nexit 1\n' > "$R/.hooks/commit-msg"; chmod +x "$R/.hooks/commit-msg"
+    ( cd "$R" && git checkout -qb other && echo other > t && git commit -qam other --no-verify \
+      && git checkout -q feature && echo mine > t && git commit -qam mine --no-verify \
+      && git merge other >/dev/null 2>&1; echo resolved > t && git add t ) || die "could not build the conflicted merge"
+    in=$(git -C "$R" rev-parse other)
   fi
-  say "$([ -n "$CMD" ] && echo given || echo missing)" given "…and the message gives the command for that case"
-  (cd "$R/sub" && eval "$CMD") >/dev/null 2>&1
-  say "$(git -C "$R" rev-parse HEAD)" "$h" "…which, run from a subdirectory, leaves HEAD where it was"
-  say "$(git -C "$R" diff --cached --name-only | grep -cxE 't|n')" 2 "…and the staged edit and new file staged"
-  say "$([ -f "$(git -C "$R" rev-parse --git-path MERGE_HEAD)" ] && echo present || echo gone)" gone "…with no MERGE_HEAD left"
+  OUT=$(cd "$R" && git commit -qm x 2>&1)
+  [ "$how" = refused ] && say "$([ -f "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD" ] && echo merging)" merging "a real merge commit-msg refuses: still merging"
+  say "$(grep -c "concluding a merge of ${in:0:12} — secret scan skipped" <<<"$OUT")" 1 "$how: the skip names the commit coming in"
+  say "$(grep -c 'check `git status` before committing again' <<<"$OUT")" 1 "…and says to check git status"
+  say "$(grep -cE '`(rm |git merge --abort|git reset)' <<<"$(grep 'pre-commit:' <<<"$OUT")")" 0 "…prescribing no rm, --abort or reset"
 done
 
 echo "A branch or tag named MERGE_HEAD is not a merge in progress (AppliHawk review, 2026-10-17):"
