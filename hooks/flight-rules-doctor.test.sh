@@ -452,6 +452,22 @@ say "$(has "$D" "DG_COMIC_PR='yes' is not never, ask or always")" "0" "…and DG
 say "$(has "$D" "treats it as never and keeps the comic out of PRs")" "0" "…falling back to never, the opt-in default"
 rm -rf "$D"
 
+# /dg's round-2 wait (owner, 2026-10-18): a value the skill cannot read as minutes would
+# silently become the default, so doctor names it.
+D=$(mkrepo); printf 'DG_WAIT_MINUTES=30\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "DG_WAIT_MINUTES is a known key"
+say "$(has "$D" "unknown key")" "1" "…not reported as unknown"
+say "$(has "$D" "DG_WAIT_MINUTES=30")" "0" "…and is reported"
+printf 'DG_WAIT_MINUTES=08\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "DG_WAIT_MINUTES=08")" "0" "…a leading zero is still minutes"
+for v in 15m 0 -5 ''; do
+  printf 'DG_WAIT_MINUTES=%s\n' "$v" > "$D/.ai/flight-rules.conf"
+  say "$(rc "$D")" "0" "DG_WAIT_MINUTES='$v' is a warning, not a failure"
+  say "$(has "$D" "DG_WAIT_MINUTES='$v' is not a positive whole number of minutes")" "0" "…naming the value '$v'"
+  say "$(has "$D" "treats it as 15")" "0" "…and the default it falls back to"
+done
+rm -rf "$D"
+
 D=$(mkrepo); printf 'PROTECTED_BRANCH=^main$\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "unknown key is a warning, not a failure"
 say "$(has "$D" "unknown key 'PROTECTED_BRANCH'")" "0" "…and is named"

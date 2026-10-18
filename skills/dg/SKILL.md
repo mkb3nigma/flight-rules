@@ -199,10 +199,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    same-family fallback, any other a project's extensions wire — has finished or
    failed by step 2's check, and the dependency scan has reported. A pre-reviewer
    left running in the background while the debate went on finished after the verdict,
-   and its findings reached no round (2026-10-18). The wait has a limit: a run with no
-   result 20 minutes after it started is stopped and counts as failed — step 2's
-   fallback, then `⚠️ unavailable — no result in 20m` (for the scan, `⚠️ not run — no
-   result in 20m`). Round 2's table then answers each pre-review and scan finding by
+   and its findings reached no round (2026-10-18). The wait has a limit,
+   `DG_WAIT_MINUTES` in `.ai/flight-rules.conf` (default 15; read like step 6's keys):
+   a run with no result that long after it started is stopped and counts as failed —
+   step 2's fallback, then `⚠️ unavailable — no result in <n>m` (for the scan, `⚠️ not
+   run — no result in <n>m`). Round 2's table then answers each pre-review and scan finding by
    its ID, and Gilfoyle's harshest finding → Dinesh defends or concedes. Further rounds
    alternate who leads. Converge early when concessions leave nothing disputed, but
    never before round 2 has answered the pre-review and the scan: a debate that
