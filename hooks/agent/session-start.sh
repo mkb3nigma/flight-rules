@@ -56,7 +56,14 @@ if [ -f "$LAST_RUN_FILE" ]; then
   exit 0
 fi
 
-touch "$LAST_RUN_FILE"
+# A headless session (`claude -p`, observed; other callers only if they set the variable
+# below) has no screen. Spending the flag on
+# it hid that day's ❌ from every attended session after it, and silently — the miss
+# could never surface as an incident (owner, 2026-10-17). It still runs, for its own
+# assistant's context. Claude Code sets CLAUDE_CODE_SESSION_ATTENDED=0 for `claude -p`
+# (probe on 2.1.301, 2026-10-17); the variable is undocumented, so only an exact 0
+# counts — unset, or renamed away, is the old once-a-day behaviour, never worse.
+[ "${CLAUDE_CODE_SESSION_ATTENDED-}" = "0" ] || touch "$LAST_RUN_FILE"
 
 # HOOK_SYNC=auto: before asking whether the git hooks are current, make them so — for
 # the copies that are provably unmodified (byte-identical to some release in the
@@ -70,18 +77,47 @@ touch "$LAST_RUN_FILE"
 # script was copied in by hand and has no git/ beside it to sync from. LOCAL config
 # only: a global core.hooksPath names a directory outside every repo, and following it
 # wrote the hooks there (review, 2026-10-12). Nor mid-merge, -rebase, -cherry-pick or -revert (review, 2026-10-12), where an
-# unattended write to a tracked file is what makes `--continue` refuse.
+# unattended write to a tracked file is what makes `--continue` refuse — and that skip
+# is said, with the command for afterwards: silent, it read as "current". A rebase is
+# in progress when git's rebase-merge or rebase-apply directory exists, as git status
+# decides it; REBASE_HEAD is not a test of that, and one left over from March 2026 kept
+# AppliHawk's hooks at 0.22.0 under 0.24.1 with nothing said (2026-10-17). git status
+# also counts a stopped `git am` (rebase-apply/applying, named as such so nobody runs
+# `rebase --continue` on it) and a multi-commit cherry-pick or revert whose conflict
+# was committed by hand — CHERRY_PICK_HEAD gone, sequencer/todo left, and a later pick
+# touching the synced hooks makes `--continue` refuse (review, 2026-10-17). And a
+# `git bisect`, which git status also reports: a synced hook on the commit under test
+# made the next `bisect good` refuse to check out (final release /dg, 2026-10-17).
+#
+# A headless session syncs too: the synced hook protects the clone at once, which a
+# headless-only setup would otherwise never get. Its "commit the diff" reaches no
+# screen, though, so an attended session that finds the hook directory changed and
+# uncommitted says so (final release /dg, 2026-10-17).
 HOOK_SYNC="$(conf_get HOOK_SYNC)"
 GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../git" 2>/dev/null && pwd)"
+in_progress() {
+  # Files, not refs: `rev-parse --verify MERGE_HEAD` also resolves a branch or tag of
+  # that name (AppliHawk review, 2026-10-17).
+  [ -f "$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)" ] && { echo merge; return; }
+  [ -f "$(git rev-parse --git-path CHERRY_PICK_HEAD 2>/dev/null)" ] && { echo cherry-pick; return; }
+  [ -f "$(git rev-parse --git-path REVERT_HEAD 2>/dev/null)" ] && { echo revert; return; }
+  [ -f "$(git rev-parse --git-path rebase-apply/applying 2>/dev/null)" ] && { echo "git am session"; return; }
+  { [ -d "$(git rev-parse --git-path rebase-merge 2>/dev/null)" ] \
+    || [ -d "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]; } && { echo rebase; return; }
+  [ -f "$(git rev-parse --git-path sequencer/todo 2>/dev/null)" ] && { echo "cherry-pick or revert"; return; }
+  [ -f "$(git rev-parse --git-path BISECT_LOG 2>/dev/null)" ] && echo bisect
+}
 SYNC_MSG=$(
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
-   && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ] \
-   && ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 \
-   && ! git rev-parse -q --verify REBASE_HEAD >/dev/null 2>&1 \
-   && ! git rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1 \
-   && ! git rev-parse -q --verify REVERT_HEAD >/dev/null 2>&1 \
-   && [ ! -d "$(git rev-parse --git-path rebase-merge 2>/dev/null)" ] \
-   && [ ! -d "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]; then
+   && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ]; then
+  OP=$(in_progress)
+  if [ -n "$OP" ]; then
+    echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress. Once it is finished:"
+    echo "  bash \"$GIT_HOOKS_SRC/install.sh\" --from \"$GIT_HOOKS_SRC\" --stale-only"
+    echo "Not doing one? A leftover never finishes: \`git status\` names it and the command that clears it."
+    echo ""
+    exit 0
+  fi
   SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only 2>&1); SYNC_RC=$?
   if [ "$SYNC_RC" -ne 0 ]; then
     echo "⚠️ flight-rules HOOK_SYNC=auto could not update the git hooks:"
@@ -91,6 +127,14 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     echo "🔁 flight-rules HOOK_SYNC=auto updated git hooks in this project — review the diff and commit it:"
     echo "$SYNC_OUT" | grep -E '^   (synced |[a-z.-]+: )' | sed 's/^  //'
     echo ""
+  elif [ "${CLAUDE_CODE_SESSION_ATTENDED-}" != "0" ]; then
+    _top=$(git rev-parse --show-toplevel 2>/dev/null)
+    _changed=$(git -C "$_top" status --short -- "$(git config --local core.hooksPath)" 2>/dev/null)
+    if [ -n "$_changed" ]; then
+      echo "📝 flight-rules: the git hooks have uncommitted changes — yours, or a headless session's HOOK_SYNC=auto, whose notice no one saw. \`git status\` and \`git diff HEAD\` show them; commit what should stay:"
+      printf '%s\n' "$_changed" | sed 's/^/  /'
+      echo ""
+    fi
   fi
 fi
 )

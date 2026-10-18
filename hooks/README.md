@@ -98,7 +98,9 @@ with all five git hooks installed.
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
-| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones, then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the repo is touched, never mid-merge or mid-rebase, and the config is never rewritten. A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
+| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones, then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the repo is touched, never during a merge, rebase, `git am`, cherry-pick, revert or bisect — that skip is said, with the command to run once it is finished — and the config is never rewritten. A headless session (`CLAUDE_CODE_SESSION_ATTENDED=0`) syncs until an attended session has run that day, spending no flag, and its notice reaches no screen — so an attended session says on screen when the hook directory has uncommitted changes, whoever made them. A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
+| `/dg` comic | `DG_COMIC` | — | `/dg` (an instruction, not a hook) | `always` (default): every verdict ends with an ASCII comic of the best banter, with the banter score. `never`: no comic and no score. |
+| `/dg` comic in PRs | `DG_COMIC_PR` | — | `/dg`, `pr-create` (instructions, not hooks) | Whether a review that is for a PR puts the comic, banter score included, in it. Strictly opt-in: `never` (default) keeps it out without asking, `ask` asks at the end of the verdict, `always` adds it. Ignored with `DG_COMIC=never`. |
 
 Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
@@ -267,7 +269,12 @@ that the logic has exactly one home.
   agent guard on purpose: the guard's `password = "…"` heuristic warns an agent but
   would block too many ordinary commits here. A merge being concluded is not
   re-scanned — its commits were scanned when made if this hook was installed then — so
-  neither is a key typed in while resolving its conflict; a `merge --squash` is an
+  neither is a key typed in while resolving its conflict. "Being concluded" means git's
+  `MERGE_HEAD` file exists and names a commit `HEAD` does not already contain (a branch
+  or tag named `MERGE_HEAD` does not count, nor a leftover file naming `HEAD` or an
+  ancestor, from which git makes an ordinary commit), and the
+  hook says on every such commit that it skipped the scan, so a `MERGE_HEAD` left behind
+  shows instead of switching the scan off unseen; a `merge --squash` is an
   ordinary commit and is scanned. A clean `cherry-pick`/`revert` does not run
   `pre-commit`; one that stopped on a conflict and is finished with `--continue` does.
   Override for a checked false positive: `--no-verify`, the owner's call — the refusal
@@ -384,11 +391,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   release is ⚠️ since it may be the project's own adaptation, and either prints the
   `install.sh --from` command — `merge.ff`, the guard's parser, the conf's keys and
   regexes, that every script `.claude/settings.json` wires exists, and that the guard
-  is wired once and actually enabled — every one a state that has failed silently
-  before. `session-start.sh` runs it daily and prints only problems.
+  is wired once and actually enabled, and — with the plugin on — that no command or
+  skill of the user's or project's own, named like a plugin skill, runs in its place
+  (⚠️; a pointer or a `flight-rules:<name>` wrapper is fine) — every one a state that has
+  failed silently before. `session-start.sh` runs it daily and prints only problems.
   Tests: `flight-rules-doctor.test.sh`.
-- **`session-start.sh`** — SessionStart banner: once a day per project, and again after
-  a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
+- **`session-start.sh`** — SessionStart banner: once a day per project (a headless session spends no
+  flag, so it runs until an attended one has that day), and again after a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
   so they get cleaned up. Doctor's ❌ problems, the command that fixes them, and a hook sync
   are printed as `systemMessage`, so they appear on the user's screen — in a project
   that uses flight-rules (`.ai/flight-rules.conf` at the root, or flight-rules' hooks

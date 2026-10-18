@@ -438,6 +438,20 @@ say "$(rc "$D")" "0" "HOOK_SYNC=yes is a warning, not a failure"
 say "$(has "$D" "neither auto nor report")" "0" "…saying what the values are"
 rm -rf "$D"
 
+# /dg's comic settings (owner, 2026-10-17): read by a skill, so a typo would only show as
+# a comic that appears, or lands in a PR, against the project's wish.
+D=$(mkrepo); printf 'DG_COMIC=never\nDG_COMIC_PR=always\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "DG_COMIC and DG_COMIC_PR are known keys"
+say "$(has "$D" "unknown key")" "1" "…not reported as unknown"
+say "$(has "$D" "DG_COMIC=never")" "0" "…and each is reported"
+say "$(has "$D" "DG_COMIC_PR=always")" "0" "…both of them"
+printf 'DG_COMIC=sometimes\nDG_COMIC_PR=yes\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "a bad comic value is a warning, not a failure"
+say "$(has "$D" "DG_COMIC='sometimes' is neither always nor never")" "0" "…naming DG_COMIC's values"
+say "$(has "$D" "DG_COMIC_PR='yes' is not never, ask or always")" "0" "…and DG_COMIC_PR's"
+say "$(has "$D" "treats it as never and keeps the comic out of PRs")" "0" "…falling back to never, the opt-in default"
+rm -rf "$D"
+
 D=$(mkrepo); printf 'PROTECTED_BRANCH=^main$\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "unknown key is a warning, not a failure"
 say "$(has "$D" "unknown key 'PROTECTED_BRANCH'")" "0" "…and is named"
@@ -542,6 +556,42 @@ mkdir -p "$D/.claude" "$D/hooks/agent"; printf '{"hooks":{"PreToolUse":[{"hooks"
 cp "$H/agent/pre-commit-check.sh" "$D/hooks/agent/pre-commit-check.sh"
 OUT=$(cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1)
 say "$(printf '%s' "$OUT" | grep -c .)" "0" "no output when nothing is wrong"
+rm -rf "$D"
+
+echo "A command or skill of the user's or project's own that shadows a plugin skill is named:"
+# AppliHawk's ~/.claude/commands/dg.md, a copy from 2026-06-11, ran for /dg in place of
+# the plugin's skill through every release after it, and nothing said so (2026-10-13).
+D=$(mkrepo); mkdir -p "$D/fakehome/.claude/commands" "$D/fakehome/.claude/skills/diagnose" "$D/.claude/skills/dg"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/fakehome/.claude/settings.json"
+printf -- '---\nname: dg\n---\n# an old full copy\n' > "$D/fakehome/.claude/commands/dg.md"
+printf -- '---\nname: diagnose\n---\n# a copy\n' > "$D/fakehome/.claude/skills/diagnose/SKILL.md"
+printf '# mine\n' > "$D/fakehome/.claude/commands/standup.md"
+# A pointer at the project's copy-in is the documented pattern, not a shadow.
+printf -- '---\nname: dg\n---\nRead and follow `.ai/skills/dg/SKILL.md`.\n' > "$D/.claude/skills/dg/SKILL.md"
+# A command that hands over to the plugin's skill by name is a wrapper, not a shadow:
+# AppliHawk's .claude/commands/*.md each say "Use the `flight-rules:<name>` skill" and
+# were all flagged on the first real run (2026-10-17).
+mkdir -p "$D/.claude/commands"
+printf -- '---\ndescription: x\n---\nUse the `flight-rules:commit` skill.\n' > "$D/.claude/commands/commit.md"
+say "$(rc "$D")" "0" "plugin on, shadowing commands: doctor exits 0 (a warning, not a failure)"
+say "$(has "$D" "commit.md shadows")" "1" "…a command that delegates to flight-rules:<name> is not a shadow"
+say "$(has "$D" "~/.claude/commands/dg.md shadows flight-rules' /dg")" "0" "…a user command named like a plugin skill is named"
+say "$(has "$D" "~/.claude/skills/diagnose/SKILL.md shadows flight-rules' /diagnose")" "0" "…so is a user skill"
+say "$(has "$D" "standup")" "1" "…a command with its own name is not"
+say "$(has "$D" ".claude/skills/dg/SKILL.md shadows")" "1" "…nor a pointer at the project's copy-in"
+# Run by a relative path from a subdirectory: doctor cds to the repo root, and a plugin
+# path resolved after that came back empty, so the check was skipped unsaid (release /dg,
+# 2026-10-17).
+mkdir -p "$D/plug" "$D/a/b"; cp -R "$H" "$D/plug/hooks"; cp -R "$H/../skills" "$D/plug/skills"
+OUT=$(cd "$D/a/b" && HOME="$D/fakehome" bash ../../plug/hooks/flight-rules-doctor.sh 2>&1)
+say "$(grep -c "commands/dg.md shadows" <<<"$OUT")" "1" "…also when doctor is run by a relative path from a subdirectory"
+rm -rf "$D/plug" "$D/a"
+# Plugin off: its skills are not in use here, so nothing is shadowed. Paired with a line
+# doctor always prints, so a doctor that died also fails.
+printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/fakehome/.claude/settings.json"
+OUT=$(run "$D")
+say "$(grep -c 'shadows flight-rules' <<<"$OUT")" "0" "plugin off: nothing reported as shadowed"
+say "$(grep -c 'warning(s)' <<<"$OUT")" "1" "…and doctor ran to its summary"
 rm -rf "$D"
 
 echo
