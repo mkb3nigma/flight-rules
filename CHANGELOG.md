@@ -29,10 +29,12 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   review, 2026-10-17, reproduced). 0.25.0 tests git's `MERGE_HEAD` file, skips only
   when it names a commit `HEAD` lacks — a leftover naming `HEAD` or an ancestor makes
   an ordinary commit, and is scanned — and prints "secret scan skipped" every time it
-  skips, so a leftover file is seen too. The message names the commit being merged in and
-  says to check `git status` before committing again; it prescribes no command, since it
-  cannot tell a leftover from a real merge and each one offered during the release
-  review was wrong in one of them.
+  skips, so a leftover file is seen too. The message names the commit being merged in, says
+  the commit records it as a parent, and says to check `git log -1` and `git status`; it
+  prescribes no command, since it cannot tell a leftover from a real merge and each one
+  offered during the release review was wrong in one of them. The merge gate's refusal
+  box still offers `git merge --abort` for a refused merge, and now says it also drops
+  what you staged and that a merge you never started is a leftover.
   `session-start.sh` had the same lookup for `MERGE_HEAD`, `CHERRY_PICK_HEAD` and
   `REVERT_HEAD`: a ref so named skipped `HOOK_SYNC`; it tests the files now.
 - **A leftover `REBASE_HEAD` blocked `HOOK_SYNC=auto` for good, silently.** git leaves

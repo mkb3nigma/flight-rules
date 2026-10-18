@@ -216,6 +216,8 @@ if echo "$NOTE" | grep -q "^passed:"; then
         box_row "That is the owner's call — do not set it yourself."
         box_row ""
         box_row "Undo this half-finished merge:   git merge --abort"
+        box_row "  — it also drops what you staged. A merge you never"
+        box_row "  started is a leftover: check git status first."
         box_row ""
         box_bot
         echo ""
@@ -239,6 +241,9 @@ if echo "$NOTE" | grep -q "^passed:"; then
     exit 0
 fi
 
+# Both boxes say what `--abort` costs: it runs `reset --merge`, and on a leftover
+# MERGE_HEAD nobody is merging it deleted the staged work beside it (final release
+# /dg, 2026-10-18). For a real refused merge it is still the undo.
 echo ""
 box_top
 box_row "❌  PRE-MERGE CHECK REQUIRED" 1
@@ -252,6 +257,8 @@ box_row "every check passes it stamps a note on the commit, and"
 box_row "this hook lets the merge through."
 box_row ""
 box_row "Undo this half-finished merge:   git merge --abort"
+box_row "  — it also drops what you staged. A merge you never"
+box_row "  started is a leftover: check git status first."
 box_row "Bypass (emergencies only):       git merge --no-verify"
 box_row ""
 box_bot
