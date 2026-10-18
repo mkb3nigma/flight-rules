@@ -225,7 +225,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    shorter fence), each a box headed `[N] GILFOYLE` or `[N] DINESH` with a small ASCII
    face and the quote, then the banter score and one line per verdict finding tagged
    `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the rules below). It is the last thing in
-   the reply, after the recommended actions, so a reader who reaches the end has seen it.
+   the reply but for the `ask` line, after the recommended actions, so a reader who reaches the end has seen it.
 
    **A page, on request only.** If the person asks for the comic as a page, fill
    `comic-template.html` from this skill's directory with the same panels; a copy of

@@ -10,7 +10,7 @@ this one does; every verdict below was run against both, not reasoned about.
 
 `hooks/git/pre-commit` changed, and a plugin update cannot touch your project's git
 hooks. With `HOOK_SYNC=auto` the first session after the update syncs them (unless a
-merge, rebase, `git am`, cherry-pick or revert is in progress, which it now says). With
+merge, rebase, `git am`, cherry-pick, revert or bisect is in progress, which it now says). With
 the default `report`, doctor names the stale hook and prints the command:
 
 ```bash
@@ -29,7 +29,12 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   review, 2026-10-17, reproduced). 0.25.0 tests git's `MERGE_HEAD` file, skips only
   when it names a commit `HEAD` lacks — a leftover naming `HEAD` or an ancestor makes
   an ordinary commit, and is scanned — and prints "secret scan skipped" every time it
-  skips, so a leftover file is seen too.
+  skips, so a leftover file is seen too. The message names the commit being merged in, says
+  the commit records it as a parent, and says to check `git log -1` and `git status`; it
+  prescribes no command, since it cannot tell a leftover from a real merge and each one
+  offered during the release review was wrong in one of them. The merge gate's refusal
+  box still offers `git merge --abort` for a refused merge, and now says it also drops
+  what you staged and that a merge you never started is a leftover.
   `session-start.sh` had the same lookup for `MERGE_HEAD`, `CHERRY_PICK_HEAD` and
   `REVERT_HEAD`: a ref so named skipped `HOOK_SYNC`; it tests the files now.
 - **A leftover `REBASE_HEAD` blocked `HOOK_SYNC=auto` for good, silently.** git leaves
@@ -37,14 +42,17 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   hooks never synced and nothing was printed while doctor called them stale. A rebase in
   progress is the `rebase-merge` or `rebase-apply` directory, which was already checked.
   The sync now also waits out a stopped `git am` (named as such, not "a rebase") and a
-  half-done multi-commit cherry-pick or revert (`sequencer/todo`), and every skip says
-  why, with the command to run once it is finished.
+  half-done multi-commit cherry-pick or revert (`sequencer/todo`) and a `git bisect`,
+  and every skip says why, with the command to run once it is finished.
 - **A headless session spent the day's on-screen message.** The first session each day
   set the flag even when it was `claude -p` — a scripted `/dg` pre-review, CI — so that
   day's doctor ❌ reached no screen and the attended sessions after it stayed quiet.
   With `CLAUDE_CODE_SESSION_ATTENDED=0` (set by `claude -p`; observed on Claude Code
-  2.1.301, undocumented) doctor still runs but the flag is left. Unset keeps 0.24.1's
-  behaviour.
+  2.1.301, undocumented) doctor still runs but the flag is left, so headless sessions
+  run it until an attended session has that day. Unset keeps 0.24.1's behaviour. A headless session still syncs the
+  hooks under `HOOK_SYNC=auto`, so the clone is protected at once; its "commit the
+  diff" reached no screen, so an attended session now says on screen when the hook
+  directory has uncommitted changes (yours count too).
 
 ### Added
 
@@ -65,7 +73,7 @@ of yours shadows a flight-rules skill — read the warning before deleting anyth
   (`always`, the default, or `never`) and `DG_COMIC_PR` (`never`, the default, `ask` or
   `always`) for whether a PR gets the comic and its score — strictly opt-in; this repo
   sets `always`. `flight-rules-doctor.sh` checks both values. A PR body never carries
-  the round tables' banter.
+  the round tables' banter, except as the opt-in comic's quotes.
   An HTML page or PNG of the comic is made only on request and stays local; every value
   in the page is escaped and the template carries a Content-Security-Policy. `/rules-sync` now
   reports a copied skill's missing companion files with the `cp` that adds them, so a

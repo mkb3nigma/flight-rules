@@ -198,7 +198,7 @@ say "$(grep -c 'flight-rules doctor' <<<"$SECOND")" "0" "…the second, same ver
 say "$(grep -c '^rc=0$' <<<"$SECOND")" "1" "…and exits 0 doing so"
 printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"
 say "$(PRUN | grep -c 'flight-rules doctor')" "1" "…the first after an update, same day, does"
-# A headless session (claude -p, the SDK, a script) has no screen, and spending the day's
+# A headless session (`claude -p`, observed) has no screen, and spending the day's
 # flag on it hid that day's ❌ from every attended session after it — silently, so it
 # could never show up as an incident. Claude Code 2.1.301 sets CLAUDE_CODE_SESSION_ATTENDED=0
 # for `claude -p` (probe, 2026-10-17; undocumented). Exactly 0 only: unset is today's flag.
@@ -248,8 +248,26 @@ say "$(usr <<<"$J" | grep -c 'synced commit-msg')" "1" "…on the user's screen 
 say "$(grep -c 'synced commit-msg (flight-rules 9.9.9)' <<<"$OUT")" "1" "…names the hook and the release"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "the stale commit-msg is now the plugin's"
 say "$(grep -c '# own' "$D/.ai/hooks/post-merge")" "1" "the adapted post-merge is untouched"
+say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and the sync's own notice is not repeated as uncommitted changes"
 say "$(grep -c 'post-merge differs from this' <<<"$OUT")" "1" "…and doctor names it on the same run"
 say "$(grep -c 'commit-msg is the flight-rules' <<<"$OUT")" "0" "doctor no longer reports the synced hook stale"
+rm -rf "$D"
+# A headless session syncs (the clone is protected at once) but its notice reaches no
+# screen, and the next attended session found the hooks current and said nothing of the
+# uncommitted diff (final release /dg, 2026-10-17). It now says so, on screen.
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
+OUT=$( { (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
+say "$(grep -c 'synced commit-msg' <<<"$OUT")" "1" "headless, auto: the stale hook is synced"
+say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and headless is not told twice"
+J=$( (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c 'rc=0')" "1" "the attended session after it exits 0"
+say "$(ctx <<<"$J" | grep -c 'updated git hooks')" "0" "…finds nothing left to sync"
+say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…and says on screen the hooks have uncommitted changes"
+say "$(usr <<<"$J" | grep -c 'M .ai/hooks/commit-msg')" "1" "…naming the file"
+git -C "$D" add .ai/hooks && git -C "$D" commit -qm "chore: synced" --no-verify
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) | usr | grep -c 'git hooks have uncommitted changes')" "0" "…and once committed, says nothing"
 rm -rf "$D"
 # Without the key: reported, not written.
 D=$(mkrepo); stale "$D" commit-msg
@@ -308,7 +326,7 @@ rm -rf "$D"
 # The other three in-progress states, each alone (fix review, 2026-10-12): a revert
 # stopped on a conflict, and the rebase directories git leaves — rebase-merge is the
 # interactive stop REBASE_HEAD misses, rebase-apply the am/apply one.
-for state in revert rebase-merge rebase-apply am sequencer; do
+for state in revert rebase-merge rebase-apply am sequencer bisect; do
   D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
   case "$state" in
@@ -333,6 +351,10 @@ for state in revert rebase-merge rebase-apply am sequencer; do
       echo resolved > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: resolved" --no-verify
       [ -z "$(git -C "$D" rev-parse -q --verify CHERRY_PICK_HEAD)" ] \
         && [ -f "$(git -C "$D" rev-parse --absolute-git-dir)/sequencer/todo" ] || die "no sequencer-only state" ;;
+    # A bisect: a synced hook on the commit under test made `bisect good` refuse to
+    # check out (final release /dg, 2026-10-17).
+    bisect) git -C "$D" bisect start >/dev/null 2>&1 \
+      && [ -f "$(git -C "$D" rev-parse --absolute-git-dir)/BISECT_LOG" ] || die "no bisect started" ;;
     *) mkdir -p "$(git -C "$D" rev-parse --absolute-git-dir)/$state" || die "could not make $state" ;;
   esac
   OUT=$(PRUN)

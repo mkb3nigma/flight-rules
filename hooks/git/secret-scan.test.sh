@@ -187,6 +187,51 @@ say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a ke
 say "$(grep -c 'secret scan skipped' <<<"$OUT")" 1 "…and says the scan was skipped, so a leftover MERGE_HEAD is never silent"
 say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
 
+echo "The skip names the commit coming in and prescribes no command (final release /dg, 2026-10-17/18):"
+# It cannot tell a real merge from a leftover, and each command it offered was wrong in
+# one: `git merge --abort` discarded staged work beside a leftover; `rm` of the marker,
+# after a real merge a gate refused, landed the branch past that gate. Through a real
+# `git commit`: a leftover, which goes through as a merge; and a real merge and a
+# leftover on a note-gated branch, which the REAL commit-msg refuses — its box offers
+# --abort, so it must say what that costs (fix /dg, 2026-10-18).
+CM_SRC="$(dirname "$HOOK_SRC")/commit-msg"
+gated() {   # gated <repo>: the real commit-msg, and the branch note-gated in the committed conf
+  cp "$CM_SRC" "$1/.hooks/commit-msg" && chmod +x "$1/.hooks/commit-msg" || die "could not install commit-msg"
+  mkdir -p "$1/.ai" && printf 'PROTECTED_BRANCHES=^feature$\nNOTE_GATED_BRANCHES=^feature$\n' > "$1/.ai/flight-rules.conf"
+  git -C "$1" add .ai && git -C "$1" commit -qm conf --no-verify || die "could not commit the conf"
+}
+for how in leftover refused leftover-gated; do
+  R=$(make_repo armed)
+  case "$how" in refused|leftover-gated) gated "$R" ;; esac
+  if [ "$how" = refused ]; then
+    ( cd "$R" && git checkout -qb other && echo other > t && git commit -qam other --no-verify \
+      && git checkout -q feature && echo mine > t && git commit -qam mine --no-verify ) >/dev/null 2>&1 \
+      || die "could not build the branches"
+    git -C "$R" merge other >/dev/null 2>&1
+    [ -f "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD" ] || die "the merge did not stop on a conflict"
+    echo resolved > "$R/t"; git -C "$R" add t || die "could not resolve"
+  else
+    ( cd "$R" && git checkout -qb other && echo o > o && git add o && git commit -qm o --no-verify \
+      && git checkout -q feature ) >/dev/null 2>&1 || die "could not build a side branch"
+    git -C "$R" rev-parse other > "$(git -C "$R" rev-parse --absolute-git-dir)/MERGE_HEAD"
+    echo new > "$R/n"; git -C "$R" add n >/dev/null 2>&1 || die "could not stage"
+  fi
+  in=$(git -C "$R" rev-parse other); h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(cd "$R" && git commit -qm x 2>&1)
+  if [ "$how" = leftover ]; then
+    # git may reduce the parents to that commit alone (HEAD is its ancestor here).
+    say "$(git -C "$R" rev-list --parents -n1 HEAD | tr ' ' '\n' | sed 1d | grep -cx "$in")" 1 "leftover: the commit lands with the named commit as a parent"
+  else
+    say "$(git -C "$R" rev-parse HEAD)" "$h" "$how: the real commit-msg refuses it"
+    say "$(grep -c 'it also drops what you staged' <<<"$OUT")" 1 "…and its box says what git merge --abort costs"
+    say "$(grep -c 'started is a leftover: check git status first' <<<"$OUT")" 1 "…and names the leftover case"
+  fi
+  say "$(grep -c "concluding a merge of ${in:0:12} — secret scan skipped" <<<"$OUT")" 1 "$how: the skip names the commit coming in"
+  say "$(grep -c "This commit records ${in:0:12} as a parent" <<<"$OUT")" 1 "…says the commit records it as a parent"
+  say "$(grep -c 'Check `git log -1` and `git status` before anything else' <<<"$OUT")" 1 "…and what to check"
+  say "$(grep -cE '`(rm |git merge --abort|git reset)' <<<"$(grep 'pre-commit:' <<<"$OUT")")" 0 "…prescribing no rm, --abort or reset"
+done
+
 echo "A branch or tag named MERGE_HEAD is not a merge in progress (AppliHawk review, 2026-10-17):"
 # `rev-parse --verify MERGE_HEAD` resolves refs/heads/MERGE_HEAD too, so one such branch
 # switched the scan off for every commit with nothing said. The marker is a file.

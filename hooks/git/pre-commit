@@ -49,18 +49,26 @@ run_local() { [ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"; exit 0; }
 # time, so a MERGE_HEAD left behind is seen rather than trusted. And it must bring in a
 # commit HEAD lacks: git drops a parent HEAD already contains, so a leftover file naming
 # HEAD or an ancestor made an ordinary, unscanned commit (release /dg, 2026-10-17).
+# The message prescribes nothing: this hook cannot tell a merge someone started from a
+# leftover file, and each command it offered was wrong in one of the two — `git merge
+# --abort` discarded the staged work beside a leftover, and `rm` of the marker, after a
+# real merge a gate refused, landed the branch as one ordinary commit past that gate
+# (final release /dg, 2026-10-17/18). It names the commit coming in, which is what
+# shows a leftover for what it is, and says the commit records it as a parent: on a
+# leftover the commit usually goes through, so "stop" came too late (fix /dg,
+# 2026-10-18). The gates give the commands for a real merge.
 MERGE_MARKER=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
 merges_something() {
     while read -r m; do
         [ -n "$m" ] || continue
         # Exit 1 is "not an ancestor"; any other failure (no such object) is no proof
         # of a merge, so the scan runs.
-        git merge-base --is-ancestor "$m" HEAD 2>/dev/null; [ $? -eq 1 ] && return 0
+        git merge-base --is-ancestor "$m" HEAD 2>/dev/null; [ $? -eq 1 ] && { MERGED=$m; return 0; }
     done < "$MERGE_MARKER"
     return 1
 }
 if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
-    echo "pre-commit: concluding a merge ($MERGE_MARKER present) — secret scan skipped; the merged commits were scanned when made. Not merging? \`git status\` shows what git thinks; \`git merge --abort\` clears it." >&2
+    echo "pre-commit: concluding a merge of ${MERGED:0:12} — secret scan skipped; the merged commits were scanned when made. This commit records ${MERGED:0:12} as a parent. Not merging ${MERGED:0:12}? Check \`git log -1\` and \`git status\` before anything else." >&2
     run_local "$@"
 fi
 
