@@ -338,10 +338,15 @@ fi
 # ── 5. No command or skill of the user's or project's own shadows a plugin skill ──
 # One named like a plugin skill is what `/dg` runs, and the plugin's stays unreached:
 # AppliHawk's ~/.claude/commands/dg.md, a copy from 2026-06-11, ran in place of every
-# release's /dg after it with nothing said (2026-10-13). A file that points at a
-# skills/<name>/SKILL.md (a project's copy-in, or this repo's own pointers) or hands over
-# to `flight-rules:<name>` (AppliHawk's wrappers, flagged on the first real run,
-# 2026-10-17) is no shadow. Only with the plugin on: off, its skills are not in use.
+# release's /dg after it with nothing said (2026-10-13). A file whose line STARTS with a
+# pointer at a skills/<name>/SKILL.md (a project's copy-in, or this repo's own pointers:
+# "Read and follow `…skills/<name>/SKILL.md`") or a handover to the plugin's skill
+# (AppliHawk's wrappers, flagged on the first real run, 2026-10-17: "Use the
+# `flight-rules:<name>` skill") is no shadow. The string anywhere else is not enough: a
+# full copy that mentions it in passing still runs its own steps (#82). A command nested
+# in commands/<dir>/ registers as /<dir>:<name> and leaves /<name> to the plugin, so it
+# is not checked (probe, 2026-10-19, #85). Only with the plugin on: off, its skills are
+# not in use.
 SKILLS_SRC="$(cd "${GIT_HOOKS_SRC%/git}/../skills" 2>/dev/null && pwd)"   # GIT_HOOKS_SRC was made absolute before the cd to $ROOT
 if [[ $PLUGIN_ON -eq 1 && -n "$SKILLS_SRC" ]]; then
   for _s in "$SKILLS_SRC"/*/SKILL.md; do
@@ -350,7 +355,8 @@ if [[ $PLUGIN_ON -eq 1 && -n "$SKILLS_SRC" ]]; then
     for _f in "$HOME/.claude/commands/$_n.md" "$HOME/.claude/skills/$_n/SKILL.md" \
               ".claude/commands/$_n.md" ".claude/skills/$_n/SKILL.md"; do
       [[ -f "$_f" ]] || continue
-      grep -qF -e "skills/$_n/SKILL.md" -e "flight-rules:$_n" "$_f" && continue
+      grep -qE -e '^Read and follow `([^`]*/)?skills/'"$_n"'/SKILL\.md`' \
+               -e '^Use the `flight-rules:'"$_n"'` skill' "$_f" && continue
       # Not ${_f/#$HOME/~}: bash 5 tilde-expands that replacement back to $HOME, and
       # escaping it prints "\~" on bash 3.2 (Ubuntu CI, 2026-10-17).
       case "$_f" in "$HOME"/*) _f="~/${_f#"$HOME"/}" ;; esac
