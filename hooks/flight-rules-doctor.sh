@@ -266,8 +266,16 @@ PLUGIN_ON=0
 # for a user-scope install and to the repo's .claude/settings.json or
 # .claude/settings.local.json for a project-scope one (#67): reading only ~/.claude
 # declared the guard absent in a repo where it was running.
+# settings.local.json is git-ignored, so only the checkout that wrote it has one, and
+# Claude Code applies the MAIN worktree's to a session in any linked worktree (probe,
+# 2026-10-19: a plugin enabled only there loaded in a nested and a sibling worktree, and
+# not in an unrelated repo). Reading only this checkout's warned "no agent guard" in
+# every worktree of such a project (#88). `worktree list` names the main worktree first.
+MAIN_LOCAL=/dev/null
+MAIN_WT=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+[[ -n "$MAIN_WT" && "$MAIN_WT" != "$ROOT" ]] && MAIN_LOCAL="$MAIN_WT/.claude/settings.local.json"
 grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' \
-  "$HOME/.claude/settings.json" .claude/settings.json .claude/settings.local.json 2>/dev/null && PLUGIN_ON=1
+  "$HOME/.claude/settings.json" .claude/settings.json .claude/settings.local.json "$MAIN_LOCAL" 2>/dev/null && PLUGIN_ON=1
 LOCAL_WIRED=0
 grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=1
 # Wiring a path is not the same as wiring a FILE. Every script named in the settings is
