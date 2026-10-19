@@ -149,14 +149,28 @@ else
   # 2026-10-17: the comic slot's placeholder lines passed an untouched template).
   PROG=$(sed -n "/| awk '\$/,/END {/p" "$RR" | sed -e '1d' -e "\$s/')\$//")
   TPL=$(sed -n "/--body \"\$(cat <<'EOF'/,/^EOF\$/p" skills/pr-create/SKILL.md)
-  filled() { printf '%s\n' "$1" | awk "$PROG" 2>/dev/null; }
+  # The awk prints two numbers: the section's filled lines, and its verdict headings.
+  filled()  { printf '%s\n' "$1" | awk "$PROG" 2>/dev/null; }
+  count()   { set -- $(filled "$1"); printf '%s' "${1:-}"; }
+  verdict() { set -- $(filled "$1"); printf '%s' "${2:-}"; }
   if [ -z "$PROG" ] || [ -z "$TPL" ]; then bad "could not extract $RR's awk or pr-create's template"
   else
-    [ "$(filled "$TPL")" = 0 ] && ok "$RR fails pr-create's untouched template" || bad "$RR passes pr-create's untouched template (counted $(filled "$TPL"))"
+    [ "$(count "$TPL")" = 0 ] && ok "$RR fails pr-create's untouched template" || bad "$RR passes pr-create's untouched template (counted $(count "$TPL"))"
     COMIC=$(printf '## Adversarial review\n### Comic\n````\n[1] DINESH\n````\n## Testing\n')
-    [ "$(filled "$COMIC")" = 0 ] && ok "…and a section holding only the comic" || bad "$RR passes a section holding only the comic"
+    [ "$(count "$COMIC")" = 0 ] && ok "…and a section holding only the comic" || bad "$RR passes a section holding only the comic"
     FULL=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n| V1 | x | minor | Applied |\n### Comic\n````\nx\n````\n## Testing\n')
-    [ "$(filled "$FULL")" = 3 ] && ok "…while a filled one counts, demoted headings and all" || bad "$RR miscounts a filled section ($(filled "$FULL"), want 3)"
+    [ "$(count "$FULL")" = 3 ] && ok "…while a filled one counts, demoted headings and all" || bad "$RR miscounts a filled section ($(count "$FULL"), want 3)"
+    # #83: the header lines alone are text, so they counted as filled — a section with
+    # no verdict in it passed. The demoted `### Verdict` is what step 2b puts there.
+    [ "$(verdict "$FULL")" = 1 ] && ok "…and finds its demoted ### Verdict" || bad "$RR does not find the ### Verdict in a filled section (got '$(verdict "$FULL")', want 1)"
+    HDR=$(printf '## Adversarial review\n> Pre-review: ✅ codex\n> Dependency scan: n/a\n## Testing\n')
+    [ "$(verdict "$HDR")" = 0 ] && ok "a section with the header lines and no verdict has no verdict heading" || bad "$RR finds a verdict in a section with only the header lines (got '$(verdict "$HDR")', want 0)"
+    LATE=$(printf '## Adversarial review\n> Pre-review: ok\n### Comic\n### Verdict\n## Testing\n')
+    [ "$(verdict "$LATE")" = 0 ] && ok "…nor one whose ### Verdict is inside the comic" || bad "$RR counts a ### Verdict after ### Comic (got '$(verdict "$LATE")', want 0)"
+    # #84: only the template's own placeholders are skipped. A review written as one-line
+    # HTML is a review, and used to count as empty.
+    HTML=$(printf '## Adversarial review\n<p>Pre-review: ok</p>\n### Verdict\n<details><summary>V1</summary>applied in abc1234</details>\n## Testing\n')
+    [ "$(count "$HTML")" = 3 ] && ok "a one-line HTML review counts as filled" || bad "$RR skips one-line HTML as a placeholder ($(count "$HTML"), want 3)"
   fi
 fi
 
