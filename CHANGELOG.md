@@ -4,6 +4,62 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.26.0 — 2026-10-20
+
+### Upgrading
+
+Nothing to do. No git hook changed, so doctor reports none stale. One new optional
+`.ai/flight-rules.conf` key, `DG_WAIT_MINUTES`, is described below.
+
+### Fixed
+
+- **`/dg` lost the pre-review when the debate finished first.** Round 1 started only
+  after the pre-reviewers had been launched, and nothing made a later round wait for
+  them. A pre-review left running in the background finished after the verdict, and
+  its findings reached no round (2026-10-18). Now round 1 starts in the same turn as
+  the pre-review and the dependency scan, and stays blind to both. Round 2 waits for
+  every pre-reviewer and the scan to finish or fail, then answers each of their
+  findings by ID. The debate can no longer converge before round 2. The wait is
+  bounded by the new `DG_WAIT_MINUTES` (default 15). A run with no result by then
+  counts as failed and is reported `⚠️ unavailable — no result in <n>m`.
+  `flight-rules-doctor.sh` warns on a value that is not a positive whole number.
+  Untested beyond reading: a `claude plugin eval` case did not reproduce the race
+  headlessly (#89).
+- **Doctor warned "no agent guard wired" in every worktree of a project that enables
+  the plugin in `.claude/settings.local.json`** (#88). That file is git-ignored, so
+  only the main checkout has it. A probe on 2026-10-19 showed Claude Code applies the
+  main checkout's copy to sessions in linked worktrees, so the warning was false.
+  Doctor now reads the main checkout's file too.
+- **A full copy of a skill escaped doctor's shadow warning by mentioning the plugin
+  in passing** (#82). A same-named command or skill was exempt if it contained
+  `skills/<name>/SKILL.md` or `flight-rules:<name>` anywhere. It is now exempt only
+  if a line starts with one of the two real pointer shapes:
+  - ``Read and follow `…skills/<name>/SKILL.md` ``
+  - ``Use the `flight-rules:<name>` skill``
+
+  A wrapper worded any other way now gets the warning. Read it before changing
+  anything. A command nested in `commands/<dir>/` is still not checked, because it
+  registers as `/<dir>:<name>` and leaves `/<name>` to the plugin (probe, 2026-10-19,
+  #85).
+- **From a linked worktree, `install.sh --stale-only` said the hooks were "outside
+  this repository; sync it by hand"** (#87). This happened when `core.hooksPath` was
+  the usual absolute path into the main checkout, and it is what `HOOK_SYNC=auto`
+  printed in every worktree session. The hooks are still not synced from a worktree,
+  because the write would land in another checkout's working tree. The message now
+  names the main checkout and prints a `cd "<main>" && … --stale-only` command that
+  works when pasted.
+
+### Changed — this repo's release PRs
+
+- The `release review` check now also requires a `### Verdict` heading in the
+  **Adversarial review** section (#83). The `> Pre-review:` line alone used to pass.
+- Only the `pr-create` template's own placeholder lines (`<the …>`, `<ONLY if …>`)
+  count as empty. A review written as one-line HTML used to count as empty (#84).
+- `docs-consistency.test.sh` now also checks three things:
+  - every Markdown code fence is closed (#86);
+  - every conf key doctor knows has a row in the Configuration table;
+  - `DG_WAIT_MINUTES` has a single default across the skill, doctor and the docs.
+
 ## 0.25.0 — 2026-10-17
 
 ### Upgrading — sync the git hooks; this one is a security fix
