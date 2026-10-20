@@ -452,6 +452,22 @@ say "$(has "$D" "DG_COMIC_PR='yes' is not never, ask or always")" "0" "…and DG
 say "$(has "$D" "treats it as never and keeps the comic out of PRs")" "0" "…falling back to never, the opt-in default"
 rm -rf "$D"
 
+# /dg's round-2 wait (owner, 2026-10-18): a value the skill cannot read as minutes would
+# silently become the default, so doctor names it.
+D=$(mkrepo); printf 'DG_WAIT_MINUTES=30\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "DG_WAIT_MINUTES is a known key"
+say "$(has "$D" "unknown key")" "1" "…not reported as unknown"
+say "$(has "$D" "DG_WAIT_MINUTES=30")" "0" "…and is reported"
+printf 'DG_WAIT_MINUTES=08\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "DG_WAIT_MINUTES=08")" "0" "…a leading zero is still minutes"
+for v in 15m 0 -5 ''; do
+  printf 'DG_WAIT_MINUTES=%s\n' "$v" > "$D/.ai/flight-rules.conf"
+  say "$(rc "$D")" "0" "DG_WAIT_MINUTES='$v' is a warning, not a failure"
+  say "$(has "$D" "DG_WAIT_MINUTES='$v' is not a positive whole number of minutes")" "0" "…naming the value '$v'"
+  say "$(has "$D" "treats it as 15")" "0" "…and the default it falls back to"
+done
+rm -rf "$D"
+
 D=$(mkrepo); printf 'PROTECTED_BRANCH=^main$\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "unknown key is a warning, not a failure"
 say "$(has "$D" "unknown key 'PROTECTED_BRANCH'")" "0" "…and is named"
@@ -542,6 +558,23 @@ printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/.claude/se
 say "$(has "$D" "no agent guard wired")" "0" "a plugin disabled at project scope does not count as wired"
 rm -rf "$D"
 
+# settings.local.json is git-ignored, so it exists only in the checkout that wrote it,
+# and Claude Code applies the MAIN worktree's to a session in any linked one (probe,
+# 2026-10-19). doctor read only the worktree's own and warned "no agent guard" in every
+# worktree of a project that enables the plugin there (#88).
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"
+printf '{}' > "$D/fakehome/.claude/settings.json"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/.claude/settings.local.json"
+git -C "$D" commit -q --allow-empty -m init
+git -C "$D" worktree add -q "$D/.ai/worktrees/w" -b w || die "worktree add failed in $D"
+mkdir -p "$D/.ai/worktrees/w/fakehome/.claude"; printf '{}' > "$D/.ai/worktrees/w/fakehome/.claude/settings.json"
+[ -e "$D/.ai/worktrees/w/.claude/settings.local.json" ] && die "the fixture's worktree has its own settings.local.json"
+say "$(has "$D/.ai/worktrees/w" "agent guard via the plugin")" "0" "a linked worktree: plugin enabled in the main checkout's settings.local.json → wired"
+say "$(has "$D/.ai/worktrees/w" "no agent guard wired")" "1" "…and not declared absent"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/.claude/settings.local.json"
+say "$(has "$D/.ai/worktrees/w" "no agent guard wired")" "0" "…while disabled there, the worktree still warns"
+rm -rf "$D"
+
 D=$(mkrepo); mkdir -p "$D/.claude/" "$D/.ai/hooks/agent"
 printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash .ai/hooks/agent/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
 printf '#!/bin/bash\n[[ "$COMMAND" == *"git commit"* ]]\n' > "$D/.ai/hooks/agent/pre-commit-check.sh"
@@ -579,6 +612,20 @@ say "$(has "$D" "~/.claude/commands/dg.md shadows flight-rules' /dg")" "0" "…a
 say "$(has "$D" "~/.claude/skills/diagnose/SKILL.md shadows flight-rules' /diagnose")" "0" "…so is a user skill"
 say "$(has "$D" "standup")" "1" "…a command with its own name is not"
 say "$(has "$D" ".claude/skills/dg/SKILL.md shadows")" "1" "…nor a pointer at the project's copy-in"
+# The exemption is the pointer or handover LINE, not the string anywhere (#82): a full
+# copy that mentions either in passing runs its own steps in place of the plugin's.
+printf -- '---\nname: pre-merge-check\n---\nUnlike flight-rules:pre-merge-check, this one skips the docs step.\n1. Run the tests.\n' > "$D/.claude/commands/pre-merge-check.md"
+printf -- '---\nname: docs-lint\n---\nAdapted from skills/docs-lint/SKILL.md in the playbook.\n1. Read every doc.\n' > "$D/.claude/commands/docs-lint.md"
+# The real pointer shapes stay exempt: this repo's own, and AppliHawk's wrapper as it
+# reads (frontmatter, a comment, the handover line, an arguments line; 2026-10-19).
+mkdir -p "$D/.claude/skills/rules-sync"
+printf -- '---\nname: rules-sync\n---\n\nRead and follow `skills/rules-sync/SKILL.md` (path relative to the repository root; this repository\nis the playbook, so the file is the skill itself, not a copy). Arguments: $ARGUMENTS\n' > "$D/.claude/skills/rules-sync/SKILL.md"
+printf -- '---\ndescription: x\nmodel: opus\n---\n<!-- description: states the invariant. -->\n\nUse the `flight-rules:feature-start` skill. It reads `.ai/skills/feature-start/EXTENSIONS.md` for the branch parameters.\n\nArguments: $ARGUMENTS\n' > "$D/.claude/commands/feature-start.md"
+say "$(has "$D" ".claude/commands/pre-merge-check.md shadows flight-rules' /pre-merge-check")" "0" "…a copy that names flight-rules:<name> in prose still shadows"
+say "$(has "$D" ".claude/commands/docs-lint.md shadows flight-rules' /docs-lint")" "0" "…so does one that names skills/<name>/SKILL.md in prose"
+say "$(has "$D" "rules-sync/SKILL.md shadows")" "1" "…this repo's own pointer shape is not a shadow"
+say "$(has "$D" "feature-start.md shadows")" "1" "…nor a downstream project's real wrapper"
+say "$(rc "$D")" "0" "…and doctor still exits 0 with all of them present"
 # Run by a relative path from a subdirectory: doctor cds to the repo root, and a plugin
 # path resolved after that came back empty, so the check was skipped unsaid (release /dg,
 # 2026-10-17).

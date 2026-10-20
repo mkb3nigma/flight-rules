@@ -140,8 +140,9 @@ branch from a local copy and opening a fresh PR against the correct base.
    — a `##` inside the section ends it, and the check below then finds it empty. No
    round tables or banter. The comic, banter score included, goes in only as the
    project's `DG_COMIC_PR` says (`/dg` step 6; default `never`), as `### Comic` at the
-   section's end. The `release review` workflow checks the section is there and not
-   empty, and re-checks on every body edit. The assistant may decline a minor or important finding with its reason, where the
+   section's end. The `release review` workflow checks the section is there, holds text
+   other than the template's placeholders, and holds a `### Verdict` — the header lines
+   alone are not a verdict (#83) — and re-checks on every body edit. The assistant may decline a minor or important finding with its reason, where the
    owner reads it; a **critical** finding is the owner's to disposition — stop and
    ask. A finding applied arrives like any change, through a branch merged into
    `{INTEGRATION_BRANCH}`; then 2a runs again on the new tip, and `/dg` on the fix's
