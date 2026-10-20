@@ -595,6 +595,20 @@ say "$(has "$D" "~/.claude/commands/dg.md shadows flight-rules' /dg")" "0" "…a
 say "$(has "$D" "~/.claude/skills/diagnose/SKILL.md shadows flight-rules' /diagnose")" "0" "…so is a user skill"
 say "$(has "$D" "standup")" "1" "…a command with its own name is not"
 say "$(has "$D" ".claude/skills/dg/SKILL.md shadows")" "1" "…nor a pointer at the project's copy-in"
+# The exemption is the pointer or handover LINE, not the string anywhere (#82): a full
+# copy that mentions either in passing runs its own steps in place of the plugin's.
+printf -- '---\nname: pre-merge-check\n---\nUnlike flight-rules:pre-merge-check, this one skips the docs step.\n1. Run the tests.\n' > "$D/.claude/commands/pre-merge-check.md"
+printf -- '---\nname: docs-lint\n---\nAdapted from skills/docs-lint/SKILL.md in the playbook.\n1. Read every doc.\n' > "$D/.claude/commands/docs-lint.md"
+# The real pointer shapes stay exempt: this repo's own, and AppliHawk's wrapper as it
+# reads (frontmatter, a comment, the handover line, an arguments line; 2026-10-19).
+mkdir -p "$D/.claude/skills/rules-sync"
+printf -- '---\nname: rules-sync\n---\n\nRead and follow `skills/rules-sync/SKILL.md` (path relative to the repository root; this repository\nis the playbook, so the file is the skill itself, not a copy). Arguments: $ARGUMENTS\n' > "$D/.claude/skills/rules-sync/SKILL.md"
+printf -- '---\ndescription: x\nmodel: opus\n---\n<!-- description: states the invariant. -->\n\nUse the `flight-rules:feature-start` skill. It reads `.ai/skills/feature-start/EXTENSIONS.md` for the branch parameters.\n\nArguments: $ARGUMENTS\n' > "$D/.claude/commands/feature-start.md"
+say "$(has "$D" ".claude/commands/pre-merge-check.md shadows flight-rules' /pre-merge-check")" "0" "…a copy that names flight-rules:<name> in prose still shadows"
+say "$(has "$D" ".claude/commands/docs-lint.md shadows flight-rules' /docs-lint")" "0" "…so does one that names skills/<name>/SKILL.md in prose"
+say "$(has "$D" "rules-sync/SKILL.md shadows")" "1" "…this repo's own pointer shape is not a shadow"
+say "$(has "$D" "feature-start.md shadows")" "1" "…nor a downstream project's real wrapper"
+say "$(rc "$D")" "0" "…and doctor still exits 0 with all of them present"
 # Run by a relative path from a subdirectory: doctor cds to the repo root, and a plugin
 # path resolved after that came back empty, so the check was skipped unsaid (release /dg,
 # 2026-10-17).
