@@ -174,6 +174,55 @@ else
   fi
 fi
 
+echo "Every code fence in a shipped markdown file is closed:"
+# A /dg step 6 edit closed its block one line early, so the comic instruction rendered
+# as loose text outside the template; every suite passed and a reviewer caught it (#86).
+# CommonMark: a fence is 3+ backticks or tildes, and only the same character, at least
+# as long, with nothing after it, closes it — so a ```` block holding ``` lines is one
+# block. A backtick run with a backtick later on the line is inline code, not a fence.
+# Indentation is ignored, since fences sit inside list items here. Prints "<line> <run>"
+# for a fence still open at the end of the file, nothing when every fence is closed.
+unclosed_fence() {
+  awk '
+    function run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
+    {
+      l = $0; sub(/^[ \t]+/, "", l); c = substr(l, 1, 1)
+      if (c != "`" && c != "~") next
+      n = run(l, c); if (n < 3) next
+      rest = substr(l, n + 1)
+      if (!open) {
+        if (c == "`" && index(rest, "`")) next
+        open = 1; oc = c; on = n; ol = NR; next
+      }
+      if (c == oc && n >= on && rest ~ /^[ \t]*$/) open = 0
+    }
+    END { if (open) { s = ""; for (i = 0; i < on; i++) s = s oc; print ol " " s } }
+  ' "$1"
+}
+# The checker is checked first: a dead awk prints nothing, which reads as "all closed".
+FX=$(mktemp -d "${TMPDIR:-/tmp}/fence.XXXXXX")
+printf 'a\n```sh\nx\n' > "$FX/open.md"
+printf '````md\n```\ninner\n```\n````\n~~~\n```\n~~~\nuse ```x``` inline\n' > "$FX/nested.md"
+OPEN_OUT=$(unclosed_fence "$FX/open.md"); OPEN_RC=$?
+NEST_OUT=$(unclosed_fence "$FX/nested.md"); NEST_RC=$?
+rm -rf "$FX"
+if [ "$OPEN_RC" -ne 0 ] || [ "$OPEN_OUT" != '2 ```' ]; then
+  bad "the fence check misses an unclosed fence (exit $OPEN_RC, said '$OPEN_OUT') — nothing below can be trusted"
+elif [ "$NEST_RC" -ne 0 ] || [ -n "$NEST_OUT" ]; then
+  bad "the fence check flags nested fences or inline code (exit $NEST_RC, said '$NEST_OUT')"
+else
+  ok "the check finds an unclosed fence, and passes \`\`\` inside \`\`\`\`, \`\`\` inside ~~~, and inline \`\`\`code\`\`\`"
+  n=0; unbalanced=0
+  for f in $(git ls-files '*.md'); do
+    n=$((n+1)); out=$(unclosed_fence "$f"); rc=$?
+    if [ "$rc" -ne 0 ]; then bad "$f: the fence check exited $rc"; unbalanced=1
+    elif [ -n "$out" ]; then bad "$f:${out%% *}: the ${out#* } fence opened here is never closed"; unbalanced=1
+    fi
+  done
+  [ "$n" -eq 0 ] && bad "git ls-files found no markdown — nothing was checked"
+  [ "$n" -gt 0 ] && [ "$unbalanced" -eq 0 ] && ok "$n tracked .md files, every fence closed"
+fi
+
 echo "Every conf key doctor knows is documented, and every /dg key a skill reads is one doctor knows:"
 # The /dg keys are read by an instruction, not a hook, so nothing fails when one is
 # renamed in the skill and not in doctor: the project's setting stops being read, and
