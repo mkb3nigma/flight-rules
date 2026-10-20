@@ -28,18 +28,30 @@ jobs:
           fi
           # A heading with nothing under it, or the template's placeholders left in
           # place, is a skipped step that looks done (fix review, 2026-10-12): the
-          # section needs a line of its own text before the next heading. Every
-          # template placeholder is a whole line in <…>, and the opt-in comic is not
-          # the review, so counting stops at `### Comic`: with only the
+          # section needs a line of its own text before the next heading. The
+          # template's placeholders in the section are whole lines beginning `<the `
+          # or `<ONLY if `, and only those are skipped: any `<…>` line used to be,
+          # so a review written as one-line HTML counted as empty (#84). The opt-in
+          # comic is not the review, so counting stops at `### Comic`: with only the
           # `<the /dg verdict` line skipped, the comic slot's lines passed an
           # untouched template (final release /dg, 2026-10-17).
-          filled=$(printf '%s\n' "$body" | awk '
+          #
+          # Text is not a verdict: the `> Pre-review:` line alone passed (#83). Step
+          # 2b puts the verdict's headings one level down, so the section must hold a
+          # `### Verdict` — an undemoted `## Verdict` ends the section instead.
+          set -- $(printf '%s\n' "$body" | awk '
             /^## Adversarial review/ { in_s = 1; next }
             in_s && (/^## / || /^### Comic/) { in_s = 0 }
-            in_s && /[^[:space:]]/ && !/^[[:space:]]*<.*>[[:space:]]*$/ { n++ }
-            END { print n + 0 }')
+            in_s && /^###[[:space:]]+Verdict[[:space:]]*$/ { v++ }
+            in_s && /[^[:space:]]/ && !/^[[:space:]]*<(the |ONLY if ).*>[[:space:]]*$/ { n++ }
+            END { print n + 0, v + 0 }')
+          filled=$1 verdict=$2
           if [ "$filled" -eq 0 ]; then
             echo "::error::the Adversarial review section is empty or still holds the pr-create template's placeholder"
             exit 1
           fi
-          echo "ok  Adversarial review section present and filled"
+          if [ "$verdict" -eq 0 ]; then
+            echo "::error::the Adversarial review section has no '### Verdict' — put the /dg verdict there with its headings one level down (pr-create step 2b), not only its header lines"
+            exit 1
+          fi
+          echo "ok  Adversarial review section present, filled, with a verdict"
