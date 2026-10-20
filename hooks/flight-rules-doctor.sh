@@ -168,7 +168,7 @@ else bad "neither jq nor python3 on PATH — the agent guard will deny every git
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 CONF=".ai/flight-rules.conf"
-KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC DG_COMIC DG_COMIC_PR'
+KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
 else
@@ -238,6 +238,9 @@ else
           never|ask|always) ok "$key=$val" ;;
           *) warn "$key='$val' is not never, ask or always — /dg treats it as never and keeps the comic out of PRs" ;;
         esac ;;
+      DG_WAIT_MINUTES)
+        if [[ "$val" =~ ^0*[1-9][0-9]*$ ]]; then ok "$key=$val"
+        else warn "$key='$val' is not a positive whole number of minutes — /dg treats it as 15 and stops waiting for a pre-review after that"; fi ;;
       *) ok "$key=$val" ;;
     esac
   done < "$CONF"
@@ -266,8 +269,16 @@ PLUGIN_ON=0
 # for a user-scope install and to the repo's .claude/settings.json or
 # .claude/settings.local.json for a project-scope one (#67): reading only ~/.claude
 # declared the guard absent in a repo where it was running.
+# settings.local.json is git-ignored, so only the checkout that wrote it has one, and
+# Claude Code applies the MAIN worktree's to a session in any linked worktree (probe,
+# 2026-10-19: a plugin enabled only there loaded in a nested and a sibling worktree, and
+# not in an unrelated repo). Reading only this checkout's warned "no agent guard" in
+# every worktree of such a project (#88). `worktree list` names the main worktree first.
+MAIN_LOCAL=/dev/null
+MAIN_WT=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+[[ -n "$MAIN_WT" && "$MAIN_WT" != "$ROOT" ]] && MAIN_LOCAL="$MAIN_WT/.claude/settings.local.json"
 grep -qsE '"flight-rules@[^"]*"[[:space:]]*:[[:space:]]*true' \
-  "$HOME/.claude/settings.json" .claude/settings.json .claude/settings.local.json 2>/dev/null && PLUGIN_ON=1
+  "$HOME/.claude/settings.json" .claude/settings.json .claude/settings.local.json "$MAIN_LOCAL" 2>/dev/null && PLUGIN_ON=1
 LOCAL_WIRED=0
 grep -qs 'pre-commit-check.sh' .claude/settings.json 2>/dev/null && LOCAL_WIRED=1
 # Wiring a path is not the same as wiring a FILE. Every script named in the settings is
@@ -338,10 +349,15 @@ fi
 # ── 5. No command or skill of the user's or project's own shadows a plugin skill ──
 # One named like a plugin skill is what `/dg` runs, and the plugin's stays unreached:
 # AppliHawk's ~/.claude/commands/dg.md, a copy from 2026-06-11, ran in place of every
-# release's /dg after it with nothing said (2026-10-13). A file that points at a
-# skills/<name>/SKILL.md (a project's copy-in, or this repo's own pointers) or hands over
-# to `flight-rules:<name>` (AppliHawk's wrappers, flagged on the first real run,
-# 2026-10-17) is no shadow. Only with the plugin on: off, its skills are not in use.
+# release's /dg after it with nothing said (2026-10-13). A file whose line STARTS with a
+# pointer at a skills/<name>/SKILL.md (a project's copy-in, or this repo's own pointers:
+# "Read and follow `…skills/<name>/SKILL.md`") or a handover to the plugin's skill
+# (AppliHawk's wrappers, flagged on the first real run, 2026-10-17: "Use the
+# `flight-rules:<name>` skill") is no shadow. The string anywhere else is not enough: a
+# full copy that mentions it in passing still runs its own steps (#82). A command nested
+# in commands/<dir>/ registers as /<dir>:<name> and leaves /<name> to the plugin, so it
+# is not checked (probe, 2026-10-19, #85). Only with the plugin on: off, its skills are
+# not in use.
 SKILLS_SRC="$(cd "${GIT_HOOKS_SRC%/git}/../skills" 2>/dev/null && pwd)"   # GIT_HOOKS_SRC was made absolute before the cd to $ROOT
 if [[ $PLUGIN_ON -eq 1 && -n "$SKILLS_SRC" ]]; then
   for _s in "$SKILLS_SRC"/*/SKILL.md; do
@@ -350,7 +366,8 @@ if [[ $PLUGIN_ON -eq 1 && -n "$SKILLS_SRC" ]]; then
     for _f in "$HOME/.claude/commands/$_n.md" "$HOME/.claude/skills/$_n/SKILL.md" \
               ".claude/commands/$_n.md" ".claude/skills/$_n/SKILL.md"; do
       [[ -f "$_f" ]] || continue
-      grep -qF -e "skills/$_n/SKILL.md" -e "flight-rules:$_n" "$_f" && continue
+      grep -qE -e '^Read and follow `([^`]*/)?skills/'"$_n"'/SKILL\.md`' \
+               -e '^Use the `flight-rules:'"$_n"'` skill' "$_f" && continue
       # Not ${_f/#$HOME/~}: bash 5 tilde-expands that replacement back to $HOME, and
       # escaping it prints "\~" on bash 3.2 (Ubuntu CI, 2026-10-17).
       case "$_f" in "$HOME"/*) _f="~/${_f#"$HOME"/}" ;; esac

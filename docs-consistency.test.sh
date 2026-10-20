@@ -149,15 +149,111 @@ else
   # 2026-10-17: the comic slot's placeholder lines passed an untouched template).
   PROG=$(sed -n "/| awk '\$/,/END {/p" "$RR" | sed -e '1d' -e "\$s/')\$//")
   TPL=$(sed -n "/--body \"\$(cat <<'EOF'/,/^EOF\$/p" skills/pr-create/SKILL.md)
-  filled() { printf '%s\n' "$1" | awk "$PROG" 2>/dev/null; }
+  # The awk prints two numbers: the section's filled lines, and its verdict headings.
+  filled()  { printf '%s\n' "$1" | awk "$PROG" 2>/dev/null; }
+  count()   { set -- $(filled "$1"); printf '%s' "${1:-}"; }
+  verdict() { set -- $(filled "$1"); printf '%s' "${2:-}"; }
   if [ -z "$PROG" ] || [ -z "$TPL" ]; then bad "could not extract $RR's awk or pr-create's template"
   else
-    [ "$(filled "$TPL")" = 0 ] && ok "$RR fails pr-create's untouched template" || bad "$RR passes pr-create's untouched template (counted $(filled "$TPL"))"
+    [ "$(count "$TPL")" = 0 ] && ok "$RR fails pr-create's untouched template" || bad "$RR passes pr-create's untouched template (counted $(count "$TPL"))"
     COMIC=$(printf '## Adversarial review\n### Comic\n````\n[1] DINESH\n````\n## Testing\n')
-    [ "$(filled "$COMIC")" = 0 ] && ok "…and a section holding only the comic" || bad "$RR passes a section holding only the comic"
+    [ "$(count "$COMIC")" = 0 ] && ok "…and a section holding only the comic" || bad "$RR passes a section holding only the comic"
     FULL=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n| V1 | x | minor | Applied |\n### Comic\n````\nx\n````\n## Testing\n')
-    [ "$(filled "$FULL")" = 3 ] && ok "…while a filled one counts, demoted headings and all" || bad "$RR miscounts a filled section ($(filled "$FULL"), want 3)"
+    [ "$(count "$FULL")" = 3 ] && ok "…while a filled one counts, demoted headings and all" || bad "$RR miscounts a filled section ($(count "$FULL"), want 3)"
+    # #83: the header lines alone are text, so they counted as filled — a section with
+    # no verdict in it passed. The demoted `### Verdict` is what step 2b puts there.
+    [ "$(verdict "$FULL")" = 1 ] && ok "…and finds its demoted ### Verdict" || bad "$RR does not find the ### Verdict in a filled section (got '$(verdict "$FULL")', want 1)"
+    HDR=$(printf '## Adversarial review\n> Pre-review: ✅ codex\n> Dependency scan: n/a\n## Testing\n')
+    [ "$(verdict "$HDR")" = 0 ] && ok "a section with the header lines and no verdict has no verdict heading" || bad "$RR finds a verdict in a section with only the header lines (got '$(verdict "$HDR")', want 0)"
+    LATE=$(printf '## Adversarial review\n> Pre-review: ok\n### Comic\n### Verdict\n## Testing\n')
+    [ "$(verdict "$LATE")" = 0 ] && ok "…nor one whose ### Verdict is inside the comic" || bad "$RR counts a ### Verdict after ### Comic (got '$(verdict "$LATE")', want 0)"
+    # #84: only the template's own placeholders are skipped. A review written as one-line
+    # HTML is a review, and used to count as empty.
+    HTML=$(printf '## Adversarial review\n<p>Pre-review: ok</p>\n### Verdict\n<details><summary>V1</summary>applied in abc1234</details>\n## Testing\n')
+    [ "$(count "$HTML")" = 3 ] && ok "a one-line HTML review counts as filled" || bad "$RR skips one-line HTML as a placeholder ($(count "$HTML"), want 3)"
   fi
+fi
+
+echo "Every code fence in a shipped markdown file is closed:"
+# A /dg step 6 edit closed its block one line early, so the comic instruction rendered
+# as loose text outside the template; every suite passed and a reviewer caught it (#86).
+# CommonMark: a fence is 3+ backticks or tildes, and only the same character, at least
+# as long, with nothing after it, closes it — so a ```` block holding ``` lines is one
+# block. A backtick run with a backtick later on the line is inline code, not a fence.
+# Indentation is ignored, since fences sit inside list items here. Prints "<line> <run>"
+# for a fence still open at the end of the file, nothing when every fence is closed.
+unclosed_fence() {
+  awk '
+    function run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
+    {
+      l = $0; sub(/^[ \t]+/, "", l); c = substr(l, 1, 1)
+      if (c != "`" && c != "~") next
+      n = run(l, c); if (n < 3) next
+      rest = substr(l, n + 1)
+      if (!open) {
+        if (c == "`" && index(rest, "`")) next
+        open = 1; oc = c; on = n; ol = NR; next
+      }
+      if (c == oc && n >= on && rest ~ /^[ \t]*$/) open = 0
+    }
+    END { if (open) { s = ""; for (i = 0; i < on; i++) s = s oc; print ol " " s } }
+  ' "$1"
+}
+# The checker is checked first: a dead awk prints nothing, which reads as "all closed".
+FX=$(mktemp -d "${TMPDIR:-/tmp}/fence.XXXXXX")
+printf 'a\n```sh\nx\n' > "$FX/open.md"
+printf '````md\n```\ninner\n```\n````\n~~~\n```\n~~~\nuse ```x``` inline\n' > "$FX/nested.md"
+OPEN_OUT=$(unclosed_fence "$FX/open.md"); OPEN_RC=$?
+NEST_OUT=$(unclosed_fence "$FX/nested.md"); NEST_RC=$?
+rm -rf "$FX"
+if [ "$OPEN_RC" -ne 0 ] || [ "$OPEN_OUT" != '2 ```' ]; then
+  bad "the fence check misses an unclosed fence (exit $OPEN_RC, said '$OPEN_OUT') — nothing below can be trusted"
+elif [ "$NEST_RC" -ne 0 ] || [ -n "$NEST_OUT" ]; then
+  bad "the fence check flags nested fences or inline code (exit $NEST_RC, said '$NEST_OUT')"
+else
+  ok "the check finds an unclosed fence, and passes \`\`\` inside \`\`\`\`, \`\`\` inside ~~~, and inline \`\`\`code\`\`\`"
+  n=0; unbalanced=0
+  for f in $(git ls-files '*.md'); do
+    n=$((n+1)); out=$(unclosed_fence "$f"); rc=$?
+    if [ "$rc" -ne 0 ]; then bad "$f: the fence check exited $rc"; unbalanced=1
+    elif [ -n "$out" ]; then bad "$f:${out%% *}: the ${out#* } fence opened here is never closed"; unbalanced=1
+    fi
+  done
+  [ "$n" -eq 0 ] && bad "git ls-files found no markdown — nothing was checked"
+  [ "$n" -gt 0 ] && [ "$unbalanced" -eq 0 ] && ok "$n tracked .md files, every fence closed"
+fi
+
+echo "Every conf key doctor knows is documented, and every /dg key a skill reads is one doctor knows:"
+# The /dg keys are read by an instruction, not a hook, so nothing fails when one is
+# renamed in the skill and not in doctor: the project's setting stops being read, and
+# doctor calls the old name unknown — or the new one (DG_WAIT_MINUTES, 2026-10-19).
+DOC=hooks/flight-rules-doctor.sh
+KNOWN=$(sed -n -E "s/^KNOWN='([^']*)'.*/\1/p" "$DOC")
+if [ -z "$KNOWN" ]; then bad "could not read KNOWN from $DOC"
+else
+  undoc=0
+  for k in $KNOWN; do
+    grep -qE '^\|[^|]*\| `'"$k"'` \|' hooks/README.md \
+      || { bad "$k is a key doctor knows, with no row in hooks/README.md's Configuration table"; undoc=1; }
+  done
+  [ "$undoc" -eq 0 ] && ok "$(printf '%s\n' $KNOWN | grep -c .) keys, each in the Configuration table"
+  for k in $(grep -rohE 'DG_[A-Z_]+' skills | sort -u); do
+    [[ " $KNOWN " == *" $k "* ]] && ok "$k (named in skills/) is a key doctor knows" \
+                                 || bad "$k is named in skills/, but doctor's KNOWN lacks it — doctor would call it unknown"
+  done
+fi
+
+echo "DG_WAIT_MINUTES has one default:"
+# The skill falls back to it, doctor's warning names it, the table documents it.
+W_SKILL=$(tr '\n' ' ' < skills/dg/SKILL.md | sed -n -E 's/.*`DG_WAIT_MINUTES`[^(]*\(default ([0-9]+).*/\1/p')
+W_DOC=$(sed -n '/^ *DG_WAIT_MINUTES)/,/;;/p' "$DOC" | sed -n -E 's/.*treats it as ([0-9]+).*/\1/p' | head -1)
+W_README=$(sed -n -E 's/^\|[^|]*\| `DG_WAIT_MINUTES` \|.*default `([0-9]+)`.*/\1/p' hooks/README.md)
+if [ -z "$W_SKILL" ] || [ -z "$W_DOC" ] || [ -z "$W_README" ]; then
+  bad "could not read the default from every place (skill '$W_SKILL', doctor '$W_DOC', README '$W_README')"
+elif [ "$W_SKILL" = "$W_DOC" ] && [ "$W_DOC" = "$W_README" ]; then
+  ok "skill, doctor and hooks/README.md all say $W_SKILL"
+else
+  bad "the default differs: skill $W_SKILL, doctor $W_DOC, hooks/README.md $W_README"
 fi
 
 echo
