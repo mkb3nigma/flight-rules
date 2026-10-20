@@ -394,7 +394,8 @@ Guards that fire on the assistant's own events, before git ever runs:
   regexes, that every script `.claude/settings.json` wires exists, and that the guard
   is wired once and actually enabled, and — with the plugin on — that no command or
   skill of the user's or project's own, named like a plugin skill, runs in its place
-  (⚠️; a pointer or a `flight-rules:<name>` wrapper is fine) — every one a state that has
+  (⚠️; a file with a line starting ``Read and follow `…skills/<name>/SKILL.md` `` or
+  ``Use the `flight-rules:<name>` skill`` is a pointer, not a shadow) — every one a state that has
   failed silently before. `session-start.sh` runs it daily and prints only problems.
   Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project (a headless session spends no

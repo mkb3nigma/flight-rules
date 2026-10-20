@@ -211,7 +211,7 @@ say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…without calling it 
 say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…naming the main checkout"
 say "$(cd "$D/.ai/hooks" && cksum * | sort)" "$BEFORE" "…and writes nothing there"
 CMD=$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')
-say "$CMD" "cd \"$D\" && bash \"$P/hooks/git/install.sh\" --from \"$P/hooks/git\" --stale-only" "…printing the command to run there"
+say "$CMD" "$(printf 'cd %q && bash %q --from %q --stale-only' "$D" "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the command to run there, its paths shell-quoted"
 # The command works when pasted, from anywhere: it syncs the main checkout's stale copy.
 PASTED=$(cd / && HOME="$D/fakehome" bash -c "$CMD" 2>&1); PRC=$?
 say "$PRC" "0" "…which, pasted, exits 0"
@@ -224,6 +224,22 @@ say "$(head -1 <<<"$OUT")" "1" "from a worktree, a hooksPath outside the reposit
 say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository"
 say "$(grep -c 'main checkout' <<<"$OUT")" "0" "…not as the main checkout"
 rm -rf "$D" "$P" "$O"
+# The printed command is pasted, so a path is quoted for the shell. Wrapped in "…", a
+# main checkout named with `$(…)` ran that command when pasted, and one with a `"`
+# broke it (0.26.0 release review, P2): the path is the user's own directory, but the
+# command has to work for any name it can have.
+D0=$(mkrepo); P=$(mkplugin); D="$(dirname "$D0")/r \$(touch pwned) q"; mv "$D0" "$D" || die "could not rename the fixture"
+echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the hostile-path fixture"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"; make_stale "$D" commit-msg
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+CMD=$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+S=$(cd "$(mktemp -d)" && pwd -P)
+PASTED=$(cd "$S" && HOME="$D/fakehome" bash -c "$CMD" 2>&1); PRC=$?
+say "$PRC" "0" "a main checkout whose path holds \$(…) and spaces: the pasted command exits 0"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…syncs the stale copy"
+say "$(ls "$S" | wc -l | tr -d ' ')" "0" "…and runs nothing the path spells out"
+rm -rf "$D" "$P" "$S"
 D=$(mkrepo); P=$(mkplugin); git -C "$D" config core.hooksPath .ai/gone
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "a hooksPath that does not exist: --stale-only refuses rather than re-pointing"

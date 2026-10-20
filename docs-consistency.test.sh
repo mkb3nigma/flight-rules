@@ -147,12 +147,14 @@ else
   # The check's own awk, run on pr-create's template: an untouched template, or a
   # section holding only the comic, must count as empty (final release /dg,
   # 2026-10-17: the comic slot's placeholder lines passed an untouched template).
-  PROG=$(sed -n "/| awk '\$/,/END {/p" "$RR" | sed -e '1d' -e "\$s/')\$//")
+  PROG=$(sed -n "/| awk '\$/,/END {/p" "$RR" | sed -e '1d' -e "\$s/').*\$//")
   TPL=$(sed -n "/--body \"\$(cat <<'EOF'/,/^EOF\$/p" skills/pr-create/SKILL.md)
-  # The awk prints two numbers: the section's filled lines, and its verdict headings.
+  # The awk prints three numbers: the section's filled lines, its verdict headings, and
+  # the lines of text under a verdict heading.
   filled()  { printf '%s\n' "$1" | awk "$PROG" 2>/dev/null; }
   count()   { set -- $(filled "$1"); printf '%s' "${1:-}"; }
   verdict() { set -- $(filled "$1"); printf '%s' "${2:-}"; }
+  under()   { set -- $(filled "$1"); printf '%s' "${3:-}"; }
   if [ -z "$PROG" ] || [ -z "$TPL" ]; then bad "could not extract $RR's awk or pr-create's template"
   else
     [ "$(count "$TPL")" = 0 ] && ok "$RR fails pr-create's untouched template" || bad "$RR passes pr-create's untouched template (counted $(count "$TPL"))"
@@ -171,7 +173,30 @@ else
     # HTML is a review, and used to count as empty.
     HTML=$(printf '## Adversarial review\n<p>Pre-review: ok</p>\n### Verdict\n<details><summary>V1</summary>applied in abc1234</details>\n## Testing\n')
     [ "$(count "$HTML")" = 3 ] && ok "a one-line HTML review counts as filled" || bad "$RR skips one-line HTML as a placeholder ($(count "$HTML"), want 3)"
+    # A `### Verdict` with nothing under it, or only the demoted headings, is a heading
+    # standing in for a review — the same hole #83 closed, one level down (0.26.0
+    # release review, P1).
+    [ "$(under "$FULL")" = 1 ] && ok "the filled section has its verdict's row under ### Verdict" || bad "$RR does not count the text under ### Verdict (got '$(under "$FULL")', want 1)"
+    BARE=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n## Testing\n')
+    SKEL=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n#### Agreed\n#### Recommended Actions\n### Comic\nx\n## Testing\n')
+    [ "$(under "$BARE")" = 0 ] && ok "a bare ### Verdict has nothing under it" || bad "$RR counts text under a bare ### Verdict (got '$(under "$BARE")', want 0)"
+    [ "$(under "$SKEL")" = 0 ] && ok "…nor does one holding only its demoted headings, the comic after it aside" || bad "$RR counts headings or the comic as a verdict (got '$(under "$SKEL")', want 0)"
   fi
+  # The step itself, as GitHub runs it (`bash -e`): it passes a filled body, fails a bare
+  # verdict, and fails when its awk dies. `set -- $(…)` exits 0 whatever the awk did, so
+  # a dead awk left both numbers empty, every test errored inside its `if`, and the step
+  # printed ok (0.26.0 release review, V1). The awk test above runs the program, never
+  # the shell around it.
+  RUN=$(sed -n '/run: |/,$p' "$RR" | sed -e '1d' -e 's/^          //')
+  FX=$(mktemp -d "${TMPDIR:-/tmp}/rr.XXXXXX"); printf '#!/bin/sh\nexit 2\n' > "$FX/awk"; chmod +x "$FX/awk"
+  step() { BODY="$1" PATH="${2:+$2:}$PATH" bash -e -c "$RUN" 2>&1; }
+  OUT=$(step "$FULL"); RC=$?
+  [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "the step passes a filled section" || bad "the step fails a filled section (exit $RC: $OUT)"
+  OUT=$(step "$BARE"); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare ### Verdict (exit $RC)" || bad "the step passes a bare ### Verdict (exit $RC: $OUT)"
+  OUT=$(step "$FULL" "$FX"); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the step passes when its awk dies (exit $RC: $OUT)"
+  rm -rf "$FX"
 fi
 
 echo "Every code fence in a shipped markdown file is closed:"
@@ -237,7 +262,10 @@ else
       || { bad "$k is a key doctor knows, with no row in hooks/README.md's Configuration table"; undoc=1; }
   done
   [ "$undoc" -eq 0 ] && ok "$(printf '%s\n' $KNOWN | grep -c .) keys, each in the Configuration table"
-  for k in $(grep -rohE 'DG_[A-Z_]+' skills | sort -u); do
+  # An empty list asserts nothing, so it is a failure, not a pass (0.26.0 release review).
+  DG_KEYS=$(grep -rohE 'DG_[A-Z_]+' skills | sort -u)
+  [ -n "$DG_KEYS" ] || bad "found no DG_* key named in skills/ — nothing to check"
+  for k in $DG_KEYS; do
     [[ " $KNOWN " == *" $k "* ]] && ok "$k (named in skills/) is a key doctor knows" \
                                  || bad "$k is named in skills/, but doctor's KNOWN lacks it — doctor would call it unknown"
   done

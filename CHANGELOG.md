@@ -8,8 +8,17 @@ this one does; every verdict below was run against both, not reasoned about.
 
 ### Upgrading
 
-Nothing to do. No git hook changed, so doctor reports none stale. One new optional
-`.ai/flight-rules.conf` key, `DG_WAIT_MINUTES`, is described below.
+No git hook changed, but `install.sh` did (#87), and the hook sync carries it. With
+`HOOK_SYNC=auto` the first session after the update replaces `.ai/hooks/install.sh` and
+leaves the diff for you to commit. With the default `report` nothing is said, because
+doctor checks only the hooks themselves (#90). Your old copy still works, and running
+the sync command brings it up to date:
+
+```bash
+bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git --stale-only
+```
+
+One new optional `.ai/flight-rules.conf` key, `DG_WAIT_MINUTES`, is described below.
 
 ### Fixed
 
@@ -19,9 +28,12 @@ Nothing to do. No git hook changed, so doctor reports none stale. One new option
   its findings reached no round (2026-10-18). Now round 1 starts in the same turn as
   the pre-review and the dependency scan, and stays blind to both. Round 2 waits for
   every pre-reviewer and the scan to finish or fail, then answers each of their
-  findings by ID. The debate can no longer converge before round 2. The wait is
-  bounded by the new `DG_WAIT_MINUTES` (default 15). A run with no result by then
-  counts as failed and is reported `⚠️ unavailable — no result in <n>m`.
+  findings. The debate can no longer converge before round 2. Each run gets
+  `DG_WAIT_MINUTES`, new in this release (default 15), from its own start. A run with
+  no result by then counts as failed. A cross-family run that times out starts the
+  same-family fallback, which gets its own `DG_WAIT_MINUTES`, so round 2 can wait about
+  twice the setting. If that run also fails, the result is reported
+  `⚠️ unavailable — no result in <n>m`.
   `flight-rules-doctor.sh` warns on a value that is not a positive whole number.
   Untested beyond reading: a `claude plugin eval` case did not reproduce the race
   headlessly (#89).
@@ -46,13 +58,18 @@ Nothing to do. No git hook changed, so doctor reports none stale. One new option
   the usual absolute path into the main checkout, and it is what `HOOK_SYNC=auto`
   printed in every worktree session. The hooks are still not synced from a worktree,
   because the write would land in another checkout's working tree. The message now
-  names the main checkout and prints a `cd "<main>" && … --stale-only` command that
-  works when pasted.
+  names the main checkout and prints a `cd <main> && … --stale-only` command that
+  works when pasted. Its paths are quoted for the shell, so a path containing `$(…)`
+  does not run that command when pasted. The same goes for the command
+  `HOOK_SYNC=auto` prints after skipping a sync while a merge, rebase or other
+  operation is in progress; since 0.25.0 that command wrapped its paths in `"…"`.
 
 ### Changed — this repo's release PRs
 
 - The `release review` check now also requires a `### Verdict` heading in the
-  **Adversarial review** section (#83). The `> Pre-review:` line alone used to pass.
+  **Adversarial review** section (#83), with text under it that is not a heading.
+  The `> Pre-review:` line alone used to pass. The check also fails when it cannot
+  count the section, instead of passing.
 - Only the `pr-create` template's own placeholder lines (`<the …>`, `<ONLY if …>`)
   count as empty. A review written as one-line HTML used to count as empty (#84).
 - `docs-consistency.test.sh` now also checks three things:
