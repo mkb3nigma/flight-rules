@@ -137,12 +137,13 @@ branch from a local copy and opening a fresh PR against the correct base.
    Recommended Actions) and every finding's disposition in the PR body under
    **Adversarial review**, each of the verdict's headings one level down (`###`, `####`;
    the review's own `## Review` title too)
-   — a `##` inside the section ends it, and the check below then finds it empty. No
+   — a `##` inside the section ends it (outside a code fence), and the check below then finds it empty. No
    round tables or banter. The comic, banter score included, goes in only as the
    project's `DG_COMIC_PR` says (`/dg` step 6; default `never`), as `### Comic` at the
    section's end. The `release review` workflow checks the section is there, holds text
-   other than the template's placeholders, and holds a `### Verdict` — the header lines
-   alone are not a verdict (#83) — and re-checks on every body edit. The assistant may decline a minor or important finding with its reason, where the
+   other than the template's placeholders, and holds a `### Verdict`, outside a code
+   fence, with text under it that is not a heading — the header lines alone are not a
+   verdict (#83), nor is a bare heading — and re-checks on every body edit. The assistant may decline a minor or important finding with its reason, where the
    owner reads it; a **critical** finding is the owner's to disposition — stop and
    ask. A finding applied arrives like any change, through a branch merged into
    `{INTEGRATION_BRANCH}`; then 2a runs again on the new tip, and `/dg` on the fix's

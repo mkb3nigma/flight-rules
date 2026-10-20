@@ -141,7 +141,9 @@ if [ -n "$FROM" ]; then
         # flight-rules-doctor.sh's hook_marker holds for it; keep them in step.
         elif [ "$h" = pre-commit ] && ! grep -q 'PRIVATE KEY' "$dst"; then
             echo "❌ $dst is not flight-rules' pre-commit (a linter? lint-staged?) and would be lost."
-            echo "   Rename it first — mv -n '$dst' '$dst.local' (merge by hand if a .local exists) — and re-run: the flight-rules one runs it after a clean scan."
+            echo "   Rename it first (merge by hand if a .local exists) and re-run: the flight-rules one runs it after a clean scan."
+            # A line of its own, %q not '…': it is pasted (0.26.0 fix review).
+            printf '   mv -n %q %q\n' "$dst" "$dst.local"
             exit 1
         else
             TO_COPY="$TO_COPY $h"

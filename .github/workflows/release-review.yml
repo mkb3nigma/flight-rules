@@ -41,17 +41,34 @@ jobs:
           # `### Verdict` — an undemoted `## Verdict` ends the section instead — with
           # text under it that is not a heading: a bare heading, or one holding only
           # its demoted `####` headings, passed too (0.26.0 release review). The
-          # verdict runs to the next `###`.
+          # verdict runs to the next `###`. A heading has a space or nothing after
+          # its hashes, so `#83 applied` is text (0.26.0 fix review). Any text
+          # counts, a lone `---` or table header too: an honest verdict with no
+          # findings has to pass, and this checks for a skipped step, not a forger.
+          #
+          # A code fence is text, never structure: a `### Verdict` inside one is an
+          # example, and a `## ` inside one does not end the section (0.26.0 fix
+          # review). Fences follow CommonMark, as docs-consistency.test.sh's own
+          # fence check does: the same character, at least as many, closes one.
           #
           # A dead awk fails the step. `set -- $(…)` exits 0 whatever the awk did, so
           # it left both numbers empty, every test below errored inside its `if`, and
           # the step printed ok (0.26.0 release review).
           counts=$(printf '%s\n' "$body" | awk '
-            /^## Adversarial review/ { in_s = 1; next }
-            in_s && (/^## / || /^### Comic/) { in_s = 0 }
-            in_s && /^###[[:space:]]/ { in_v = 0 }
-            in_s && /^###[[:space:]]+Verdict[[:space:]]*$/ { v++; in_v = 1 }
-            in_s && /[^[:space:]]/ && !/^[[:space:]]*<(the |ONLY if ).*>[[:space:]]*$/ { n++; if (in_v && !/^[[:space:]]*#/) b++ }
+            function run(t, c,   k) { k = 0; while (substr(t, k + 1, 1) == c) k++; return k }
+            {
+              fence = 0; l = $0; sub(/^[ \t]+/, "", l); c = substr(l, 1, 1)
+              if ((c == "`" || c == "~") && (k = run(l, c)) >= 3) {
+                if (!in_f) { if (!(c == "`" && index(substr(l, k + 1), "`"))) { in_f = 1; fc = c; fk = k; fence = 1 } }
+                else if (c == fc && k >= fk && substr(l, k + 1) ~ /^[ \t]*$/) { in_f = 0; fence = 1 }
+              }
+              text = in_f || fence
+            }
+            !text && /^## Adversarial review/ { in_s = 1; next }
+            in_s && !text && (/^## / || /^### Comic/) { in_s = 0 }
+            in_s && !text && /^###[[:space:]]/ { in_v = 0 }
+            in_s && !text && /^###[[:space:]]+Verdict[[:space:]]*$/ { v++; in_v = 1 }
+            in_s && /[^[:space:]]/ && !/^[[:space:]]*<(the |ONLY if ).*>[[:space:]]*$/ { n++; if (in_v && (text || !/^[[:space:]]*#+([[:space:]]|$)/)) b++ }
             END { print n + 0, v + 0, b + 0 }') || { echo "::error::could not read the PR body's Adversarial review section (awk exited $?)"; exit 1; }
           set -- $counts
           [ "$#" -eq 3 ] && [ -z "$(printf '%s' "$*" | tr -d '0-9 ')" ] \

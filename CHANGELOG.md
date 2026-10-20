@@ -9,10 +9,13 @@ this one does; every verdict below was run against both, not reasoned about.
 ### Upgrading
 
 No git hook changed, but `install.sh` did (#87), and the hook sync carries it. With
-`HOOK_SYNC=auto` the first session after the update replaces `.ai/hooks/install.sh` and
-leaves the diff for you to commit. With the default `report` nothing is said, because
-doctor checks only the hooks themselves (#90). Your old copy still works, and running
-the sync command brings it up to date:
+`HOOK_SYNC=auto`, the first session after the update replaces `.ai/hooks/install.sh` and
+leaves the diff for you to commit. That happens when the session is in the main checkout,
+your copy is unmodified, and no merge or rebase is in progress; otherwise the session
+says why it skipped. With the default `report` nothing is said, because doctor checks
+only the hooks themselves (#90). Your old copy still works. To bring it up to date, run
+this from the project's main checkout, where `<plugin>` is
+`~/.claude/plugins/cache/<marketplace>/flight-rules/0.26.0`:
 
 ```bash
 bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git --stale-only
@@ -62,14 +65,18 @@ One new optional `.ai/flight-rules.conf` key, `DG_WAIT_MINUTES`, is described be
   works when pasted. Its paths are quoted for the shell, so a path containing `$(…)`
   does not run that command when pasted. The same goes for the command
   `HOOK_SYNC=auto` prints after skipping a sync while a merge, rebase or other
-  operation is in progress; since 0.25.0 that command wrapped its paths in `"…"`.
+  operation is in progress; since 0.25.0 that command wrapped its paths in `"…"`. It
+  also goes for the `mv -n` rename `install.sh` prints when your own pre-commit is in
+  the way; that one wrapped its paths in `'…'` and is now on a line of its own.
 
 ### Changed — this repo's release PRs
 
 - The `release review` check now also requires a `### Verdict` heading in the
   **Adversarial review** section (#83), with text under it that is not a heading.
-  The `> Pre-review:` line alone used to pass. The check also fails when it cannot
-  count the section, instead of passing.
+  The `> Pre-review:` line alone used to pass. A line like `#83 applied` counts as
+  text, not as a heading. Inside a code fence, a `### Verdict` is not the verdict, and
+  a `## ` line does not end the section. The check also fails when it cannot count
+  the section, instead of passing.
 - Only the `pr-create` template's own placeholder lines (`<the …>`, `<ONLY if …>`)
   count as empty. A review written as one-line HTML used to count as empty (#84).
 - `docs-consistency.test.sh` now also checks three things:
