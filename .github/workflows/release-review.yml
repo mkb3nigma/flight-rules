@@ -42,7 +42,10 @@ jobs:
           # text under it that is not a heading: a bare heading, or one holding only
           # its demoted `####` headings, passed too (0.26.0 release review). The
           # verdict runs to the next `###`. A heading has a space or nothing after
-          # its hashes, so `#83 applied` is text (0.26.0 fix review). Any text
+          # its hashes, so `#83 applied` is text (0.26.0 fix review), and up to
+          # three spaces before them: matched at column 1 only, ` ## Testing` did
+          # not end the section and a bare verdict took the text after it (0.26.0
+          # third review). Four spaces is an indented code block, so text. Any text
           # counts, a lone `---` or table header too: an honest verdict with no
           # findings has to pass, and this checks for a skipped step, not a forger.
           #
@@ -63,12 +66,13 @@ jobs:
                 else if (c == fc && k >= fk && substr(l, k + 1) ~ /^[ \t]*$/) { in_f = 0; fence = 1 }
               }
               text = in_f || fence
+              h = $0; sub(/^(   |  | )/, "", h)
             }
-            !text && /^## Adversarial review/ { in_s = 1; next }
-            in_s && !text && (/^## / || /^### Comic/) { in_s = 0 }
-            in_s && !text && /^###[[:space:]]/ { in_v = 0 }
-            in_s && !text && /^###[[:space:]]+Verdict[[:space:]]*$/ { v++; in_v = 1 }
-            in_s && /[^[:space:]]/ && !/^[[:space:]]*<(the |ONLY if ).*>[[:space:]]*$/ { n++; if (in_v && (text || !/^[[:space:]]*#+([[:space:]]|$)/)) b++ }
+            !text && h ~ /^## Adversarial review/ { in_s = 1; next }
+            in_s && !text && (h ~ /^## / || h ~ /^### Comic/) { in_s = 0 }
+            in_s && !text && h ~ /^###[[:space:]]/ { in_v = 0 }
+            in_s && !text && h ~ /^###[[:space:]]+Verdict[[:space:]]*$/ { v++; in_v = 1 }
+            in_s && /[^[:space:]]/ && !/^[[:space:]]*<(the |ONLY if ).*>[[:space:]]*$/ { n++; if (in_v && (text || h !~ /^#+([[:space:]]|$)/)) b++ }
             END { print n + 0, v + 0, b + 0 }') || { echo "::error::could not read the PR body's Adversarial review section (awk exited $?)"; exit 1; }
           set -- $counts
           [ "$#" -eq 3 ] && [ -z "$(printf '%s' "$*" | tr -d '0-9 ')" ] \

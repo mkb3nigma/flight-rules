@@ -9,12 +9,18 @@ this one does; every verdict below was run against both, not reasoned about.
 ### Upgrading
 
 No git hook changed, but `install.sh` did (#87), and the hook sync carries it. With
-`HOOK_SYNC=auto`, the first session after the update replaces `.ai/hooks/install.sh` and
-leaves the diff for you to commit. That happens when the session is in the main checkout,
-your copy is unmodified, and no merge or rebase is in progress; otherwise the session
-says why it skipped. With the default `report` nothing is said, because doctor checks
-only the hooks themselves (#90). Your old copy still works. To bring it up to date, run
-this from the project's main checkout, where `<plugin>` is
+`HOOK_SYNC=auto`, a session replaces an unmodified `.ai/hooks/install.sh` and leaves the
+diff for you to commit. Where that happens depends on `core.hooksPath`:
+- The usual absolute path into the main checkout: only a session there syncs. A session
+  in a worktree prints the command to run there instead.
+- A relative path: each worktree's session syncs its own copy.
+
+No sync runs while a merge, rebase or similar operation is in progress, and the session
+says so. A copy you changed is left alone, and nothing is said about it, because this
+release syncs no other file. With the default `report` nothing is said either, because
+doctor checks only the hooks themselves (#90). An old or changed copy still works. To
+see where yours stands, or to update an unmodified one, run this from the checkout
+`core.hooksPath` points into, where `<plugin>` is
 `~/.claude/plugins/cache/<marketplace>/flight-rules/0.26.0`:
 
 ```bash
@@ -74,8 +80,9 @@ One new optional `.ai/flight-rules.conf` key, `DG_WAIT_MINUTES`, is described be
 - The `release review` check now also requires a `### Verdict` heading in the
   **Adversarial review** section (#83), with text under it that is not a heading.
   The `> Pre-review:` line alone used to pass. A line like `#83 applied` counts as
-  text, not as a heading. Inside a code fence, a `### Verdict` is not the verdict, and
-  a `## ` line does not end the section. The check also fails when it cannot count
+  text, not as a heading, and a heading indented by up to three spaces counts as a
+  heading. Inside a code fence, a `### Verdict` is not the verdict, and a `## ` line
+  does not end the section. The check also fails when it cannot count
   the section, instead of passing.
 - Only the `pr-create` template's own placeholder lines (`<the …>`, `<ONLY if …>`)
   count as empty. A review written as one-line HTML used to count as empty (#84).

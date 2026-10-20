@@ -191,6 +191,28 @@ else
     [ "$(verdict "$FENCED")" = 0 ] && ok "a ### Verdict inside a code fence is not the verdict" || bad "$RR counts a fenced ### Verdict (got '$(verdict "$FENCED")', want 0)"
     INNER=$(printf '## Adversarial review\n### Verdict\n~~~\n## not a heading\n~~~\n| V1 | applied |\n## Testing\n')
     [ "$(under "$INNER")" = 4 ] && ok "…and a ## inside a fence does not end the section" || bad "$RR ends the section at a fenced ## (under '$(under "$INNER")', want 4)"
+    # A heading may be indented up to three spaces; four is an indented code block,
+    # so text (CommonMark). Matched at column 1 only, ` ## Testing` did not end the
+    # section and a bare verdict took the text after it (0.26.0 third review, X1).
+    INDH2=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n ## Testing\nran the suites\n')
+    INDCOMIC=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n   ### Comic\nx\n## Testing\n')
+    CODE4=$(printf '## Adversarial review\n### Verdict\n    ## indented code, not a heading\n| V1 | applied |\n## Testing\n')
+    [ "$(under "$INDH2")" = 0 ] && ok "an indented ## ends the section" || bad "$RR does not end the section at ' ## Testing' (under '$(under "$INDH2")', want 0)"
+    [ "$(under "$INDCOMIC")" = 0 ] && ok "…and an indented ### Comic ends the verdict" || bad "$RR does not end the verdict at '   ### Comic' (under '$(under "$INDCOMIC")', want 0)"
+    [ "$(under "$CODE4")" = 2 ] && ok "…while four spaces is code, so text" || bad "$RR reads a 4-space-indented ## as a heading (under '$(under "$CODE4")', want 2)"
+    # The close rule, case by case: each of these passed with the rule broken — any
+    # fence line closing, the backtick-in-info-string rule gone, or a run of one
+    # opening a fence (0.26.0 third review, X3).
+    LONG=$(printf '## Adversarial review\n### Verdict\n````\n```\n## inside\n```\n````\n| V1 | applied |\n## Testing\n')
+    TILDE=$(printf '## Adversarial review\n### Verdict\n~~~\n```\n## inside\n~~~\n| V1 | applied |\n## Testing\n')
+    INLINE3=$(printf '## Adversarial review\n### Verdict\n```x``` is inline code\n## Testing\nafter\n')
+    INLINE1=$(printf '## Adversarial review\n### Verdict\n`x` applied\n## Testing\nafter\n')
+    [ "$(under "$LONG")" = 6 ] && ok "a \`\`\` line does not close a \`\`\`\` fence" || bad "$RR closes a \`\`\`\` fence at \`\`\` (under '$(under "$LONG")', want 6)"
+    [ "$(under "$TILDE")" = 5 ] && ok "…nor does it close a ~~~ fence" || bad "$RR closes a ~~~ fence at \`\`\` (under '$(under "$TILDE")', want 5)"
+    [ "$(under "$INLINE3")" = 1 ] && ok "…a line of inline \`\`\`code\`\`\` opens no fence" || bad "$RR opens a fence at inline \`\`\`code\`\`\` (under '$(under "$INLINE3")', want 1)"
+    [ "$(under "$INLINE1")" = 1 ] && ok "…nor does a line starting with \`code\`" || bad "$RR opens a fence at a line starting \`x\` (under '$(under "$INLINE1")', want 1)"
+    APPROX=$(printf '## Adversarial review\n### Verdict\n~2 minutes of CI, applied\n## Testing\nafter\n')
+    [ "$(under "$APPROX")" = 1 ] && ok "…nor one starting with a single ~" || bad "$RR opens a fence at a line starting '~2' (under '$(under "$APPROX")', want 1)"
   fi
   # The step itself, as GitHub runs it (`bash -e`): it passes a filled body, fails a bare
   # verdict, and fails when its awk dies. `set -- $(…)` exits 0 whatever the awk did, so
@@ -208,6 +230,8 @@ else
   [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes a verdict whose line starts #83" || bad "the step fails a verdict whose line starts #83 (exit $RC: $OUT)"
   OUT=$(step "$FENCED"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a verdict that is only inside a code fence (exit $RC)" || bad "the step passes a fenced-only verdict (exit $RC: $OUT)"
+  OUT=$(step "$INDH2"); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare verdict followed by an indented ## (exit $RC)" || bad "the step passes a bare verdict followed by ' ## Testing' (exit $RC: $OUT)"
   OUT=$(step "$FULL" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the step passes when its awk dies (exit $RC: $OUT)"
   rm -rf "$FX"
