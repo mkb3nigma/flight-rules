@@ -309,7 +309,7 @@ say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, in a worktree, hooks in the main ch
 say "$(grep -c 'could not update the git hooks' <<<"$OUT")" "1" "…says it did not sync"
 say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…because the hooks are the main checkout's"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…not because they are outside the repository"
-say "$(grep -cF "cd \"$D\" && bash \"$T/hooks/git/install.sh\" --from \"$T/hooks/git\" --stale-only" <<<"$OUT")" "1" "…and gives the command to run there"
+say "$(grep -cF "$(printf 'cd %q && bash %q --from %q --stale-only' "$D" "$T/hooks/git/install.sh" "$T/hooks/git")" <<<"$OUT")" "1" "…and gives the command to run there, its paths shell-quoted"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" && echo stale)" "stale" "…leaving the main checkout's copy as it was"
 rm -rf "$D"
 # Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
@@ -323,6 +323,9 @@ OUT=$(PRUN)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-merge: the hook exits 0"
 say "$(grep -c 'skipped the git hooks: a merge is in progress' <<<"$OUT")" "1" "…says the sync was skipped and why"
 say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and how to clear one left behind"
+# The command is pasted, so its paths are quoted for the shell, not wrapped in "…": a
+# path holding `$(…)` or `"` ran or broke when pasted (0.26.0 release review, P2).
+say "$(grep -cxF "  $(printf 'bash %q --from %q --stale-only' "$T/hooks/git/install.sh" "$T/hooks/git")" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 rm -rf "$D"

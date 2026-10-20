@@ -101,7 +101,9 @@ if [ -n "$FROM" ]; then
             MAIN=$(main_checkout || true)
             if [ -n "$MAIN" ] && inside "$HOOKS_DIR" "$MAIN"; then
                 echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. Start a session there, or run:"
-                echo "   cd \"$MAIN\" && bash \"$FROM/install.sh\" --from \"$FROM\" --stale-only"
+                # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it
+                # was (0.26.0 release review).
+                printf '   cd %q && bash %q --from %q --stale-only\n' "$MAIN" "$FROM/install.sh" "$FROM"
                 exit 1
             fi
             echo "❌ core.hooksPath=$HOOKS_PATH is outside this repository — not touched; sync it by hand"; exit 1
