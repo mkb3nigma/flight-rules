@@ -160,6 +160,39 @@ else
   fi
 fi
 
+echo "Every conf key doctor knows is documented, and every /dg key a skill reads is one doctor knows:"
+# The /dg keys are read by an instruction, not a hook, so nothing fails when one is
+# renamed in the skill and not in doctor: the project's setting stops being read, and
+# doctor calls the old name unknown — or the new one (DG_WAIT_MINUTES, 2026-10-19).
+DOC=hooks/flight-rules-doctor.sh
+KNOWN=$(sed -n -E "s/^KNOWN='([^']*)'.*/\1/p" "$DOC")
+if [ -z "$KNOWN" ]; then bad "could not read KNOWN from $DOC"
+else
+  undoc=0
+  for k in $KNOWN; do
+    grep -qE '^\|[^|]*\| `'"$k"'` \|' hooks/README.md \
+      || { bad "$k is a key doctor knows, with no row in hooks/README.md's Configuration table"; undoc=1; }
+  done
+  [ "$undoc" -eq 0 ] && ok "$(printf '%s\n' $KNOWN | grep -c .) keys, each in the Configuration table"
+  for k in $(grep -rohE 'DG_[A-Z_]+' skills | sort -u); do
+    [[ " $KNOWN " == *" $k "* ]] && ok "$k (named in skills/) is a key doctor knows" \
+                                 || bad "$k is named in skills/, but doctor's KNOWN lacks it — doctor would call it unknown"
+  done
+fi
+
+echo "DG_WAIT_MINUTES has one default:"
+# The skill falls back to it, doctor's warning names it, the table documents it.
+W_SKILL=$(tr '\n' ' ' < skills/dg/SKILL.md | sed -n -E 's/.*`DG_WAIT_MINUTES`[^(]*\(default ([0-9]+).*/\1/p')
+W_DOC=$(sed -n '/^ *DG_WAIT_MINUTES)/,/;;/p' "$DOC" | sed -n -E 's/.*treats it as ([0-9]+).*/\1/p' | head -1)
+W_README=$(sed -n -E 's/^\|[^|]*\| `DG_WAIT_MINUTES` \|.*default `([0-9]+)`.*/\1/p' hooks/README.md)
+if [ -z "$W_SKILL" ] || [ -z "$W_DOC" ] || [ -z "$W_README" ]; then
+  bad "could not read the default from every place (skill '$W_SKILL', doctor '$W_DOC', README '$W_README')"
+elif [ "$W_SKILL" = "$W_DOC" ] && [ "$W_DOC" = "$W_README" ]; then
+  ok "skill, doctor and hooks/README.md all say $W_SKILL"
+else
+  bad "the default differs: skill $W_SKILL, doctor $W_DOC, hooks/README.md $W_README"
+fi
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

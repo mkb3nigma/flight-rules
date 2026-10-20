@@ -168,7 +168,7 @@ else bad "neither jq nor python3 on PATH — the agent guard will deny every git
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 CONF=".ai/flight-rules.conf"
-KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC DG_COMIC DG_COMIC_PR'
+KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
 else
@@ -238,6 +238,9 @@ else
           never|ask|always) ok "$key=$val" ;;
           *) warn "$key='$val' is not never, ask or always — /dg treats it as never and keeps the comic out of PRs" ;;
         esac ;;
+      DG_WAIT_MINUTES)
+        if [[ "$val" =~ ^0*[1-9][0-9]*$ ]]; then ok "$key=$val"
+        else warn "$key='$val' is not a positive whole number of minutes — /dg treats it as 15 and stops waiting for a pre-review after that"; fi ;;
       *) ok "$key=$val" ;;
     esac
   done < "$CONF"
