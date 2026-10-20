@@ -558,6 +558,23 @@ printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/.claude/se
 say "$(has "$D" "no agent guard wired")" "0" "a plugin disabled at project scope does not count as wired"
 rm -rf "$D"
 
+# settings.local.json is git-ignored, so it exists only in the checkout that wrote it,
+# and Claude Code applies the MAIN worktree's to a session in any linked one (probe,
+# 2026-10-19). doctor read only the worktree's own and warned "no agent guard" in every
+# worktree of a project that enables the plugin there (#88).
+D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"
+printf '{}' > "$D/fakehome/.claude/settings.json"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/.claude/settings.local.json"
+git -C "$D" commit -q --allow-empty -m init
+git -C "$D" worktree add -q "$D/.ai/worktrees/w" -b w || die "worktree add failed in $D"
+mkdir -p "$D/.ai/worktrees/w/fakehome/.claude"; printf '{}' > "$D/.ai/worktrees/w/fakehome/.claude/settings.json"
+[ -e "$D/.ai/worktrees/w/.claude/settings.local.json" ] && die "the fixture's worktree has its own settings.local.json"
+say "$(has "$D/.ai/worktrees/w" "agent guard via the plugin")" "0" "a linked worktree: plugin enabled in the main checkout's settings.local.json → wired"
+say "$(has "$D/.ai/worktrees/w" "no agent guard wired")" "1" "…and not declared absent"
+printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/.claude/settings.local.json"
+say "$(has "$D/.ai/worktrees/w" "no agent guard wired")" "0" "…while disabled there, the worktree still warns"
+rm -rf "$D"
+
 D=$(mkrepo); mkdir -p "$D/.claude/" "$D/.ai/hooks/agent"
 printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash .ai/hooks/agent/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
 printf '#!/bin/bash\n[[ "$COMMAND" == *"git commit"* ]]\n' > "$D/.ai/hooks/agent/pre-commit-check.sh"
