@@ -296,6 +296,22 @@ say "$(ls "$D/fakehome/githooks" | wc -l | tr -d ' ')" "0" "…and writes nothin
 # runs hooks from, and it lacks the flight-rules ones — the honest diagnosis.
 say "$(grep -c 'missing from' <<<"$OUT")" "6" "…while doctor reports the global directory as missing every hook"
 rm -rf "$D"
+# A session in a linked worktree, with the usual install: an absolute core.hooksPath into
+# the main checkout, shared by every worktree. Not synced from here, and said as such
+# with the command for the main checkout — it read "outside this repository; sync it by
+# hand", and a downstream project's worktree sessions never synced (#87, 2026-10-18).
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+OUT=$( { (cd "$D/.ai/worktrees/wt" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
+say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, in a worktree, hooks in the main checkout: the hook exits 0"
+say "$(grep -c 'could not update the git hooks' <<<"$OUT")" "1" "…says it did not sync"
+say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…because the hooks are the main checkout's"
+say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…not because they are outside the repository"
+say "$(grep -cF "cd \"$D\" && bash \"$T/hooks/git/install.sh\" --from \"$T/hooks/git\" --stale-only" <<<"$OUT")" "1" "…and gives the command to run there"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" && echo stale)" "stale" "…leaving the main checkout's copy as it was"
+rm -rf "$D"
 # Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
