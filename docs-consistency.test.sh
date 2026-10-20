@@ -181,6 +181,16 @@ else
     SKEL=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n#### Agreed\n#### Recommended Actions\n### Comic\nx\n## Testing\n')
     [ "$(under "$BARE")" = 0 ] && ok "a bare ### Verdict has nothing under it" || bad "$RR counts text under a bare ### Verdict (got '$(under "$BARE")', want 0)"
     [ "$(under "$SKEL")" = 0 ] && ok "…nor does one holding only its demoted headings, the comic after it aside" || bad "$RR counts headings or the comic as a verdict (got '$(under "$SKEL")', want 0)"
+    # A line is a heading only with a space (or nothing) after its hashes: `#83 applied`
+    # is a paragraph, and this repo writes dispositions that way (0.26.0 fix review, W2).
+    ISSUE=$(printf '## Adversarial review\n> Pre-review: ok\n### Verdict\n#83 applied in abc1234\n## Testing\n')
+    [ "$(under "$ISSUE")" = 1 ] && ok "a verdict line starting #83 is text, not a heading" || bad "$RR reads '#83 applied' as a heading (got '$(under "$ISSUE")', want 1)"
+    # A code fence is text, never structure (W3): a `### Verdict` inside one is an
+    # example, not the verdict, and a `## ` inside one does not end the section.
+    FENCED=$(printf '## Adversarial review\n> Pre-review: ok\n```md\n### Verdict\n| V1 | x |\n```\n## Testing\n')
+    [ "$(verdict "$FENCED")" = 0 ] && ok "a ### Verdict inside a code fence is not the verdict" || bad "$RR counts a fenced ### Verdict (got '$(verdict "$FENCED")', want 0)"
+    INNER=$(printf '## Adversarial review\n### Verdict\n~~~\n## not a heading\n~~~\n| V1 | applied |\n## Testing\n')
+    [ "$(under "$INNER")" = 4 ] && ok "…and a ## inside a fence does not end the section" || bad "$RR ends the section at a fenced ## (under '$(under "$INNER")', want 4)"
   fi
   # The step itself, as GitHub runs it (`bash -e`): it passes a filled body, fails a bare
   # verdict, and fails when its awk dies. `set -- $(…)` exits 0 whatever the awk did, so
@@ -194,6 +204,10 @@ else
   [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "the step passes a filled section" || bad "the step fails a filled section (exit $RC: $OUT)"
   OUT=$(step "$BARE"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare ### Verdict (exit $RC)" || bad "the step passes a bare ### Verdict (exit $RC: $OUT)"
+  OUT=$(step "$ISSUE"); RC=$?
+  [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes a verdict whose line starts #83" || bad "the step fails a verdict whose line starts #83 (exit $RC: $OUT)"
+  OUT=$(step "$FENCED"); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a verdict that is only inside a code fence (exit $RC)" || bad "the step passes a fenced-only verdict (exit $RC: $OUT)"
   OUT=$(step "$FULL" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the step passes when its awk dies (exit $RC: $OUT)"
   rm -rf "$FX"

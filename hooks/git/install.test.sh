@@ -123,6 +123,21 @@ say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit")" "1" "…the project's p
 say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…and the stale commit-msg IS updated"
 rm -rf "$D" "$P"
 
+# The rename is printed on a line of its own for pasting, its paths quoted for the
+# shell. In '…' a path holding a quote and `$(…)` ran that command when pasted (0.26.0
+# fix review, W1) — the class the --stale-only command was fixed for one screen away.
+D0=$(mkrepo); P=$(mkplugin); D="$(dirname "$D0")/p '\$(touch pwned)' q"; mv "$D0" "$D" || die "could not rename the fixture"
+printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+CMD=$(grep -E '^[[:space:]]+mv -n ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$(printf '%s\n' "$CMD" | grep -c .)" "1" "a linter's pre-commit, in a path holding a quote and \$(…): the rename is a line of its own"
+S=$(cd "$(mktemp -d)" && pwd -P)
+(cd "$S" && bash -c "$CMD") >/dev/null 2>&1; PRC=$?
+say "$PRC" "0" "…which, pasted, exits 0"
+say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "…moves the project's pre-commit to pre-commit.local"
+say "$(ls "$S" | wc -l | tr -d ' ')" "0" "…and runs nothing the path spells out"
+rm -rf "$D" "$P" "$S"
+
 echo "install.sh updates itself when it is the file running:"
 # The project's copy is what the CHANGELOG told people to run. bash reads a running
 # script incrementally, so overwriting it in place is a hazard; the copy goes via mv.
