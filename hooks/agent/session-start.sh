@@ -131,16 +131,19 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     # Asked from the directory that holds the hooks, not this checkout's top: from a
     # worktree whose hooks are in the main checkout, `status -- <that path>` is refused
     # (exit 128), and with 2>/dev/null that read as "no changes" (#93 batch review, B8).
-    # A status that fails is said, not taken for clean.
+    # A status that fails is said, not taken for clean. Only its stdout is the answer: a
+    # status that succeeds with a warning on stderr (an unreadable directory among the
+    # hooks) put the warning on screen as "uncommitted changes" every session (second
+    # review, C2). A failed one is asked again for its reason.
     _top=$(git rev-parse --show-toplevel 2>/dev/null)
     _hp=$(git config --local --path core.hooksPath)
     # if, not case: a case pattern's `)` inside this $( … ) is a syntax error to bash 3.2.
     if [ "${_hp#/}" != "$_hp" ]; then _hd="$_hp"; else _hd="$_top/$_hp"; fi
     _own=$(git -C "$_hd" rev-parse --show-toplevel 2>/dev/null)
     _in=""; [ "$_own" = "$_top" ] || _in=" in $_own"
-    if ! _changed=$(git -C "$_hd" -c status.relativePaths=false status --short -- . 2>&1); then
+    if ! _changed=$(git -C "$_hd" -c status.relativePaths=false status --short -- . 2>/dev/null); then
       echo "⚠️ flight-rules could not check the git hooks for uncommitted changes:"
-      printf '%s\n' "$_changed" | sed 's/^/  /'
+      git -C "$_hd" status --short -- . 2>&1 | sed 's/^/  /'
       echo ""
     elif [ -n "$_changed" ]; then
       echo "📝 flight-rules: the git hooks have uncommitted changes$_in — yours, or a headless session's HOOK_SYNC=auto, whose notice no one saw. \`git status\` and \`git diff HEAD\` there show them; commit what should stay:"

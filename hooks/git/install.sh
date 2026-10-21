@@ -120,6 +120,10 @@ if [ -n "$FROM" ]; then
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
+            # A missing install.sh is no reason to send anyone to the main checkout:
+            # nothing needs it, and doctor does not name it. It was, every day, from
+            # every worktree (second review, C1). A missing hook still is.
+            [ -n "$MAIN" ] && [ "$h" = install.sh ] && continue
             [ -z "$MAIN" ] || echo "   $h: missing"
             TO_COPY="$TO_COPY $h"
         elif cmp -s "$src" "$dst"; then
@@ -128,6 +132,15 @@ if [ -n "$FROM" ]; then
             if ver=$(release_of "$dst"); then
                 echo "   $h: the flight-rules $ver copy — $ACT"
                 TO_COPY="$TO_COPY $h"
+            # An install.sh without this header phrase is the project's own script, not
+            # an edited copy of flight-rules': no stale copy, and not one to tell anyone
+            # to mark `adapted` (second review, C4). The phrase is in every revision of
+            # this file; flight-rules-doctor.sh's hook_marker holds the same one — keep
+            # them in step. A heuristic, not a signature. The full install still
+            # replaces such a file: #97. Exit 1 only — no match — so a grep that fails
+            # (an unreadable file) is not taken for "the project's own" and skipped.
+            elif [ "$h" = install.sh ] && { grep -qF 'committed git hooks into git' "$dst"; [ $? -eq 1 ]; }; then
+                :
             # A comment line of its own, `# flight-rules: adapted`: the phrase also sits in
             # this script's text, so an unanchored match took an edited install.sh as
             # marked by nobody (release review, 2026-10-12). Same pattern in doctor.

@@ -273,6 +273,38 @@ say "$(head -1 <<<"$OUT")" "1" "…one missing copy there: exit 1"
 say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…with the main-checkout message"
 say "$(grep -c '^   pre-rebase: missing$' <<<"$OUT")" "1" "…naming the missing copy"
 say "$([ -f "$D/.ai/hooks/pre-rebase" ] && echo written || echo absent)" "absent" "…and nothing written"
+# No install.sh there at all: nothing needs it (doctor does not name it), so it is no
+# reason to send anyone to the main checkout — it was, every day (second review, C1).
+cp "$P/hooks/git/pre-rebase" "$P/hooks/git/post-merge" "$D/.ai/hooks/"; rm "$D/.ai/hooks/install.sh"; BEFORE=$(sums "$D/.ai/hooks")
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "…no install.sh there, every hook current: exit 0"
+say "$(tail -n +2 <<<"$OUT" | grep -c .)" "0" "…saying nothing"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing there"
+make_stale "$D" commit-msg
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "…no install.sh and a stale hook: exit 1, the hook still counts"
+say "$(grep -c 'install.sh: missing' <<<"$OUT")" "0" "…without naming install.sh as missing"
+rm -rf "$D" "$P"
+# A project's own install.sh in the hooks directory — one that is not flight-rules' at
+# all — is no stale copy: --stale-only said "differs from every release… add
+# '# flight-rules: adapted'" about it whenever another hook synced, while doctor names
+# no such file (second review, C4). Skipped without a word; flight-rules' own copy,
+# edited, is still named.
+D=$(mkrepo); P=$(mkplugin)
+printf '#!/bin/sh\n# our setup script\ngit config merge.ff false\n' > "$D/.ai/hooks/install.sh"; make_stale "$D" commit-msg
+OWN=$(cksum < "$D/.ai/hooks/install.sh")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "a project's own install.sh beside a stale hook: exit 0"
+say "$(grep -c '^   synced commit-msg' <<<"$OUT")" "1" "…the stale hook is synced"
+say "$(grep -c 'install.sh' <<<"$OUT")" "0" "…and nothing is said about install.sh"
+say "$(cksum < "$D/.ai/hooks/install.sh")" "$OWN" "…which is left as it was"
+cp "$P/hooks/git/install.sh" "$D/.ai/hooks/install.sh"; make_adapted "$D" install.sh
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(grep -c 'install.sh: differs from every flight-rules release' <<<"$OUT")" "1" "flight-rules' install.sh, edited: still named as differing"
+chmod 000 "$D/.ai/hooks/install.sh"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+chmod 644 "$D/.ai/hooks/install.sh"
+say "$(grep -c 'install.sh: differs from every flight-rules release' <<<"$OUT")" "1" "an unreadable install.sh is named, not taken for the project's own"
 rm -rf "$D" "$P"
 # An exported MAIN in the caller's environment is not this script's. Read before it was
 # set, it made a plain --from install a silent no-op and an update a false main-checkout

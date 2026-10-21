@@ -335,6 +335,41 @@ J=$(WT)
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…an uncommitted change to a hook in the main checkout: said on screen from the worktree"
 say "$(usr <<<"$J" | grep -c 'M .ai/hooks/post-merge')" "1" "…naming the file"
 say "$(usr <<<"$J" | grep -cF "in $D")" "1" "…and the checkout it is in"
+# A status git cannot answer is said, with git's reason, not read as clean (second
+# review, C3): the main checkout's index corrupted, asked from the worktree.
+git -C "$D" checkout -q -- .ai/hooks/post-merge; cp "$D/.git/index" "$D/index.bak"; printf 'x' > "$D/.git/index"
+J=$(WT)
+mv "$D/index.bak" "$D/.git/index"
+say "$(usr <<<"$J" | grep -c 'could not check the git hooks for uncommitted changes')" "1" "…a status that fails: said on screen as not checked"
+say "$(usr <<<"$J" | grep -c 'fatal:')" "1" "…with git's reason"
+say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "…and not as uncommitted changes"
+rm -rf "$D"
+# No install.sh in the main checkout at all — nothing needs it, and doctor does not
+# name it — was a "could not update" every day from every worktree (second review, C1).
+D=$(mkrepo); rm -f "$D/.ai/hooks/install.sh"; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+say "$(WT | grep -c 'could not update the git hooks\|main checkout\|install.sh: missing')" "0" "auto, in a worktree, no install.sh in the main checkout, hooks current: says nothing about the sync"
+stale "$D" commit-msg; git -C "$D" commit -qam "chore: stale" --no-verify
+J=$(WT)
+say "$(usr <<<"$J" | grep -c 'is in the main checkout')" "1" "…while a stale hook there, same fixture, still gets the main-checkout command"
+say "$(usr <<<"$J" | grep -c 'install.sh: missing')" "0" "…without naming install.sh as missing"
+rm -rf "$D"
+# A status that succeeds but warns on stderr — an unreadable directory among the hooks —
+# showed the warning on screen as "uncommitted changes" every session: stderr was read
+# with stdout (second review, C2). Only stdout is the answer; stderr is shown when the
+# status fails.
+D=$(mkrepo); cp "$H/../git/install.sh" "$D/.ai/hooks/"; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
+mkdir -p "$D/.ai/hooks/sub"; : > "$D/.ai/hooks/sub/x"; chmod 000 "$D/.ai/hooks/sub"
+J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) )
+chmod 755 "$D/.ai/hooks/sub"
+say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "a status that warns but succeeds: no uncommitted-changes notice"
+say "$(usr <<<"$J" | grep -c 'could not check')" "0" "…and no could-not-check notice"
+rm -rf "$D/.ai/hooks/sub"; echo '# flight-rules: adapted' >> "$D/.ai/hooks/post-merge"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) | usr | grep -c 'git hooks have uncommitted changes')" "1" "…while a real uncommitted change, same fixture, is still said"
 rm -rf "$D"
 # Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
