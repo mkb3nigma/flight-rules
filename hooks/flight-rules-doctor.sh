@@ -140,6 +140,24 @@ else
         ok "$h installed and executable"
       fi
     done
+    # The sync updates install.sh with the hooks, so a stale copy is named too: 0.26.0
+    # changed only it, and under HOOK_SYNC=report nothing said so (#90). A warning, not a
+    # problem — it guards nothing, an old copy works as it did, and the commands printed
+    # here run this flight-rules' own. Missing is not reported: nothing needs it.
+    if [[ -f "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]] \
+       && ! cmp -s "$HOOKS_DIR/install.sh" "$GIT_HOOKS_SRC/install.sh" \
+       && ! grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/install.sh"; then
+      if _ver=$(release_of "$HOOKS_DIR/install.sh"); then
+        if [[ -n "$SRC_VERSION" && "$_ver" == "$SRC_VERSION" ]]; then
+          warn "install.sh is the released $_ver copy, and this flight-rules checkout carries unreleased changes to it"
+        else
+          warn "install.sh is the flight-rules $_ver copy — this flight-rules is ${SRC_VERSION:-newer}; only running $HOOKS_PATH/install.sh by hand gets the old one"
+        fi
+      else
+        warn "install.sh differs from this flight-rules' copy (${SRC_VERSION:-hooks/git/install.sh}) — adapted here on purpose, or a stale copy? diff it against $GIT_HOOKS_SRC/install.sh; if adapted, add a line '# flight-rules: adapted' to it and this stops"
+      fi
+      NEEDS_SYNC=1
+    fi
     if [[ "${NEEDS_SYNC:-0}" -eq 1 ]]; then
       # The --stale-only form is the one printed: this line reaches the user's screen
       # without the ⚠️ beside it, and the bare form overwrote an unmarked adapted hook

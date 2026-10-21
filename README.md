@@ -105,7 +105,7 @@ per clone: its first session's doctor message prints the command (the plugin's
 `python3`; without either, doctor's findings reach only the assistant.)
 
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run
-only when one starts. If a git hook is behind the new release, that session's doctor
+only when one starts. If a git hook, or the project's copy of `install.sh`, is behind the new release, that session's doctor
 message prints the sync command with `--stale-only`: it replaces only copies identical
 to an older release, and leaves a hook you changed alone and names it. To have it run on
 its own, set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each release's

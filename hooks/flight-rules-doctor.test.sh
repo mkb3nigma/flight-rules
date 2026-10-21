@@ -428,6 +428,34 @@ D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
 say "$(has "$D" "to update: bash")" "0" "a missing hook also prints the sync command"
 rm -rf "$D"
 
+# install.sh is synced with the hooks, so a stale copy is named too; 0.26.0 changed
+# only it, and under HOOK_SYNC=report nothing said so (#90). It guards nothing, so a
+# warning. mkrepo copies no install.sh: missing is a project that never had one.
+D=$(mkrepo); mkcache "$D" install.sh
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/install.sh" "$D/.ai/hooks/install.sh"
+say "$(rc "$D")" "0" "a stale install.sh is a warning, not a problem"
+say "$(has "$D" "install.sh is the flight-rules 0.0.1 copy")" "0" "…naming the release it came from"
+SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]* --stale-only' | sed 's/^to update: //' | head -1)
+say "$([ -n "$SYNC" ] && echo yes)" "yes" "…and printing the sync command"
+(cd "$D" && HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1
+say "$(cmp -s "$D/.ai/hooks/install.sh" "$H/git/install.sh" && echo synced)" "synced" "…which, run as printed, updates it"
+say "$(run "$D" | grep -c -e 'install.sh is the' -e 'to update:')" "0" "…after which neither line is printed"
+say "$(rc "$D")" "0" "…and doctor passes"
+rm -rf "$D"
+D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
+say "$(has "$D" "install.sh differs from this flight-rules' copy")" "0" "an install.sh matching no release is named as differing"
+printf '# flight-rules: adapted\n' >> "$D/.ai/hooks/install.sh"
+say "$(run "$D" | grep -c -e 'install.sh differs' -e 'to update:')" "0" "…and, marked adapted, is not"
+say "$(rc "$D")" "0" "…with doctor passing"
+rm -rf "$D"
+D=$(mkrepo)
+say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a missing install.sh is not reported"
+say "$(rc "$D")" "0" "…and doctor passes"
+cp "$H/git/install.sh" "$D/.ai/hooks/"
+say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a current install.sh is not reported"
+say "$(rc "$D")" "0" "…and doctor passes"
+rm -rf "$D"
+
 echo "The conf — typos and bad values must not pass silently:"
 D=$(mkrepo); printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "HOOK_SYNC=auto is a known key"
