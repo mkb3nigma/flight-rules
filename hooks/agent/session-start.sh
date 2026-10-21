@@ -118,8 +118,31 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     echo ""
     exit 0
   fi
-  SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only 2>&1); SYNC_RC=$?
-  if [ "$SYNC_RC" -ne 0 ]; then
+  # On a protected branch nothing is written: the diff could not be committed there,
+  # and `git restore` to clear it is refused as discarding work, so it sat in the
+  # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
+  # Compared only, and said when something is behind, with the command for a branch.
+  # Not a worktree made on the developer's behalf (owner, 2026-10-21): they choose
+  # where to run it. The default is pre-commit-check.sh's DEFAULT_PROTECTED; keep
+  # them in step (session-start.test.sh compares them).
+  _prot="$(conf_get PROTECTED_BRANCHES)"
+  _prot="${_prot:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
+  _br=$(git branch --show-current 2>/dev/null)
+  _check=""
+  if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ] \
+     && printf '%s\n' "$_br" | grep -qE -- "$_prot"; then
+    _check=--check-only
+  fi
+  SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only $_check 2>&1); SYNC_RC=$?
+  if [ -n "$_check" ] && [ "$SYNC_RC" -eq 3 ]; then
+    echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: this checkout is on \"$_br\", a protected branch, where the change could not be committed. Behind or missing:"
+    echo "$SYNC_OUT" | grep -E '^   [a-z.-]+: ' | sed 's/^  //'
+    # --this-checkout: from a worktree whose git runs the hooks from this checkout, the
+    # plain form refused and sent the user back here (#99 review, 2026-10-21).
+    echo "To update them, run this in a worktree on a branch, then commit and merge it:"
+    printf '  bash %q --from %q --stale-only --this-checkout\n' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"   # %q: it is pasted
+    echo ""
+  elif [ "$SYNC_RC" -ne 0 ]; then
     echo "⚠️ flight-rules HOOK_SYNC=auto could not update the git hooks:"
     echo "$SYNC_OUT" | sed 's/^/  /'
     echo ""
