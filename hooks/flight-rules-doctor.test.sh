@@ -448,6 +448,24 @@ printf '# flight-rules: adapted\n' >> "$D/.ai/hooks/install.sh"
 say "$(run "$D" | grep -c -e 'install.sh differs' -e 'to update:')" "0" "…and, marked adapted, is not"
 say "$(rc "$D")" "0" "…with doctor passing"
 rm -rf "$D"
+# A project's own installer in the hooks directory — no flight-rules marker — is not
+# flight-rules' to report: the printed hint would have replaced it (batch review,
+# 2026-10-21). The ✅ for the hooks in the same run shows doctor got that far.
+D=$(mkrepo); printf '#!/bin/sh\ngit config core.hooksPath .ai/hooks\n' > "$D/.ai/hooks/install.sh"
+say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a project's own install.sh (no marker) is not reported"
+say "$(run "$D" | grep -c 'pre-commit installed and executable')" "1" "…in a run that checked the hooks"
+say "$(rc "$D")" "0" "…and doctor passes"
+rm -rf "$D"
+# A copy identical to this version's own release, while this checkout's differs: the
+# development case, worded as such rather than as an old release.
+D=$(mkrepo); _sv=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$H/../.claude-plugin/plugin.json" | head -1)
+mkdir -p "$D/fakehome/.claude/plugins/cache/mp/flight-rules/$_sv/hooks/git"
+{ cat "$H/git/install.sh"; echo "# released $_sv"; } > "$D/fakehome/.claude/plugins/cache/mp/flight-rules/$_sv/hooks/git/install.sh"
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/$_sv/hooks/git/install.sh" "$D/.ai/hooks/install.sh"
+say "$(has "$D" "install.sh is the released $_sv copy, and this flight-rules checkout carries unreleased changes")" "0" "an install.sh of this version's release, under a changed checkout, is named as such"
+say "$(has "$D" "to update: bash")" "0" "…with the sync command"
+say "$(rc "$D")" "0" "…as a warning"
+rm -rf "$D"
 D=$(mkrepo)
 say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a missing install.sh is not reported"
 say "$(rc "$D")" "0" "…and doctor passes"

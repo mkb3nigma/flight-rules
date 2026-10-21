@@ -309,8 +309,10 @@ that the logic has exactly one home.
   every differing hook is replaced, except a `pre-commit` that is not flight-rules'
   at all, which is refused with the rename that keeps it running. A copy that fails
   is an exit, never a "synced" line. `flight-rules-doctor.sh` prints the command
-  whenever a hook is missing or behind, or the project's `install.sh` is behind (a
-  warning: it guards nothing), and `HOOK_SYNC=auto` in the conf has
+  whenever a hook is missing or behind, or the project's `install.sh` is behind or
+  differs while still carrying flight-rules' marker (a warning, not on screen: it
+  guards nothing; one without the marker is the project's own and is not named), and
+  `HOOK_SYNC=auto` in the conf has
   `session-start.sh` run the `--stale-only` form itself. Either way the result is a
   diff to review and commit. Tests: `install.test.sh`.
 

@@ -57,6 +57,10 @@ hook_marker() {
     post-merge)             printf 'post-merge-note' ;;
     reference-transaction)  printf 'is-ancestor' ;;
     pre-commit)             printf 'PRIVATE KEY' ;;
+    # Not a hook: tells flight-rules' install.sh from a project's own. Every revision
+    # since it was added (7b7f968, 2026-07-19) sets merge.ff; core.hooksPath would not do,
+    # because any hook installer sets that.
+    install.sh)             printf 'merge.ff' ;;
     *)                      printf 'flight-rules' ;;
   esac
 }
@@ -143,7 +147,9 @@ else
     # The sync updates install.sh with the hooks, so a stale copy is named too: 0.26.0
     # changed only it, and under HOOK_SYNC=report nothing said so (#90). A warning, not a
     # problem — it guards nothing, an old copy works as it did, and the commands printed
-    # here run this flight-rules' own. Missing is not reported: nothing needs it.
+    # here run this flight-rules' own. Missing is not reported: nothing needs it. Nor is
+    # one that differs and lacks the marker: it is the project's own installer, and the
+    # hint below would have replaced it (batch review, 2026-10-21; that overwrite is #97).
     if [[ -f "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]] \
        && ! cmp -s "$HOOKS_DIR/install.sh" "$GIT_HOOKS_SRC/install.sh" \
        && ! grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/install.sh"; then
@@ -153,10 +159,11 @@ else
         else
           warn "install.sh is the flight-rules $_ver copy — this flight-rules is ${SRC_VERSION:-newer}; only running $HOOKS_PATH/install.sh by hand gets the old one"
         fi
-      else
+        NEEDS_SYNC=1
+      elif grep -qF "$(hook_marker install.sh)" "$HOOKS_DIR/install.sh"; then
         warn "install.sh differs from this flight-rules' copy (${SRC_VERSION:-hooks/git/install.sh}) — adapted here on purpose, or a stale copy? diff it against $GIT_HOOKS_SRC/install.sh; if adapted, add a line '# flight-rules: adapted' to it and this stops"
+        NEEDS_SYNC=1
       fi
-      NEEDS_SYNC=1
     fi
     if [[ "${NEEDS_SYNC:-0}" -eq 1 ]]; then
       # The --stale-only form is the one printed: this line reaches the user's screen
