@@ -347,16 +347,16 @@ other, and a reviewer who cannot fill it has said something weaker than it sound
 
 ## Review Domains
 
-Adapt to the subject. For code, ask each question below that the diff gives a reason
-to, and answer it with a location — a category named with no place in the diff has not
-been checked (the classes and their warrant: #96):
+Adapt to the subject. For code, look for each class below that the diff gives a reason
+to. A finding names its place (`file:line`) and, where a test should have caught it,
+the test that would fail. A class with nothing found is not reported: the table holds
+findings, not a checklist (the classes and their warrant: #96).
 
-- **Security** — *object-level authorization*: for each record id a route or tool
-  accepts, in the path, body or arguments, where is ownership checked, and what test
-  fails without it? *Untrusted input*: SQL, shell, templates, file paths, URLs fetched
-  server-side. *Client-side*: unescaped HTML, CSRF on cookie-authenticated changes,
-  secrets in bundles. *Fail-open defaults*: a missing config value, flag or permission
-  that allows.
+- **Security** — *object-level authorization*: a record id a route or tool accepts, in
+  the path, body or arguments, with no ownership check, or none a test would miss.
+  *Untrusted input*: SQL, shell, templates, file paths, URLs fetched server-side.
+  *Client-side*: unescaped HTML, CSRF on cookie-authenticated changes, secrets in
+  bundles. *Fail-open defaults*: a missing config value, flag or permission that allows.
 - **Correctness** — *races*: check-then-act, double submit, a handler unsafe to run
   twice with no unique constraint. *Magic values*: a literal compared where an enum,
   union or named constant exists, or a fixed-value field typed as a plain string — a
@@ -364,10 +364,12 @@ been checked (the classes and their warrant: #96):
 - **Performance** — *unbounded work*: no limit or pagination, no size cap on input.
 - **Compatibility** — an API, schema, config key or CLI change that breaks existing
   callers or stored data; deploy order (old code on a new schema).
-- **Tests**, and where the code has them: data access (missing indexes, N+1 queries,
-  transactions, migrations), distributed calls (timeouts, retries with backoff,
-  idempotency, partial failure), logging (secrets or PII in logs, swallowed errors,
-  silent critical paths), and the language's own idioms.
+- **Tests** — a changed behaviour no test would fail without; an assertion that passes
+  on no output.
+- Where the code has them: data access (missing indexes, N+1 queries, transactions,
+  migrations), distributed calls (timeouts, retries with backoff, idempotency, partial
+  failure), logging (secrets or PII in logs, swallowed errors, silent critical paths),
+  and the language's own idioms.
 
 Otherwise: architecture (coupling, scale, reversibility), product/business (market fit,
 monetisation mechanics, churn, distribution), decisions (trade-offs, alternatives,
