@@ -147,7 +147,7 @@ else
       # --this-checkout and "on a branch": the plain form, run in a main checkout on a
       # protected branch, left a diff that could not be committed or cleared there, and
       # from a worktree it sent the user back to that checkout (#99, 2026-10-21).
-      printf '     to update: bash %q --from %q --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace it. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
+      printf '     to update: bash %q --from %q --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only --this-checkout to replace it. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
         "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"
     fi
     # The scan runs pre-commit.local only if it is executable, and skips it without a

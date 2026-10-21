@@ -405,6 +405,68 @@ rm -rf "$D"
 # The default set is pre-commit-check.sh's; a copy that drifts protects a different set.
 say "$(sed -n 's/^  _prot="\${_prot:-\(.*\)}"$/\1/p' "$H/session-start.sh")" \
     "$(sed -n "s/^DEFAULT_PROTECTED='\(.*\)'$/\1/p" "$H/pre-commit-check.sh")" "the protected-branch default matches pre-commit-check.sh's"
+say "$(sed -n '/^read_conf() {/,/^}/p' "$H/session-start.sh")" \
+    "$(sed -n '/^read_conf() {/,/^}/p' "$H/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"
+# Protected as the guard decides it, crossed through both hooks: a single-quoted value,
+# a branch in another case, the environment over the conf. The sync's own parse, grep
+# and case wrote on each while the guard refused the commit (fix review, F1/D7).
+# <description> % <conf line> % <branch> % <env>
+while IFS='%' read -r desc line br envv; do
+  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n%s\n' "$line" >> "$D/.ai/flight-rules.conf"
+  git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
+  [ "$br" = trunk ] || git -C "$D" checkout -qb "$br"
+  BEFORE=$(cksum < "$D/.ai/hooks/commit-msg")
+  J=$( (cd "$D" && env $envv HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+  say "$(grep -c '^rc=0$' <<<"$J")" "1" "$desc: session-start exits 0"
+  say "$(usr <<<"$J" | grep -c "this checkout is on \"$br\", a protected branch")" "1" "…the sync says the branch is protected"
+  say "$(cksum < "$D/.ai/hooks/commit-msg")" "$BEFORE" "…and writes nothing"
+  G=$(cd "$D" && env $envv CLAUDE_PROJECT_DIR="$D" bash "$H/pre-commit-check.sh" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+  say "$(grep -c '"permissionDecision": *"deny"' <<<"$G")" "1" "…as the guard refuses a commit there"
+  rm -rf "$D"
+done <<'CASES'
+a single-quoted pattern%PROTECTED_BRANCHES='^trunk$'%trunk%
+a double-quoted pattern with a comment%PROTECTED_BRANCHES="^trunk$"   # the trunk%trunk%
+a branch in another case than the pattern%PROTECTED_BRANCHES=^(main|qa)$%QA%
+the environment over the conf%PROTECTED_BRANCHES=^main$%trunk%FLIGHT_RULES_PROTECTED_BRANCHES=^trunk$
+CASES
+# A pattern bash cannot compile protects nothing to =~; the sync takes the branch as
+# protected and says the pattern is broken, rather than writing (fix review, F5).
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(trunk\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
+BEFORE=$(cksum < "$D/.ai/hooks/commit-msg")
+J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+say "$(grep -c '^rc=0$' <<<"$J")" "1" "a pattern that does not compile: session-start exits 0"
+say "$(usr <<<"$J" | grep -c 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read, so "trunk" is taken as protected')" "1" "…says the pattern is broken and the branch taken as protected"
+say "$(cksum < "$D/.ai/hooks/commit-msg")" "$BEFORE" "…and writes nothing"
+rm -rf "$D"
+# Behind is stale or missing; what the command leaves alone is listed apart, not as
+# behind beside a command that will not touch it (fix review, F3).
+D=$(mkrepo); stale "$D" commit-msg; echo "# own" >> "$D/.ai/hooks/post-merge"; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
+J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+SEC=$(usr <<<"$J" | sed -n '/Behind or missing:$/,/^To update them/p')
+say "$(grep -c 'commit-msg: the flight-rules 0.0.1 copy — stale' <<<"$SEC")" "1" "protected, stale and differing: the stale hook is behind"
+say "$(grep -c 'post-merge' <<<"$SEC")" "0" "…the differing one is not listed as behind"
+say "$(usr <<<"$J" | sed -n '/^Left alone/,$p' | grep -c 'post-merge: differs')" "1" "…but under what the command leaves alone"
+rm -rf "$D"
+# A hook the sync could not read, nothing else to say: said, not silence that reads as
+# "current" (fix review, F4; Codex P2). Root reads a mode-000 file: skipped there.
+D=$(mkrepo); echo "# own" >> "$D/.ai/hooks/post-merge"; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: own" --no-verify
+chmod 000 "$D/.ai/hooks/post-merge"
+if [ -r "$D/.ai/hooks/post-merge" ]; then
+  echo "  ⏭️  an unreadable hook: skipped — running as root, a mode-000 file is readable"
+else
+  for br in trunk feature/x; do
+    [ "$br" = trunk ] || git -C "$D" checkout -qb "$br"
+    rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+    J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+    say "$(grep -c '^rc=0$' <<<"$J")" "1" "an unreadable hook, on $br: session-start exits 0"
+    say "$(usr <<<"$J" | grep -c 'HOOK_SYNC=auto could not check every git hook')" "1" "…says a hook could not be checked"
+    say "$(usr <<<"$J" | grep -c 'post-merge: unreadable — could not check it')" "1" "…naming it"
+  done
+fi
+chmod 644 "$D/.ai/hooks/post-merge"; rm -rf "$D"
 # Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify

@@ -31,6 +31,15 @@ PROJECT_ROOT=$(pwd)
 
 # Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
+# read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
+# for the one key whose reading must match the guard's (session-start.test.sh compares).
+read_conf() {
+  local key="$1" file="$2"
+  [ -r "$file" ] || return 1
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
 conf_get() {
   sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]]+)\"?.*$/\\1/p" \
     "$PROJECT_ROOT/.ai/flight-rules.conf" 2>/dev/null | tail -1
@@ -123,24 +132,46 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
   # Compared only, and said when something is behind, with the command for a branch.
   # Not a worktree made on the developer's behalf (owner, 2026-10-21): they choose
-  # where to run it. The default is pre-commit-check.sh's DEFAULT_PROTECTED; keep
-  # them in step (session-start.test.sh compares them).
-  _prot="$(conf_get PROTECTED_BRANCHES)"
+  # where to run it. Protected is decided as pre-commit-check.sh decides it: the
+  # environment first, then the conf read by the same read_conf, the same default, and
+  # bash's =~ case-insensitively. Its own parse, grep and case missed `'^trunk$'`, `QA`
+  # and the environment, and wrote where the guard refuses (fix review, F1).
+  # session-start.test.sh compares the copies.
+  _prot="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.ai/flight-rules.conf")}"
   _prot="${_prot:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
   _br=$(git branch --show-current 2>/dev/null)
-  _check=""
-  if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ] \
-     && printf '%s\n' "$_br" | grep -qE -- "$_prot"; then
-    _check=--check-only
+  _check=""; _bad=""
+  if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
+    shopt -s nocasematch; [[ "$_br" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+    [ "$_m" -eq 0 ] && _check=--check-only
+    # 2: a pattern bash cannot compile. Taken as protected, and said — writing is the
+    # failure that costs work (fix review, F5).
+    [ "$_m" -eq 2 ] && { _check=--check-only; _bad=1; }
   fi
   SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only $_check 2>&1); SYNC_RC=$?
+  # Behind is stale or missing; the rest — adapted, differing, unreadable — the command
+  # leaves alone, and listing them as behind beside it misled (fix review, F3).
+  _behind=$(echo "$SYNC_OUT" | grep -E '^   [a-z.-]+: (missing|.* — stale)$' | sed 's/^  //')
+  _left=$(echo "$SYNC_OUT" | grep -E '^   [a-z.-]+: ' | grep -vE '^   [a-z.-]+: (missing|.* — stale)$' | sed 's/^  //')
   if [ -n "$_check" ] && [ "$SYNC_RC" -eq 3 ]; then
-    echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: this checkout is on \"$_br\", a protected branch, where the change could not be committed. Behind or missing:"
-    echo "$SYNC_OUT" | grep -E '^   [a-z.-]+: ' | sed 's/^  //'
+    if [ -n "$_bad" ]; then
+      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. Fix the pattern in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES). Behind or missing:"
+    else
+      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: this checkout is on \"$_br\", a protected branch, where the change could not be committed. Behind or missing:"
+    fi
+    echo "$_behind"
     # --this-checkout: from a worktree whose git runs the hooks from this checkout, the
     # plain form refused and sent the user back here (#99 review, 2026-10-21).
     echo "To update them, run this in a worktree on a branch, then commit and merge it:"
     printf '  bash %q --from %q --stale-only --this-checkout\n' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"   # %q: it is pasted
+    [ -z "$_left" ] || { echo "Left alone (the command does not touch these):"; echo "$_left"; }
+    echo ""
+  # A hook the sync could not read, with nothing else to say: silent, the check that
+  # could not run read as "current" (fix review, F4).
+  elif [ "$SYNC_RC" -eq 0 ] && ! echo "$SYNC_OUT" | grep -q '^   synced ' \
+       && echo "$_left" | grep -q 'could not check it'; then
+    echo "⚠️ flight-rules HOOK_SYNC=auto could not check every git hook:"
+    echo "$_left" | grep 'could not check it'
     echo ""
   elif [ "$SYNC_RC" -ne 0 ]; then
     echo "⚠️ flight-rules HOOK_SYNC=auto could not update the git hooks:"
