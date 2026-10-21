@@ -173,8 +173,13 @@ if [ -n "$FROM" ]; then
             # A comment line of its own, `# flight-rules: adapted`: the phrase also sits in
             # this script's text, so an unanchored match took an edited install.sh as
             # marked by nobody (release review, 2026-10-12). Same pattern in doctor.
-            elif grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$dst"; then
+            # The status is kept: a grep that errors on a readable file (I/O, a race)
+            # could not check it, and was reported as "differs" (fix review, F14).
+            elif { grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$dst"; _a=$?; [ "$_a" -eq 0 ]; }; then
                 echo "   $h: adapted here (marked flight-rules: adapted) — left alone"
+                LEFT=$((LEFT+1))
+            elif [ "$_a" -ne 1 ]; then
+                echo "   $h: could not be read (grep exited $_a) — could not check it; left alone"
                 LEFT=$((LEFT+1))
             else
                 echo "   $h: differs from every flight-rules release in the plugin cache — left alone (adapted here? diff it against $src, and add a line '# flight-rules: adapted' if so)"

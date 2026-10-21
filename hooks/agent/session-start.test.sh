@@ -377,6 +377,14 @@ fi
 rm -rf "$D/.ai/hooks/sub"; echo '# flight-rules: adapted' >> "$D/.ai/hooks/post-merge"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) | usr | grep -c 'git hooks have uncommitted changes')" "1" "…while a real uncommitted change, same fixture, is still said"
+# status.branch=true adds a `## trunk` line to --short: taken for git saying something,
+# it was a false "could not fully check" every session (fix review, F2).
+git -C "$D" config status.branch true
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?" )
+say "$(grep -c '^rc=0$' <<<"$J")" "1" "status.branch=true: session-start exits 0"
+say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…still says the uncommitted change"
+say "$(usr <<<"$J" | grep -c 'could not fully check')" "0" "…and not that the hooks could not be checked"
 rm -rf "$D"
 # On a protected branch nothing is written: the diff could not be committed there, and
 # `git restore` was refused as discarding work, so it blocked the merge that would land
