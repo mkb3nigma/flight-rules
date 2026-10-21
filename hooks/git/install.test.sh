@@ -239,6 +239,37 @@ say "$(head -1 <<<"$OUT")" "1" "from a worktree, a hooksPath outside the reposit
 say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository"
 say "$(grep -c 'main checkout' <<<"$OUT")" "0" "…not as the main checkout"
 rm -rf "$D" "$P" "$O"
+# Compared first: when every copy in the main checkout is already current there is
+# nothing to send anyone there for, and a worktree session said "could not update the
+# git hooks" every day regardless (#93, 2026-10-21). Silent, exit 0; one stale or
+# missing copy still gets the main-checkout command.
+D=$(mkrepo); P=$(mkplugin)
+echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the worktree fixture"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+BEFORE=$(cd "$D/.ai/hooks" && cksum * | sort)
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "a worktree whose hooksPath is in the main checkout, every copy current: exit 0"
+say "$(tail -n +2 <<<"$OUT" | grep -c .)" "0" "…saying nothing"
+say "$(cd "$D/.ai/hooks" && cksum * | sort)" "$BEFORE" "…and writing nothing there"
+make_adapted "$D" post-merge; BEFORE=$(cd "$D/.ai/hooks" && cksum * | sort)
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "…an adapted copy there is not stale: exit 0"
+say "$(grep -c 'main checkout' <<<"$OUT")" "0" "…with no main-checkout command"
+say "$(cd "$D/.ai/hooks" && cksum * | sort)" "$BEFORE" "…and nothing written"
+make_stale "$D" install.sh; BEFORE=$(cd "$D/.ai/hooks" && cksum * | sort)
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "…one stale copy there: exit 1"
+say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…with the main-checkout message"
+say "$(grep -c 'install.sh: the flight-rules 0.0.1 copy — stale' <<<"$OUT")" "1" "…naming the stale copy, not as being updated"
+say "$(grep -c 'updating' <<<"$OUT")" "0" "…and claiming no update"
+say "$(cd "$D/.ai/hooks" && cksum * | sort)" "$BEFORE" "…and writing nothing there"
+cp "$P/hooks/git/install.sh" "$D/.ai/hooks/install.sh"; rm "$D/.ai/hooks/pre-rebase"
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "…one missing copy there: exit 1"
+say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…with the main-checkout message"
+say "$([ -f "$D/.ai/hooks/pre-rebase" ] && echo written || echo absent)" "absent" "…and nothing written"
+rm -rf "$D" "$P"
 # The printed command is pasted, so a path is quoted for the shell. Wrapped in "…", a
 # main checkout named with `$(…)` ran that command when pasted, and one with a `"`
 # broke it (0.26.0 release review, P2): the path is the user's own directory, but the

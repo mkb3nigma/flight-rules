@@ -97,16 +97,15 @@ if [ -n "$FROM" ]; then
         # worktree. It is not synced from here: the write would land in another
         # checkout's working tree. Said as such, with the command to run there: "outside
         # this repository; sync it by hand" was wrong on both counts (#87, 2026-10-18).
+        # Said only when something there is stale or missing, after the comparison
+        # below: said every time, a worktree session warned daily over current hooks
+        # (#93, 2026-10-21).
+        MAIN=""
         if ! inside_repo "$HOOKS_DIR"; then
             MAIN=$(main_checkout || true)
-            if [ -n "$MAIN" ] && inside "$HOOKS_DIR" "$MAIN"; then
-                echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. Start a session there, or run:"
-                # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it
-                # was (0.26.0 release review).
-                printf '   cd %q && bash %q --from %q --stale-only\n' "$MAIN" "$FROM/install.sh" "$FROM"
-                exit 1
+            if [ -z "$MAIN" ] || ! inside "$HOOKS_DIR" "$MAIN"; then
+                echo "❌ core.hooksPath=$HOOKS_PATH is outside this repository — not touched; sync it by hand"; exit 1
             fi
-            echo "❌ core.hooksPath=$HOOKS_PATH is outside this repository — not touched; sync it by hand"; exit 1
         fi
     fi
     mkdir -p "$HOOKS_DIR"
@@ -116,7 +115,7 @@ if [ -n "$FROM" ]; then
     fi
     # Decide everything before copying anything, so a refusal leaves the directory as
     # it was rather than half updated.
-    TO_COPY=""
+    TO_COPY=""; ACT=updating; [ -n "${MAIN:-}" ] && ACT=stale
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
@@ -125,7 +124,7 @@ if [ -n "$FROM" ]; then
             :
         elif [ "$STALE_ONLY" -eq 1 ]; then
             if ver=$(release_of "$dst"); then
-                echo "   $h: the flight-rules $ver copy — updating"
+                echo "   $h: the flight-rules $ver copy — $ACT"
                 TO_COPY="$TO_COPY $h"
             # A comment line of its own, `# flight-rules: adapted`: the phrase also sits in
             # this script's text, so an unanchored match took an edited install.sh as
@@ -149,6 +148,14 @@ if [ -n "$FROM" ]; then
             TO_COPY="$TO_COPY $h"
         fi
     done
+    if [ -n "${MAIN:-}" ]; then
+        [ -n "$TO_COPY" ] || exit 0
+        echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. Start a session there, or run:"
+        # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it was
+        # (0.26.0 release review).
+        printf '   cd %q && bash %q --from %q --stale-only\n' "$MAIN" "$FROM/install.sh" "$FROM"
+        exit 1
+    fi
     # Via a temporary name: when this script is the project's copy, install.sh is
     # itself one of the files, and bash reads a running script incrementally. mv swaps
     # the inode; the running shell keeps the old one. A failed cp or mv is an exit, not

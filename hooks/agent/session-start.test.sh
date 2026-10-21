@@ -312,6 +312,16 @@ say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…not because they ar
 say "$(grep -cF "$(printf 'cd %q && bash %q --from %q --stale-only' "$D" "$T/hooks/git/install.sh" "$T/hooks/git")" <<<"$OUT")" "1" "…and gives the command to run there, its paths shell-quoted"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" && echo stale)" "stale" "…leaving the main checkout's copy as it was"
 rm -rf "$D"
+# …and with every copy there current, nothing to say: the warning came every day
+# regardless (#93, 2026-10-21).
+D=$(mkrepo); cp "$H/../git/install.sh" "$D/.ai/hooks/"; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+J=$( (cd "$D/.ai/worktrees/wt" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c 'rc=0')" "1" "auto, in a worktree, current hooks in the main checkout: the hook exits 0"
+say "$(grep -c 'could not update the git hooks\|main checkout' <<<"$J")" "0" "…and says nothing about the sync"
+rm -rf "$D"
 # Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
