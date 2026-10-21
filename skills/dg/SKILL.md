@@ -368,7 +368,8 @@ findings, not a checklist (the classes and their warrant: #96).
   not run; a value from outside the app stays untyped until a type guard narrows it,
   never a cast. *Swallowed errors*: a catch that neither handles a named failure nor
   surfaces it. *Dropped async errors*: a promise or task neither awaited, returned nor
-  handled.
+  handled. *Time*: an instant stored without a zone; calendar arithmetic (next day,
+  9am local, a recurrence) done in UTC or server time, not the owning zone.
 - **Performance** — *unbounded work*: no limit or pagination, no size cap on input.
   *Blocking calls* in async code.
 - **Compatibility** — an API, schema, config key or CLI change that breaks existing
