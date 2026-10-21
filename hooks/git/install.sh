@@ -46,7 +46,15 @@ if [ -n "$HOOKS_PATH" ]; then
     PATH_IS_SET=1
     case "$HOOKS_PATH" in /*) HOOKS_DIR="$HOOKS_PATH" ;; *) HOOKS_DIR="$REPO_ROOT/$HOOKS_PATH" ;; esac
 fi
-inside_repo() { case "$(cd "$1" 2>/dev/null && pwd -P)" in "$(cd "$REPO_ROOT" && pwd -P)"/*) return 0 ;; esac; return 1; }
+inside() { case "$(cd "$1" 2>/dev/null && pwd -P)" in "$(cd "$2" && pwd -P)"/*) return 0 ;; esac; return 1; }
+inside_repo() { inside "$1" "$REPO_ROOT"; }
+# The main worktree's path, from a linked worktree; nothing in the main one itself, or
+# when the main one is bare. It is the first entry `git worktree list` prints.
+main_checkout() {
+    local m; m=$(git worktree list --porcelain 2>/dev/null \
+        | awk 'NR==1 && /^worktree /{w=substr($0,10)} /^$/{exit} $0=="bare"{b=1} END{if (w!="" && !b) print w}')
+    [ -n "$m" ] && [ "$(cd "$m" 2>/dev/null && pwd -P)" != "$(cd "$REPO_ROOT" && pwd -P)" ] && printf '%s' "$m"
+}
 
 # Which flight-rules release shipped this exact file? Searches the plugin cache and
 # prints the newest release's version directory, or nothing. The same function sits in
@@ -84,7 +92,22 @@ if [ -n "$FROM" ]; then
         # the repo is not this repo's to write; a missing one is doctor's to report.
         [ "$PATH_IS_SET" -eq 1 ] || { echo "❌ no local core.hooksPath — nothing is installed here to update (run install.sh without --stale-only to install)"; exit 1; }
         [ -d "$HOOKS_DIR" ] || { echo "❌ core.hooksPath=$HOOKS_PATH does not exist — git runs no hooks; not touched"; exit 1; }
-        inside_repo "$HOOKS_DIR" || { echo "❌ core.hooksPath=$HOOKS_PATH is outside this repository — not touched; sync it by hand"; exit 1; }
+        # From a linked worktree, the usual install — an absolute path into the main
+        # checkout, which every worktree shares — is in the repository but not in this
+        # worktree. It is not synced from here: the write would land in another
+        # checkout's working tree. Said as such, with the command to run there: "outside
+        # this repository; sync it by hand" was wrong on both counts (#87, 2026-10-18).
+        if ! inside_repo "$HOOKS_DIR"; then
+            MAIN=$(main_checkout || true)
+            if [ -n "$MAIN" ] && inside "$HOOKS_DIR" "$MAIN"; then
+                echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. Start a session there, or run:"
+                # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it
+                # was (0.26.0 release review).
+                printf '   cd %q && bash %q --from %q --stale-only\n' "$MAIN" "$FROM/install.sh" "$FROM"
+                exit 1
+            fi
+            echo "❌ core.hooksPath=$HOOKS_PATH is outside this repository — not touched; sync it by hand"; exit 1
+        fi
     fi
     mkdir -p "$HOOKS_DIR"
     if [ "$FROM" = "$(cd "$HOOKS_DIR" && pwd -P)" ]; then
@@ -118,7 +141,9 @@ if [ -n "$FROM" ]; then
         # flight-rules-doctor.sh's hook_marker holds for it; keep them in step.
         elif [ "$h" = pre-commit ] && ! grep -q 'PRIVATE KEY' "$dst"; then
             echo "❌ $dst is not flight-rules' pre-commit (a linter? lint-staged?) and would be lost."
-            echo "   Rename it first — mv -n '$dst' '$dst.local' (merge by hand if a .local exists) — and re-run: the flight-rules one runs it after a clean scan."
+            echo "   Rename it first (merge by hand if a .local exists) and re-run: the flight-rules one runs it after a clean scan."
+            # A line of its own, %q not '…': it is pasted (0.26.0 fix review).
+            printf '   mv -n %q %q\n' "$dst" "$dst.local"
             exit 1
         else
             TO_COPY="$TO_COPY $h"

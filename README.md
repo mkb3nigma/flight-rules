@@ -150,8 +150,10 @@ policy has **one home, `.ai/flight-rules.conf`**, the file the hooks read —
 `PROTECTED_BRANCHES`, `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`,
 `WORKTREE_DIR`, `MERGE_NEEDS_INSTRUCTION` — so the skills and the enforcement never disagree about which
 branches are protected. The rest lives in the skill's `EXTENSIONS.md`. The conf also
-holds two `/dg` settings: `DG_COMIC` for the review's comic, and `DG_COMIC_PR`, unset
-by default, so no comic reaches a PR unless you set it — see the
+holds three `/dg` settings: `DG_COMIC` for the review's comic, `DG_COMIC_PR`, unset
+by default, so no comic reaches a PR unless you set it, and `DG_WAIT_MINUTES`, how long
+round 2 waits for each pre-review run and the dependency scan before treating it as
+failed — see the
 [Configuration table](hooks/README.md#configuration).
 
 | Placeholder | Meaning | Example | Home |

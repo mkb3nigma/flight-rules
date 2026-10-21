@@ -187,14 +187,27 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 3. **Spawn two persona agents** (or simulate both voices sequentially if subagents are
    unavailable): Dinesh and Gilfoyle each review the subject independently in round 1.
-   Every persona brief says: *"Research only — read the subject and produce your
+   Start them in the same turn as step 2's pre-review and step 1's dependency scan, not
+   after: round 1 is blind to both, so waiting for them first only adds their time to
+   the review's. Every persona brief says: *"Research only — read the subject and produce your
    review. Do NOT edit any files."* A persona subagent has the full toolset, and a
    reviewer that fixes what it found leaves an unreviewed change in the tree the
    verdict describes.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
-   Round 2: Gilfoyle's harshest finding → Dinesh defends or concedes. Further rounds
-   alternate who leads. Converge early when concessions leave nothing disputed.
+   **Round 2 waits** until every pre-reviewer started — the cross-family one, its
+   same-family fallback, any other a project's extensions wire — has finished or
+   failed by step 2's check, and the dependency scan has reported. A pre-reviewer
+   left running in the background while the debate went on finished after the verdict,
+   and its findings reached no round (2026-10-18). The wait has a limit,
+   `DG_WAIT_MINUTES` in `.ai/flight-rules.conf` (default 15; read like step 6's keys):
+   a run with no result that long after it started is stopped and counts as failed —
+   step 2's fallback, then `⚠️ unavailable — no result in <n>m` (for the scan, `⚠️ not
+   run — no result in <n>m`). Round 2's table then answers each pre-review finding by its
+   ID and each scan finding by its `<package>@<version>` and CVE, and Gilfoyle's harshest finding → Dinesh defends or concedes. Further rounds
+   alternate who leads. Converge early when concessions leave nothing disputed, but
+   never before round 2 has answered the pre-review and the scan: a debate that
+   converges in round 1 is the debate that ends before they arrive.
 
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is

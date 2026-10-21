@@ -123,6 +123,21 @@ say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit")" "1" "…the project's p
 say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…and the stale commit-msg IS updated"
 rm -rf "$D" "$P"
 
+# The rename is printed on a line of its own for pasting, its paths quoted for the
+# shell. In '…' a path holding a quote and `$(…)` ran that command when pasted (0.26.0
+# fix review, W1) — the class the --stale-only command was fixed for one screen away.
+D0=$(mkrepo); P=$(mkplugin); D="$(dirname "$D0")/p '\$(touch pwned)' q"; mv "$D0" "$D" || die "could not rename the fixture"
+printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+CMD=$(grep -E '^[[:space:]]+mv -n ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$(printf '%s\n' "$CMD" | grep -c .)" "1" "a linter's pre-commit, in a path holding a quote and \$(…): the rename is a line of its own"
+S=$(cd "$(mktemp -d)" && pwd -P)
+(cd "$S" && bash -c "$CMD") >/dev/null 2>&1; PRC=$?
+say "$PRC" "0" "…which, pasted, exits 0"
+say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "…moves the project's pre-commit to pre-commit.local"
+say "$(ls "$S" | wc -l | tr -d ' ')" "0" "…and runs nothing the path spells out"
+rm -rf "$D" "$P" "$S"
+
 echo "install.sh updates itself when it is the file running:"
 # The project's copy is what the CHANGELOG told people to run. bash reads a running
 # script incrementally, so overwriting it in place is a hazard; the copy goes via mv.
@@ -195,6 +210,51 @@ OUT=$(cd "$D" && HOME="$O" bash "$P/hooks/git/install.sh" --from "$P/hooks/git" 
 say "$RC" "1" "a local hooksPath of ~/hk outside the repo: --stale-only refuses"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository, not as missing"
 rm -rf "$D" "$P" "$O"
+# From a linked worktree, an absolute core.hooksPath into the MAIN checkout — the usual
+# install, shared by every worktree — is inside the repository, just not this worktree.
+# It is still not synced from here (the write would land in another checkout's working
+# tree), but "outside this repository; sync it by hand" was wrong on both counts: a
+# downstream project's worktree sessions never synced and were told so (#87, 2026-10-18).
+D=$(mkrepo); P=$(mkplugin)
+echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the worktree fixture"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"; make_stale "$D" commit-msg
+BEFORE=$(cd "$D/.ai/hooks" && cksum * | sort)
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "a worktree whose hooksPath is in the main checkout: --stale-only still refuses"
+say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…without calling it outside the repository"
+say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…naming the main checkout"
+say "$(cd "$D/.ai/hooks" && cksum * | sort)" "$BEFORE" "…and writes nothing there"
+CMD=$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$CMD" "$(printf 'cd %q && bash %q --from %q --stale-only' "$D" "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the command to run there, its paths shell-quoted"
+# The command works when pasted, from anywhere: it syncs the main checkout's stale copy.
+PASTED=$(cd / && HOME="$D/fakehome" bash -c "$CMD" 2>&1); PRC=$?
+say "$PRC" "0" "…which, pasted, exits 0"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…and syncs the main checkout's stale copy"
+say "$(grep -c '^   synced commit-msg' <<<"$PASTED")" "1" "…saying so"
+# A path truly outside the repository, from the same worktree, keeps the old refusal.
+O=$(cd "$(mktemp -d)" && pwd -P); cp "$D"/.ai/hooks/* "$O/"; git -C "$D" config core.hooksPath "$O"
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "from a worktree, a hooksPath outside the repository: refused"
+say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository"
+say "$(grep -c 'main checkout' <<<"$OUT")" "0" "…not as the main checkout"
+rm -rf "$D" "$P" "$O"
+# The printed command is pasted, so a path is quoted for the shell. Wrapped in "…", a
+# main checkout named with `$(…)` ran that command when pasted, and one with a `"`
+# broke it (0.26.0 release review, P2): the path is the user's own directory, but the
+# command has to work for any name it can have.
+D0=$(mkrepo); P=$(mkplugin); D="$(dirname "$D0")/r \$(touch pwned) q"; mv "$D0" "$D" || die "could not rename the fixture"
+echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the hostile-path fixture"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"; make_stale "$D" commit-msg
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+CMD=$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+S=$(cd "$(mktemp -d)" && pwd -P)
+PASTED=$(cd "$S" && HOME="$D/fakehome" bash -c "$CMD" 2>&1); PRC=$?
+say "$PRC" "0" "a main checkout whose path holds \$(…) and spaces: the pasted command exits 0"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…syncs the stale copy"
+say "$(ls "$S" | wc -l | tr -d ' ')" "0" "…and runs nothing the path spells out"
+rm -rf "$D" "$P" "$S"
 D=$(mkrepo); P=$(mkplugin); git -C "$D" config core.hooksPath .ai/gone
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "a hooksPath that does not exist: --stale-only refuses rather than re-pointing"

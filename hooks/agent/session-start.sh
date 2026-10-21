@@ -113,7 +113,7 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   OP=$(in_progress)
   if [ -n "$OP" ]; then
     echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress. Once it is finished:"
-    echo "  bash \"$GIT_HOOKS_SRC/install.sh\" --from \"$GIT_HOOKS_SRC\" --stale-only"
+    printf '  bash %q --from %q --stale-only\n' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"   # %q: it is pasted
     echo "Not doing one? A leftover never finishes: \`git status\` names it and the command that clears it."
     echo ""
     exit 0
