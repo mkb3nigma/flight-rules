@@ -34,7 +34,10 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
    non-idempotent seeded fixtures must be reseeded first. Skipping is allowed for a
    docs-only branch or known-baseline failures, but must be reported as
    `WAIVED: <reason>` — never silent.
-4. **Type check** — e.g. `tsc --noEmit`, `mypy`; show errors in full.
+4. **Type check** — e.g. `tsc --noEmit`, `mypy`; show errors in full. ❌ on an error
+   this branch adds. A project adopting a checker on existing code gates on its
+   baseline (no new errors) and pays the rest down. ⚠️ when the language has a checker
+   and the project runs none.
 5. **Lint check (error level)** — e.g. `eslint`, `ruff check`. Type checkers do not
     catch lint findings, so an ungated linter's error debt silently creeps back
     between cleanups. Gate only suites the project keeps at zero errors; report
@@ -128,6 +131,11 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     locale date parse — right for a reader, wrong for storage, so say which this one
     is. Converting a stored UTC instant for a reader is never a hit, whoever the
     reader is: a screen, an email, a report, a scheduled job.
+20. **Swallowed errors** — grep the diff's added lines for a catch-all handler whose
+    body only passes, returns or is empty (`except:` / `except Exception:` then `pass`
+    or `return`; `catch (e) {}`; the stack's equivalent). ⚠️ on each hit: it turns a
+    failure into "nothing happened". A project linter rule that does this check
+    (ruff `BLE001`/`S110`, ESLint `no-empty`) satisfies it.
 
 ## Report
 
