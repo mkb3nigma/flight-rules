@@ -301,10 +301,30 @@ say "$(cksum < "$D/.ai/hooks/install.sh")" "$OWN" "…which is left as it was"
 cp "$P/hooks/git/install.sh" "$D/.ai/hooks/install.sh"; make_adapted "$D" install.sh
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(grep -c 'install.sh: differs from every flight-rules release' <<<"$OUT")" "1" "flight-rules' install.sh, edited: still named as differing"
+# Unreadable: a check that could not run, said as such — not "differs… mark it adapted"
+# (third review, E3), not the project's own. Root reads a mode-000 file, so the case
+# would pass through the marker path without testing this (E7): skipped there.
 chmod 000 "$D/.ai/hooks/install.sh"
+if [ -r "$D/.ai/hooks/install.sh" ]; then
+    chmod 644 "$D/.ai/hooks/install.sh"
+    echo "  ⏭️  an unreadable install.sh: skipped — running as root, a mode-000 file is readable"
+else
+    OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+    chmod 644 "$D/.ai/hooks/install.sh"
+    say "$(grep -c 'install.sh: unreadable — could not check it' <<<"$OUT")" "1" "an unreadable install.sh is said to be unreadable"
+    say "$(grep -c 'install.sh: differs' <<<"$OUT")" "0" "…not named as differing"
+fi
+rm -rf "$D" "$P"
+# A missing install.sh in the checkout the sync writes to is not put back unattended,
+# here any more than from a worktree (third review, E4; owner, 2026-10-21): doctor names
+# it with the command. The full install still copies it.
+D=$(mkrepo); P=$(mkplugin); rm -f "$D/.ai/hooks/install.sh"; make_stale "$D" commit-msg
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
-chmod 644 "$D/.ai/hooks/install.sh"
-say "$(grep -c 'install.sh: differs from every flight-rules release' <<<"$OUT")" "1" "an unreadable install.sh is named, not taken for the project's own"
+say "$(head -1 <<<"$OUT")" "0" "--stale-only, no install.sh, a stale hook: exit 0"
+say "$(grep -c '^   synced commit-msg' <<<"$OUT")" "1" "…the stale hook is synced"
+say "$([ -f "$D/.ai/hooks/install.sh" ] && echo there || echo absent)" "absent" "…install.sh is not put back"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$([ -f "$D/.ai/hooks/install.sh" ] && echo there || echo absent)" "there" "…while the full install restores it"
 rm -rf "$D" "$P"
 # An exported MAIN in the caller's environment is not this script's. Read before it was
 # set, it made a plain --from install a silent no-op and an update a false main-checkout

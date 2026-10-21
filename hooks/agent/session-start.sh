@@ -131,19 +131,25 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     # Asked from the directory that holds the hooks, not this checkout's top: from a
     # worktree whose hooks are in the main checkout, `status -- <that path>` is refused
     # (exit 128), and with 2>/dev/null that read as "no changes" (#93 batch review, B8).
-    # A status that fails is said, not taken for clean. Only its stdout is the answer: a
-    # status that succeeds with a warning on stderr (an unreadable directory among the
-    # hooks) put the warning on screen as "uncommitted changes" every session (second
-    # review, C2). A failed one is asked again for its reason.
+    # A check that could not run is "could not check", with git's reason — never clean,
+    # never "changed" (the rule each review of #93 found another case of: the third,
+    # 2026-10-21). One run, both streams: a status line is two status letters and a
+    # space; anything else is git saying something, a warning on a status that still
+    # succeeded included. Read apart, the warning was either shown as a change (C2) or
+    # dropped (E1), and a failed status asked again lost its reason (E2).
     _top=$(git rev-parse --show-toplevel 2>/dev/null)
     _hp=$(git config --local --path core.hooksPath)
     # if, not case: a case pattern's `)` inside this $( … ) is a syntax error to bash 3.2.
     if [ "${_hp#/}" != "$_hp" ]; then _hd="$_hp"; else _hd="$_top/$_hp"; fi
     _own=$(git -C "$_hd" rev-parse --show-toplevel 2>/dev/null)
     _in=""; [ "$_own" = "$_top" ] || _in=" in $_own"
-    if ! _changed=$(git -C "$_hd" -c status.relativePaths=false status --short -- . 2>/dev/null); then
-      echo "⚠️ flight-rules could not check the git hooks for uncommitted changes:"
-      git -C "$_hd" status --short -- . 2>&1 | sed 's/^/  /'
+    _all=$(git -C "$_hd" -c status.relativePaths=false -c color.status=false status --short -- . 2>&1); _st=$?
+    _changed=$(printf '%s\n' "$_all" | grep -E '^[ MADRCUT?!]{2} ')
+    _said=$(printf '%s\n' "$_all" | grep -vE '^[ MADRCUT?!]{2} ' | grep .)
+    if [ "$_st" -ne 0 ] || [ -n "$_said" ]; then
+      echo "⚠️ flight-rules could not fully check the git hooks$_in for uncommitted changes — git said:"
+      printf '%s\n' "${_said:-(nothing; git status exited $_st)}" | sed 's/^/  /'
+      [ -n "$_changed" ] && printf '%s\n' "$_changed" | sed 's/^/  /'
       echo ""
     elif [ -n "$_changed" ]; then
       echo "📝 flight-rules: the git hooks have uncommitted changes$_in — yours, or a headless session's HOOK_SYNC=auto, whose notice no one saw. \`git status\` and \`git diff HEAD\` there show them; commit what should stay:"

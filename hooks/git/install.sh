@@ -120,14 +120,22 @@ if [ -n "$FROM" ]; then
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
-            # A missing install.sh is no reason to send anyone to the main checkout:
-            # nothing needs it, and doctor does not name it. It was, every day, from
-            # every worktree (second review, C1). A missing hook still is.
-            [ -n "$MAIN" ] && [ "$h" = install.sh ] && continue
+            # A missing install.sh is not put back unattended: nothing needs it to run
+            # the hooks, a project may have removed it on purpose, and from a worktree it
+            # sent everyone to the main checkout every day (second review, C1). Doctor
+            # names it, with the cp that restores it (owner, 2026-10-21). A missing hook
+            # is still copied in. The full install still restores it.
+            [ "$STALE_ONLY" -eq 1 ] && [ "$h" = install.sh ] && continue
             [ -z "$MAIN" ] || echo "   $h: missing"
             TO_COPY="$TO_COPY $h"
         elif cmp -s "$src" "$dst"; then
             :
+        # A file this script cannot read is one it could not check — not stale, not
+        # differing, not the project's own (third review, E3: an unreadable install.sh
+        # was told to mark itself adapted, while doctor called it unreadable).
+        elif [ "$STALE_ONLY" -eq 1 ] && [ ! -r "$dst" ]; then
+            echo "   $h: unreadable — could not check it; left alone"
+            LEFT=$((LEFT+1))
         elif [ "$STALE_ONLY" -eq 1 ]; then
             if ver=$(release_of "$dst"); then
                 echo "   $h: the flight-rules $ver copy — $ACT"

@@ -340,7 +340,7 @@ say "$(usr <<<"$J" | grep -cF "in $D")" "1" "…and the checkout it is in"
 git -C "$D" checkout -q -- .ai/hooks/post-merge; cp "$D/.git/index" "$D/index.bak"; printf 'x' > "$D/.git/index"
 J=$(WT)
 mv "$D/index.bak" "$D/.git/index"
-say "$(usr <<<"$J" | grep -c 'could not check the git hooks for uncommitted changes')" "1" "…a status that fails: said on screen as not checked"
+say "$(usr <<<"$J" | grep -c "could not fully check the git hooks in $D for uncommitted changes")" "1" "…a status that fails: said on screen as not checked, naming the checkout"
 say "$(usr <<<"$J" | grep -c 'fatal:')" "1" "…with git's reason"
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "…and not as uncommitted changes"
 rm -rf "$D"
@@ -356,17 +356,24 @@ J=$(WT)
 say "$(usr <<<"$J" | grep -c 'is in the main checkout')" "1" "…while a stale hook there, same fixture, still gets the main-checkout command"
 say "$(usr <<<"$J" | grep -c 'install.sh: missing')" "0" "…without naming install.sh as missing"
 rm -rf "$D"
-# A status that succeeds but warns on stderr — an unreadable directory among the hooks —
-# showed the warning on screen as "uncommitted changes" every session: stderr was read
-# with stdout (second review, C2). Only stdout is the answer; stderr is shown when the
-# status fails.
+# A status that succeeds but warns — an unreadable directory among the hooks — is a
+# check that did not see everything: said as such, with the warning. Read with stdout it
+# was shown as "uncommitted changes" (second review, C2); dropped, it was silence the
+# suite pinned (third review, E1). Root reads a mode-000 directory, so git never warns.
 D=$(mkrepo); cp "$H/../git/install.sh" "$D/.ai/hooks/"; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
 mkdir -p "$D/.ai/hooks/sub"; : > "$D/.ai/hooks/sub/x"; chmod 000 "$D/.ai/hooks/sub"
-J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) )
-chmod 755 "$D/.ai/hooks/sub"
-say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "a status that warns but succeeds: no uncommitted-changes notice"
-say "$(usr <<<"$J" | grep -c 'could not check')" "0" "…and no could-not-check notice"
+if [ -r "$D/.ai/hooks/sub" ]; then
+  chmod 755 "$D/.ai/hooks/sub"
+  echo "  ⏭️  a status that warns: skipped — running as root, a mode-000 directory is readable"
+else
+  J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?" )
+  chmod 755 "$D/.ai/hooks/sub"
+  say "$(grep -c '^rc=0$' <<<"$J")" "1" "a status that warns but succeeds: session-start exits 0"
+  say "$(usr <<<"$J" | grep -c 'could not fully check the git hooks for uncommitted changes')" "1" "…and says the hooks could not be fully checked"
+  say "$(usr <<<"$J" | grep -c 'warning:')" "1" "…with git's warning"
+  say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "…not as uncommitted changes"
+fi
 rm -rf "$D/.ai/hooks/sub"; echo '# flight-rules: adapted' >> "$D/.ai/hooks/post-merge"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) | usr | grep -c 'git hooks have uncommitted changes')" "1" "…while a real uncommitted change, same fixture, is still said"
