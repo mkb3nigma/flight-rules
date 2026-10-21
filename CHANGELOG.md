@@ -10,17 +10,23 @@ this one does; every verdict below was run against both, not reasoned about.
 
 No git hook changed, but `install.sh` did (#87), and the hook sync carries it. With
 `HOOK_SYNC=auto`, a session replaces an unmodified `.ai/hooks/install.sh` and leaves the
-diff for you to commit. Where that happens depends on `core.hooksPath`:
-- The usual absolute path into the main checkout: only a session there syncs. A session
-  in a worktree prints the command to run there instead.
-- A relative path: each worktree's session syncs its own copy.
+diff for you to commit. Where that happens depends on `core.hooksPath`, which
+`git config --local core.hooksPath` shows:
+- A relative path, which every install since 0.24.0 writes: each checkout's session
+  syncs its own copy, worktrees included.
+- An absolute path into the main checkout, which 0.23.0 and earlier wrote: only a
+  session there syncs. A session in a worktree prints the command to run there, every
+  day, even when nothing is stale (#93).
+- An absolute path outside the repository: never synced; the session says so.
 
 No sync runs while a merge, rebase or similar operation is in progress, and the session
-says so. A copy you changed is left alone, and nothing is said about it, because this
-release syncs no other file. With the default `report` nothing is said either, because
-doctor checks only the hooks themselves (#90). An old or changed copy still works. To
-see where yours stands, or to update an unmodified one, run this from the checkout
-`core.hooksPath` points into, where `<plugin>` is
+says so. A copy you changed is left alone. The session names it only when another hook
+is synced in the same run, which happens for a project older than 0.25.0, whose
+`pre-commit` changed then. It also lists it among uncommitted changes while it is
+uncommitted. With the default `report` nothing is said at all, because doctor checks
+only the hooks themselves (#90). An old or changed copy still works. To see where yours
+stands, or to update an unmodified one, run this from the checkout `core.hooksPath`
+points into, where `<plugin>` is
 `~/.claude/plugins/cache/<marketplace>/flight-rules/0.26.0`:
 
 ```bash
@@ -80,10 +86,12 @@ One new optional `.ai/flight-rules.conf` key, `DG_WAIT_MINUTES`, is described be
 - The `release review` check now also requires a `### Verdict` heading in the
   **Adversarial review** section (#83), with text under it that is not a heading.
   The `> Pre-review:` line alone used to pass. A line like `#83 applied` counts as
-  text, not as a heading, and a heading indented by up to three spaces counts as a
-  heading. Inside a code fence, a `### Verdict` is not the verdict, and a `## ` line
-  does not end the section. The check also fails when it cannot count
-  the section, instead of passing.
+  text, not as a heading. A heading indented by up to three spaces counts as a
+  heading, apart from the `## Adversarial review` line itself, which must start the
+  line. An H1, and a `##` followed by a tab or by nothing, end the section. Inside a
+  code fence, a `### Verdict` is not the verdict, and a `## ` line does not end the
+  section. The check also fails when it cannot count the section, instead of passing.
+  Its known limits are listed in the workflow's comment (#91).
 - Only the `pr-create` template's own placeholder lines (`<the …>`, `<ONLY if …>`)
   count as empty. A review written as one-line HTML used to count as empty (#84).
 - `docs-consistency.test.sh` now also checks three things:
