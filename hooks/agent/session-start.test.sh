@@ -318,9 +318,23 @@ D=$(mkrepo); cp "$H/../git/install.sh" "$D/.ai/hooks/"; printf 'HOOK_SYNC=auto\n
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
 git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"
-J=$( (cd "$D/.ai/worktrees/wt" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
-say "$(ctx <<<"$J" | grep -c 'rc=0')" "1" "auto, in a worktree, current hooks in the main checkout: the hook exits 0"
-say "$(grep -c 'could not update the git hooks\|main checkout' <<<"$J")" "0" "…and says nothing about the sync"
+WT() { (cd "$D/.ai/worktrees/wt" && rm -f "$D"/fakehome/.claude/hooks/.worktree-check-* && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); }
+J=$(WT)
+say "$(grep -c 'could not update the git hooks\|main checkout' <<<"$J")" "0" "auto, in a worktree, current hooks in the main checkout: says nothing about the sync"
+# The silence is a decision, not a path never reached (session-start always exits 0, so
+# its exit status could not tell — #93 batch review, B4): the same fixture with one
+# stale copy gets the main-checkout command on screen.
+stale "$D" commit-msg; git -C "$D" commit -qam "chore: stale" --no-verify
+say "$(WT | usr | grep -c 'is in the main checkout')" "1" "…while one stale copy there, same fixture, gets the main-checkout command on screen"
+# A worktree session asked `git status` about a path in the main checkout, which git
+# refuses (exit 128); 2>/dev/null made that "no uncommitted changes" (#93 batch review,
+# B8). It now asks from the directory that holds the hooks.
+cp "$H/../git/commit-msg" "$D/.ai/hooks/commit-msg"; git -C "$D" commit -qam "chore: current" --no-verify
+echo '# flight-rules: adapted' >> "$D/.ai/hooks/post-merge"
+J=$(WT)
+say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…an uncommitted change to a hook in the main checkout: said on screen from the worktree"
+say "$(usr <<<"$J" | grep -c 'M .ai/hooks/post-merge')" "1" "…naming the file"
+say "$(usr <<<"$J" | grep -cF "in $D")" "1" "…and the checkout it is in"
 rm -rf "$D"
 # Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"

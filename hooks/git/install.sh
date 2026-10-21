@@ -75,7 +75,9 @@ release_of() {
     if [ -n "$best" ]; then printf '%s' "$best"; else printf '%s' "$found" | head -1; fi
 }
 
-SYNCED=0; LEFT=0
+# MAIN here, not only on the --stale-only path: it is read on every path below, and one
+# exported by the caller made a plain install a silent no-op (#93 batch review, B1).
+SYNCED=0; LEFT=0; MAIN=""
 if [ -n "$FROM" ]; then
     [ -d "$FROM" ] || { echo "❌ --from $FROM is not a directory"; exit 1; }
     FROM=$(cd "$FROM" && pwd -P)
@@ -100,7 +102,6 @@ if [ -n "$FROM" ]; then
         # Said only when something there is stale or missing, after the comparison
         # below: said every time, a worktree session warned daily over current hooks
         # (#93, 2026-10-21).
-        MAIN=""
         if ! inside_repo "$HOOKS_DIR"; then
             MAIN=$(main_checkout || true)
             if [ -z "$MAIN" ] || ! inside "$HOOKS_DIR" "$MAIN"; then
@@ -119,6 +120,7 @@ if [ -n "$FROM" ]; then
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
+            [ -z "$MAIN" ] || echo "   $h: missing"
             TO_COPY="$TO_COPY $h"
         elif cmp -s "$src" "$dst"; then
             :
