@@ -352,24 +352,34 @@ to. A finding names its place (`file:line`) and, where a test should have caught
 the test that would fail. A class with nothing found is not reported: the table holds
 findings, not a checklist (the classes and their warrant: #96).
 
-- **Security** — *object-level authorization*: a record id a route or tool accepts, in
-  the path, body or arguments, with no ownership check, or none a test would miss.
-  *Untrusted input*: SQL, shell, templates, file paths, URLs fetched server-side.
-  *Client-side*: unescaped HTML, CSRF on cookie-authenticated changes, secrets in
-  bundles. *Fail-open defaults*: a missing config value, flag or permission that allows.
+- **Security** — *object-level authorization*: a record id a caller supplies (path,
+  body, nested arrays, tool or RPC arguments) with no ownership check, or one no test
+  exercises; a foreign id answered differently from an unknown one (an existence
+  oracle); a test that fails for an unrelated 404/422, not for ownership. The ids are
+  best listed from the schema, not by hand. *Untrusted input*: SQL built as a string,
+  shell, templates, file paths, URLs fetched server-side. *Client-side*: unescaped HTML,
+  CSRF on cookie-authenticated changes, secrets in bundles. *Fail-open defaults*: a
+  missing config value, flag or permission that allows. *Shared policies*: one setting
+  serving two principals' security policies, so tightening one moves the other.
 - **Correctness** — *races*: check-then-act, double submit, a handler unsafe to run
-  twice with no unique constraint. *Magic values*: a literal compared where an enum,
-  union or named constant exists, or a fixed-value field typed as a plain string — a
-  typo should fail the build, not run.
+  twice with no unique constraint, module-level mutable state shared across requests or
+  workers. *Magic values*: a literal compared where an enum, union or named constant
+  exists, or a fixed-value field typed as a plain string — a typo should fail the build,
+  not run; a value from outside the app stays untyped until a type guard narrows it,
+  never a cast. *Swallowed errors*: a catch that neither handles a named failure nor
+  surfaces it. *Dropped async errors*: a promise or task neither awaited, returned nor
+  handled.
 - **Performance** — *unbounded work*: no limit or pagination, no size cap on input.
+  *Blocking calls* in async code.
 - **Compatibility** — an API, schema, config key or CLI change that breaks existing
   callers or stored data; deploy order (old code on a new schema).
 - **Tests** — a changed behaviour no test would fail without; an assertion that passes
-  on no output.
+  on no output; a harness that can reach a non-disposable database (it should refuse
+  before connecting).
 - Where the code has them: data access (missing indexes, N+1 queries, transactions,
   migrations), distributed calls (timeouts, retries with backoff, idempotency, partial
-  failure), logging (secrets or PII in logs, swallowed errors, silent critical paths),
-  and the language's own idioms.
+  failure), logging (secrets or PII in logs, silent critical paths), and the language's
+  own idioms.
 
 Otherwise: architecture (coupling, scale, reversibility), product/business (market fit,
 monetisation mechanics, churn, distribution), decisions (trade-offs, alternatives,
