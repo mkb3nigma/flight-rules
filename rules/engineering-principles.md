@@ -33,8 +33,6 @@
   ask, take the reading the project's own evidence best supports, say which and why,
   then proceed. If something you need is answered by neither the request nor the
   project, say what is missing and stop — a guess is not one of the readings
-- Store instants in UTC — a stored time with no zone is a bug. Calendar arithmetic
-  (next day, 9am local, a recurrence) happens in the owning zone, not in UTC
 
 ## 2. Simplicity First
 
