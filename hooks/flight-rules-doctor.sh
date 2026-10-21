@@ -57,10 +57,13 @@ hook_marker() {
     post-merge)             printf 'post-merge-note' ;;
     reference-transaction)  printf 'is-ancestor' ;;
     pre-commit)             printf 'PRIVATE KEY' ;;
-    # Not a hook: tells flight-rules' install.sh from a project's own. Every revision
-    # since it was added (7b7f968, 2026-07-19) sets merge.ff; core.hooksPath would not do,
-    # because any hook installer sets that.
-    install.sh)             printf 'merge.ff' ;;
+    # Not a hook: tells flight-rules' install.sh from a project's own — a heuristic,
+    # like the rest. The phrase is in the header comment of every revision since it was
+    # added (7b7f968, 2026-07-19). merge.ff and core.hooksPath would not do: every
+    # flight-rules project is told to set both, so its own installer would match (second
+    # review, 2026-10-21). install.sh's --stale-only loop holds the same phrase; keep
+    # them in step. The full install's overwrite of a foreign copy is #97.
+    install.sh)             printf 'committed git hooks into git' ;;
     *)                      printf 'flight-rules' ;;
   esac
 }
@@ -150,7 +153,11 @@ else
     # here run this flight-rules' own. Missing is not reported: nothing needs it. Nor is
     # one that differs and lacks the marker: it is the project's own installer, and the
     # hint below would have replaced it (batch review, 2026-10-21; that overwrite is #97).
-    if [[ -f "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]] \
+    # One doctor cannot read is said: grep's error read as "no marker", and the file went
+    # unmentioned (second review, 2026-10-21).
+    if [[ -f "$HOOKS_DIR/install.sh" && ! -r "$HOOKS_DIR/install.sh" ]]; then
+      warn "$HOOKS_PATH/install.sh is unreadable — could not check it"
+    elif [[ -f "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]] \
        && ! cmp -s "$HOOKS_DIR/install.sh" "$GIT_HOOKS_SRC/install.sh" \
        && ! grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/install.sh"; then
       if _ver=$(release_of "$HOOKS_DIR/install.sh"); then

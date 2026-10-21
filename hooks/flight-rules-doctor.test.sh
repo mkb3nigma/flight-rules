@@ -456,6 +456,26 @@ say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a project's own
 say "$(run "$D" | grep -c 'pre-commit installed and executable')" "1" "…in a run that checked the hooks"
 say "$(rc "$D")" "0" "…and doctor passes"
 rm -rf "$D"
+# …including one that follows the playbook's own advice and sets merge.ff, which every
+# flight-rules project is told to do: merge.ff was the marker, and named it (second
+# review, 2026-10-21).
+D=$(mkrepo); printf '#!/bin/sh\ngit config core.hooksPath .ai/hooks\ngit config merge.ff false\n' > "$D/.ai/hooks/install.sh"
+say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a project's own install.sh that sets merge.ff is not reported"
+say "$(run "$D" | grep -c 'pre-commit installed and executable')" "1" "…in a run that checked the hooks"
+rm -rf "$D"
+# An install.sh doctor cannot read is said, not skipped: grep's error read as "no
+# marker" and the file went unmentioned (second review, 2026-10-21). As root, chmod
+# 000 blocks nothing, so the case would pass without testing anything: it says so.
+D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
+chmod 000 "$D/.ai/hooks/install.sh"
+if [ -r "$D/.ai/hooks/install.sh" ]; then
+  echo "  ⏭️  an unreadable install.sh: skipped — running as root, chmod 000 does not block the read"
+else
+  say "$(has "$D" "install.sh is unreadable")" "0" "an unreadable install.sh is named, not skipped"
+  say "$(rc "$D")" "0" "…as a warning"
+fi
+chmod 644 "$D/.ai/hooks/install.sh"
+rm -rf "$D"
 # A copy identical to this version's own release, while this checkout's differs: the
 # development case, worded as such rather than as an old release.
 D=$(mkrepo); _sv=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$H/../.claude-plugin/plugin.json" | head -1)
