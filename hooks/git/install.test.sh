@@ -315,6 +315,18 @@ else
     say "$(grep -c 'install.sh: differs' <<<"$OUT")" "0" "…not named as differing"
 fi
 rm -rf "$D" "$P"
+# A marker grep that errors on a readable file could not check it: said so, not
+# "differs… mark it adapted" (fix review, F14). Reachable only by a race or an I/O
+# error, so a grep on PATH fails it here.
+D=$(mkrepo); P=$(mkplugin); make_adapted "$D" post-merge
+SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+printf '#!/bin/sh\ncase "$*" in *"flight-rules: adapted"*) exit 2 ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
+chmod +x "$SHIM/grep"
+OUT=$(PATH="$SHIM:$PATH" run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "a marker grep that errors: exit 0"
+say "$(grep -c 'post-merge: could not be read (grep exited 2) — could not check it; left alone' <<<"$OUT")" "1" "…said as could not check"
+say "$(grep -c 'post-merge: differs' <<<"$OUT")" "0" "…not as differing"
+rm -rf "$D" "$P" "$SHIM"
 # A missing install.sh in the checkout the sync writes to is not put back unattended,
 # here any more than from a worktree (third review, E4; owner, 2026-10-21): doctor names
 # it with the command. The full install still copies it.

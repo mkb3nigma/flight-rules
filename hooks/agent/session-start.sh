@@ -143,7 +143,9 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     if [ "${_hp#/}" != "$_hp" ]; then _hd="$_hp"; else _hd="$_top/$_hp"; fi
     _own=$(git -C "$_hd" rev-parse --show-toplevel 2>/dev/null)
     _in=""; [ "$_own" = "$_top" ] || _in=" in $_own"
-    _all=$(git -C "$_hd" -c status.relativePaths=false -c color.status=false status --short -- . 2>&1); _st=$?
+    # status.branch=false: set true, it adds a `## <branch>` line that is not a status
+    # line, and every session said the hooks could not be checked (fix review, F2).
+    _all=$(git -C "$_hd" -c status.relativePaths=false -c color.status=false -c status.branch=false status --short -- . 2>&1); _st=$?
     _changed=$(printf '%s\n' "$_all" | grep -E '^[ MADRCUT?!]{2} ')
     _said=$(printf '%s\n' "$_all" | grep -vE '^[ MADRCUT?!]{2} ' | grep .)
     if [ "$_st" -ne 0 ] || [ -n "$_said" ]; then
