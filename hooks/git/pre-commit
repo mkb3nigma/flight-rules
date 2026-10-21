@@ -42,34 +42,42 @@ export LC_ALL=C
 LOCAL_HOOK="$(dirname "$0")/pre-commit.local"
 run_local() { [ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"; exit 0; }
 
-# Concluding a merge is not re-scanned: the incoming commits were scanned when they were
-# made. The marker is git's MERGE_HEAD FILE — `rev-parse --verify MERGE_HEAD` also
-# resolves a branch or tag of that name, and one switched the scan off for every
-# commit with nothing said (AppliHawk review, 2026-10-17). The skip is said every
-# time, so a MERGE_HEAD left behind is seen rather than trusted. And it must bring in a
-# commit HEAD lacks: git drops a parent HEAD already contains, so a leftover file naming
-# HEAD or an ancestor made an ordinary, unscanned commit (release /dg, 2026-10-17).
-# The message prescribes nothing: this hook cannot tell a merge someone started from a
-# leftover file, and each command it offered was wrong in one of the two — `git merge
-# --abort` discarded the staged work beside a leftover, and `rm` of the marker, after a
-# real merge a gate refused, landed the branch as one ordinary commit past that gate
-# (final release /dg, 2026-10-17/18). It names the commit coming in, which is what
-# shows a leftover for what it is, and says the commit records it as a parent: on a
-# leftover the commit usually goes through, so "stop" came too late (fix /dg,
-# 2026-10-18). The gates give the commands for a real merge.
+# Concluding a merge scans what the person wrote, not what came in. Skipping the commit
+# outright ("the merged commits were scanned when made") also skipped the conflict
+# resolution — new content in neither parent, never scanned — and this hook only runs
+# on a merge that stopped, which is where a resolution is (AppliHawk, 2026-10-21, #101).
+# git ≥ 2.42 writes AUTO_MERGE, the tree as git merged it, conflict markers included:
+# the staged diff against it is the resolution. Without it, the whole staged diff
+# against HEAD is scanned, incoming commits and all — slower, never unscanned.
+# The marker is git's MERGE_HEAD FILE, and AUTO_MERGE's too — `rev-parse --verify`
+# also resolves a branch or tag of that name, and one switched the scan off for every
+# commit with nothing said (AppliHawk review, 2026-10-17). It must bring in a commit
+# HEAD lacks: git drops a parent HEAD already contains, so a leftover file naming HEAD
+# or an ancestor is an ordinary commit, scanned in full (release /dg, 2026-10-17).
 MERGE_MARKER=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
 merges_something() {
     while read -r m; do
         [ -n "$m" ] || continue
         # Exit 1 is "not an ancestor"; any other failure (no such object) is no proof
-        # of a merge, so the scan runs.
+        # of a merge, so the scan runs in full.
         git merge-base --is-ancestor "$m" HEAD 2>/dev/null; [ $? -eq 1 ] && { MERGED=$m; return 0; }
     done < "$MERGE_MARKER"
     return 1
 }
+BASE=()
 if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
-    echo "pre-commit: concluding a merge of ${MERGED:0:12} — secret scan skipped; the merged commits were scanned when made. This commit records ${MERGED:0:12} as a parent. Not merging ${MERGED:0:12}? Check \`git log -1\` and \`git status\` before anything else." >&2
-    run_local "$@"
+    AUTO_FILE=$(git rev-parse --git-path AUTO_MERGE 2>/dev/null)
+    AUTO=""; [ -n "$AUTO_FILE" ] && [ -f "$AUTO_FILE" ] && read -r AUTO < "$AUTO_FILE"
+    if [ -n "$AUTO" ] && [ "$(git cat-file -t "$AUTO" 2>/dev/null)" = tree ]; then
+        BASE=("$AUTO")
+        _how="scanning the conflict resolution (what is staged beyond git's own merge)"
+    else
+        _how="no AUTO_MERGE from git (older than 2.42, or a merge with no conflict), so everything staged is scanned, the incoming commits included"
+    fi
+    # Said every time, naming the commit coming in: a MERGE_HEAD left behind is then
+    # seen rather than trusted, and prescribing a command was wrong for one of the two
+    # cases (final release /dg, 2026-10-17/18).
+    echo "pre-commit: concluding a merge of ${MERGED:0:12} — $_how. This commit records ${MERGED:0:12} as a parent. Not merging ${MERGED:0:12}? Check \`git log -1\` and \`git status\` before anything else." >&2
 fi
 
 # Every flag here stops repo config from changing what `git diff` prints, which would
@@ -100,9 +108,9 @@ not an agent's: stop and ask them.
 EOF
   exit 1
 }
-DIFF=(git diff --cached --no-color --no-ext-diff --no-textconv --text -U0)
-NAMES=(git -c core.quotePath=false diff --cached --name-only --diff-filter=d)
-RENAMES=(git -c core.quotePath=false diff --cached --name-status -M --diff-filter=RC)
+DIFF=(git diff --cached --no-color --no-ext-diff --no-textconv --text -U0 ${BASE[@]+"${BASE[@]}"})
+NAMES=(git -c core.quotePath=false diff --cached --name-only --diff-filter=d ${BASE[@]+"${BASE[@]}"})
+RENAMES=(git -c core.quotePath=false diff --cached --name-status -M --diff-filter=RC ${BASE[@]+"${BASE[@]}"})
 STAGED_DIFF=$("${DIFF[@]}" 2>/dev/null | tr -d '\000') || unread $? "${DIFF[*]} | tr" "${DIFF[@]}"
 # A .env is flagged for every change except its removal (--diff-filter=d): deleting or
 # untracking one is the clean-up. Editing one already tracked is refused like adding it
