@@ -476,6 +476,29 @@ else
 fi
 chmod 644 "$D/.ai/hooks/install.sh"
 rm -rf "$D"
+# A grep that errors rather than answering is a check that could not run — not "no
+# marker", which left the file unmentioned (third review, E12). It is reachable only by
+# a race or an I/O error after the readability test, so a grep on PATH fails it here.
+D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
+SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/install.sh) case "$*" in *-qF*) exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
+chmod +x "$SHIM/grep"
+OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
+say "$RC" "0" "a marker grep that errors: doctor exits 0"
+say "$(grep -c 'install.sh could not be read (grep exited 2) — could not check it' <<<"$OUT")" "1" "…and says install.sh could not be checked"
+say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the hooks"
+rm -rf "$D" "$SHIM"
+# Missing: noted on the full report with the cp that restores it, not in the daily
+# --problems-only one — nothing needs it, and a project may have removed it on purpose
+# (owner, 2026-10-21). mkrepo copies no install.sh.
+D=$(mkrepo)
+say "$(has "$D" "install.sh is not in .ai/hooks — nothing needs it to run the hooks; to restore it: cp")" "0" "a missing install.sh is noted, with the cp that restores it"
+P=$( (cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1) )
+say "$(grep -c 'install.sh' <<<"$P")" "0" "…not in --problems-only"
+CMD=$(run "$D" | grep -o 'to restore it: .*' | sed 's/^to restore it: //')
+(cd "$D" && eval "$CMD")
+say "$(cmp -s "$D/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "restored" "…and the cp, run as printed, restores it"
+rm -rf "$D"
 # A copy identical to this version's own release, while this checkout's differs: the
 # development case, worded as such rather than as an old release.
 D=$(mkrepo); _sv=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$H/../.claude-plugin/plugin.json" | head -1)
@@ -487,7 +510,7 @@ say "$(has "$D" "to update: bash")" "0" "…with the sync command"
 say "$(rc "$D")" "0" "…as a warning"
 rm -rf "$D"
 D=$(mkrepo)
-say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a missing install.sh is not reported"
+say "$(run "$D" | grep -c -e '[⚠❌].*install.sh' -e 'to update:')" "0" "a missing install.sh is no warning and asks for no sync"
 say "$(rc "$D")" "0" "…and doctor passes"
 cp "$H/git/install.sh" "$D/.ai/hooks/"
 say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a current install.sh is not reported"

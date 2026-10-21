@@ -150,12 +150,18 @@ else
     # The sync updates install.sh with the hooks, so a stale copy is named too: 0.26.0
     # changed only it, and under HOOK_SYNC=report nothing said so (#90). A warning, not a
     # problem — it guards nothing, an old copy works as it did, and the commands printed
-    # here run this flight-rules' own. Missing is not reported: nothing needs it. Nor is
-    # one that differs and lacks the marker: it is the project's own installer, and the
-    # hint below would have replaced it (batch review, 2026-10-21; that overwrite is #97).
-    # One doctor cannot read is said: grep's error read as "no marker", and the file went
-    # unmentioned (second review, 2026-10-21).
-    if [[ -f "$HOOKS_DIR/install.sh" && ! -r "$HOOKS_DIR/install.sh" ]]; then
+    # here run this flight-rules' own. Not one that differs and lacks the marker: it is
+    # the project's own installer, and the hint below would have replaced it (batch
+    # review, 2026-10-21; that overwrite is #97). A check that could not run says so —
+    # an unreadable file, or a grep that errors rather than answering, which read as
+    # "no marker" and left the file unmentioned (second and third reviews, 2026-10-21).
+    # Missing is noted on the full report only, with the cp that restores it: nothing
+    # needs it to run the hooks, the sync no longer puts it back unattended, and a
+    # project that removed it on purpose would get a warning every day (owner,
+    # 2026-10-21).
+    if [[ ! -e "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+      ok "$(printf 'install.sh is not in %s — nothing needs it to run the hooks; to restore it: cp %q %q' "$HOOKS_PATH" "$GIT_HOOKS_SRC/install.sh" "$HOOKS_DIR/install.sh")"
+    elif [[ -f "$HOOKS_DIR/install.sh" && ! -r "$HOOKS_DIR/install.sh" ]]; then
       warn "$HOOKS_PATH/install.sh is unreadable — could not check it"
     elif [[ -f "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]] \
        && ! cmp -s "$HOOKS_DIR/install.sh" "$GIT_HOOKS_SRC/install.sh" \
@@ -167,9 +173,14 @@ else
           warn "install.sh is the flight-rules $_ver copy — this flight-rules is ${SRC_VERSION:-newer}; only running $HOOKS_PATH/install.sh by hand gets the old one"
         fi
         NEEDS_SYNC=1
-      elif grep -qF "$(hook_marker install.sh)" "$HOOKS_DIR/install.sh"; then
-        warn "install.sh differs from this flight-rules' copy (${SRC_VERSION:-hooks/git/install.sh}) — adapted here on purpose, or a stale copy? diff it against $GIT_HOOKS_SRC/install.sh; if adapted, add a line '# flight-rules: adapted' to it and this stops"
-        NEEDS_SYNC=1
+      else
+        grep -qF "$(hook_marker install.sh)" "$HOOKS_DIR/install.sh"; _m=$?
+        if [[ $_m -eq 0 ]]; then
+          warn "install.sh differs from this flight-rules' copy (${SRC_VERSION:-hooks/git/install.sh}) — adapted here on purpose, or a stale copy? diff it against $GIT_HOOKS_SRC/install.sh; if adapted, add a line '# flight-rules: adapted' to it and this stops"
+          NEEDS_SYNC=1
+        elif [[ $_m -ne 1 ]]; then
+          warn "$HOOKS_PATH/install.sh could not be read (grep exited $_m) — could not check it"
+        fi
       fi
     fi
     if [[ "${NEEDS_SYNC:-0}" -eq 1 ]]; then
