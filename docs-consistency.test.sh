@@ -210,9 +210,37 @@ else
     [ "$(under "$LONG")" = 6 ] && ok "a \`\`\` line does not close a \`\`\`\` fence" || bad "$RR closes a \`\`\`\` fence at \`\`\` (under '$(under "$LONG")', want 6)"
     [ "$(under "$TILDE")" = 5 ] && ok "…nor does it close a ~~~ fence" || bad "$RR closes a ~~~ fence at \`\`\` (under '$(under "$TILDE")', want 5)"
     [ "$(under "$INLINE3")" = 1 ] && ok "…a line of inline \`\`\`code\`\`\` opens no fence" || bad "$RR opens a fence at inline \`\`\`code\`\`\` (under '$(under "$INLINE3")', want 1)"
+    # INLINE1 guards the backtick-later-on-the-line rule for a one-backtick run; with
+    # a run of one allowed to open a fence, APPROX is the case that fails.
     [ "$(under "$INLINE1")" = 1 ] && ok "…nor does a line starting with \`code\`" || bad "$RR opens a fence at a line starting \`x\` (under '$(under "$INLINE1")', want 1)"
     APPROX=$(printf '## Adversarial review\n### Verdict\n~2 minutes of CI, applied\n## Testing\nafter\n')
     [ "$(under "$APPROX")" = 1 ] && ok "…nor one starting with a single ~" || bad "$RR opens a fence at a line starting '~2' (under '$(under "$APPROX")', want 1)"
+    # Every structural rule reads the line with its indent stripped, each pinned by a
+    # case of its own: with one reverted to the raw line, the suite stayed green, and
+    # the `###` reset's revert let text under an indented heading pass as the verdict
+    # (0.26.0 fourth review, Y3). A closing fence has nothing after its run, so
+    # ```md inside a ``` fence is text, not its end (Y4).
+    NOTES=$(printf '## Adversarial review\n### Verdict\n  ### Notes\ntext\n## Testing\n')
+    INDVERD=$(printf '## Adversarial review\n  ### Verdict\n| V1 | applied |\n## Testing\n')
+    H4ONLY=$(printf '## Adversarial review\n### Verdict\n #### Agreed\n## Testing\n')
+    COMICFIRST=$(printf '## Adversarial review\n> Pre-review: ok\n  ### Comic\n### Verdict\n| V1 | applied |\n## Testing\n')
+    INFOCLOSE=$(printf '## Adversarial review\n### Verdict\n```\n```md\n## inside\n```\n| V1 | applied |\n## Testing\nafter\n')
+    [ "$(under "$NOTES")" = 0 ] && ok "an indented ### ends the verdict" || bad "$RR does not end the verdict at '  ### Notes' (under '$(under "$NOTES")', want 0)"
+    [ "$(verdict "$INDVERD")" = 1 ] && ok "…an indented ### Verdict is the verdict" || bad "$RR misses '  ### Verdict' (verdict '$(verdict "$INDVERD")', want 1)"
+    [ "$(under "$H4ONLY")" = 0 ] && ok "…an indented #### is a heading, not text" || bad "$RR counts ' #### Agreed' as verdict text (under '$(under "$H4ONLY")', want 0)"
+    [ "$(verdict "$COMICFIRST")" = 0 ] && ok "…and an indented ### Comic ends the section" || bad "$RR does not end the section at '  ### Comic' (verdict '$(verdict "$COMICFIRST")', want 0)"
+    [ "$(under "$INFOCLOSE")" = 5 ] && ok "a \`\`\`md line does not close a \`\`\` fence" || bad "$RR closes a fence at \`\`\`md (under '$(under "$INFOCLOSE")', want 5)"
+    # An H1, a `##` followed by a tab, and an empty `##` are headings that end the
+    # section; matched as `## ` only, a bare verdict before any of them took the text
+    # after it (Y1). So is an empty `###`, which ends the verdict.
+    H1=$(printf '## Adversarial review\n### Verdict\n# Testing\nran the suites\n')
+    TABH2=$(printf '## Adversarial review\n### Verdict\n##\tTesting\nran the suites\n')
+    EMPTYH2=$(printf '## Adversarial review\n### Verdict\n##\nran the suites\n')
+    EMPTYH3=$(printf '## Adversarial review\n### Verdict\n###\nran the suites\n## Testing\n')
+    for c in H1 TABH2 EMPTYH2 EMPTYH3; do
+      eval "b=\$$c"
+      [ "$(under "$b")" = 0 ] && ok "a bare verdict followed by $c has nothing under it" || bad "$RR takes the text after $c as the verdict (under '$(under "$b")', want 0)"
+    done
   fi
   # The step itself, as GitHub runs it (`bash -e`): it passes a filled body, fails a bare
   # verdict, and fails when its awk dies. `set -- $(…)` exits 0 whatever the awk did, so
@@ -232,6 +260,8 @@ else
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a verdict that is only inside a code fence (exit $RC)" || bad "the step passes a fenced-only verdict (exit $RC: $OUT)"
   OUT=$(step "$INDH2"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare verdict followed by an indented ## (exit $RC)" || bad "the step passes a bare verdict followed by ' ## Testing' (exit $RC: $OUT)"
+  OUT=$(step "$H1"); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare verdict followed by an H1 (exit $RC)" || bad "the step passes a bare verdict followed by '# Testing' (exit $RC: $OUT)"
   OUT=$(step "$FULL" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the step passes when its awk dies (exit $RC: $OUT)"
   rm -rf "$FX"
