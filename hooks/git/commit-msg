@@ -203,8 +203,12 @@ if echo "$NOTE" | grep -q "^passed:"; then
         box_row "that note itself, so it shows a check ran, not that"
         box_row "anyone wanted this branch merged."
         box_row ""
-        box_row "If the user asked for it, say so and merge:"
-        box_row "  FLIGHT_RULES_MERGE_AUTHORISED=1 git merge $MERGE_BRANCH"
+        # The conclude form, not `git merge <branch>`: this hook refusing leaves the
+        # merge in progress (MERGE_HEAD stays, clean merge or conflicted), and a second
+        # `git merge` fails with "You have not concluded your merge" — the command
+        # printed here never worked (AppliHawk, 2026-10-21, #100).
+        box_row "If the user asked for it, say so and finish the merge:"
+        box_row "  FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit"
         box_row ""
         box_row "If they did not: stop, and ask. Setting that variable"
         box_row "to get unblocked is the whole thing this prevents,"

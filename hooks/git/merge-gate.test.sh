@@ -486,6 +486,16 @@ grep -q 'FLIGHT_RULES_MERGE_AUTHORISED=1' <<<"$OUT"
 say "$?" "0" "…and the block names the way to proceed"
 [ "$(git -C "$D" rev-parse dev)" = "$BEFORE" ]
 say "$?" "0" "…and dev did not move"
+# The command the box prints is run as printed, in the state the refusal left: it
+# printed `git merge <branch>`, which fails while the refused merge is still in
+# progress — every time the box fired (#100).
+CMD=$(grep -o 'FLIGHT_RULES_MERGE_AUTHORISED=1 git [^║]*' <<<"$OUT" | sed 's/[[:space:]]*$//')
+say "$CMD" "FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit" "…and prints the command that concludes it"
+(cd "$D" && eval "$CMD") >/dev/null 2>&1
+say "$?" "0" "…which, run as printed, exits 0"
+say "$(git -C "$D" rev-parse dev^2 2>/dev/null)" "$(git -C "$D" rev-parse feature/x)" "…landing the merge"
+git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: explicit'
+say "$?" "0" "…with the authorisation recorded"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 
 D=$(mkauth)

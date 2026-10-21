@@ -225,7 +225,9 @@ that the logic has exactly one home.
   **A passing note is not consent.** The agent writes that note itself, so a stamped
   merge nobody asked for used to land with a green `✅ Pre-merge check verified` —
   measured 2026-09-10, no warning of any kind. The merge is now refused unless it says
-  who wanted it: `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`. An agent *can* set that
+  who wanted it: `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`. A refused merge is left
+  in progress, so the box gives `FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit`
+  to finish it — a second `git merge` fails there. An agent *can* set that
   variable itself — nothing inside its own tool calls distinguishes "the user asked"
   from "the agent decided" — so this does not claim proof. It makes the unbidden merge
   a deliberate, named act rather than a silent one, and writes the outcome into the
