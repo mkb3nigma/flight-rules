@@ -30,7 +30,7 @@ PEM=$(printf -- '-----BEGIN %s PRIVATE KEY-----' RSA)
 # A repo with one commit holding a tracked file `t`. $1: "armed" or "bare".
 make_repo() {
   local d; d=$(mktemp -d "$TMPROOT/r.XXXXXX")
-  git -C "$d" init -q -b feature || die "git init failed in $d"
+  git -C "$d" init -q -b feature ${2:+--ref-format=$2} || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.hooks"
   if [ "$1" = armed ]; then
@@ -206,6 +206,33 @@ h=$(git -C "$R" rev-parse HEAD)
 OUT=$(git -C "$R" commit -qm merge 2>&1)
 say "$(landed "$R" "$h")" no "no AUTO_MERGE: everything staged is scanned, so the incoming key is refused"
 say "$(grep -c 'no AUTO_MERGE from git' <<<"$OUT")" 1 "…saying why it scanned it all"
+# A tag (or branch) named AUTO_MERGE is not git's merge: with no AUTO_MERGE file, one
+# naming the staged tree narrowed the scan to nothing, so the incoming key landed.
+R=$(make_repo armed); cmerge "$R" resolved
+rm -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE"
+git -C "$R" tag AUTO_MERGE "$(git -C "$R" write-tree)"
+h=$(git -C "$R" rev-parse HEAD)
+OUT=$(git -C "$R" commit -qm merge 2>&1)
+say "$(landed "$R" "$h")" no "a tag named AUTO_MERGE is not git's merge: everything staged is scanned, the incoming key refused"
+say "$(grep -c 'no AUTO_MERGE from git' <<<"$OUT")" 1 "…saying it scanned it all"
+# A reftable repository has no AUTO_MERGE file; git still has the pseudo-ref, so the
+# scan is the resolution's there too (fix review, F8). Needs git >= 2.45.
+if ! git init -q --ref-format=reftable "$TMPROOT/rt-probe" >/dev/null 2>&1; then
+  echo "  ⏭️  reftable: skipped — this git ($(git --version)) cannot make a reftable repository"
+else
+  R=$(make_repo armed reftable); cmerge "$R" resolved
+  if [ -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE" ] || ! git -C "$R" rev-parse -q --verify AUTO_MERGE >/dev/null; then
+    die "the reftable fixture is not one: an AUTO_MERGE file, or no AUTO_MERGE at all"
+  fi
+  h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(git -C "$R" commit -qm merge 2>&1)
+  say "$(landed "$R" "$h")" yes "reftable: a conflicted merge whose incoming side holds a key concludes"
+  say "$(grep -c 'scanning the conflict resolution' <<<"$OUT")" 1 "…scanning the resolution, not everything"
+  R=$(make_repo armed reftable); cmerge "$R" "resolved, token=$GHP"
+  h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(git -C "$R" commit -qm merge 2>&1)
+  say "$(landed "$R" "$h")" no "reftable: a key written into the resolution is refused"
+fi
 
 echo "The notice names the commit coming in and prescribes no command (final release /dg, 2026-10-17/18):"
 # It cannot tell a real merge from a leftover, and each command it offered was wrong in

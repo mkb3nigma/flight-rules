@@ -270,9 +270,12 @@ that the logic has exactly one home.
   agent guard on purpose: the guard's `password = "…"` heuristic warns an agent but
   would block too many ordinary commits here. A merge being concluded has its
   conflict resolution scanned, not the commits coming in: the staged diff against
-  git's `AUTO_MERGE` (git ≥ 2.42) is what was typed while resolving. Without
+  git's `AUTO_MERGE` (git ≥ 2.42; the file, or in a reftable repository the pseudo-ref —
+  never a branch or tag of that name) is what was typed while resolving. Without
   `AUTO_MERGE` everything staged is scanned, incoming commits included (#101: skipping
-  the whole commit let a key typed into a resolution through). "Being concluded" means git's
+  the whole commit let a key typed into a resolution through). The accepted cost: an
+  incoming commit is scanned only if this hook ran when it was made, so one from before
+  it, or made with `--no-verify`, lands with the merge. "Being concluded" means git's
   `MERGE_HEAD` file exists and names a commit `HEAD` does not already contain (a branch
   or tag named `MERGE_HEAD` does not count, nor a leftover file naming `HEAD` or an
   ancestor, from which git makes an ordinary commit), and the

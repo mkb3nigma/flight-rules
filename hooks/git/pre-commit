@@ -16,13 +16,14 @@
 # warn an agent, and wrong often enough that blocking every human commit on it would
 # be the kind of "safety" block this playbook avoids.
 #
-# A merge being concluded (see the MERGE_HEAD test below) is not scanned. Its staged diff is the
-# whole incoming branch, and re-scanning it blocks the merge on lines nobody is writing
-# now. Those commits were scanned when they were made only if this hook was installed
-# and not bypassed then — not for history from before it, or a --no-verify commit. The
-# cost, accepted: those, and a key typed in while resolving the conflict, are not
-# scanned here. A `merge --squash` is a new
-# commit, with no MERGE_HEAD, and is scanned like any other.
+# A merge being concluded (see the MERGE_HEAD test below) scans the conflict
+# resolution — what is staged beyond git's own merge, AUTO_MERGE — not the incoming
+# commits: their whole diff blocks the merge on lines nobody is writing now. Without
+# AUTO_MERGE, everything staged is scanned against HEAD, incoming commits included. The
+# cost, accepted (owner, 2026-10-21, #101 fix review): an incoming commit is scanned
+# only if this hook ran when it was made — not history from before it, or a
+# --no-verify commit. A `merge --squash` is a new commit, with no MERGE_HEAD, and is
+# scanned like any other.
 #
 # A project that has its own pre-commit (a linter, lint-staged) renames it
 # `pre-commit.local` beside this one; it runs after a clean scan, with the same
@@ -66,13 +67,21 @@ merges_something() {
 }
 BASE=()
 if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
-    AUTO_FILE=$(git rev-parse --git-path AUTO_MERGE 2>/dev/null)
-    AUTO=""; [ -n "$AUTO_FILE" ] && [ -f "$AUTO_FILE" ] && read -r AUTO < "$AUTO_FILE"
+    AUTO_FILE=$(git rev-parse --git-path AUTO_MERGE 2>/dev/null); AUTO=""
+    if [ -n "$AUTO_FILE" ] && [ -f "$AUTO_FILE" ]; then
+        read -r AUTO < "$AUTO_FILE"
+    # A reftable repository keeps AUTO_MERGE in the ref store, not a file, and every
+    # merge there scanned everything, blaming an old git (fix review, F8). Read through
+    # git only when the name resolves to the pseudo-ref itself: a branch or tag named
+    # AUTO_MERGE would narrow the scan to whatever tree it names — the MERGE_HEAD trap.
+    elif [ "$(git rev-parse --symbolic-full-name AUTO_MERGE 2>/dev/null)" = AUTO_MERGE ]; then
+        AUTO=$(git rev-parse --verify -q AUTO_MERGE 2>/dev/null)
+    fi
     if [ -n "$AUTO" ] && [ "$(git cat-file -t "$AUTO" 2>/dev/null)" = tree ]; then
         BASE=("$AUTO")
         _how="scanning the conflict resolution (what is staged beyond git's own merge)"
     else
-        _how="no AUTO_MERGE from git (older than 2.42, or a merge with no conflict), so everything staged is scanned, the incoming commits included"
+        _how="no AUTO_MERGE from git (older than 2.42, or a merge strategy other than ort), so everything staged is scanned, the incoming commits included"
     fi
     # Said every time, naming the commit coming in: a MERGE_HEAD left behind is then
     # seen rather than trusted, and prescribing a command was wrong for one of the two
