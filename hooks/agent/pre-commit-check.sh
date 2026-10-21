@@ -397,6 +397,15 @@ resolve_target() {
   # not a workflow preference.
   GUARD_OFF=0
   [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]] && GUARD_OFF=1
+  # A pattern bash cannot compile makes =~ return 2, which read as "no match": a typo
+  # such as `^(trunk` turned the branch policy off with nothing said (#103). Fail
+  # closed: every branch is protected, and the block names the pattern (owner,
+  # 2026-10-21). `.`, not `.*`: a detached HEAD has no branch to protect.
+  PATTERN_BAD=""
+  if [[ $GUARD_OFF -eq 0 ]]; then
+    [[ "" =~ $PROTECTED_RE ]]
+    [[ $? -eq 2 ]] && { PATTERN_BAD="$PROTECTED_RE"; PROTECTED_RE='.'; }
+  fi
   MERGE_IN_PROGRESS=0
   [[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
   # Scope the branch policy to the project this hook belongs to. Without this, the
@@ -624,6 +633,12 @@ the project decides that — not the session that happened to merge something."
 Use absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified."
   fi
 
+  if [[ -n "$PATTERN_BAD" ]]; then
+    deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so every branch, \"$BLOCKED_BRANCH\" included, is treated as protected until it is fixed.
+
+The pattern is set in .ai/flight-rules.conf, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."
+    exit 0
+  fi
   deny "⛔ BLOCKED: protected branch \"$BLOCKED_BRANCH\".
 
 $VERB

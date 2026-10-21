@@ -174,6 +174,28 @@ check "custom REPLACES, not extends"     allow main 'git rm f.txt' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^integration$'
 check "custom: worktree dir in message"  deny  main 'git rm f.txt' \
       FLIGHT_RULES_WORKTREE_DIR='.worktrees'
+# A pattern bash cannot compile protected nothing: =~ returned 2, read as no match, and
+# a commit landed on the branch the typo meant to name (#103). Every branch is
+# protected until it is fixed; a valid pattern still lets a branch it does not name be.
+check "broken pattern: the branch it names"   deny  trunk     'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "broken pattern: any other branch too"  deny  feature/x 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "broken pattern: a destructive command" deny  feature/x 'git reset --hard HEAD~1' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "valid pattern: a branch it does not name" allow feature/x 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk)$'
+check "broken pattern, but off in the env wins" allow trunk 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=off
+D=$(make_repo feature/x); mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.ai/flight-rules.conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); RC=$?
+if [[ $RC -eq 0 ]] && grep -q '"permissionDecision": *"deny"' <<<"$OUT" \
+   && grep -qF 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ broken pattern in the conf: denied, naming the pattern\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ broken pattern in the conf: denied, naming the pattern (rc=%s)\n%s\n' "$RC" "$OUT"
+fi
+rm -rf "$D"
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR='.worktrees' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
