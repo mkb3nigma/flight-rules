@@ -312,7 +312,8 @@ that the logic has exactly one home.
   whenever a hook is missing or behind, or the project's `install.sh` is behind,
   differs while still carrying flight-rules' marker, or cannot be read (a warning,
   not on screen: it guards nothing; one without the marker is the project's own and
-  is not named; a missing one is noted with the `cp` that restores it), and
+  is not named; a missing one is noted with the `cp` that restores it — this
+  checkout's copy, from a worktree too), and
   `HOOK_SYNC=auto` in the conf has
   `session-start.sh` run the `--stale-only` form itself. Either way the result is a
   diff to review and commit. Tests: `install.test.sh`.
@@ -391,7 +392,8 @@ Guards that fire on the assistant's own events, before git ever runs:
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
 - **`flight-rules-doctor.sh`** — is the enforcement actually installed, and current? Checks `core.hooksPath`,
   every hook's executable bit *and* that each one still contains the string that makes
-  it that hook (a present, executable stub enforces nothing), that each one is this
+  it that hook (a present, executable stub enforces nothing; one it cannot read is said
+  to be unreadable, ❌, since git cannot run it either), that each one is this
   release's copy — byte-identical to an older cached release is ❌, differing from every
   release is ⚠️ since it may be the project's own adaptation, and either prints the
   `install.sh --from` command — `merge.ff`, the guard's parser, the conf's keys and

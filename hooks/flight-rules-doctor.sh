@@ -115,11 +115,20 @@ else
         fi
       elif [[ ! -x "$HOOKS_DIR/$h" ]]; then
         bad "$h is not executable — git ignores it silently (chmod +x, and commit the mode)"
-      elif ! grep -q "$(hook_marker "$h")" "$HOOKS_DIR/$h"; then
-        # pre-commit is the one hook a project is likely to have had already (a linter),
-        # and the upgrade to 0.23.0 is when it meets this line; say where it goes.
-        _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
-        bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
+      # Unreadable, or a grep that errors, is a check that could not run — not "no
+      # marker", which called the hook a stub and leaked grep's error (fix review, F15).
+      # Unreadable is a problem on its own: git cannot run it, so every commit fails.
+      elif [[ ! -r "$HOOKS_DIR/$h" ]]; then
+        bad "$h is unreadable — git cannot run it, so the commands it gates fail, and doctor could not check it (chmod +r, and commit the mode)"
+      elif { grep -q "$(hook_marker "$h")" "$HOOKS_DIR/$h" 2>/dev/null; _m=$?; [[ $_m -ne 0 ]]; }; then
+        if [[ $_m -ne 1 ]]; then
+          warn "$h could not be read (grep exited $_m) — could not check it"
+        else
+          # pre-commit is the one hook a project is likely to have had already (a linter),
+          # and the upgrade to 0.23.0 is when it meets this line; say where it goes.
+          _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
+          bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
+        fi
       elif grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/$h"; then
         # The project's own version, said so in the file: not compared with the release,
         # and never replaced by HOOK_SYNC=auto. Without the mark, an adapted hook drew a
@@ -160,7 +169,18 @@ else
     # project that removed it on purpose would get a warning every day (owner,
     # 2026-10-21).
     if [[ ! -e "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
-      ok "$(printf 'install.sh is not in %s — nothing needs it to run the hooks; to restore it: cp %q %q' "$HOOKS_PATH" "$GIT_HOOKS_SRC/install.sh" "$HOOKS_DIR/install.sh")"
+      # From a worktree whose hooks are in another checkout, the cp lands at the same
+      # path in this one: written into that checkout, it was an untracked file there that
+      # a later merge bringing install.sh in refused to overwrite (fix review, F9).
+      _dst="$HOOKS_DIR/install.sh"
+      _own=$(cd "$HOOKS_DIR" && git rev-parse --show-toplevel 2>/dev/null)
+      _hd=$(cd "$HOOKS_DIR" && pwd -P)
+      _cd1=$(cd "$HOOKS_DIR" && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+      _cd2=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+      if [[ -n "$_own" && "$_own" != "$ROOT" && -n "$_cd1" && "$_cd1" == "$_cd2" && "$_hd" == "$_own"/* ]]; then
+        _dst="$ROOT/${_hd#"$_own"/}/install.sh"
+      fi
+      ok "$(printf 'install.sh is not in %s — nothing needs it to run the hooks; to restore it, on a branch: cp %q %q' "$HOOKS_PATH" "$GIT_HOOKS_SRC/install.sh" "$_dst")"
     elif [[ -f "$HOOKS_DIR/install.sh" && ! -r "$HOOKS_DIR/install.sh" ]]; then
       warn "$HOOKS_PATH/install.sh is unreadable — could not check it"
     elif [[ -f "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]] \

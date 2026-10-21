@@ -492,13 +492,56 @@ rm -rf "$D" "$SHIM"
 # --problems-only one — nothing needs it, and a project may have removed it on purpose
 # (owner, 2026-10-21). mkrepo copies no install.sh.
 D=$(mkrepo)
-say "$(has "$D" "install.sh is not in .ai/hooks — nothing needs it to run the hooks; to restore it: cp")" "0" "a missing install.sh is noted, with the cp that restores it"
-P=$( (cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1) )
-say "$(grep -c 'install.sh' <<<"$P")" "0" "…not in --problems-only"
-CMD=$(run "$D" | grep -o 'to restore it: .*' | sed 's/^to restore it: //')
+say "$(has "$D" "install.sh is not in .ai/hooks — nothing needs it to run the hooks; to restore it, on a branch: cp")" "0" "a missing install.sh is noted, with the cp that restores it"
+# Paired with a problem the same run reports, so an empty --problems-only from a doctor
+# that died is not read as "install.sh not mentioned" (fix review, F13).
+chmod -x "$D/.ai/hooks/post-merge"
+P=$( (cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1) ); RC=$?
+say "$RC" "1" "…--problems-only, beside a hook that is not executable: exits 1"
+say "$(grep -c 'post-merge is not executable' <<<"$P")" "1" "…and reports that hook"
+say "$(grep -c 'install.sh' <<<"$P")" "0" "…but not the missing install.sh"
+chmod +x "$D/.ai/hooks/post-merge"
+CMD=$(run "$D" | grep -o 'to restore it, on a branch: .*' | sed 's/^to restore it, on a branch: //')
 (cd "$D" && eval "$CMD")
 say "$(cmp -s "$D/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "restored" "…and the cp, run as printed, restores it"
 rm -rf "$D"
+# From a worktree whose hooks are in the main checkout (an absolute core.hooksPath), the
+# cp restores this worktree's copy: into the main checkout it was an untracked file a
+# later merge bringing install.sh in refused to overwrite (fix review, F9).
+D=$(mkrepo); git -C "$D" add -A && git -C "$D" commit -qm base --no-verify
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt 2>/dev/null || die "could not add a worktree in $D"
+W="$D/.ai/worktrees/wt"; mkdir -p "$W/fakehome"
+CMD=$(run "$W" | grep -o 'to restore it, on a branch: .*' | sed 's/^to restore it, on a branch: //')
+say "$([ -n "$CMD" ] && echo printed)" "printed" "from a worktree, hooks in the main checkout: the cp is printed"
+(cd "$W" && eval "$CMD")
+say "$(cmp -s "$W/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "restored" "…and, run as printed, restores this worktree's copy"
+say "$([ -e "$D/.ai/hooks/install.sh" ] && echo written || echo untouched)" "untouched" "…not the main checkout's"
+rm -rf "$D"
+# An unreadable hook could not be checked: said so, not "may be a stub", and grep's
+# error is not on screen (fix review, F15). Git cannot run it, so it is a problem.
+D=$(mkrepo); chmod 111 "$D/.ai/hooks/post-merge"
+if [ -r "$D/.ai/hooks/post-merge" ]; then
+  echo "  ⏭️  an unreadable hook: skipped — running as root, chmod 111 does not block the read"
+else
+  OUT=$(run "$D")
+  say "$(head -1 <<<"$OUT")" "1" "an unreadable hook: a problem"
+  say "$(grep -c 'post-merge is unreadable — git cannot run it' <<<"$OUT")" "1" "…said to be unreadable"
+  say "$(grep -c 'post-merge does not look like' <<<"$OUT")" "0" "…not called a stub"
+  say "$(grep -ci 'permission denied' <<<"$OUT")" "0" "…with no grep error on screen"
+fi
+chmod 755 "$D/.ai/hooks/post-merge"; rm -rf "$D"
+# A marker grep that errors on a readable hook: could not check it, not a stub.
+D=$(mkrepo)
+SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/post-merge) case "$1" in -q) exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
+chmod +x "$SHIM/grep"
+OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
+say "$RC" "0" "a hook marker grep that errors: a warning, doctor exits 0"
+say "$(grep -c 'post-merge could not be read (grep exited 2) — could not check it' <<<"$OUT")" "1" "…said as could not check"
+say "$(grep -c 'post-merge does not look like' <<<"$OUT")" "0" "…not called a stub"
+say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the other hooks"
+rm -rf "$D" "$SHIM"
 # A copy identical to this version's own release, while this checkout's differs: the
 # development case, worded as such rather than as an old release.
 D=$(mkrepo); _sv=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$H/../.claude-plugin/plugin.json" | head -1)
