@@ -24,7 +24,9 @@ See [CHANGELOG.md](CHANGELOG.md) for what changes between versions.
 > guardrails, not a security boundary: anyone who means to get past them can, and an
 > assistant given full control of a machine is beyond anything a repository of rules can
 > reach. The design goal is to make the accidental path harder than the correct one, not
-> to be unbypassable. See [hooks/README.md](hooks/README.md#what-these-hooks-are--and-are-not).
+> to be unbypassable, and it assumes a competent developer: it catches what is easy to
+> overlook, stops and says why when it cannot go on, and does not babysit. See
+> [hooks/README.md](hooks/README.md#what-these-hooks-are--and-are-not).
 
 ## How it flows
 

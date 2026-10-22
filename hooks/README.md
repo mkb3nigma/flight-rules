@@ -479,6 +479,13 @@ design to stop someone acting deliberately.** A guard that catches the careless 
 and is honest about the willful one is more useful than one that poses as a security
 boundary and isn't.
 
+**It assumes a competent developer.** flight-rules exists so the small, easily
+overlooked thing is not missed — not to babysit. Where it cannot proceed safely it
+stops, says why, and prints the command where there is one. Its own automation (the
+sync, doctor) does not act on the developer's behalf to get round the stop — it makes
+no branch or worktree for them (#99) — and it adds no block for a mistake a competent
+developer would not make (owner, 2026-10-21).
+
 ### With the plugin alone, a protected branch is only half guarded
 
 `core.hooksPath` cannot be set by a plugin — git offers no mechanism — so the **git**
