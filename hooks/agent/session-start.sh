@@ -153,9 +153,19 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   # leaves alone, and listing them as behind beside it misled (fix review, F3).
   _behind=$(echo "$SYNC_OUT" | grep -E '^   [a-z.-]+: (missing|.* — stale)$' | sed 's/^  //')
   _left=$(echo "$SYNC_OUT" | grep -E '^   [a-z.-]+: ' | grep -vE '^   [a-z.-]+: (missing|.* — stale)$' | sed 's/^  //')
+  # A hook the sync could not read, with nothing else to say: silent, the check that
+  # could not run read as "current" (fix review, F4). Its own if, before the chain: an
+  # elif in it, it kept the uncommitted-changes check below from ever running while
+  # any hook was unreadable (fix review, F2).
+  if [ "$SYNC_RC" -eq 0 ] && ! echo "$SYNC_OUT" | grep -q '^   synced ' \
+     && echo "$_left" | grep -q 'could not check it'; then
+    echo "⚠️ flight-rules HOOK_SYNC=auto could not check every git hook:"
+    echo "$_left" | grep 'could not check it'
+    echo ""
+  fi
   if [ -n "$_check" ] && [ "$SYNC_RC" -eq 3 ]; then
     if [ -n "$_bad" ]; then
-      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. Fix the pattern in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES). Behind or missing:"
+      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. Tell the project owner: it is set in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES), and fixing it is their call, as the guard says. Behind or missing:"
     else
       echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: this checkout is on \"$_br\", a protected branch, where the change could not be committed. Behind or missing:"
     fi
@@ -165,13 +175,6 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     echo "To update them, run this in a worktree on a branch, then commit and merge it:"
     printf '  bash %q --from %q --stale-only --this-checkout\n' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"   # %q: it is pasted
     [ -z "$_left" ] || { echo "Left alone (the command does not touch these):"; echo "$_left"; }
-    echo ""
-  # A hook the sync could not read, with nothing else to say: silent, the check that
-  # could not run read as "current" (fix review, F4).
-  elif [ "$SYNC_RC" -eq 0 ] && ! echo "$SYNC_OUT" | grep -q '^   synced ' \
-       && echo "$_left" | grep -q 'could not check it'; then
-    echo "⚠️ flight-rules HOOK_SYNC=auto could not check every git hook:"
-    echo "$_left" | grep 'could not check it'
     echo ""
   elif [ "$SYNC_RC" -ne 0 ]; then
     echo "⚠️ flight-rules HOOK_SYNC=auto could not update the git hooks:"
@@ -199,7 +202,9 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     _in=""; [ "$_own" = "$_top" ] || _in=" in $_own"
     # status.branch=false: set true, it adds a `## <branch>` line that is not a status
     # line, and every session said the hooks could not be checked (fix review, F2).
-    _all=$(git -C "$_hd" -c status.relativePaths=false -c color.status=false -c status.branch=false status --short -- . 2>&1); _st=$?
+    # --untracked-files=all: status.showUntrackedFiles=no hid a hook the sync copied in
+    # (fix review, F12).
+    _all=$(git -C "$_hd" -c status.relativePaths=false -c color.status=false -c status.branch=false status --short --untracked-files=all -- . 2>&1); _st=$?
     _changed=$(printf '%s\n' "$_all" | grep -E '^[ MADRCUT?!]{2} ')
     _said=$(printf '%s\n' "$_all" | grep -vE '^[ MADRCUT?!]{2} ' | grep .)
     if [ "$_st" -ne 0 ] || [ -n "$_said" ]; then

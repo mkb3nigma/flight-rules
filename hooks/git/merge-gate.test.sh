@@ -494,8 +494,11 @@ say "$?" "0" "…and dev did not move"
 cp "$H/pre-commit" "$D/.ai/hooks/" && chmod +x "$D/.ai/hooks/pre-commit" || die "could not copy pre-commit into $D"
 CMD=$(grep -o 'FLIGHT_RULES_MERGE_AUTHORISED=1 git [^║]*' <<<"$OUT" | sed 's/[[:space:]]*$//')
 say "$CMD" "FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit" "…and prints the command that concludes it"
-(cd "$D" && eval "$CMD") >/dev/null 2>&1
-say "$?" "0" "…which, run as printed, exits 0"
+CONC=$(cd "$D" && eval "$CMD" 2>&1); RC=$?
+say "$RC" "0" "…which, run as printed, exits 0"
+# Its output is read: thrown away, the case also passed with no pre-commit run at all
+# (fix review, F8).
+say "$(grep -c '^pre-commit: concluding a merge of' <<<"$CONC")" "1" "…with the secret scan run on the merge it concludes"
 say "$(git -C "$D" rev-parse dev^2 2>/dev/null)" "$(git -C "$D" rev-parse feature/x)" "…landing the merge"
 git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: explicit'
 say "$?" "0" "…with the authorisation recorded"

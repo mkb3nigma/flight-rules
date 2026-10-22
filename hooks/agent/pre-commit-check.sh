@@ -597,7 +597,18 @@ while IFS= read -r _raw; do
   IS_PROTECTED=1; break
 done < <(command_segments_marked "$COMMAND")
 
-if [[ "$ACTION" == "branch-create" ]]; then
+# First, for every refusal: a branch-create one, ahead of it, offered PROTECTED_BRANCHES=off
+# and never named the broken pattern (fix review, F3). The branch is named only when it
+# is one: on a mirror push it read `every branch, "every branch (--mirror)" included`
+# (fix review, F7).
+if [[ -n "$PATTERN_BAD" && ( "$ACTION" == "branch-create" || "$IS_PROTECTED" == "1" ) ]]; then
+  _every="every branch"
+  [[ -n "$BLOCKED_BRANCH" && "$BLOCKED_BRANCH" != "every branch"* ]] && _every="every branch, \"$BLOCKED_BRANCH\" included,"
+  deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so $_every is treated as protected until it is fixed.
+
+The pattern is set in .ai/flight-rules.conf, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."
+  exit 0
+elif [[ "$ACTION" == "branch-create" ]]; then
   deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
@@ -636,12 +647,6 @@ the project decides that — not the session that happened to merge something."
 Use absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified."
   fi
 
-  if [[ -n "$PATTERN_BAD" ]]; then
-    deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so every branch, \"$BLOCKED_BRANCH\" included, is treated as protected until it is fixed.
-
-The pattern is set in .ai/flight-rules.conf, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."
-    exit 0
-  fi
   deny "⛔ BLOCKED: protected branch \"$BLOCKED_BRANCH\".
 
 $VERB

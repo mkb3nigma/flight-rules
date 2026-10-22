@@ -7,6 +7,7 @@
 #   … --from <dir> --stale-only                             # what HOOK_SYNC=auto runs
 #   … --from <dir> --stale-only --check-only                # …on a protected branch
 #   … --from <dir> --stale-only --this-checkout             # a worktree's own copy
+#   … --from <dir> --this-checkout                          # …replacing what differs
 #
 # A plugin update refreshes the agent hooks but cannot touch these: they are the
 # project's own committed files (AppliHawk, 2026-10-12: four hooks stayed at 0.22.0
@@ -33,12 +34,12 @@ while [ $# -gt 0 ]; do
         --stale-only) STALE_ONLY=1; shift ;;
         --check-only) CHECK_ONLY=1; shift ;;
         --this-checkout) THIS_CHECKOUT=1; shift ;;
-        *) echo "❌ unknown argument: $1 (usage: install.sh [--from <dir> [--stale-only [--check-only | --this-checkout]]])"; exit 1 ;;
+        *) echo "❌ unknown argument: $1 (usage: install.sh [--from <dir> [--stale-only [--check-only]] [--this-checkout]])"; exit 1 ;;
     esac
 done
 [ "$STALE_ONLY" -eq 1 ] && [ -z "$FROM" ] && { echo "❌ --stale-only needs --from <dir>"; exit 1; }
 [ "$CHECK_ONLY" -eq 1 ] && [ "$STALE_ONLY" -eq 0 ] && { echo "❌ --check-only needs --stale-only"; exit 1; }
-[ "$THIS_CHECKOUT" -eq 1 ] && [ "$STALE_ONLY" -eq 0 ] && { echo "❌ --this-checkout needs --stale-only"; exit 1; }
+[ "$THIS_CHECKOUT" -eq 1 ] && [ -z "$FROM" ] && { echo "❌ --this-checkout needs --from <dir>"; exit 1; }
 
 # The directory git runs hooks from. LOCAL config only: the global one can name a
 # directory outside every repo (~/.githooks), and a sync that followed it wrote seven
@@ -94,11 +95,14 @@ if [ -n "$FROM" ]; then
     # (a checkout, not a plugin) must mean "no version", not an exit.
     FROM_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
         "$FROM/../../.claude-plugin/plugin.json" 2>/dev/null | head -1 || true)
-    if [ "$STALE_ONLY" -eq 1 ]; then
+    # --this-checkout without --stale-only takes this path too: it is the full replace
+    # doctor's hint points at for a hook left alone as differing. Without it, that
+    # command run in a worktree wrote into the main checkout (fix review, F1).
+    if [ "$STALE_ONLY" -eq 1 ] || [ "$THIS_CHECKOUT" -eq 1 ]; then
         # Unattended (HOOK_SYNC=auto): only an install that exists, inside this repo,
         # is updated. Installing from nothing is the owner's step; a directory outside
         # the repo is not this repo's to write; a missing one is doctor's to report.
-        [ "$PATH_IS_SET" -eq 1 ] || { echo "❌ no local core.hooksPath — nothing is installed here to update (run install.sh without --stale-only to install)"; exit 1; }
+        [ "$PATH_IS_SET" -eq 1 ] || { echo "❌ no local core.hooksPath — nothing is installed here to update (run install.sh --from <dir>, with neither --stale-only nor --this-checkout, to install)"; exit 1; }
         [ -d "$HOOKS_DIR" ] || { echo "❌ core.hooksPath=$HOOKS_PATH does not exist — git runs no hooks; not touched"; exit 1; }
         # From a linked worktree, the usual install — an absolute path into the main
         # checkout, which every worktree shares — is in the repository but not in this

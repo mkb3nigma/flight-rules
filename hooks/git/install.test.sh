@@ -242,8 +242,22 @@ say "$(same "$D/.ai/worktrees/wt/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg"
 say "$(grep -c '^   synced commit-msg' <<<"$PASTED")" "1" "…saying so"
 say "$(sums "$D/.ai/hooks")" "$BEFORE" "…leaving the main checkout's copy as it was"
 say "$(git -C "$D/.ai/worktrees/wt" status --porcelain -- .ai/hooks)" " M .ai/hooks/commit-msg" "…a diff the worktree's branch can commit"
-say "$(rc "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --this-checkout)" "1" "--this-checkout without --stale-only is refused"
 git -C "$D/.ai/worktrees/wt" checkout -q -- .ai/hooks
+# --this-checkout without --stale-only replaces what differs too — doctor's "re-run
+# without --stale-only to replace it". Run with no flag, that command wrote into the main
+# checkout, on whatever branch it was (fix review, F1).
+echo "# this project's own change" >> "$D/.ai/worktrees/wt/.ai/hooks/post-merge"
+git -C "$D/.ai/worktrees/wt" commit -qam "chore: an adapted copy" --no-verify || die "could not commit the worktree's adapted copy"
+MAINST=$(git -C "$D" status --porcelain -- .ai/hooks 2>&1)
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --this-checkout)
+say "$(head -1 <<<"$OUT")" "0" "--this-checkout without --stale-only, from the worktree: exits 0"
+say "$(same "$D/.ai/worktrees/wt/.ai/hooks/post-merge" "$P/hooks/git/post-merge")" "same" "…replaces the worktree's differing copy"
+say "$(same "$D/.ai/worktrees/wt/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…and its stale one"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…leaving the main checkout's copy as it was"
+say "$(git -C "$D" status --porcelain -- .ai/hooks 2>&1)" "$MAINST" "…and the main checkout's git status there unchanged"
+say "$(git -C "$D" config --local core.hooksPath)" "$D/.ai/hooks" "…and core.hooksPath unchanged"
+git -C "$D/.ai/worktrees/wt" reset -q --hard HEAD~1
+say "$(rc "$D" "$P/hooks/git/install.sh" --this-checkout)" "1" "--this-checkout without --from is refused"
 # A path truly outside the repository, from the same worktree, keeps the old refusal.
 O=$(cd "$(mktemp -d)" && pwd -P); cp "$D"/.ai/hooks/* "$O/"; git -C "$D" config core.hooksPath "$O"
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)

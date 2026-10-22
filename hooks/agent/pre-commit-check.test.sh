@@ -185,17 +185,35 @@ check "broken pattern: a destructive command" deny  feature/x 'git reset --hard 
       FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
 check "valid pattern: a branch it does not name" allow feature/x 'git commit -m x' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk)$'
-check "broken pattern, but off in the env wins" allow trunk 'git commit -m x' \
-      FLIGHT_RULES_PROTECTED_BRANCHES=off
-D=$(make_repo feature/x); mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.ai/flight-rules.conf"
-OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); RC=$?
-if [[ $RC -eq 0 ]] && grep -q '"permissionDecision": *"deny"' <<<"$OUT" \
-   && grep -qF 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' <<<"$OUT"; then
-  PASS=$((PASS+1)); printf '  ✅ broken pattern in the conf: denied, naming the pattern\n'
-else
-  FAIL=$((FAIL+1)); printf '  ❌ broken pattern in the conf: denied, naming the pattern (rc=%s)\n%s\n' "$RC" "$OUT"
-fi
-rm -rf "$D"
+# The broken pattern in the conf, and a command run against it: <desc> <branch>
+# <command> <verdict> <text the output must hold> <text it must not> [env…].
+broken_conf() {
+  local desc="$1" branch="$2" cmd="$3" want="$4" has="$5" hasnt="$6" D OUT RC got; shift 6
+  D=$(make_repo "$branch"); mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.ai/flight-rules.conf"
+  OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" env "$@" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); RC=$?
+  if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then got=deny; else got=allow; fi
+  if [[ $RC -eq 0 && "$got" == "$want" ]] && { [[ -z "$has" ]] || grep -qF -- "$has" <<<"$OUT"; } \
+     && { [[ -z "$hasnt" ]] || ! grep -qF -- "$hasnt" <<<"$OUT"; }; then
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s (rc=%s, %s)\n%s\n' "$desc" "$RC" "$got" "$OUT"
+  fi
+  rm -rf "$D"
+}
+broken_conf "broken pattern in the conf: denied, naming the pattern" feature/x 'git commit -m x' \
+  deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read, so every branch, \"feature/x\" included,' ''
+# Off in the env wins over a broken conf. The case it replaces set off with no broken
+# pattern anywhere, so it pinned nothing about the two together (fix review, F4).
+broken_conf "broken pattern in the conf, off in the env: allowed" trunk 'git commit -m x' \
+  allow '' '' FLIGHT_RULES_PROTECTED_BRANCHES=off
+# A branch create was refused by the worktree block, which offered `off` and never named
+# the pattern (fix review, F3).
+broken_conf "broken pattern, checkout -b: denied, naming the pattern" feature/x 'git checkout -b feature/y' \
+  deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' 'PROTECTED_BRANCHES=off'
+# A mirror push names no branch: `every branch, "every branch (--mirror)" included` (F7).
+broken_conf "broken pattern, mirror push: denied, without naming a branch" feature/x 'git push --mirror origin' \
+  deny 'so every branch is treated as protected' 'included'
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR='.worktrees' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)

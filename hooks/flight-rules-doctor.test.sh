@@ -391,11 +391,13 @@ say "$(rc "$D")" "0" "a copy matching no release is a warning, not a problem"
 say "$(has "$D" "post-merge differs from this flight-rules' copy")" "0" "…that names the hook"
 say "$(has "$D" "to update: bash")" "0" "…and still prints the sync command"
 # "re-run without <flags> to replace it", followed as written, replaces it: the hint
-# named only --stale-only, and --this-checkout without it is refused (fix review, F12).
+# named only --stale-only, and --this-checkout without it was refused (fix review, F12).
+# Since F1 that is one flag, --stale-only, wherever it sits in the command.
 OUT=$(run "$D")
 FULL=$(grep -o 'to update: bash .*--this-checkout   (' <<<"$OUT" | sed 's/^to update: //; s/   ($//' | head -1)
 DROP=$(grep -o 're-run without [^)]* to replace it' <<<"$OUT" | sed 's/^re-run without //; s/ to replace it$//')
-(cd "$D" && HOME="$D/fakehome" eval "${FULL% $DROP}") >/dev/null 2>&1; RC=$?
+(cd "$D" && HOME="$D/fakehome" eval "${FULL/ $DROP/}") >/dev/null 2>&1; RC=$?
+say "$DROP" "--stale-only" "…the hint naming --stale-only alone, so --this-checkout stays"
 say "$RC" "0" "…and the command without the flags the hint names runs"
 say "$(cmp -s "$D/.ai/hooks/post-merge" "$H/git/post-merge" && echo replaced)" "replaced" "…and replaces the differing copy"
 rm -rf "$D"
@@ -526,6 +528,18 @@ say "$([ -n "$CMD" ] && echo printed)" "printed" "from a worktree, hooks in the 
 say "$(cmp -s "$W/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "restored" "…and, run as printed, restores this worktree's copy"
 say "$([ -e "$D/.ai/hooks/install.sh" ] && echo written || echo untouched)" "untouched" "…not the main checkout's"
 rm -rf "$D"
+# …but when the hooks directory is untracked in the main checkout, this worktree has none,
+# and the cp keeps the main checkout's path: redirected, it failed (fix review, F9 again).
+D=$(mkrepo); echo base > "$D/f"; git -C "$D" add f && git -C "$D" commit -qm base --no-verify
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt 2>/dev/null || die "could not add a worktree in $D"
+W="$D/.ai/worktrees/wt"; mkdir -p "$W/fakehome"
+CMD=$(run "$W" | grep -o 'to restore it, on a branch: .*' | sed 's/^to restore it, on a branch: //')
+say "$([ -n "$CMD" ] && echo printed)" "printed" "from a worktree, hooks untracked in the main checkout: the cp is printed"
+(cd "$W" && eval "$CMD") 2>/dev/null; RC=$?
+say "$RC" "0" "…and, run as printed, succeeds"
+say "$(cmp -s "$D/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "restored" "…restoring the main checkout's copy, the only one there is"
+rm -rf "$D"
 # An unreadable hook could not be checked: said so, not "may be a stub", and grep's
 # error is not on screen (fix review, F15). Git cannot run it, so it is a problem.
 D=$(mkrepo); chmod 111 "$D/.ai/hooks/post-merge"
@@ -535,6 +549,7 @@ else
   OUT=$(run "$D")
   say "$(head -1 <<<"$OUT")" "1" "an unreadable hook: a problem"
   say "$(grep -c 'post-merge is unreadable — git cannot run it' <<<"$OUT")" "1" "…said to be unreadable"
+  say "$(grep -c 'so what it checks does not happen and a command it gates fails' <<<"$OUT")" "1" "…in words true of post-merge too, whose status git ignores"
   say "$(grep -c 'post-merge does not look like' <<<"$OUT")" "0" "…not called a stub"
   say "$(grep -ci 'permission denied' <<<"$OUT")" "0" "…with no grep error on screen"
 fi
@@ -548,6 +563,18 @@ OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=
 say "$RC" "0" "a hook marker grep that errors: a warning, doctor exits 0"
 say "$(grep -c 'post-merge could not be read (grep exited 2) — could not check it' <<<"$OUT")" "1" "…said as could not check"
 say "$(grep -c 'post-merge does not look like' <<<"$OUT")" "0" "…not called a stub"
+say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the other hooks"
+rm -rf "$D" "$SHIM"
+# The adapted-mark grep that errors: could not check it either, not "not adapted" with
+# grep's error on screen (fix review, F13).
+D=$(mkrepo)
+SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/post-merge) case "$1" in -qE) echo "grep: shim I/O error" >&2; exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
+chmod +x "$SHIM/grep"
+OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
+say "$RC" "0" "an adapted-mark grep that errors: a warning, doctor exits 0"
+say "$(grep -c 'post-merge could not be read (grep exited 2) — could not check it' <<<"$OUT")" "1" "…said as could not check"
+say "$(grep -c 'shim I/O error' <<<"$OUT")" "0" "…with grep's error not on screen"
 say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the other hooks"
 rm -rf "$D" "$SHIM"
 # A copy identical to this version's own release, while this checkout's differs: the
