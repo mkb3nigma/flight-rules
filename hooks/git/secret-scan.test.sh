@@ -30,7 +30,7 @@ PEM=$(printf -- '-----BEGIN %s PRIVATE KEY-----' RSA)
 # A repo with one commit holding a tracked file `t`. $1: "armed" or "bare".
 make_repo() {
   local d; d=$(mktemp -d "$TMPROOT/r.XXXXXX")
-  git -C "$d" init -q -b feature || die "git init failed in $d"
+  git -C "$d" init -q -b feature ${2:+--ref-format=$2} || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.hooks"
   if [ "$1" = armed ]; then
@@ -174,20 +174,67 @@ rm -f "$R/ran"
 (cd "$R" && echo "k=$AWS" > g && git add g && git commit -qm x) >/dev/null 2>&1
 say "$(cat "$R/ran" 2>/dev/null || echo not-run)" not-run "…and does not run when the scan refused"
 
-echo "Concluding a merge (MERGE_HEAD present) is not re-scanned:"
-R=$(make_repo armed)
-( cd "$R" && git checkout -qb other && echo "k=$AWS" > f && echo other > t && git add . \
-  && git commit -qm "other" --no-verify && git checkout -q feature && echo mine > t \
-  && git commit -qam mine && git merge other >/dev/null 2>&1; echo resolved > t && git add t ) \
-  || die "could not build the conflicted merge"
-git -C "$R" rev-parse -q --verify MERGE_HEAD >/dev/null || die "the merge did not stop on a conflict"
+echo "Concluding a merge scans the conflict resolution, not the commits coming in (#101):"
+# Skipping the whole commit also skipped the resolution — new content in neither parent,
+# never scanned (AppliHawk, 2026-10-21). AUTO_MERGE (git >= 2.42) is git's own merge;
+# the staged diff against it is what the person wrote. Without it, all is scanned.
+cmerge() {   # cmerge <repo> <resolution of t>: a conflicted merge of `other` (which carries a key, committed --no-verify), resolved
+  ( cd "$1" && git checkout -qb other && echo "k=$AWS" > f && echo other > t && git add . \
+    && git commit -qm "other" --no-verify && git checkout -q feature && echo mine > t \
+    && git commit -qam mine && git merge other >/dev/null 2>&1; printf '%s\n' "$2" > t && git add t ) \
+    || die "could not build the conflicted merge"
+  [ -f "$(git -C "$1" rev-parse --absolute-git-dir)/MERGE_HEAD" ] || die "the merge did not stop on a conflict"
+}
+R=$(make_repo armed); cmerge "$R" resolved
+if [ ! -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE" ]; then
+  echo "  ⏭️  resolution-only scan: skipped — this git ($(git --version)) writes no AUTO_MERGE"
+else
+  h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(git -C "$R" commit -qm merge 2>&1)
+  say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a key concludes"
+  say "$(grep -c 'scanning the conflict resolution' <<<"$OUT")" 1 "…saying it scanned the resolution, so a leftover MERGE_HEAD is never silent"
+  say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
+  R=$(make_repo armed); cmerge "$R" "resolved, token=$GHP"
+  h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(git -C "$R" commit -qm merge 2>&1)
+  say "$(landed "$R" "$h")" no "a key written into the conflict resolution is refused"
+  say "$(grep -c 'commit refused' <<<"$OUT")" 1 "…and the hook said why"
+fi
+R=$(make_repo armed); cmerge "$R" resolved
+rm -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE"
 h=$(git -C "$R" rev-parse HEAD)
 OUT=$(git -C "$R" commit -qm merge 2>&1)
-say "$(landed "$R" "$h")" yes "a conflicted merge whose incoming side holds a key concludes"
-say "$(grep -c 'secret scan skipped' <<<"$OUT")" 1 "…and says the scan was skipped, so a leftover MERGE_HEAD is never silent"
-say "$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" 3 "…and it is a merge commit"
+say "$(landed "$R" "$h")" no "no AUTO_MERGE: everything staged is scanned, so the incoming key is refused"
+say "$(grep -c 'no AUTO_MERGE from git' <<<"$OUT")" 1 "…saying why it scanned it all"
+# A tag (or branch) named AUTO_MERGE is not git's merge: with no AUTO_MERGE file, one
+# naming the staged tree narrowed the scan to nothing, so the incoming key landed.
+R=$(make_repo armed); cmerge "$R" resolved
+rm -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE"
+git -C "$R" tag AUTO_MERGE "$(git -C "$R" write-tree)"
+h=$(git -C "$R" rev-parse HEAD)
+OUT=$(git -C "$R" commit -qm merge 2>&1)
+say "$(landed "$R" "$h")" no "a tag named AUTO_MERGE is not git's merge: everything staged is scanned, the incoming key refused"
+say "$(grep -c 'no AUTO_MERGE from git' <<<"$OUT")" 1 "…saying it scanned it all"
+# A reftable repository has no AUTO_MERGE file; git still has the pseudo-ref, so the
+# scan is the resolution's there too (fix review, F8). Needs git >= 2.45.
+if ! git init -q --ref-format=reftable "$TMPROOT/rt-probe" >/dev/null 2>&1; then
+  echo "  ⏭️  reftable: skipped — this git ($(git --version)) cannot make a reftable repository"
+else
+  R=$(make_repo armed reftable); cmerge "$R" resolved
+  if [ -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE" ] || ! git -C "$R" rev-parse -q --verify AUTO_MERGE >/dev/null; then
+    die "the reftable fixture is not one: an AUTO_MERGE file, or no AUTO_MERGE at all"
+  fi
+  h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(git -C "$R" commit -qm merge 2>&1)
+  say "$(landed "$R" "$h")" yes "reftable: a conflicted merge whose incoming side holds a key concludes"
+  say "$(grep -c 'scanning the conflict resolution' <<<"$OUT")" 1 "…scanning the resolution, not everything"
+  R=$(make_repo armed reftable); cmerge "$R" "resolved, token=$GHP"
+  h=$(git -C "$R" rev-parse HEAD)
+  OUT=$(git -C "$R" commit -qm merge 2>&1)
+  say "$(landed "$R" "$h")" no "reftable: a key written into the resolution is refused"
+fi
 
-echo "The skip names the commit coming in and prescribes no command (final release /dg, 2026-10-17/18):"
+echo "The notice names the commit coming in and prescribes no command (final release /dg, 2026-10-17/18):"
 # It cannot tell a real merge from a leftover, and each command it offered was wrong in
 # one: `git merge --abort` discarded staged work beside a leftover; `rm` of the marker,
 # after a real merge a gate refused, landed the branch past that gate. Through a real
@@ -226,7 +273,7 @@ for how in leftover refused leftover-gated; do
     say "$(grep -c 'it also drops what you staged' <<<"$OUT")" 1 "…and its box says what git merge --abort costs"
     say "$(grep -c 'started is a leftover: check git status first' <<<"$OUT")" 1 "…and names the leftover case"
   fi
-  say "$(grep -c "concluding a merge of ${in:0:12} — secret scan skipped" <<<"$OUT")" 1 "$how: the skip names the commit coming in"
+  say "$(grep -c "concluding a merge of ${in:0:12} — " <<<"$OUT")" 1 "$how: the notice names the commit coming in"
   say "$(grep -c "This commit records ${in:0:12} as a parent" <<<"$OUT")" 1 "…says the commit records it as a parent"
   say "$(grep -c 'Check `git log -1` and `git status` before anything else' <<<"$OUT")" 1 "…and what to check"
   say "$(grep -cE '`(rm |git merge --abort|git reset)' <<<"$(grep 'pre-commit:' <<<"$OUT")")" 0 "…prescribing no rm, --abort or reset"

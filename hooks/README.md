@@ -270,14 +270,19 @@ that the logic has exactly one home.
   prefix are all covered — the agent guard scans before the command runs and saw none
   of them (#71, #72) — and a human's commit is scanned too. It is narrower than the
   agent guard on purpose: the guard's `password = "…"` heuristic warns an agent but
-  would block too many ordinary commits here. A merge being concluded is not
-  re-scanned — its commits were scanned when made if this hook was installed then — so
-  neither is a key typed in while resolving its conflict. "Being concluded" means git's
+  would block too many ordinary commits here. A merge being concluded has its
+  conflict resolution scanned, not the commits coming in: the staged diff against
+  git's `AUTO_MERGE` (git ≥ 2.42; the file, or in a reftable repository the pseudo-ref —
+  never a branch or tag of that name) is what was typed while resolving. Without
+  `AUTO_MERGE` everything staged is scanned, incoming commits included (#101: skipping
+  the whole commit let a key typed into a resolution through). The accepted cost: an
+  incoming commit is scanned only if this hook ran when it was made, so one from before
+  it, or made with `--no-verify`, lands with the merge. "Being concluded" means git's
   `MERGE_HEAD` file exists and names a commit `HEAD` does not already contain (a branch
   or tag named `MERGE_HEAD` does not count, nor a leftover file naming `HEAD` or an
   ancestor, from which git makes an ordinary commit), and the
-  hook says on every such commit that it skipped the scan, so a `MERGE_HEAD` left behind
-  shows instead of switching the scan off unseen; a `merge --squash` is an
+  hook says on every such commit what it scanned, naming the commit coming in, so a
+  `MERGE_HEAD` left behind shows instead of narrowing the scan unseen; a `merge --squash` is an
   ordinary commit and is scanned. A clean `cherry-pick`/`revert` does not run
   `pre-commit`; one that stopped on a conflict and is finished with `--continue` does.
   Override for a checked false positive: `--no-verify`, the owner's call — the refusal
