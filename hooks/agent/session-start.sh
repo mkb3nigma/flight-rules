@@ -31,6 +31,15 @@ PROJECT_ROOT=$(pwd)
 
 # Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
+# read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
+# for the one key whose reading must match the guard's (session-start.test.sh compares).
+read_conf() {
+  local key="$1" file="$2"
+  [ -r "$file" ] || return 1
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
 conf_get() {
   sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]]+)\"?.*$/\\1/p" \
     "$PROJECT_ROOT/.ai/flight-rules.conf" 2>/dev/null | tail -1
@@ -118,8 +127,56 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     echo ""
     exit 0
   fi
-  SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only 2>&1); SYNC_RC=$?
-  if [ "$SYNC_RC" -ne 0 ]; then
+  # On a protected branch nothing is written: the diff could not be committed there,
+  # and `git restore` to clear it is refused as discarding work, so it sat in the
+  # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
+  # Compared only, and said when something is behind, with the command for a branch.
+  # Not a worktree made on the developer's behalf (owner, 2026-10-21): they choose
+  # where to run it. Protected is decided as pre-commit-check.sh decides it: the
+  # environment first, then the conf read by the same read_conf, the same default, and
+  # bash's =~ case-insensitively. Its own parse, grep and case missed `'^trunk$'`, `QA`
+  # and the environment, and wrote where the guard refuses (fix review, F1).
+  # session-start.test.sh compares the copies.
+  _prot="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+  _prot="${_prot:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
+  _br=$(git branch --show-current 2>/dev/null)
+  _check=""; _bad=""
+  if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
+    shopt -s nocasematch; [[ "$_br" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+    [ "$_m" -eq 0 ] && _check=--check-only
+    # 2: a pattern bash cannot compile. Taken as protected, and said — writing is the
+    # failure that costs work (fix review, F5).
+    [ "$_m" -eq 2 ] && { _check=--check-only; _bad=1; }
+  fi
+  SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only $_check 2>&1); SYNC_RC=$?
+  # Behind is stale or missing; the rest — adapted, differing, unreadable — the command
+  # leaves alone, and listing them as behind beside it misled (fix review, F3).
+  _behind=$(echo "$SYNC_OUT" | grep -E '^   [a-z.-]+: (missing|.* — stale)$' | sed 's/^  //')
+  _left=$(echo "$SYNC_OUT" | grep -E '^   [a-z.-]+: ' | grep -vE '^   [a-z.-]+: (missing|.* — stale)$' | sed 's/^  //')
+  # A hook the sync could not read, with nothing else to say: silent, the check that
+  # could not run read as "current" (group A fix review, F4). Its own if, before the chain: an
+  # elif in it, it kept the uncommitted-changes check below from ever running while
+  # any hook was unreadable (group A fix review, F2).
+  if [ "$SYNC_RC" -eq 0 ] && ! echo "$SYNC_OUT" | grep -q '^   synced ' \
+     && echo "$_left" | grep -q 'could not check it'; then
+    echo "⚠️ flight-rules HOOK_SYNC=auto could not check every git hook:"
+    echo "$_left" | grep 'could not check it'
+    echo ""
+  fi
+  if [ -n "$_check" ] && [ "$SYNC_RC" -eq 3 ]; then
+    if [ -n "$_bad" ]; then
+      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. It is the project owner's to fix, in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it. Behind or missing:"
+    else
+      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: this checkout is on \"$_br\", a protected branch, where the change could not be committed. Behind or missing:"
+    fi
+    echo "$_behind"
+    # --this-checkout: from a worktree whose git runs the hooks from this checkout, the
+    # plain form refused and sent the user back here (#99 review, 2026-10-21).
+    echo "To update them, run this in a worktree on a branch, then commit and merge it:"
+    printf '  bash %q --from %q --stale-only --this-checkout\n' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"   # %q: it is pasted
+    [ -z "$_left" ] || { echo "Left alone (the command does not touch these):"; echo "$_left"; }
+    echo ""
+  elif [ "$SYNC_RC" -ne 0 ]; then
     echo "⚠️ flight-rules HOOK_SYNC=auto could not update the git hooks:"
     echo "$SYNC_OUT" | sed 's/^/  /'
     echo ""
@@ -128,10 +185,35 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     echo "$SYNC_OUT" | grep -E '^   (synced |[a-z.-]+: )' | sed 's/^  //'
     echo ""
   elif [ "${CLAUDE_CODE_SESSION_ATTENDED-}" != "0" ]; then
+    # Asked from the directory that holds the hooks, not this checkout's top: from a
+    # worktree whose hooks are in the main checkout, `status -- <that path>` is refused
+    # (exit 128), and with 2>/dev/null that read as "no changes" (#93 batch review, B8).
+    # A check that could not run is "could not check", with git's reason — never clean,
+    # never "changed" (the rule each review of #93 found another case of: the third,
+    # 2026-10-21). One run, both streams: a status line is two status letters and a
+    # space; anything else is git saying something, a warning on a status that still
+    # succeeded included. Read apart, the warning was either shown as a change (C2) or
+    # dropped (E1), and a failed status asked again lost its reason (E2).
     _top=$(git rev-parse --show-toplevel 2>/dev/null)
-    _changed=$(git -C "$_top" status --short -- "$(git config --local core.hooksPath)" 2>/dev/null)
-    if [ -n "$_changed" ]; then
-      echo "📝 flight-rules: the git hooks have uncommitted changes — yours, or a headless session's HOOK_SYNC=auto, whose notice no one saw. \`git status\` and \`git diff HEAD\` show them; commit what should stay:"
+    _hp=$(git config --local --path core.hooksPath)
+    # if, not case: a case pattern's `)` inside this $( … ) is a syntax error to bash 3.2.
+    if [ "${_hp#/}" != "$_hp" ]; then _hd="$_hp"; else _hd="$_top/$_hp"; fi
+    _own=$(git -C "$_hd" rev-parse --show-toplevel 2>/dev/null)
+    _in=""; [ "$_own" = "$_top" ] || _in=" in $_own"
+    # status.branch=false: set true, it adds a `## <branch>` line that is not a status
+    # line, and every session said the hooks could not be checked (#93 fix review, F2).
+    # --untracked-files=all: status.showUntrackedFiles=no hid a hook the sync copied in
+    # (group A fix review, F12).
+    _all=$(git -C "$_hd" -c status.relativePaths=false -c color.status=false -c status.branch=false status --short --untracked-files=all -- . 2>&1); _st=$?
+    _changed=$(printf '%s\n' "$_all" | grep -E '^[ MADRCUT?!]{2} ')
+    _said=$(printf '%s\n' "$_all" | grep -vE '^[ MADRCUT?!]{2} ' | grep .)
+    if [ "$_st" -ne 0 ] || [ -n "$_said" ]; then
+      echo "⚠️ flight-rules could not fully check the git hooks$_in for uncommitted changes — git said:"
+      printf '%s\n' "${_said:-(nothing; git status exited $_st)}" | sed 's/^/  /'
+      [ -n "$_changed" ] && printf '%s\n' "$_changed" | sed 's/^/  /'
+      echo ""
+    elif [ -n "$_changed" ]; then
+      echo "📝 flight-rules: the git hooks have uncommitted changes$_in — yours, or a headless session's HOOK_SYNC=auto, whose notice no one saw. \`git status\` and \`git diff HEAD\` there show them; commit what should stay:"
       printf '%s\n' "$_changed" | sed 's/^/  /'
       echo ""
     fi

@@ -486,6 +486,22 @@ grep -q 'FLIGHT_RULES_MERGE_AUTHORISED=1' <<<"$OUT"
 say "$?" "0" "…and the block names the way to proceed"
 [ "$(git -C "$D" rev-parse dev)" = "$BEFORE" ]
 say "$?" "0" "…and dev did not move"
+# The command the box prints is run as printed, in the state the refusal left: it
+# printed `git merge <branch>`, which fails while the refused merge is still in
+# progress — every time the box fired (#100).
+# With the secret scan installed as a project has it: git commit runs pre-commit on a
+# merge being concluded, which a hook-less fixture never exercised (fix review, F10).
+cp "$H/pre-commit" "$D/.ai/hooks/" && chmod +x "$D/.ai/hooks/pre-commit" || die "could not copy pre-commit into $D"
+CMD=$(grep -o 'FLIGHT_RULES_MERGE_AUTHORISED=1 git [^║]*' <<<"$OUT" | sed 's/[[:space:]]*$//')
+say "$CMD" "FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit" "…and prints the command that concludes it"
+CONC=$(cd "$D" && eval "$CMD" 2>&1); RC=$?
+say "$RC" "0" "…which, run as printed, exits 0"
+# Its output is read: thrown away, the case also passed with no pre-commit run at all
+# (group A fix review, F8).
+say "$(grep -c '^pre-commit: concluding a merge of' <<<"$CONC")" "1" "…with the secret scan run on the merge it concludes"
+say "$(git -C "$D" rev-parse dev^2 2>/dev/null)" "$(git -C "$D" rev-parse feature/x)" "…landing the merge"
+git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: explicit'
+say "$?" "0" "…with the authorisation recorded"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 
 D=$(mkauth)

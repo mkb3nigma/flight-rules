@@ -174,6 +174,49 @@ check "custom REPLACES, not extends"     allow main 'git rm f.txt' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^integration$'
 check "custom: worktree dir in message"  deny  main 'git rm f.txt' \
       FLIGHT_RULES_WORKTREE_DIR='.worktrees'
+# A pattern bash cannot compile protected nothing: =~ returned 2, read as no match, and
+# a commit landed on the branch the typo meant to name (#103). Every branch is
+# protected until it is fixed; a valid pattern still lets a branch it does not name be.
+check "broken pattern: the branch it names"   deny  trunk     'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "broken pattern: any other branch too"  deny  feature/x 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "broken pattern: a destructive command" deny  feature/x 'git reset --hard HEAD~1' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "valid pattern: a branch it does not name" allow feature/x 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk)$'
+# The broken pattern in the conf, and a command run against it: <desc> <branch>
+# <command> <verdict> <text the output must hold> <text it must not> [env…].
+broken_conf() {
+  local desc="$1" branch="$2" cmd="$3" want="$4" has="$5" hasnt="$6" D OUT RC got; shift 6
+  D=$(make_repo "$branch"); mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.ai/flight-rules.conf"
+  OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" env "$@" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); RC=$?
+  if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then got=deny; else got=allow; fi
+  if [[ $RC -eq 0 && "$got" == "$want" ]] && { [[ -z "$has" ]] || grep -qF -- "$has" <<<"$OUT"; } \
+     && { [[ -z "$hasnt" ]] || ! grep -qF -- "$hasnt" <<<"$OUT"; }; then
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s (rc=%s, %s)\n%s\n' "$desc" "$RC" "$got" "$OUT"
+  fi
+  rm -rf "$D"
+}
+broken_conf "broken pattern in the conf: denied, naming the pattern" feature/x 'git commit -m x' \
+  deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read, so every branch, \"feature/x\" included,' ''
+# Off in the env wins over a broken conf. The case it replaces set off with no broken
+# pattern anywhere, so it pinned nothing about the two together (group A fix review, F4).
+broken_conf "broken pattern in the conf, off in the env: allowed" trunk 'git commit -m x' \
+  allow '' '' FLIGHT_RULES_PROTECTED_BRANCHES=off
+# A branch create on feature/x is refused only because the broken pattern matches every
+# branch — a valid one would allow it — so the pattern's block names the cause. The
+# worktree block offered `off` and never named the pattern (group A fix review, F3;
+# round 3, V1).
+broken_conf "broken pattern, checkout -b: denied, naming the pattern" feature/x 'git checkout -b feature/y' \
+  deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' 'PROTECTED_BRANCHES=off'
+# A mirror push is refused under any pattern, so it keeps its own block: the pattern's
+# said fixing it would let it through (group A fix review round 2, F7).
+broken_conf "broken pattern, mirror push: the protected-branch block" feature/x 'git push --mirror origin' \
+  deny 'protected branch \"every branch (--mirror)\"' 'is not a pattern bash can read'
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR='.worktrees' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
@@ -889,6 +932,42 @@ mg deny  "mid-merge: nor a forced push at a protected branch" \
 mg deny  "mid-merge: nor a local delete of a protected branch" \
          'git commit -m "merge feature/x" && git branch -D main'
 rm -rf "$MG"
+
+echo "…and the merge is the one in the -C target, not in the hook's own cwd (#98):"
+# `rev-parse --git-dir` printed `.git` relative to the -C target, and the test resolved
+# it from the cwd: from a linked worktree (where .git is a file) a merge being finished
+# in the main checkout was refused, and from a repo mid-merge a direct commit to another
+# repo's protected branch was waived. Each case runs with cwd ≠ the target.
+mgc() {   # mgc <expect> <desc> <cwd> <project dir> <command>
+  local expect="$1" desc="$2" cwd="$3" proj="$4" cmd="$5" out rc got
+  out=$(cd "$cwd" && CLAUDE_PROJECT_DIR="$proj" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+MR=$(make_repo main)
+git -C "$MR" worktree add -q "$MR/.ai/worktrees/x" -b feature/x >/dev/null 2>&1 \
+  || die "could not add a worktree to $MR"
+printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$MR/.git/MERGE_HEAD"
+mgc allow "from a worktree, finishing the main checkout's merge is waived" \
+    "$MR/.ai/worktrees/x" "$MR" "git -C $MR commit --no-edit"
+# A linked worktree keeps its MERGE_HEAD in its own gitdir (.git/worktrees/<name>), so
+# the main checkout's .git is the wrong place to look for it, from either side.
+git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 \
+  || die "could not add a dev worktree to $MR"
+mgc deny  "from the main checkout, a merge there does not waive a commit in a worktree on dev" \
+    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
+printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$(git -C "$MR/.ai/worktrees/d" rev-parse --absolute-git-dir)/MERGE_HEAD"
+mgc allow "from the main checkout, finishing a merge in a worktree on dev is waived" \
+    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit --no-edit"
+NM=$(make_repo main)
+mgc deny  "a merge in the cwd's repo does not waive a commit to another repo's main" \
+    "$MR" "$NM" "git -C $NM commit -m x"
+rm -rf "$MR" "$NM"
 
 echo "…and a harmless command is not made dangerous by its neighbour:"
 # The mirror of the section below, and the direction that had no coverage. The target

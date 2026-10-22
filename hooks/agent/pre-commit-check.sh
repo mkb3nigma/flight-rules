@@ -397,8 +397,20 @@ resolve_target() {
   # not a workflow preference.
   GUARD_OFF=0
   [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]] && GUARD_OFF=1
+  # A pattern bash cannot compile makes =~ return 2, which read as "no match": a typo
+  # such as `^(trunk` turned the branch policy off with nothing said (#103). Fail
+  # closed: every branch is protected, and the block names the pattern (owner,
+  # 2026-10-21). `.`, not `.*`: a detached HEAD has no branch to protect.
+  PATTERN_BAD=""
+  if [[ $GUARD_OFF -eq 0 ]]; then
+    [[ "" =~ $PROTECTED_RE ]]
+    [[ $? -eq 2 ]] && { PATTERN_BAD="$PROTECTED_RE"; PROTECTED_RE='.'; }
+  fi
   MERGE_IN_PROGRESS=0
-  [[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
+  # Absolute: `--git-dir` prints `.git` relative to the -C target, and `-f` resolved it
+  # from this hook's cwd — refusing a merge commit from a worktree, waiving a direct
+  # commit when the cwd's repo was mid-merge (#98).
+  [[ -f "$("${GIT[@]}" rev-parse --absolute-git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
   # Scope the branch policy to the project this hook belongs to. Without this, the
   # guard applies the project's branch rules to every repo the session touches —
   # including a sibling repo whose normal working branch IS main. (The secret scan
@@ -585,7 +597,19 @@ while IFS= read -r _raw; do
   IS_PROTECTED=1; break
 done < <(command_segments_marked "$COMMAND")
 
-if [[ "$ACTION" == "branch-create" ]]; then
+# A broken pattern's refusal comes first: a branch create is refused only on a branch
+# the pattern matches, and the worktree block it fell to offered PROTECTED_BRANCHES=off
+# and never named the pattern (group A fix review, F3; round 3, 2026-10-22, V1). Not for
+# a mirror push, which any pattern but off refuses: "until it is fixed" was false there
+# (group A fix review round 2, F7).
+if [[ -n "$PATTERN_BAD" && "$IS_PROTECTED" == "1" && "$BLOCKED_BRANCH" != "every branch (--mirror)" ]]; then
+  _every="every branch"
+  [[ -n "$BLOCKED_BRANCH" ]] && _every="every branch, \"$BLOCKED_BRANCH\" included,"
+  deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so $_every is treated as protected until it is fixed.
+
+The pattern is set in .ai/flight-rules.conf, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."
+  exit 0
+elif [[ "$ACTION" == "branch-create" ]]; then
   deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
