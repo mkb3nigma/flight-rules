@@ -890,6 +890,42 @@ mg deny  "mid-merge: nor a local delete of a protected branch" \
          'git commit -m "merge feature/x" && git branch -D main'
 rm -rf "$MG"
 
+echo "…and the merge is the one in the -C target, not in the hook's own cwd (#98):"
+# `rev-parse --git-dir` printed `.git` relative to the -C target, and the test resolved
+# it from the cwd: from a linked worktree (where .git is a file) a merge being finished
+# in the main checkout was refused, and from a repo mid-merge a direct commit to another
+# repo's protected branch was waived. Each case runs with cwd ≠ the target.
+mgc() {   # mgc <expect> <desc> <cwd> <project dir> <command>
+  local expect="$1" desc="$2" cwd="$3" proj="$4" cmd="$5" out rc got
+  out=$(cd "$cwd" && CLAUDE_PROJECT_DIR="$proj" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+MR=$(make_repo main)
+git -C "$MR" worktree add -q "$MR/.ai/worktrees/x" -b feature/x >/dev/null 2>&1 \
+  || die "could not add a worktree to $MR"
+printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$MR/.git/MERGE_HEAD"
+mgc allow "from a worktree, finishing the main checkout's merge is waived" \
+    "$MR/.ai/worktrees/x" "$MR" "git -C $MR commit --no-edit"
+# A linked worktree keeps its MERGE_HEAD in its own gitdir (.git/worktrees/<name>), so
+# the main checkout's .git is the wrong place to look for it, from either side.
+git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 \
+  || die "could not add a dev worktree to $MR"
+mgc deny  "from the main checkout, a merge there does not waive a commit in a worktree on dev" \
+    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
+printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$(git -C "$MR/.ai/worktrees/d" rev-parse --absolute-git-dir)/MERGE_HEAD"
+mgc allow "from the main checkout, finishing a merge in a worktree on dev is waived" \
+    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit --no-edit"
+NM=$(make_repo main)
+mgc deny  "a merge in the cwd's repo does not waive a commit to another repo's main" \
+    "$MR" "$NM" "git -C $NM commit -m x"
+rm -rf "$MR" "$NM"
+
 echo "…and a harmless command is not made dangerous by its neighbour:"
 # The mirror of the section below, and the direction that had no coverage. The target
 # parsers have run per SEGMENT since 2026-09-10, for the reason written above them; the

@@ -50,6 +50,9 @@ run() { local d="$1"; shift; local out rc; out=$(cd "$d" && HOME="$d/fakehome" b
 rc()  { run "$@" | head -1; }
 has() { local want="$1"; shift; run "$@" | tail -n +2 | grep -qF -- "$want"; echo $?; }
 same() { cmp -s "$1" "$2" && echo same || echo differs; }
+# sums <dir>: every file's checksum, dotfiles included — `cksum *` skipped them, and a
+# leftover .h.sync.$$ temp file is one (#93 batch review, B6).
+sums() { (cd "$1" && find . -type f -exec cksum {} + | sort); }
 
 echo "Plain install still wires the hooks:"
 D=$(mkrepo); git -C "$D" config --unset core.hooksPath; git -C "$D" config --unset merge.ff
@@ -219,12 +222,12 @@ D=$(mkrepo); P=$(mkplugin)
 echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the worktree fixture"
 git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt || die "could not add the worktree"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"; make_stale "$D" commit-msg
-BEFORE=$(cd "$D/.ai/hooks" && cksum * | sort)
+BEFORE=$(sums "$D/.ai/hooks")
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "a worktree whose hooksPath is in the main checkout: --stale-only still refuses"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…without calling it outside the repository"
 say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…naming the main checkout"
-say "$(cd "$D/.ai/hooks" && cksum * | sort)" "$BEFORE" "…and writes nothing there"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writes nothing there"
 CMD=$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')
 say "$CMD" "$(printf 'cd %q && bash %q --from %q --stale-only' "$D" "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the command to run there, its paths shell-quoted"
 # The command works when pasted, from anywhere: it syncs the main checkout's stale copy.
@@ -239,6 +242,117 @@ say "$(head -1 <<<"$OUT")" "1" "from a worktree, a hooksPath outside the reposit
 say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository"
 say "$(grep -c 'main checkout' <<<"$OUT")" "0" "…not as the main checkout"
 rm -rf "$D" "$P" "$O"
+# Compared first: when every copy in the main checkout is already current there is
+# nothing to send anyone there for, and a worktree session said "could not update the
+# git hooks" every day regardless (#93, 2026-10-21). Silent, exit 0; one stale or
+# missing copy still gets the main-checkout command.
+D=$(mkrepo); P=$(mkplugin)
+echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the worktree fixture"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+BEFORE=$(sums "$D/.ai/hooks")
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "a worktree whose hooksPath is in the main checkout, every copy current: exit 0"
+say "$(tail -n +2 <<<"$OUT" | grep -c .)" "0" "…saying nothing"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing there"
+make_adapted "$D" post-merge; BEFORE=$(sums "$D/.ai/hooks")
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "…an adapted copy there is not stale: exit 0"
+say "$(grep -c 'main checkout' <<<"$OUT")" "0" "…with no main-checkout command"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and nothing written"
+make_stale "$D" install.sh; BEFORE=$(sums "$D/.ai/hooks")
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "…one stale copy there: exit 1"
+say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…with the main-checkout message"
+say "$(grep -c 'install.sh: the flight-rules 0.0.1 copy — stale' <<<"$OUT")" "1" "…naming the stale copy, not as being updated"
+say "$(grep -c 'updating' <<<"$OUT")" "0" "…and claiming no update"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing there"
+cp "$P/hooks/git/install.sh" "$D/.ai/hooks/install.sh"; rm "$D/.ai/hooks/pre-rebase"
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "…one missing copy there: exit 1"
+say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…with the main-checkout message"
+say "$(grep -c '^   pre-rebase: missing$' <<<"$OUT")" "1" "…naming the missing copy"
+say "$([ -f "$D/.ai/hooks/pre-rebase" ] && echo written || echo absent)" "absent" "…and nothing written"
+# No install.sh there at all: nothing needs it (doctor does not name it), so it is no
+# reason to send anyone to the main checkout — it was, every day (second review, C1).
+cp "$P/hooks/git/pre-rebase" "$P/hooks/git/post-merge" "$D/.ai/hooks/"; rm "$D/.ai/hooks/install.sh"; BEFORE=$(sums "$D/.ai/hooks")
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "…no install.sh there, every hook current: exit 0"
+say "$(tail -n +2 <<<"$OUT" | grep -c .)" "0" "…saying nothing"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing there"
+make_stale "$D" commit-msg
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "…no install.sh and a stale hook: exit 1, the hook still counts"
+say "$(grep -c 'install.sh: missing' <<<"$OUT")" "0" "…without naming install.sh as missing"
+rm -rf "$D" "$P"
+# A project's own install.sh in the hooks directory — one that is not flight-rules' at
+# all — is no stale copy: --stale-only said "differs from every release… add
+# '# flight-rules: adapted'" about it whenever another hook synced, while doctor names
+# no such file (second review, C4). Skipped without a word; flight-rules' own copy,
+# edited, is still named.
+D=$(mkrepo); P=$(mkplugin)
+printf '#!/bin/sh\n# our setup script\ngit config merge.ff false\n' > "$D/.ai/hooks/install.sh"; make_stale "$D" commit-msg
+OWN=$(cksum < "$D/.ai/hooks/install.sh")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "a project's own install.sh beside a stale hook: exit 0"
+say "$(grep -c '^   synced commit-msg' <<<"$OUT")" "1" "…the stale hook is synced"
+say "$(grep -c 'install.sh' <<<"$OUT")" "0" "…and nothing is said about install.sh"
+say "$(cksum < "$D/.ai/hooks/install.sh")" "$OWN" "…which is left as it was"
+cp "$P/hooks/git/install.sh" "$D/.ai/hooks/install.sh"; make_adapted "$D" install.sh
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(grep -c 'install.sh: differs from every flight-rules release' <<<"$OUT")" "1" "flight-rules' install.sh, edited: still named as differing"
+# Unreadable: a check that could not run, said as such — not "differs… mark it adapted"
+# (third review, E3), not the project's own. Root reads a mode-000 file, so the case
+# would pass through the marker path without testing this (E7): skipped there.
+chmod 000 "$D/.ai/hooks/install.sh"
+if [ -r "$D/.ai/hooks/install.sh" ]; then
+    chmod 644 "$D/.ai/hooks/install.sh"
+    echo "  ⏭️  an unreadable install.sh: skipped — running as root, a mode-000 file is readable"
+else
+    OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+    chmod 644 "$D/.ai/hooks/install.sh"
+    say "$(grep -c 'install.sh: unreadable — could not check it' <<<"$OUT")" "1" "an unreadable install.sh is said to be unreadable"
+    say "$(grep -c 'install.sh: differs' <<<"$OUT")" "0" "…not named as differing"
+fi
+rm -rf "$D" "$P"
+# A marker grep that errors on a readable file could not check it: said so, not
+# "differs… mark it adapted" (fix review, F14). Reachable only by a race or an I/O
+# error, so a grep on PATH fails it here.
+D=$(mkrepo); P=$(mkplugin); make_adapted "$D" post-merge
+SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+printf '#!/bin/sh\ncase "$*" in *"flight-rules: adapted"*) exit 2 ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
+chmod +x "$SHIM/grep"
+OUT=$(PATH="$SHIM:$PATH" run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "a marker grep that errors: exit 0"
+say "$(grep -c 'post-merge: could not be read (grep exited 2) — could not check it; left alone' <<<"$OUT")" "1" "…said as could not check"
+say "$(grep -c 'post-merge: differs' <<<"$OUT")" "0" "…not as differing"
+rm -rf "$D" "$P" "$SHIM"
+# A missing install.sh in the checkout the sync writes to is not put back unattended,
+# here any more than from a worktree (third review, E4; owner, 2026-10-21): doctor names
+# it with the command. The full install still copies it.
+D=$(mkrepo); P=$(mkplugin); rm -f "$D/.ai/hooks/install.sh"; make_stale "$D" commit-msg
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "--stale-only, no install.sh, a stale hook: exit 0"
+say "$(grep -c '^   synced commit-msg' <<<"$OUT")" "1" "…the stale hook is synced"
+say "$([ -f "$D/.ai/hooks/install.sh" ] && echo there || echo absent)" "absent" "…install.sh is not put back"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$([ -f "$D/.ai/hooks/install.sh" ] && echo there || echo absent)" "there" "…while the full install restores it"
+rm -rf "$D" "$P"
+# An exported MAIN in the caller's environment is not this script's. Read before it was
+# set, it made a plain --from install a silent no-op and an update a false main-checkout
+# refusal (#93 batch review, B1, 2026-10-21).
+D=$(mkrepo); P=$(mkplugin); git -C "$D" config --unset core.hooksPath; git -C "$D" config --unset merge.ff
+OUT=$(export MAIN=/x; run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "MAIN exported: a plain --from install exits 0"
+say "$(git -C "$D" config core.hooksPath)" ".ai/hooks" "…and sets core.hooksPath"
+say "$(git -C "$D" config merge.ff)" "false" "…and merge.ff=false"
+rm -rf "$D"
+D=$(mkrepo); make_stale "$D" commit-msg
+OUT=$(export MAIN=/x; run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "MAIN exported: --from over a stale copy exits 0"
+say "$(grep -c '^   synced commit-msg' <<<"$OUT")" "1" "…and syncs it"
+say "$(grep -c 'main checkout' <<<"$OUT")" "0" "…with no main-checkout refusal"
+rm -rf "$D" "$P"
 # The printed command is pasted, so a path is quoted for the shell. Wrapped in "…", a
 # main checkout named with `$(…)` ran that command when pasted, and one with a `"`
 # broke it (0.26.0 release review, P2): the path is the user's own directory, but the
