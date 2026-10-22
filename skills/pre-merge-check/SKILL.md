@@ -38,8 +38,8 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
    this branch adds: run the checker on `<dest>` and on HEAD, and fail on any error not
    in `<dest>`'s set, matched by file, code and message — not by line, nor by count,
    which passes a branch that fixes one error and adds another. A project adopting a
-   checker on existing code gates on that baseline and pays the rest down. Unlike item
-   5's lint debt, which is reported: the type baseline has an event behind it
+   checker on existing code gates on that baseline and pays the rest down. Item 5
+   reports lint debt instead; the type baseline is gated because an event is behind it
    (AppliHawk carried 248 mypy errors with nothing to stop the count rising).
 5. **Lint check (error level)** — e.g. `eslint`, `ruff check`. Type checkers do not
     catch lint findings, so an ungated linter's error debt silently creeps back
@@ -130,10 +130,10 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     exactly what an authored one does. Its warrant is the pin.
 19. **Datetimes stored without a zone** — grep the diff's added lines. ❌ on a
     timestamp or datetime column declared without a timezone, or on `datetime.now()`
-    / `date.today()` with no tz argument, or the stack's equivalent. ⚠️ on `new Date(…)`, `time.time()` or a
-    locale date parse — right for a reader, wrong for storage, so say which this one
-    is. Converting a stored UTC instant for a reader is never a hit, whoever the
-    reader is: a screen, an email, a report, a scheduled job.
+    / `date.today()` with no tz argument, or the stack's equivalent. ⚠️ on
+    `new Date(…)`, `time.time()` or a locale date parse — right for a reader, wrong for
+    storage, so say which this one is. Converting a stored UTC instant for a reader is
+    never a hit, whoever the reader is: a screen, an email, a report, a scheduled job.
 20. **Swallowed errors** — grep the diff's added code lines (not comments, prose or
     examples) for a catch-all handler whose body only passes, returns or is empty
     (`except:` / `except Exception:` then `pass` or `return`; `catch (e) {}`; the
