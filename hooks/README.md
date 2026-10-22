@@ -461,9 +461,10 @@ boundary and isn't.
 
 **It assumes a competent developer.** flight-rules exists so the small, easily
 overlooked thing is not missed — not to babysit. Where it cannot proceed safely it
-stops, says why, and prints the command; it does not act on the developer's behalf to
-get round the stop (making a branch or a worktree for them, say), and it does not add a
-block for a mistake a competent developer would not make (owner, 2026-10-21, on #99).
+stops, says why, and prints the command where there is one. Its own automation (the
+sync, doctor) does not act on the developer's behalf to get round the stop — it makes
+no branch or worktree for them (#99) — and it adds no block for a mistake a competent
+developer would not make (owner, 2026-10-21).
 
 ### With the plugin alone, a protected branch is only half guarded
 
