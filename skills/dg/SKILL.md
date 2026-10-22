@@ -96,7 +96,10 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
    subject cold: no personas, no access to their findings. It enumerates correctness
    bugs, security issues, design weaknesses, and unstated assumptions with severity
-   (critical/important/minor) and confidence.
+   (critical/important/minor) and confidence. When the subject is code, the brief carries
+   § Review Domains verbatim: a reviewer starts with nothing but its brief, and a class
+   it is not shown is one it is not asked to look for (group B review, 2026-10-22: no
+   brief in that run carried them).
 
    **A second model being unavailable never stops the review.** A cross-family reviewer
    the project wires (Codex, say) that is out of quota, missing, or failing is a
@@ -192,7 +195,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the review's. Every persona brief says: *"Research only — read the subject and produce your
    review. Do NOT edit any files."* A persona subagent has the full toolset, and a
    reviewer that fixes what it found leaves an unreviewed change in the tree the
-   verdict describes.
+   verdict describes. When the subject is code, each brief also carries § Review Domains
+   verbatim, for step 2's reason.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its
@@ -353,9 +357,9 @@ the test that would fail. A class with nothing found is not reported: the table 
 findings, not a checklist (the classes and their warrant: #96).
 
 - **Security** — *object-level authorization*: a record id a caller supplies (path,
-  body, nested arrays, tool or RPC arguments) with no ownership check, or one no test
-  exercises; a foreign id answered differently from an unknown one (an existence
-  oracle); a test that fails for an unrelated 404/422, not for ownership. The ids are
+  body, nested arrays, tool or RPC arguments) with no ownership check, or an ownership
+  check no test exercises; a foreign id answered differently from an unknown one (an
+  existence oracle); a test that fails for an unrelated 404/422, not for ownership. The ids are
   best listed from the schema, not by hand. *Untrusted input*: SQL built as a string,
   shell, templates, file paths, URLs fetched server-side. *Client-side*: unescaped HTML,
   CSRF on cookie-authenticated changes, secrets in bundles. *Fail-open defaults*: a
