@@ -203,9 +203,13 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    `DG_WAIT_MINUTES` in `.ai/flight-rules.conf` (default 15; read like step 6's keys):
    a run with no result that long after it started is stopped and counts as failed —
    step 2's fallback, then `⚠️ unavailable — no result in <n>m` (for the scan, `⚠️ not
-   run — no result in <n>m`). Round 2's table then answers each pre-review finding by its
-   ID and each scan finding by its `<package>@<version>` and CVE, and Gilfoyle's harshest finding → Dinesh defends or concedes. Further rounds
-   alternate who leads. Converge early when concessions leave nothing disputed, but
+   run — no result in <n>m`). A timeout an extension gives its own pre-reviewer is an
+   inner limit under this one, so the extension need not read the key: a shorter one
+   fails that run sooner, a longer one is cut off here (#95). Round 2's table then
+   answers each pre-review finding by its ID and each scan finding by its
+   `<package>@<version>` and CVE, and Gilfoyle's harshest finding → Dinesh defends or
+   concedes. Further rounds alternate who leads. Converge early when concessions leave
+   nothing disputed, but
    never before round 2 has answered the pre-review and the scan: a debate that
    converges in round 1 is the debate that ends before they arrive.
 

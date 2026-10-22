@@ -107,8 +107,11 @@ per clone: its first session's doctor message prints the command (the plugin's
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run
 only when one starts. If a git hook is behind the new release, that session's doctor
 message prints the sync command with `--stale-only`: it replaces only copies identical
-to an older release, and leaves a hook you changed alone and names it. To have it run on
-its own, set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each release's
+to an older release, and leaves a hook you changed alone and names it. A project copy of
+`install.sh` that is behind, differs while carrying flight-rules' marker, or cannot be read
+is reported to the assistant only, not on screen: it guards nothing. To have the sync run on its own,
+set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each
+release's
 [CHANGELOG](CHANGELOG.md) entry starts with anything the update needs from you.
 
 **Any AI tool (rules, by pointer):** add one line to the project's rules entry point
