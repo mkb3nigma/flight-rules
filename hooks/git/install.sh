@@ -54,7 +54,17 @@ if [ -n "$HOOKS_PATH" ]; then
     PATH_IS_SET=1
     case "$HOOKS_PATH" in /*) HOOKS_DIR="$HOOKS_PATH" ;; *) HOOKS_DIR="$REPO_ROOT/$HOOKS_PATH" ;; esac
 fi
-inside() { case "$(cd "$1" 2>/dev/null && pwd -P)" in "$(cd "$2" && pwd -P)"/*) return 0 ;; esac; return 1; }
+# A path as `pwd -P` spells it, resolved through its nearest existing ancestor: a
+# directory not made yet resolved to nothing, so the worktree refusal below missed a
+# missing hooks directory in the main checkout and mkdir -p made it there (group A fix
+# review round 3, 2026-10-22, V2).
+resolved() {
+    local d="$1" t=""
+    [ "$d" = / ] || d="${d%/}"
+    while [ ! -d "$d" ]; do t="/${d##*/}$t"; d=$(dirname "$d"); done
+    printf '%s%s' "$(cd "$d" && pwd -P)" "$t"
+}
+inside() { case "$(resolved "$1")" in "$(cd "$2" && pwd -P)"/*) return 0 ;; esac; return 1; }
 inside_repo() { inside "$1" "$REPO_ROOT"; }
 # The main worktree's path, from a linked worktree; nothing in the main one itself, or
 # when the main one is bare. It is the first entry `git worktree list` prints.
@@ -128,7 +138,13 @@ if [ -n "$FROM" ]; then
                 [ -d "$REPO_ROOT/$_rel" ] || { echo "❌ $_rel is not in this checkout — nothing here to update (is it committed in the main checkout?)"; exit 1; }
                 # Resolved, not only present: a link there to the main checkout's copy
                 # took the write back into it (group A fix review round 2, F0).
-                inside_repo "$REPO_ROOT/$_rel" || { echo "❌ $_rel in this checkout leads to $(cd "$REPO_ROOT/$_rel" && pwd -P), outside it — not touched"; exit 1; }
+                # With the way on: a refusal that named only its cause left the next step
+                # to guess (round 3, V5).
+                inside_repo "$REPO_ROOT/$_rel" || {
+                    echo "❌ $_rel in this checkout leads to $(cd "$REPO_ROOT/$_rel" && pwd -P), outside it — not touched."
+                    echo "   Replace the link with the committed directory (rm the link, then git checkout -- $_rel) and re-run, or update the main checkout's copy there, on a branch."
+                    exit 1
+                }
                 HOOKS_DIR="$REPO_ROOT/$_rel"; MAIN=""; ACTIVE="This checkout's copy (git runs the main checkout's until it is merged there)"
                 echo "   updating this checkout's copy, $_rel — git runs the main checkout's until this is merged there"
             fi
@@ -139,7 +155,7 @@ if [ -n "$FROM" ]; then
     elif [ "$PATH_IS_SET" -eq 1 ] && ! inside_repo "$HOOKS_DIR" && _m=$(main_checkout) && inside "$HOOKS_DIR" "$_m"; then
         echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $_m — not written from this worktree. To update this worktree's copy, on its branch, then commit and merge it:"
         printf '   bash %q --from %q --this-checkout\n' "$FROM/install.sh" "$FROM"
-        echo "   To update the main checkout's copy instead, run the command without --this-checkout there."
+        echo "   To update the main checkout's copy instead, run the command without --this-checkout there, on a branch."
         exit 1
     fi
     mkdir -p "$HOOKS_DIR"

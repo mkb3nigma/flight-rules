@@ -207,11 +207,14 @@ broken_conf "broken pattern in the conf: denied, naming the pattern" feature/x '
 # pattern anywhere, so it pinned nothing about the two together (group A fix review, F4).
 broken_conf "broken pattern in the conf, off in the env: allowed" trunk 'git commit -m x' \
   allow '' '' FLIGHT_RULES_PROTECTED_BRANCHES=off
-# A branch create and a mirror push are refused under any pattern, so they keep their
-# own blocks: the pattern's said fixing it would let them through (group A fix review
-# round 2, F7).
-broken_conf "broken pattern, checkout -b: the worktree block" feature/x 'git checkout -b feature/y' \
-  deny 'branches are created as worktrees' 'is not a pattern bash can read'
+# A branch create on feature/x is refused only because the broken pattern matches every
+# branch — a valid one would allow it — so the pattern's block names the cause. The
+# worktree block offered `off` and never named the pattern (group A fix review, F3;
+# round 3, V1).
+broken_conf "broken pattern, checkout -b: denied, naming the pattern" feature/x 'git checkout -b feature/y' \
+  deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' 'PROTECTED_BRANCHES=off'
+# A mirror push is refused under any pattern, so it keeps its own block: the pattern's
+# said fixing it would let it through (group A fix review round 2, F7).
 broken_conf "broken pattern, mirror push: the protected-branch block" feature/x 'git push --mirror origin' \
   deny 'protected branch \"every branch (--mirror)\"' 'is not a pattern bash can read'
 D=$(make_repo main)

@@ -597,11 +597,12 @@ while IFS= read -r _raw; do
   IS_PROTECTED=1; break
 done < <(command_segments_marked "$COMMAND")
 
-# A broken pattern's refusal, only where the pattern decided it: a mirror push and a
-# branch create are refused under any pattern but off, so "until it is fixed" was false
-# for both, and they keep their own blocks (group A fix review round 2, 2026-10-22, F7).
-if [[ -n "$PATTERN_BAD" && "$IS_PROTECTED" == "1" && "$ACTION" != "branch-create" \
-      && "$BLOCKED_BRANCH" != "every branch (--mirror)" ]]; then
+# A broken pattern's refusal comes first: a branch create is refused only on a branch
+# the pattern matches, and the worktree block it fell to offered PROTECTED_BRANCHES=off
+# and never named the pattern (group A fix review, F3; round 3, 2026-10-22, V1). Not for
+# a mirror push, which any pattern but off refuses: "until it is fixed" was false there
+# (group A fix review round 2, F7).
+if [[ -n "$PATTERN_BAD" && "$IS_PROTECTED" == "1" && "$BLOCKED_BRANCH" != "every branch (--mirror)" ]]; then
   _every="every branch"
   [[ -n "$BLOCKED_BRANCH" ]] && _every="every branch, \"$BLOCKED_BRANCH\" included,"
   deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so $_every is treated as protected until it is fixed.
