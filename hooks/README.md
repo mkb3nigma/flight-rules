@@ -313,7 +313,8 @@ that the logic has exactly one home.
   2026-10-12). From a linked worktree whose hooks are in the main checkout, that form
   is refused — it would write into the main checkout's working tree — and prints the
   one to use there, `--this-checkout`, which updates the worktree's own copy for its
-  branch to commit and merge. `--stale-only` replaces only a copy byte-identical to some release in
+  branch to commit and merge. If that directory does not exist, git runs no hooks in
+  any checkout; the refusal says so and prints the install to run in the main checkout. `--stale-only` replaces only a copy byte-identical to some release in
   the plugin cache, so a project's own adaptation is left alone and named — mark it
   with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
   left alone without a word: an `install.sh` that is the project's own script, not

@@ -57,7 +57,10 @@ fi
 # A path as `pwd -P` spells it, resolved through its nearest existing ancestor: a
 # directory not made yet resolved to nothing, so the worktree refusal below missed a
 # missing hooks directory in the main checkout and mkdir -p made it there (group A fix
-# review round 3, 2026-10-22, V2).
+# review round 3, 2026-10-22, V2). Past the deepest existing directory the rest is taken
+# as written: a `..` or a dangling link there is not followed. Only a hand-set
+# core.hooksPath reaches that, and a dangling link fails mkdir -p loudly on BSD and GNU
+# alike (round 3 review, W3/W4: no refusal added for it).
 resolved() {
     local d="$1" t=""
     [ "$d" = / ] || d="${d%/}"
@@ -140,9 +143,17 @@ if [ -n "$FROM" ]; then
                 # took the write back into it (group A fix review round 2, F0).
                 # With the way on: a refusal that named only its cause left the next step
                 # to guess (round 3, V5).
+                # The command to paste on a line of its own, %q-quoted (round 4, W2), and
+                # only when $_rel itself is the link: a linked parent is not its to remove.
                 inside_repo "$REPO_ROOT/$_rel" || {
                     echo "❌ $_rel in this checkout leads to $(cd "$REPO_ROOT/$_rel" && pwd -P), outside it — not touched."
-                    echo "   Replace the link with the committed directory (rm the link, then git checkout -- $_rel) and re-run, or update the main checkout's copy there, on a branch."
+                    if [ -L "$REPO_ROOT/$_rel" ]; then
+                        echo "   Replace the link with the committed directory, then re-run:"
+                        printf '   rm %q && git checkout -- %q\n' "$REPO_ROOT/$_rel" "$_rel"
+                    else
+                        echo "   A directory above it is a link; replace that with the committed directory, then re-run."
+                    fi
+                    echo "   Or update the main checkout's copy there, on a branch the diff can be committed on, not a protected one."
                     exit 1
                 }
                 HOOKS_DIR="$REPO_ROOT/$_rel"; MAIN=""; ACTIVE="This checkout's copy (git runs the main checkout's until it is merged there)"
@@ -153,9 +164,16 @@ if [ -n "$FROM" ]; then
     # into that checkout's working tree — the docs said to run it (group A fix review
     # round 2, 2026-10-22, D1). Refused before anything is compared, with both ways on.
     elif [ "$PATH_IS_SET" -eq 1 ] && ! inside_repo "$HOOKS_DIR" && _m=$(main_checkout) && inside "$HOOKS_DIR" "$_m"; then
+        # Missing there, --this-checkout stops at "does not exist" too, so it is not the
+        # route printed — and git runs no hooks anywhere meanwhile (round 4, W1).
+        if [ ! -d "$HOOKS_DIR" ]; then
+            echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $_m, and does not exist — git runs no hooks in any checkout until it does. Not made from this worktree; install it there, on a branch the diff can be committed on, not a protected one:"
+            printf '   cd %q && bash %q --from %q\n' "$_m" "$FROM/install.sh" "$FROM"
+            exit 1
+        fi
         echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $_m — not written from this worktree. To update this worktree's copy, on its branch, then commit and merge it:"
         printf '   bash %q --from %q --this-checkout\n' "$FROM/install.sh" "$FROM"
-        echo "   To update the main checkout's copy instead, run the command without --this-checkout there, on a branch."
+        echo "   To update the main checkout's copy instead, run the command without --this-checkout there, on a branch the diff can be committed on, not a protected one."
         exit 1
     fi
     mkdir -p "$HOOKS_DIR"
