@@ -597,7 +597,19 @@ while IFS= read -r _raw; do
   IS_PROTECTED=1; break
 done < <(command_segments_marked "$COMMAND")
 
-if [[ "$ACTION" == "branch-create" ]]; then
+# A broken pattern's refusal comes first: a branch create is refused only on a branch
+# the pattern matches, and the worktree block it fell to offered PROTECTED_BRANCHES=off
+# and never named the pattern (group A fix review, F3; round 3, 2026-10-22, V1). Not for
+# a mirror push, which any pattern but off refuses: "until it is fixed" was false there
+# (group A fix review round 2, F7).
+if [[ -n "$PATTERN_BAD" && "$IS_PROTECTED" == "1" && "$BLOCKED_BRANCH" != "every branch (--mirror)" ]]; then
+  _every="every branch"
+  [[ -n "$BLOCKED_BRANCH" ]] && _every="every branch, \"$BLOCKED_BRANCH\" included,"
+  deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so $_every is treated as protected until it is fixed.
+
+The pattern is set in .ai/flight-rules.conf, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."
+  exit 0
+elif [[ "$ACTION" == "branch-create" ]]; then
   deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
@@ -636,12 +648,6 @@ the project decides that — not the session that happened to merge something."
 Use absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified."
   fi
 
-  if [[ -n "$PATTERN_BAD" ]]; then
-    deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so every branch, \"$BLOCKED_BRANCH\" included, is treated as protected until it is fixed.
-
-The pattern is set in .ai/flight-rules.conf, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."
-    exit 0
-  fi
   deny "⛔ BLOCKED: protected branch \"$BLOCKED_BRANCH\".
 
 $VERB

@@ -213,6 +213,14 @@ OUT=$(cd "$D" && HOME="$O" bash "$P/hooks/git/install.sh" --from "$P/hooks/git" 
 say "$RC" "1" "a local hooksPath of ~/hk outside the repo: --stale-only refuses"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository, not as missing"
 rm -rf "$D" "$P" "$O"
+# `/` is outside every repository. Stripped of its slash it resolved to the current
+# directory, inside the repo, and the sync went ahead (round 4, W6). --check-only, so a
+# break here compares rather than writes into /.
+D=$(mkrepo); P=$(mkplugin); git -C "$D" config core.hooksPath /
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only --check-only)
+say "$(head -1 <<<"$OUT")" "1" "a local hooksPath of /: --stale-only refuses"
+say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository"
+rm -rf "$D" "$P"
 # From a linked worktree, an absolute core.hooksPath into the MAIN checkout — the usual
 # install, shared by every worktree — is inside the repository, just not this worktree.
 # It is still not synced from here (the write would land in another checkout's working
@@ -242,8 +250,66 @@ say "$(same "$D/.ai/worktrees/wt/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg"
 say "$(grep -c '^   synced commit-msg' <<<"$PASTED")" "1" "…saying so"
 say "$(sums "$D/.ai/hooks")" "$BEFORE" "…leaving the main checkout's copy as it was"
 say "$(git -C "$D/.ai/worktrees/wt" status --porcelain -- .ai/hooks)" " M .ai/hooks/commit-msg" "…a diff the worktree's branch can commit"
-say "$(rc "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --this-checkout)" "1" "--this-checkout without --stale-only is refused"
 git -C "$D/.ai/worktrees/wt" checkout -q -- .ai/hooks
+# --this-checkout without --stale-only replaces what differs too — doctor's "re-run
+# without --stale-only to replace it". Run with no flag, that command wrote into the main
+# checkout, on whatever branch it was (group A fix review, F1).
+echo "# this project's own change" >> "$D/.ai/worktrees/wt/.ai/hooks/post-merge"
+git -C "$D/.ai/worktrees/wt" commit -qam "chore: an adapted copy" --no-verify || die "could not commit the worktree's adapted copy"
+MAINST=$(git -C "$D" status --porcelain -- .ai/hooks 2>&1)
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --this-checkout)
+say "$(head -1 <<<"$OUT")" "0" "--this-checkout without --stale-only, from the worktree: exits 0"
+# The list names whose copy it is: under the core.hooksPath line naming the main
+# checkout's, "Active hooks" read as that one (group A fix review round 2, F3; round 3, V4).
+say "$(grep -c "This checkout's copy (git runs the main checkout's" <<<"$OUT")" "1" "…listing the hooks as this checkout's copy"
+say "$(same "$D/.ai/worktrees/wt/.ai/hooks/post-merge" "$P/hooks/git/post-merge")" "same" "…replaces the worktree's differing copy"
+say "$(same "$D/.ai/worktrees/wt/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…and its stale one"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…leaving the main checkout's copy as it was"
+say "$(git -C "$D" status --porcelain -- .ai/hooks 2>&1)" "$MAINST" "…and the main checkout's git status there unchanged"
+say "$(git -C "$D" config --local core.hooksPath)" "$D/.ai/hooks" "…and core.hooksPath unchanged"
+git -C "$D/.ai/worktrees/wt" reset -q --hard HEAD~1
+say "$(rc "$D" "$P/hooks/git/install.sh" --this-checkout)" "1" "--this-checkout without --from is refused"
+# The plain form, from that worktree, wrote into the main checkout — and README, the
+# installer's header and /rules-sync all gave it (group A fix review round 2, D1).
+WTBEFORE=$(sums "$D/.ai/worktrees/wt/.ai/hooks")
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "plain --from, from a worktree whose hooks are in the main checkout: refused"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…writing nothing into the main checkout"
+say "$(sums "$D/.ai/worktrees/wt/.ai/hooks")" "$WTBEFORE" "…nor into the worktree"
+say "$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | sed 's/^[[:space:]]*//')" \
+    "$(printf 'bash %q --from %q --this-checkout' "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the --this-checkout form"
+say "$(grep -c "main checkout's copy instead" <<<"$OUT")" "1" "…and the way to update the main checkout's copy"
+# …and when that directory does not exist yet: it resolved to nothing, the refusal was
+# skipped, and mkdir -p made it in the main checkout with the hooks in it (round 3, V2).
+git -C "$D" config core.hooksPath "$D/.ai/hooks-new"
+MAINST=$(git -C "$D" status --porcelain 2>&1)
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "plain --from, from the worktree, the main checkout's hooks directory missing: refused"
+say "$([ -e "$D/.ai/hooks-new" ] && echo made || echo absent)" "absent" "…not making it there"
+say "$(git -C "$D" status --porcelain 2>&1)" "$MAINST" "…and the main checkout's git status unchanged"
+# Said as missing, by this refusal and no other exit 1, with the one route that works:
+# --this-checkout stopped at "does not exist" too (round 4, W1, W7).
+say "$(grep -c "is in the main checkout, .*, and does not exist — git runs no hooks" <<<"$OUT")" "1" "…saying it is missing there and git runs no hooks"
+say "$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')" \
+    "$(printf 'cd %q && bash %q --from %q' "$D" "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the install to run in the main checkout"
+say "$(grep -c -- '--this-checkout' <<<"$OUT")" "0" "…and not --this-checkout, which would stop at the same missing directory"
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+# A link in the worktree to the main checkout's copy passed the redirect's -d, and the
+# write went through it into the main checkout (group A fix review round 2, F0).
+mv "$D/.ai/worktrees/wt/.ai/hooks" "$D/.ai/worktrees/wt/.ai/hooks.real"
+ln -s "$D/.ai/hooks" "$D/.ai/worktrees/wt/.ai/hooks"
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --this-checkout)
+say "$(head -1 <<<"$OUT")" "1" "--this-checkout, the worktree's hooks a link into the main checkout: refused"
+say "$(grep -c 'outside it — not touched' <<<"$OUT")" "1" "…saying where it leads"
+say "$(grep -c 'Replace the link with the committed directory' <<<"$OUT")" "1" "…and the way on (round 3, V5)"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing through it"
+# The way on is a line to paste, %q-quoted, and run as printed it works (round 4, W2).
+CMD=$(grep -E '^[[:space:]]+rm ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$CMD" "$(printf 'rm %q && git checkout -- %q' "$(cd "$D/.ai/worktrees/wt" && pwd -P)/.ai/hooks" ".ai/hooks")" "…printed as a command of its own, its paths shell-quoted"
+(cd "$D/.ai/worktrees/wt" && eval "$CMD") >/dev/null 2>&1; RC=$?
+say "$RC" "0" "…which, run as printed, exits 0"
+say "$([ -d "$D/.ai/worktrees/wt/.ai/hooks" ] && [ ! -L "$D/.ai/worktrees/wt/.ai/hooks" ] && echo dir)" "dir" "…leaving the committed directory in place of the link"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and the main checkout's copy as it was"
 # A path truly outside the repository, from the same worktree, keeps the old refusal.
 O=$(cd "$(mktemp -d)" && pwd -P); cp "$D"/.ai/hooks/* "$O/"; git -C "$D" config core.hooksPath "$O"
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)

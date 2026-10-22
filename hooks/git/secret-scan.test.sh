@@ -206,6 +206,9 @@ h=$(git -C "$R" rev-parse HEAD)
 OUT=$(git -C "$R" commit -qm merge 2>&1)
 say "$(landed "$R" "$h")" no "no AUTO_MERGE: everything staged is scanned, so the incoming key is refused"
 say "$(grep -c 'no AUTO_MERGE from git' <<<"$OUT")" 1 "…saying why it scanned it all"
+# Every cause it may have: git's docs say AUTO_MERGE is written on a conflict, git 2.56
+# writes it for a clean merge that stopped too (group A fix review, F6).
+say "$(grep -c 'older than 2.42, a strategy other than ort, or a git that writes it only on a conflict' <<<"$OUT")" 1 "…naming each cause"
 # A tag (or branch) named AUTO_MERGE is not git's merge: with no AUTO_MERGE file, one
 # naming the staged tree narrowed the scan to nothing, so the incoming key landed.
 R=$(make_repo armed); cmerge "$R" resolved

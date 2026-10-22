@@ -117,9 +117,10 @@ else
         bad "$h is not executable — git ignores it silently (chmod +x, and commit the mode)"
       # Unreadable, or a grep that errors, is a check that could not run — not "no
       # marker", which called the hook a stub and leaked grep's error (fix review, F15).
-      # Unreadable is a problem on its own: git cannot run it, so every commit fails.
+      # Unreadable is a problem on its own: git cannot run it, so a command it gates
+      # fails, and what post-merge does just does not happen (group A fix review, F5).
       elif [[ ! -r "$HOOKS_DIR/$h" ]]; then
-        bad "$h is unreadable — git cannot run it, so the commands it gates fail, and doctor could not check it (chmod +r, and commit the mode)"
+        bad "$h is unreadable — git cannot run it, so what it checks does not happen and a command it gates fails; doctor could not check it either (chmod +r, and commit the mode)"
       elif { grep -q "$(hook_marker "$h")" "$HOOKS_DIR/$h" 2>/dev/null; _m=$?; [[ $_m -ne 0 ]]; }; then
         if [[ $_m -ne 1 ]]; then
           warn "$h could not be read (grep exited $_m) — could not check it"
@@ -129,11 +130,15 @@ else
           _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
           bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
         fi
-      elif grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/$h"; then
+      # The status is kept, as in install.sh: a grep that errors could not check it, and
+      # read as "not adapted", its error on screen (group A fix review, F13).
+      elif { grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/$h" 2>/dev/null; _a=$?; [[ $_a -eq 0 ]]; }; then
         # The project's own version, said so in the file: not compared with the release,
         # and never replaced by HOOK_SYNC=auto. Without the mark, an adapted hook drew a
         # ⚠️ into every session's context with no way to accept it (review, 2026-10-12).
         ok "$h adapted here (marked flight-rules: adapted) — not compared with this release; /rules-sync shows its diff against each new one"
+      elif [[ $_a -ne 1 ]]; then
+        warn "$h could not be read (grep exited $_a) — could not check it"
       elif [[ -f "$GIT_HOOKS_SRC/$h" ]] && ! cmp -s "$HOOKS_DIR/$h" "$GIT_HOOKS_SRC/$h"; then
         # Present, executable, the right hook — and not this release's. A plugin update
         # cannot touch it, so four hooks sat at 0.22.0 under a 0.23.0 plugin with every
@@ -171,22 +176,31 @@ else
     if [[ ! -e "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
       # From a worktree whose hooks are in another checkout, the cp lands at the same
       # path in this one: written into that checkout, it was an untracked file there that
-      # a later merge bringing install.sh in refused to overwrite (fix review, F9).
+      # a later merge bringing install.sh in refused to overwrite (#90 fix review, F9).
+      # Only when that directory is in this checkout too — untracked there, it is not,
+      # and the cp failed (group A fix review, F9) — and resolves inside it: a link back
+      # to the other checkout's copy took the cp there (group A fix review round 2, F0).
       _dst="$HOOKS_DIR/install.sh"
       _own=$(cd "$HOOKS_DIR" && git rev-parse --show-toplevel 2>/dev/null)
       _hd=$(cd "$HOOKS_DIR" && pwd -P)
       _cd1=$(cd "$HOOKS_DIR" && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
       _cd2=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
-      if [[ -n "$_own" && "$_own" != "$ROOT" && -n "$_cd1" && "$_cd1" == "$_cd2" && "$_hd" == "$_own"/* ]]; then
+      _wd=$(cd "$ROOT/${_hd#"$_own"/}" 2>/dev/null && pwd -P)
+      if [[ -n "$_own" && "$_own" != "$ROOT" && -n "$_cd1" && "$_cd1" == "$_cd2" && "$_hd" == "$_own"/* \
+            && -n "$_wd" && "$_wd" == "$(cd "$ROOT" && pwd -P)"/* ]]; then
         _dst="$ROOT/${_hd#"$_own"/}/install.sh"
       fi
       ok "$(printf 'install.sh is not in %s — nothing needs it to run the hooks; to restore it, on a branch: cp %q %q' "$HOOKS_PATH" "$GIT_HOOKS_SRC/install.sh" "$_dst")"
     elif [[ -f "$HOOKS_DIR/install.sh" && ! -r "$HOOKS_DIR/install.sh" ]]; then
       warn "$HOOKS_PATH/install.sh is unreadable — could not check it"
+    # The adapted grep keeps its status, as the hooks' does above: an error read as "not
+    # marked" (group A fix review round 2, F1).
     elif [[ -f "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]] \
        && ! cmp -s "$HOOKS_DIR/install.sh" "$GIT_HOOKS_SRC/install.sh" \
-       && ! grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/install.sh"; then
-      if _ver=$(release_of "$HOOKS_DIR/install.sh"); then
+       && { grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/install.sh" 2>/dev/null; _a=$?; [[ $_a -ne 0 ]]; }; then
+      if [[ $_a -ne 1 ]]; then
+        warn "$HOOKS_PATH/install.sh could not be read (grep exited $_a) — could not check it"
+      elif _ver=$(release_of "$HOOKS_DIR/install.sh"); then
         if [[ -n "$SRC_VERSION" && "$_ver" == "$SRC_VERSION" ]]; then
           warn "install.sh is the released $_ver copy, and this flight-rules checkout carries unreleased changes to it"
         else
@@ -210,7 +224,7 @@ else
       # --this-checkout and "on a branch": the plain form, run in a main checkout on a
       # protected branch, left a diff that could not be committed or cleared there, and
       # from a worktree it sent the user back to that checkout (#99, 2026-10-21).
-      printf '     to update: bash %q --from %q --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only --this-checkout to replace it. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
+      printf '     to update: bash %q --from %q --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
         "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"
     fi
     # The scan runs pre-commit.local only if it is executable, and skips it without a

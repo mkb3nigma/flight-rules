@@ -81,7 +81,7 @@ if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
         BASE=("$AUTO")
         _how="scanning the conflict resolution (what is staged beyond git's own merge)"
     else
-        _how="no AUTO_MERGE from git (older than 2.42, or a merge strategy other than ort), so everything staged is scanned, the incoming commits included"
+        _how="no AUTO_MERGE from git (older than 2.42, a strategy other than ort, or a git that writes it only on a conflict), so everything staged is scanned, the incoming commits included"
     fi
     # Said every time, naming the commit coming in: a MERGE_HEAD left behind is then
     # seen rather than trusted, and prescribing a command was wrong for one of the two

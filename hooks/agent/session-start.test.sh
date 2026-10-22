@@ -385,6 +385,15 @@ J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1)
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "status.branch=true: session-start exits 0"
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…still says the uncommitted change"
 say "$(usr <<<"$J" | grep -c 'could not fully check')" "0" "…and not that the hooks could not be checked"
+# status.showUntrackedFiles=no hid an untracked file there — a hook the sync copied in
+# (group A fix review, F12).
+git -C "$D" config status.branch false; git -C "$D" checkout -q -- .ai/hooks/post-merge
+git -C "$D" config status.showUntrackedFiles no; : > "$D/.ai/hooks/pre-push"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?" )
+say "$(grep -c '^rc=0$' <<<"$J")" "1" "status.showUntrackedFiles=no: session-start exits 0"
+say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…still says the hooks directory has changes"
+say "$(usr <<<"$J" | grep -c '?? .ai/hooks/pre-push')" "1" "…naming the untracked file"
 rm -rf "$D"
 # On a protected branch nothing is written: the diff could not be committed there, and
 # `git restore` was refused as discarding work, so it blocked the merge that would land
@@ -446,6 +455,10 @@ J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1)
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "a pattern that does not compile: session-start exits 0"
 say "$(usr <<<"$J" | grep -c 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read, so "trunk" is taken as protected')" "1" "…says the pattern is broken and the branch taken as protected"
 say "$(cksum < "$D/.ai/hooks/commit-msg")" "$BEFORE" "…and writes nothing"
+# The fix is the owner's, as the guard says: "fix the pattern" told the assistant to edit
+# the setting the guard tells it not to (group A fix review, F10).
+say "$(usr <<<"$J" | grep -c "It is the project owner's to fix, in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it")" "1" "…leaves the fix to the project owner, in words that read right to them on screen"
+say "$(usr <<<"$J" | grep -c 'Fix the pattern')" "0" "…not to the assistant"
 rm -rf "$D"
 # Behind is stale or missing; what the command leaves alone is listed apart, not as
 # behind beside a command that will not touch it (fix review, F3).
@@ -473,6 +486,14 @@ else
     say "$(usr <<<"$J" | grep -c 'HOOK_SYNC=auto could not check every git hook')" "1" "…says a hook could not be checked"
     say "$(usr <<<"$J" | grep -c 'post-merge: unreadable — could not check it')" "1" "…naming it"
   done
+  # …and the uncommitted-changes check still runs beside it: an elif in the same chain,
+  # the notice hid it (group A fix review, F2).
+  : > "$D/.ai/hooks/notes.txt"
+  rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+  J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+  say "$(grep -c '^rc=0$' <<<"$J")" "1" "an unreadable hook and an uncommitted file: session-start exits 0"
+  say "$(usr <<<"$J" | grep -c 'HOOK_SYNC=auto could not check every git hook')" "1" "…says a hook could not be checked"
+  say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…and the uncommitted change too"
 fi
 chmod 644 "$D/.ai/hooks/post-merge"; rm -rf "$D"
 # Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
