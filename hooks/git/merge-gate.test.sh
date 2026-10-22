@@ -691,6 +691,95 @@ say "$?" "1" "install.sh does not list the agent/ directory as an active hook"
 grep -q 'README' <<<"$OUT"
 say "$?" "1" "install.sh still skips dotted files"
 rm -rf "$D"
+
+echo "A pattern that does not compile matches every branch, not none (#103):"
+# conf_on <repo> <branch> <conf line>: commit the conf on <branch>, where the hooks
+# read it from (HEAD of the branch merged into).
+conf_on() {
+  git -C "$1" checkout -q "$2" || die "no $2 in $1"
+  mkdir -p "$1/.ai"; printf '%s\n' "$3" > "$1/.ai/flight-rules.conf"
+  git -C "$1" add -A >/dev/null; git -C "$1" commit -qm "chore: conf" --no-verify >/dev/null || die "could not commit the conf"
+}
+feature() {   # <repo> <name> <base>: a one-commit branch off <base>, stamped
+  git -C "$1" checkout -q -b "$2" "$3" || die "could not branch $2"
+  echo "$2" > "$1/$(echo "$2" | tr / _)"; git -C "$1" add -A; git -C "$1" commit -qm "feature: $2" >/dev/null || die "could not commit on $2"
+  git -C "$1" notes --ref=pre-merge-check add -f -m "passed: 2026-10-22T00:00:00Z branch:$2" HEAD
+}
+
+# pre-merge-commit: a broken PR_ONLY_BRANCHES let every local merge through.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^(main'; feature "$D" feature/x dev
+git -C "$D" checkout -q dev; BEFORE=$(git -C "$D" rev-parse dev)
+OUT=$(cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/x -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a stamped, authorised merge into dev is refused"
+say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — LOCAL MERGE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+say "$(grep -cF '  ^(main' <<<"$OUT")" "1" "…naming the pattern"
+say "$(git -C "$D" rev-parse dev)" "$BEFORE" "…and dev does not move"
+git -C "$D" merge --abort 2>/dev/null
+# The way out the box prints: the pattern meant, for that one command.
+(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/x -m merge) >/dev/null 2>&1
+say "$?" "0" "…and the command it prints, a valid pattern in the environment, lands the merge"
+rm -rf "$D"
+
+# pre-rebase: a rebase of any branch is refused.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^(main'; feature "$D" feature/r dev
+# main moves on, so the rebase has something to do: an up-to-date one never runs the hook.
+git -C "$D" checkout -q main; echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: m" >/dev/null
+git -C "$D" checkout -q feature/r
+OUT=$(cd "$D" && git rebase main 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a rebase is refused"
+say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — REBASE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+git -C "$D" rebase --abort 2>/dev/null
+rm -rf "$D"
+
+# commit-msg's squash guard: a squash merge finished by a commit, on any branch.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^(main'; feature "$D" feature/s dev
+git -C "$D" checkout -q dev
+# --ff: with merge.ff=false git refuses --squash outright, and nothing is staged.
+git -C "$D" merge --squash --ff feature/s >/dev/null 2>&1
+OUT=$(cd "$D" && git commit -m "squash" 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a squash merge's commit is refused"
+say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — SQUASH MERGE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+rm -rf "$D"
+
+# commit-msg's note gate: a broken NOTE_GATED_BRANCHES, or PROTECTED_BRANCHES with none
+# set, gated nothing. Unstamped feature branches, so the gate has something to refuse.
+for KEY in NOTE_GATED_BRANCHES PROTECTED_BRANCHES; do
+  D=$(mkrepo); conf_on "$D" dev "$KEY=^(dev"
+  git -C "$D" checkout -q -b feature/n dev; echo n > "$D/n"; git -C "$D" add -A; git -C "$D" commit -qm "feature: n" >/dev/null
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && git merge --no-ff feature/n -m merge 2>&1); RC=$?
+  say "$RC" "1" "$KEY that does not compile: an unstamped merge into dev is refused"
+  say "$(grep -cF "Gated because $KEY (^(dev)" <<<"$OUT")" "1" "…saying the pattern is why"
+  git -C "$D" merge --abort 2>/dev/null
+  git -C "$D" notes --ref=pre-merge-check add -f -m "passed: 2026-10-22T00:00:00Z branch:feature/n" feature/n
+  (cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/n -m merge) >/dev/null 2>&1
+  say "$?" "0" "…while a stamped, authorised one lands as usual"
+  rm -rf "$D"
+done
+
+# The exemptions take a real match only. A conflicted merge skips pre-merge-commit, so
+# commit-msg alone judges it: with a broken PR_ONLY_BRANCHES in the environment, the
+# incoming branch is not taken for a reviewed back-merge, nor dev for PR-only.
+D=$(mkrepo); git -C "$D" checkout -q -b feature/c dev
+echo theirs > "$D/f"; git -C "$D" add -A; git -C "$D" commit -qm "feature: c" >/dev/null
+git -C "$D" checkout -q dev; echo ours > "$D/f"; git -C "$D" add -A; git -C "$D" commit -qm "chore: ours" >/dev/null
+git -C "$D" merge feature/c >/dev/null 2>&1; echo resolved > "$D/f"; git -C "$D" add f
+OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^(main' git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "a broken PR_ONLY_BRANCHES grants no back-merge exemption: the unstamped merge is refused"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
+rm -rf "$D"
+
+# `off` names no branch. Read as a pattern it matched any branch with "off" in its
+# name, which pre-merge-commit and pre-rebase then took for PR-only (#103 review).
+D=$(mkrepo); conf_on "$D" main 'PR_ONLY_BRANCHES=off'
+git -C "$D" checkout -q -b feature/offline main; feature "$D" feature/o feature/offline
+git -C "$D" checkout -q feature/offline
+(cd "$D" && git merge --no-ff feature/o -m merge) >/dev/null 2>&1
+say "$?" "0" "PR_ONLY_BRANCHES=off: a merge into feature/offline is not gated"
+(cd "$D" && git rebase main) >/dev/null 2>&1
+say "$?" "0" "…nor a rebase of it"
+rm -rf "$D"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

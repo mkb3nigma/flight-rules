@@ -71,6 +71,27 @@ box_row() {
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
 
+# A refusal a broken pattern decided: the pattern named, where it is set, and the one
+# command that lands its fix past the gate it broke (#103). <key> <value> <what>
+broken_box() {
+    echo ""
+    box_top
+    box_row "⛔  $1 DOES NOT COMPILE — $3 BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "$1 is not a pattern that compiles:"
+    box_row "  $2"
+    box_row "so every branch is taken as matching it until it is fixed."
+    box_row ""
+    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "branch, or in FLIGHT_RULES_$1. To land that fix past"
+    box_row "this gate, give the pattern meant for that one command:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' git merge <fix branch>"
+    box_row ""
+    box_bot
+    echo ""
+}
+
 while read -r _old new ref; do
     case "$ref" in
         refs/heads/*) short="${ref#refs/heads/}" ;;
@@ -100,7 +121,10 @@ while read -r _old new ref; do
     fi
     [ "$PROT_RE" = "off" ] && continue
 
-    printf '%s' "$short" | grep -qE "$PR_ONLY_RE" || continue
+    # A pattern that does not compile matches every branch, not none: grep exits 2
+    # for it, which read as "no match" and let the move through (#103).
+    _rc=0; printf '%s' "$short" | grep -qE "$PR_ONLY_RE" 2>/dev/null || _rc=$?
+    [ "$_rc" -eq 1 ] && continue
 
     # A ref that does not exist yet is being CREATED (clone, `git branch <new>`),
     # not moved. `_old` cannot be used to detect this: `git update-ref <ref> <sha>`
@@ -120,6 +144,10 @@ while read -r _old new ref; do
     # THE RULE.
     git merge-base --is-ancestor "$new" "$upstream" 2>/dev/null && continue
 
+    if [ "$_rc" -ne 0 ]; then
+        broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "MOVE OF $short" >&2
+        exit 1
+    fi
     {
         echo ""
         box_top

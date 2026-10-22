@@ -80,8 +80,40 @@ box_row() {
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
 
+# A refusal a broken pattern decided: the pattern named, where it is set, and the one
+# command that lands its fix past the gate it broke (#103). <key> <value> <what>
+broken_box() {
+    echo ""
+    box_top
+    box_row "⛔  $1 DOES NOT COMPILE — $3 BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "$1 is not a pattern that compiles:"
+    box_row "  $2"
+    box_row "so every branch is taken as matching it until it is fixed."
+    box_row ""
+    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "branch, or in FLIGHT_RULES_$1. To land that fix past"
+    box_row "this gate, give the pattern meant for that one command:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' git merge <fix branch>"
+    box_row ""
+    box_bot
+    echo ""
+}
+
 # --- Mechanism 1: PR-only branches — block any local merge commit -------------
-if [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]]; then
+# `off` names no branch. Read as a pattern it matched any branch with "off" in its name
+# (#103 review, 2026-10-22). A pattern that does not compile matches every branch, not
+# none: [[ =~ ]] returns 2 for it, which read as "no match" and let every merge through
+# (#103).
+[ "$PR_ONLY_RE" = "off" ] && exit 0
+_rc=0; [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]] || _rc=$?
+if [ "$_rc" -eq 2 ]; then
+    broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "LOCAL MERGE"
+    echo "Undo this half-finished merge:   git merge --abort"
+    exit 1
+fi
+if [ "$_rc" -eq 0 ]; then
     echo ""
     box_top
     box_row "⛔  $CURRENT_BRANCH IS PR-ONLY — LOCAL MERGE BLOCKED" 1

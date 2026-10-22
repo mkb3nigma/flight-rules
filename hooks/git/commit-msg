@@ -98,12 +98,47 @@ box_row() {
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
 
+# A refusal a broken pattern decided: the pattern named, where it is set, and the one
+# command that lands its fix past the gate it broke (#103). <key> <value> <what>
+broken_box() {
+    echo ""
+    box_top
+    box_row "⛔  $1 DOES NOT COMPILE — $3 BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "$1 is not a pattern that compiles:"
+    box_row "  $2"
+    box_row "so every branch is taken as matching it until it is fixed."
+    box_row ""
+    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "branch, or in FLIGHT_RULES_$1. To land that fix past"
+    box_row "this gate, give the pattern meant for that one command:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' git merge <fix branch>"
+    box_row ""
+    box_bot
+    echo ""
+}
+
+# re_rc <string> <pattern>: 0 match, 1 no match, 2 the pattern does not compile. A
+# broken pattern used to read as "no match" (#103). Where a match imposes a gate, 2
+# counts as a match; where it grants an exemption, it does not — so a broken pattern
+# turns no gate off and no exemption on. `off` matches nothing (#103 review).
+re_rc() {
+    [ "$2" = "off" ] && return 1
+    [[ "$1" =~ $2 ]]
+}
+
 # --- Squash guard for PR-only branches ----------------------------------------
 # `git merge --squash --ff feature` on main stages the result and writes
 # SQUASH_MSG but creates no merge commit, so pre-merge-commit never fires and the
 # following `git commit` would land the whole feature on a PR-only branch as one
 # ordinary commit. That commit is the one to refuse.
-if [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE && -f "$GIT_DIR/SQUASH_MSG" ]]; then
+_rc=0; re_rc "$CURRENT_BRANCH" "$PR_ONLY_RE" || _rc=$?
+if [ "$_rc" -eq 2 ] && [ -f "$GIT_DIR/SQUASH_MSG" ]; then
+    broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "SQUASH MERGE"
+    exit 1
+fi
+if [ "$_rc" -eq 0 ] && [ -f "$GIT_DIR/SQUASH_MSG" ]; then
     echo ""
     box_top
     box_row "⛔  $CURRENT_BRANCH IS PR-ONLY — SQUASH MERGE BLOCKED" 1
@@ -125,13 +160,21 @@ fi
 # PR-only": a PR-only branch takes no local merge at all (the ref gate refuses it),
 # so the branches left needing a stamp are exactly the other protected ones —
 # whatever this project calls them.
+# BROKEN names a gating pattern that does not compile, for the refusal to say.
+BROKEN=""
 if [ -n "$NOTE_GATED_RE" ]; then
     [ "$NOTE_GATED_RE" = "off" ] && exit 0
-    [[ "$CURRENT_BRANCH" =~ $NOTE_GATED_RE ]] || exit 0
+    _rc=0; re_rc "$CURRENT_BRANCH" "$NOTE_GATED_RE" || _rc=$?
+    [ "$_rc" -eq 1 ] && exit 0
+    [ "$_rc" -eq 2 ] && BROKEN="NOTE_GATED_BRANCHES ($NOTE_GATED_RE)"
 else
     [ "$PROTECTED_RE_CONF" = "off" ] && exit 0
-    [[ "$CURRENT_BRANCH" =~ $PROTECTED_RE_CONF ]] || exit 0
-    [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]] && exit 0
+    _rc=0; re_rc "$CURRENT_BRANCH" "$PROTECTED_RE_CONF" || _rc=$?
+    [ "$_rc" -eq 1 ] && exit 0
+    [ "$_rc" -eq 2 ] && BROKEN="PROTECTED_BRANCHES ($PROTECTED_RE_CONF)"
+    # An exemption: only a real match counts.
+    _rc=0; re_rc "$CURRENT_BRANCH" "$PR_ONLY_RE" || _rc=$?
+    [ "$_rc" -eq 0 ] && exit 0
 fi
 
 # MERGE_HEAD present ⇒ a merge is in progress. Absent ⇒ ordinary commit, nothing to
@@ -158,7 +201,10 @@ while read -r ref sha; do
         refs/remotes/origin/*) short="${ref#refs/remotes/origin/}" ;;
         *)                     continue ;;
     esac
-    [[ "$sha" == "$MERGE_SHA" && "$short" =~ $PR_ONLY_RE ]] || continue
+    [ "$sha" = "$MERGE_SHA" ] || continue
+    # An exemption: only a real match counts. Read as matching every branch, a broken
+    # PR_ONLY_BRANCHES would take every merge for a back-merge needing no note (#103).
+    re_rc "$short" "$PR_ONLY_RE" || continue
     if origin_sha=$(git rev-parse -q --verify "refs/remotes/origin/$short" 2>/dev/null); then
         git merge-base --is-ancestor "$MERGE_SHA" "$origin_sha" 2>/dev/null || continue
     fi
@@ -256,6 +302,13 @@ box_row ""
 box_row "Merging: $MERGE_BRANCH"
 box_row "Into:    $CURRENT_BRANCH"
 box_row ""
+if [ -n "$BROKEN" ]; then
+    box_row "Gated because $BROKEN"
+    box_row "does not compile: every branch is taken as gated until"
+    box_row "the project owner fixes it (.ai/flight-rules.conf, or"
+    box_row "its FLIGHT_RULES_ variable in the environment)."
+    box_row ""
+fi
 box_row "Run /pre-merge-check in the feature worktree first. When"
 box_row "every check passes it stamps a note on the commit, and"
 box_row "this hook lets the merge through."

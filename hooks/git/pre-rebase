@@ -37,7 +37,13 @@ PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHE
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 
 BRANCH="${2:-$(git branch --show-current)}"
-[[ "$BRANCH" =~ $PR_ONLY_RE ]] || exit 0
+# `off` names no branch. Read as a pattern it matched any branch with "off" in its name
+# (#103 review, 2026-10-22).
+[ "$PR_ONLY_RE" = "off" ] && exit 0
+# A pattern that does not compile matches every branch, not none: [[ =~ ]] returns 2
+# for it, which read as "no match" and turned the gate off (#103).
+_rc=0; [[ "$BRANCH" =~ $PR_ONLY_RE ]] || _rc=$?
+[ "$_rc" -eq 1 ] && exit 0
 
 # --- Box drawing (duplicated verbatim in pre-merge-commit and commit-msg) ------
 BOX_W=68
@@ -51,6 +57,32 @@ box_row() {
     [ "$pad" -lt 0 ] && pad=0
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
+
+# A refusal a broken pattern decided: the pattern named, where it is set, and the one
+# command that lands its fix past the gate it broke (#103). <key> <value> <what>
+broken_box() {
+    echo ""
+    box_top
+    box_row "⛔  $1 DOES NOT COMPILE — $3 BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "$1 is not a pattern that compiles:"
+    box_row "  $2"
+    box_row "so every branch is taken as matching it until it is fixed."
+    box_row ""
+    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "branch, or in FLIGHT_RULES_$1. To land that fix past"
+    box_row "this gate, give the pattern meant for that one command:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' git merge <fix branch>"
+    box_row ""
+    box_bot
+    echo ""
+}
+
+if [ "$_rc" -eq 2 ]; then
+    broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" REBASE
+    exit 1
+fi
 
 echo ""
 box_top

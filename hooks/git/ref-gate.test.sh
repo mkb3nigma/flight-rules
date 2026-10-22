@@ -210,6 +210,36 @@ PR_ONLY_BRANCHES=^main\$"                                                      a
 conf_case "PR_ONLY_BRANCHES=off disables the gate" "PR_ONLY_BRANCHES=off"      allowed
 conf_case "a conf naming another branch"           "PR_ONLY_BRANCHES=^nope\$"  allowed
 conf_case "env override wins"                      "env:^nothing\$"            allowed
+# A pattern that does not compile matches every branch, not none: grep exits 2 for it,
+# which read as "no match" and let main move off its upstream (#103).
+conf_case "a PR_ONLY_BRANCHES that does not compile gates main" "PR_ONLY_BRANCHES=^(main" blocked
+conf_case "…from the environment too"                "env:^(main"                blocked
+D=$(make_repo "PR_ONLY_BRANCHES=^(main" armed); off_main "$D"
+OUT=$(git -C "$D" branch -f main "$(git -C "$D" rev-parse feature/x)" 2>&1); RC=$?
+if [ "$RC" -ne 0 ] && grep -qF 'PR_ONLY_BRANCHES DOES NOT COMPILE' <<<"$OUT" && grep -qF '^(main' <<<"$OUT" \
+   && grep -qF "FLIGHT_RULES_PR_ONLY_BRANCHES='<pattern>' git merge <fix branch>" <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ …refused naming the pattern, with the command that lands its fix\n'
+else
+    FAIL=$((FAIL+1)); printf '  ❌ …refused naming the pattern (rc=%s)\n%s\n' "$RC" "$OUT"
+fi
+# Every branch with an upstream, not only the one the pattern meant: feature/x, pushed.
+git -C "$D" checkout -q feature/x; git -C "$D" push -q origin feature/x 2>/dev/null || die "could not push feature/x"
+git -C "$D" fetch -q origin
+echo more >> "$D/g.txt"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: more" >/dev/null 2>&1; RC=$?
+if [ "$RC" -ne 0 ] && [ "$(git -C "$D" rev-parse feature/x)" = "$(git -C "$D" rev-parse origin/feature/x)" ]; then
+    PASS=$((PASS+1)); printf '  ✅ …and a pushed feature branch is gated as well\n'
+else
+    FAIL=$((FAIL+1)); printf '  ❌ …a pushed feature branch moved off its upstream (rc=%s)\n' "$RC"
+fi
+# The way out the refusal prints: the pattern meant, in the environment, for that one
+# command. It lifts the gate where that pattern does not reach — here feature/x.
+FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' git -C "$D" commit -qm "feature: more" >/dev/null 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(git -C "$D" rev-parse feature/x)" != "$(git -C "$D" rev-parse origin/feature/x)" ]; then
+    PASS=$((PASS+1)); printf '  ✅ …and the pattern meant, in the environment, lifts it for that command\n'
+else
+    FAIL=$((FAIL+1)); printf '  ❌ …the pattern meant, in the environment, did not lift it (rc=%s)\n' "$RC"
+fi
 conf_case "no conf at all falls back to ^main\$"   "none"                      blocked
 
 # The working-tree conf must NOT lift the gate: editing it is the bypass the agent
