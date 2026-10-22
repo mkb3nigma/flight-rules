@@ -436,6 +436,138 @@ D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
 say "$(has "$D" "to update: bash")" "0" "a missing hook also prints the sync command"
 rm -rf "$D"
 
+# install.sh is synced with the hooks, so a stale copy is named too; 0.26.0 changed
+# only it, and under HOOK_SYNC=report nothing said so (#90). It guards nothing, so a
+# warning. mkrepo copies no install.sh: missing is a project that never had one.
+D=$(mkrepo); mkcache "$D" install.sh
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/install.sh" "$D/.ai/hooks/install.sh"
+say "$(rc "$D")" "0" "a stale install.sh is a warning, not a problem"
+say "$(has "$D" "install.sh is the flight-rules 0.0.1 copy")" "0" "…naming the release it came from"
+SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]* --stale-only' | sed 's/^to update: //' | head -1)
+say "$([ -n "$SYNC" ] && echo yes)" "yes" "…and printing the sync command"
+(cd "$D" && HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1
+say "$(cmp -s "$D/.ai/hooks/install.sh" "$H/git/install.sh" && echo synced)" "synced" "…which, run as printed, updates it"
+say "$(run "$D" | grep -c -e 'install.sh is the' -e 'to update:')" "0" "…after which neither line is printed"
+say "$(rc "$D")" "0" "…and doctor passes"
+rm -rf "$D"
+D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
+say "$(has "$D" "install.sh differs from this flight-rules' copy")" "0" "an install.sh matching no release is named as differing"
+printf '# flight-rules: adapted\n' >> "$D/.ai/hooks/install.sh"
+say "$(run "$D" | grep -c -e 'install.sh differs' -e 'to update:')" "0" "…and, marked adapted, is not"
+say "$(rc "$D")" "0" "…with doctor passing"
+rm -rf "$D"
+# A project's own installer in the hooks directory — no flight-rules marker — is not
+# flight-rules' to report: the printed hint would have replaced it (batch review,
+# 2026-10-21). The ✅ for the hooks in the same run shows doctor got that far.
+D=$(mkrepo); printf '#!/bin/sh\ngit config core.hooksPath .ai/hooks\n' > "$D/.ai/hooks/install.sh"
+say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a project's own install.sh (no marker) is not reported"
+say "$(run "$D" | grep -c 'pre-commit installed and executable')" "1" "…in a run that checked the hooks"
+say "$(rc "$D")" "0" "…and doctor passes"
+rm -rf "$D"
+# …including one that follows the playbook's own advice and sets merge.ff, which every
+# flight-rules project is told to do: merge.ff was the marker, and named it (second
+# review, 2026-10-21).
+D=$(mkrepo); printf '#!/bin/sh\ngit config core.hooksPath .ai/hooks\ngit config merge.ff false\n' > "$D/.ai/hooks/install.sh"
+say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a project's own install.sh that sets merge.ff is not reported"
+say "$(run "$D" | grep -c 'pre-commit installed and executable')" "1" "…in a run that checked the hooks"
+rm -rf "$D"
+# An install.sh doctor cannot read is said, not skipped: grep's error read as "no
+# marker" and the file went unmentioned (second review, 2026-10-21). As root, chmod
+# 000 blocks nothing, so the case would pass without testing anything: it says so.
+D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
+chmod 000 "$D/.ai/hooks/install.sh"
+if [ -r "$D/.ai/hooks/install.sh" ]; then
+  echo "  ⏭️  an unreadable install.sh: skipped — running as root, chmod 000 does not block the read"
+else
+  say "$(has "$D" "install.sh is unreadable")" "0" "an unreadable install.sh is named, not skipped"
+  say "$(rc "$D")" "0" "…as a warning"
+fi
+chmod 644 "$D/.ai/hooks/install.sh"
+rm -rf "$D"
+# A grep that errors rather than answering is a check that could not run — not "no
+# marker", which left the file unmentioned (third review, E12). It is reachable only by
+# a race or an I/O error after the readability test, so a grep on PATH fails it here.
+D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
+SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/install.sh) case "$*" in *-qF*) exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
+chmod +x "$SHIM/grep"
+OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
+say "$RC" "0" "a marker grep that errors: doctor exits 0"
+say "$(grep -c 'install.sh could not be read (grep exited 2) — could not check it' <<<"$OUT")" "1" "…and says install.sh could not be checked"
+say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the hooks"
+rm -rf "$D" "$SHIM"
+# Missing: noted on the full report with the cp that restores it, not in the daily
+# --problems-only one — nothing needs it, and a project may have removed it on purpose
+# (owner, 2026-10-21). mkrepo copies no install.sh.
+D=$(mkrepo)
+say "$(has "$D" "install.sh is not in .ai/hooks — nothing needs it to run the hooks; to restore it, on a branch: cp")" "0" "a missing install.sh is noted, with the cp that restores it"
+# Paired with a problem the same run reports, so an empty --problems-only from a doctor
+# that died is not read as "install.sh not mentioned" (fix review, F13).
+chmod -x "$D/.ai/hooks/post-merge"
+P=$( (cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1) ); RC=$?
+say "$RC" "1" "…--problems-only, beside a hook that is not executable: exits 1"
+say "$(grep -c 'post-merge is not executable' <<<"$P")" "1" "…and reports that hook"
+say "$(grep -c 'install.sh' <<<"$P")" "0" "…but not the missing install.sh"
+chmod +x "$D/.ai/hooks/post-merge"
+CMD=$(run "$D" | grep -o 'to restore it, on a branch: .*' | sed 's/^to restore it, on a branch: //')
+(cd "$D" && eval "$CMD")
+say "$(cmp -s "$D/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "restored" "…and the cp, run as printed, restores it"
+rm -rf "$D"
+# From a worktree whose hooks are in the main checkout (an absolute core.hooksPath), the
+# cp restores this worktree's copy: into the main checkout it was an untracked file a
+# later merge bringing install.sh in refused to overwrite (fix review, F9).
+D=$(mkrepo); git -C "$D" add -A && git -C "$D" commit -qm base --no-verify
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt 2>/dev/null || die "could not add a worktree in $D"
+W="$D/.ai/worktrees/wt"; mkdir -p "$W/fakehome"
+CMD=$(run "$W" | grep -o 'to restore it, on a branch: .*' | sed 's/^to restore it, on a branch: //')
+say "$([ -n "$CMD" ] && echo printed)" "printed" "from a worktree, hooks in the main checkout: the cp is printed"
+(cd "$W" && eval "$CMD")
+say "$(cmp -s "$W/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "restored" "…and, run as printed, restores this worktree's copy"
+say "$([ -e "$D/.ai/hooks/install.sh" ] && echo written || echo untouched)" "untouched" "…not the main checkout's"
+rm -rf "$D"
+# An unreadable hook could not be checked: said so, not "may be a stub", and grep's
+# error is not on screen (fix review, F15). Git cannot run it, so it is a problem.
+D=$(mkrepo); chmod 111 "$D/.ai/hooks/post-merge"
+if [ -r "$D/.ai/hooks/post-merge" ]; then
+  echo "  ⏭️  an unreadable hook: skipped — running as root, chmod 111 does not block the read"
+else
+  OUT=$(run "$D")
+  say "$(head -1 <<<"$OUT")" "1" "an unreadable hook: a problem"
+  say "$(grep -c 'post-merge is unreadable — git cannot run it' <<<"$OUT")" "1" "…said to be unreadable"
+  say "$(grep -c 'post-merge does not look like' <<<"$OUT")" "0" "…not called a stub"
+  say "$(grep -ci 'permission denied' <<<"$OUT")" "0" "…with no grep error on screen"
+fi
+chmod 755 "$D/.ai/hooks/post-merge"; rm -rf "$D"
+# A marker grep that errors on a readable hook: could not check it, not a stub.
+D=$(mkrepo)
+SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/post-merge) case "$1" in -q) exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
+chmod +x "$SHIM/grep"
+OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
+say "$RC" "0" "a hook marker grep that errors: a warning, doctor exits 0"
+say "$(grep -c 'post-merge could not be read (grep exited 2) — could not check it' <<<"$OUT")" "1" "…said as could not check"
+say "$(grep -c 'post-merge does not look like' <<<"$OUT")" "0" "…not called a stub"
+say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the other hooks"
+rm -rf "$D" "$SHIM"
+# A copy identical to this version's own release, while this checkout's differs: the
+# development case, worded as such rather than as an old release.
+D=$(mkrepo); _sv=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$H/../.claude-plugin/plugin.json" | head -1)
+mkdir -p "$D/fakehome/.claude/plugins/cache/mp/flight-rules/$_sv/hooks/git"
+{ cat "$H/git/install.sh"; echo "# released $_sv"; } > "$D/fakehome/.claude/plugins/cache/mp/flight-rules/$_sv/hooks/git/install.sh"
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/$_sv/hooks/git/install.sh" "$D/.ai/hooks/install.sh"
+say "$(has "$D" "install.sh is the released $_sv copy, and this flight-rules checkout carries unreleased changes")" "0" "an install.sh of this version's release, under a changed checkout, is named as such"
+say "$(has "$D" "to update: bash")" "0" "…with the sync command"
+say "$(rc "$D")" "0" "…as a warning"
+rm -rf "$D"
+D=$(mkrepo)
+say "$(run "$D" | grep -c -e '[⚠❌].*install.sh' -e 'to update:')" "0" "a missing install.sh is no warning and asks for no sync"
+say "$(rc "$D")" "0" "…and doctor passes"
+cp "$H/git/install.sh" "$D/.ai/hooks/"
+say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a current install.sh is not reported"
+say "$(rc "$D")" "0" "…and doctor passes"
+rm -rf "$D"
+
 echo "The conf — typos and bad values must not pass silently:"
 D=$(mkrepo); printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "HOOK_SYNC=auto is a known key"

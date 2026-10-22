@@ -398,7 +398,10 @@ resolve_target() {
   GUARD_OFF=0
   [[ "$PROTECTED_RE" == "off" || "$PROTECTED_RE" == "none" ]] && GUARD_OFF=1
   MERGE_IN_PROGRESS=0
-  [[ -f "$("${GIT[@]}" rev-parse --git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
+  # Absolute: `--git-dir` prints `.git` relative to the -C target, and `-f` resolved it
+  # from this hook's cwd — refusing a merge commit from a worktree, waiving a direct
+  # commit when the cwd's repo was mid-merge (#98).
+  [[ -f "$("${GIT[@]}" rev-parse --absolute-git-dir 2>/dev/null)/MERGE_HEAD" ]] && MERGE_IN_PROGRESS=1
   # Scope the branch policy to the project this hook belongs to. Without this, the
   # guard applies the project's branch rules to every repo the session touches —
   # including a sibling repo whose normal working branch IS main. (The secret scan
