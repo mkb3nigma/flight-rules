@@ -75,7 +75,9 @@ release_of() {
     if [ -n "$best" ]; then printf '%s' "$best"; else printf '%s' "$found" | head -1; fi
 }
 
-SYNCED=0; LEFT=0
+# MAIN here, not only on the --stale-only path: it is read on every path below, and one
+# exported by the caller made a plain install a silent no-op (#93 batch review, B1).
+SYNCED=0; LEFT=0; MAIN=""
 if [ -n "$FROM" ]; then
     [ -d "$FROM" ] || { echo "❌ --from $FROM is not a directory"; exit 1; }
     FROM=$(cd "$FROM" && pwd -P)
@@ -97,16 +99,14 @@ if [ -n "$FROM" ]; then
         # worktree. It is not synced from here: the write would land in another
         # checkout's working tree. Said as such, with the command to run there: "outside
         # this repository; sync it by hand" was wrong on both counts (#87, 2026-10-18).
+        # Said only when something there is stale or missing, after the comparison
+        # below: said every time, a worktree session warned daily over current hooks
+        # (#93, 2026-10-21).
         if ! inside_repo "$HOOKS_DIR"; then
             MAIN=$(main_checkout || true)
-            if [ -n "$MAIN" ] && inside "$HOOKS_DIR" "$MAIN"; then
-                echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. Start a session there, or run:"
-                # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it
-                # was (0.26.0 release review).
-                printf '   cd %q && bash %q --from %q --stale-only\n' "$MAIN" "$FROM/install.sh" "$FROM"
-                exit 1
+            if [ -z "$MAIN" ] || ! inside "$HOOKS_DIR" "$MAIN"; then
+                echo "❌ core.hooksPath=$HOOKS_PATH is outside this repository — not touched; sync it by hand"; exit 1
             fi
-            echo "❌ core.hooksPath=$HOOKS_PATH is outside this repository — not touched; sync it by hand"; exit 1
         fi
     fi
     mkdir -p "$HOOKS_DIR"
@@ -116,22 +116,49 @@ if [ -n "$FROM" ]; then
     fi
     # Decide everything before copying anything, so a refusal leaves the directory as
     # it was rather than half updated.
-    TO_COPY=""
+    TO_COPY=""; ACT=updating; [ -n "${MAIN:-}" ] && ACT=stale
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
+            # A missing install.sh is not put back unattended: nothing needs it to run
+            # the hooks, a project may have removed it on purpose, and from a worktree it
+            # sent everyone to the main checkout every day (second review, C1). Doctor
+            # names it, with the cp that restores it (owner, 2026-10-21). A missing hook
+            # is still copied in. The full install still restores it.
+            [ "$STALE_ONLY" -eq 1 ] && [ "$h" = install.sh ] && continue
+            [ -z "$MAIN" ] || echo "   $h: missing"
             TO_COPY="$TO_COPY $h"
         elif cmp -s "$src" "$dst"; then
             :
+        # A file this script cannot read is one it could not check — not stale, not
+        # differing, not the project's own (third review, E3: an unreadable install.sh
+        # was told to mark itself adapted, while doctor called it unreadable).
+        elif [ "$STALE_ONLY" -eq 1 ] && [ ! -r "$dst" ]; then
+            echo "   $h: unreadable — could not check it; left alone"
+            LEFT=$((LEFT+1))
         elif [ "$STALE_ONLY" -eq 1 ]; then
             if ver=$(release_of "$dst"); then
-                echo "   $h: the flight-rules $ver copy — updating"
+                echo "   $h: the flight-rules $ver copy — $ACT"
                 TO_COPY="$TO_COPY $h"
+            # An install.sh without this header phrase is the project's own script, not
+            # an edited copy of flight-rules': no stale copy, and not one to tell anyone
+            # to mark `adapted` (second review, C4). The phrase is in every revision of
+            # this file; flight-rules-doctor.sh's hook_marker holds the same one — keep
+            # them in step. A heuristic, not a signature. The full install still
+            # replaces such a file: #97. Exit 1 only — no match — so a grep that fails
+            # (an unreadable file) is not taken for "the project's own" and skipped.
+            elif [ "$h" = install.sh ] && { grep -qF 'committed git hooks into git' "$dst"; [ $? -eq 1 ]; }; then
+                :
             # A comment line of its own, `# flight-rules: adapted`: the phrase also sits in
             # this script's text, so an unanchored match took an edited install.sh as
             # marked by nobody (release review, 2026-10-12). Same pattern in doctor.
-            elif grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$dst"; then
+            # The status is kept: a grep that errors on a readable file (I/O, a race)
+            # could not check it, and was reported as "differs" (fix review, F14).
+            elif { grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$dst"; _a=$?; [ "$_a" -eq 0 ]; }; then
                 echo "   $h: adapted here (marked flight-rules: adapted) — left alone"
+                LEFT=$((LEFT+1))
+            elif [ "$_a" -ne 1 ]; then
+                echo "   $h: could not be read (grep exited $_a) — could not check it; left alone"
                 LEFT=$((LEFT+1))
             else
                 echo "   $h: differs from every flight-rules release in the plugin cache — left alone (adapted here? diff it against $src, and add a line '# flight-rules: adapted' if so)"
@@ -149,6 +176,14 @@ if [ -n "$FROM" ]; then
             TO_COPY="$TO_COPY $h"
         fi
     done
+    if [ -n "${MAIN:-}" ]; then
+        [ -n "$TO_COPY" ] || exit 0
+        echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. Start a session there, or run:"
+        # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it was
+        # (0.26.0 release review).
+        printf '   cd %q && bash %q --from %q --stale-only\n' "$MAIN" "$FROM/install.sh" "$FROM"
+        exit 1
+    fi
     # Via a temporary name: when this script is the project's copy, install.sh is
     # itself one of the files, and bash reads a running script incrementally. mv swaps
     # the inode; the running shell keeps the old one. A failed cp or mv is an exit, not
