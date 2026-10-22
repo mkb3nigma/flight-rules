@@ -92,13 +92,13 @@ with all five git hooks installed.
 
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh`, git hooks, doctor | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch until it is fixed, and the guard's block names it — except on a mirror push, which any pattern refuses (#103: it used to protect none). The git hooks still read such a pattern as matching nothing (#103). `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
 | PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured here too — the ref gate and the local merge gate stand down, while `PROTECTED_BRANCHES` still applies. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
-| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones, then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the checkout the session runs in is touched — from a linked worktree, hooks in the main checkout are not synced (the write would land in that checkout's working tree), and the session says so and prints the command to run there — never during a merge, rebase, `git am`, cherry-pick, revert or bisect — that skip is said, with the command to run once it is finished — and the config is never rewritten. A headless session (`CLAUDE_CODE_SESSION_ATTENDED=0`) syncs until an attended session has run that day, spending no flag, and its notice reaches no screen — so an attended session says on screen when the hook directory has uncommitted changes, whoever made them. A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
+| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones (not a missing `install.sh`: nothing needs it to run the hooks, so doctor names it with the `cp` that restores it), then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the checkout the session runs in is touched — from a linked worktree, hooks in the main checkout are not synced (the write would land in that checkout's working tree); when one there is stale or missing the session says so and prints the command that updates this worktree's own copy instead (`--this-checkout`), to commit on its branch and merge, and when all are current it says nothing — never during a merge, rebase, `git am`, cherry-pick, revert or bisect — that skip is said, with the command to run once it is finished — nor on a protected branch, where the diff could not be committed — protected as the agent guard decides it, `FLIGHT_RULES_PROTECTED_BRANCHES` first and case-insensitively, and a `PROTECTED_BRANCHES` pattern that does not compile counts as protected, said as such: there it only compares, names what is behind or missing, lists apart what the command leaves alone, and prints the command to run in a worktree on a branch (silent when all are current); with `--this-checkout` it updates that worktree's copy even when git runs the hooks from the main checkout (without `--stale-only`, replacing what differs there too), and the merge brings it there — and the config is never rewritten. A headless session (`CLAUDE_CODE_SESSION_ATTENDED=0`) syncs until an attended session has run that day, spending no flag, and its notice reaches no screen — so an attended session says on screen when the hook directory has uncommitted changes, whoever made them, and when git cannot fully tell (it shows what git said). A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted; one the sync cannot read is said to be unreadable and left alone, on screen even when nothing else was synced. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. It also warns, to the assistant only, about a project `install.sh` that is behind, differs while carrying flight-rules' marker, or cannot be read; a missing one is noted on the full report with the `cp` that restores it. |
 | `/dg` comic | `DG_COMIC` | — | `/dg` (an instruction, not a hook) | `always` (default): every verdict ends with an ASCII comic of the best banter, with the banter score. `never`: no comic and no score. |
 | `/dg` comic in PRs | `DG_COMIC_PR` | — | `/dg`, `pr-create` (instructions, not hooks) | Whether a review that is for a PR puts the comic, banter score included, in it. Strictly opt-in: `never` (default) keeps it out without asking, `ask` asks at the end of the verdict, `always` adds it. Ignored with `DG_COMIC=never`. |
 | `/dg` round-2 wait | `DG_WAIT_MINUTES` | — | `/dg` (an instruction, not a hook) | Round 2 of the debate waits for the pre-review and the dependency scan; a run with no result after this many minutes counts as failed. A positive whole number; default `15`. |
@@ -225,7 +225,9 @@ that the logic has exactly one home.
   **A passing note is not consent.** The agent writes that note itself, so a stamped
   merge nobody asked for used to land with a green `✅ Pre-merge check verified` —
   measured 2026-09-10, no warning of any kind. The merge is now refused unless it says
-  who wanted it: `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`. An agent *can* set that
+  who wanted it: `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`. A refused merge is left
+  in progress, so the box gives `FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit`
+  to finish it — a second `git merge` fails there. An agent *can* set that
   variable itself — nothing inside its own tool calls distinguishes "the user asked"
   from "the agent decided" — so this does not claim proof. It makes the unbidden merge
   a deliberate, named act rather than a silent one, and writes the outcome into the
@@ -268,14 +270,19 @@ that the logic has exactly one home.
   prefix are all covered — the agent guard scans before the command runs and saw none
   of them (#71, #72) — and a human's commit is scanned too. It is narrower than the
   agent guard on purpose: the guard's `password = "…"` heuristic warns an agent but
-  would block too many ordinary commits here. A merge being concluded is not
-  re-scanned — its commits were scanned when made if this hook was installed then — so
-  neither is a key typed in while resolving its conflict. "Being concluded" means git's
+  would block too many ordinary commits here. A merge being concluded has its
+  conflict resolution scanned, not the commits coming in: the staged diff against
+  git's `AUTO_MERGE` (git ≥ 2.42; the file, or in a reftable repository the pseudo-ref —
+  never a branch or tag of that name) is what was typed while resolving. Without
+  `AUTO_MERGE` everything staged is scanned, incoming commits included (#101: skipping
+  the whole commit let a key typed into a resolution through). The accepted cost: an
+  incoming commit is scanned only if this hook ran when it was made, so one from before
+  it, or made with `--no-verify`, lands with the merge. "Being concluded" means git's
   `MERGE_HEAD` file exists and names a commit `HEAD` does not already contain (a branch
   or tag named `MERGE_HEAD` does not count, nor a leftover file naming `HEAD` or an
   ancestor, from which git makes an ordinary commit), and the
-  hook says on every such commit that it skipped the scan, so a `MERGE_HEAD` left behind
-  shows instead of switching the scan off unseen; a `merge --squash` is an
+  hook says on every such commit what it scanned, naming the commit coming in, so a
+  `MERGE_HEAD` left behind shows instead of narrowing the scan unseen; a `merge --squash` is an
   ordinary commit and is scanned. A clean `cherry-pick`/`revert` does not run
   `pre-commit`; one that stopped on a conflict and is finished with `--continue` does.
   Override for a checked false positive: `--no-verify`, the owner's call — the refusal
@@ -303,13 +310,25 @@ that the logic has exactly one home.
   copies the six hooks and itself into the project first, then installs as usual —
   the update refreshes the agent hooks but cannot touch these, which are the
   project's committed files (AppliHawk ran four 0.22.0 hooks under a 0.23.0 plugin,
-  2026-10-12). `--stale-only` replaces only a copy byte-identical to some release in
+  2026-10-12). From a linked worktree whose hooks are in the main checkout, that form
+  is refused — it would write into the main checkout's working tree — and prints the
+  one to use there, `--this-checkout`, which updates the worktree's own copy for its
+  branch to commit and merge. If that directory does not exist, git runs no hooks in
+  any checkout; the refusal says so and prints the install to run in the main checkout. `--stale-only` replaces only a copy byte-identical to some release in
   the plugin cache, so a project's own adaptation is left alone and named — mark it
-  with a line `# flight-rules: adapted` and doctor accepts it too; without the flag
+  with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
+  left alone without a word: an `install.sh` that is the project's own script, not
+  flight-rules' (it lacks the installer's header phrase), and a missing `install.sh`,
+  which doctor names instead; without the flag
   every differing hook is replaced, except a `pre-commit` that is not flight-rules'
   at all, which is refused with the rename that keeps it running. A copy that fails
   is an exit, never a "synced" line. `flight-rules-doctor.sh` prints the command
-  whenever a hook is missing or behind, and `HOOK_SYNC=auto` in the conf has
+  whenever a hook is missing or behind, or the project's `install.sh` is behind,
+  differs while still carrying flight-rules' marker, or cannot be read (a warning,
+  not on screen: it guards nothing; one without the marker is the project's own and
+  is not named; a missing one is noted with the `cp` that restores it — this
+  checkout's copy, from a worktree too), and
+  `HOOK_SYNC=auto` in the conf has
   `session-start.sh` run the `--stale-only` form itself. Either way the result is a
   diff to review and commit. Tests: `install.test.sh`.
 
@@ -387,7 +406,8 @@ Guards that fire on the assistant's own events, before git ever runs:
   Tests: `pre-commit-check.test.sh` (no arguments, no network).
 - **`flight-rules-doctor.sh`** — is the enforcement actually installed, and current? Checks `core.hooksPath`,
   every hook's executable bit *and* that each one still contains the string that makes
-  it that hook (a present, executable stub enforces nothing), that each one is this
+  it that hook (a present, executable stub enforces nothing; one it cannot read is said
+  to be unreadable, ❌, since git cannot run it either), that each one is this
   release's copy — byte-identical to an older cached release is ❌, differing from every
   release is ⚠️ since it may be the project's own adaptation, and either prints the
   `install.sh --from` command — `merge.ff`, the guard's parser, the conf's keys and
