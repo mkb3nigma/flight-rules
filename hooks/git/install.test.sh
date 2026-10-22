@@ -228,13 +228,22 @@ say "$(head -1 <<<"$OUT")" "1" "a worktree whose hooksPath is in the main checko
 say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…without calling it outside the repository"
 say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…naming the main checkout"
 say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writes nothing there"
-CMD=$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')
-say "$CMD" "$(printf 'cd %q && bash %q --from %q --stale-only' "$D" "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the command to run there, its paths shell-quoted"
-# The command works when pasted, from anywhere: it syncs the main checkout's stale copy.
-PASTED=$(cd / && HOME="$D/fakehome" bash -c "$CMD" 2>&1); PRC=$?
-say "$PRC" "0" "…which, pasted, exits 0"
-say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…and syncs the main checkout's stale copy"
+# The command is for THIS worktree's copy, committed on its branch and merged: `cd <main>
+# && …` sent a worktree back to a main checkout on a protected branch, where the diff
+# could not be committed (#99 review, 2026-10-21).
+CMD=$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$CMD" "$(printf 'bash %q --from %q --stale-only --this-checkout' "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the command for this worktree's copy, its paths shell-quoted"
+say "$(grep -c 'cd ' <<<"$OUT")" "0" "…not one that sends it to the main checkout"
+cp "$D/.ai/hooks/commit-msg" "$D/.ai/worktrees/wt/.ai/hooks/commit-msg"
+git -C "$D/.ai/worktrees/wt" commit -qam "chore: the stale copy, committed" --no-verify || die "could not commit the worktree's stale copy"
+PASTED=$(cd "$D/.ai/worktrees/wt" && HOME="$D/fakehome" bash -c "$CMD" 2>&1); PRC=$?
+say "$PRC" "0" "…which, pasted in the worktree, exits 0"
+say "$(same "$D/.ai/worktrees/wt/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…and syncs the worktree's stale copy"
 say "$(grep -c '^   synced commit-msg' <<<"$PASTED")" "1" "…saying so"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…leaving the main checkout's copy as it was"
+say "$(git -C "$D/.ai/worktrees/wt" status --porcelain -- .ai/hooks)" " M .ai/hooks/commit-msg" "…a diff the worktree's branch can commit"
+say "$(rc "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --this-checkout)" "1" "--this-checkout without --stale-only is refused"
+git -C "$D/.ai/worktrees/wt" checkout -q -- .ai/hooks
 # A path truly outside the repository, from the same worktree, keeps the old refusal.
 O=$(cd "$(mktemp -d)" && pwd -P); cp "$D"/.ai/hooks/* "$O/"; git -C "$D" config core.hooksPath "$O"
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
@@ -338,6 +347,21 @@ say "$([ -f "$D/.ai/hooks/install.sh" ] && echo there || echo absent)" "absent" 
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 say "$([ -f "$D/.ai/hooks/install.sh" ] && echo there || echo absent)" "there" "…while the full install restores it"
 rm -rf "$D" "$P"
+# --check-only (session-start on a protected branch, #99): the comparison, named, and
+# nothing written — exit 3 when something is behind, 0 when current.
+D=$(mkrepo); P=$(mkplugin); make_stale "$D" commit-msg; BEFORE=$(sums "$D/.ai/hooks")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only --check-only)
+say "$(head -1 <<<"$OUT")" "3" "--check-only, a stale hook: exit 3"
+say "$(grep -c 'commit-msg: the flight-rules 0.0.1 copy — stale' <<<"$OUT")" "1" "…naming it"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing"
+rm -f "$D/.ai/hooks/post-merge"
+say "$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only --check-only | grep -c 'post-merge: missing')" "1" "…a missing hook is named too"
+cp "$P/hooks/git/commit-msg" "$P/hooks/git/post-merge" "$D/.ai/hooks/"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only --check-only)
+say "$(head -1 <<<"$OUT")" "0" "…every hook current: exit 0"
+say "$(tail -n +2 <<<"$OUT" | grep -c .)" "0" "…saying nothing"
+say "$(rc "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --check-only)" "1" "--check-only without --stale-only is refused"
+rm -rf "$D" "$P"
 # An exported MAIN in the caller's environment is not this script's. Read before it was
 # set, it made a plain --from install a silent no-op and an update a false main-checkout
 # refusal (#93 batch review, B1, 2026-10-21).
@@ -355,20 +379,20 @@ say "$(grep -c 'main checkout' <<<"$OUT")" "0" "…with no main-checkout refusal
 rm -rf "$D" "$P"
 # The printed command is pasted, so a path is quoted for the shell. Wrapped in "…", a
 # main checkout named with `$(…)` ran that command when pasted, and one with a `"`
-# broke it (0.26.0 release review, P2): the path is the user's own directory, but the
-# command has to work for any name it can have.
-D0=$(mkrepo); P=$(mkplugin); D="$(dirname "$D0")/r \$(touch pwned) q"; mv "$D0" "$D" || die "could not rename the fixture"
+# broke it (0.26.0 release review, P2). The command now names only the plugin's paths
+# (#99 review), so the hostile name is the plugin directory's.
+D=$(mkrepo); P0=$(mkplugin); P="$(dirname "$P0")/p \$(touch pwned) q"; mv "$P0" "$P" || die "could not rename the plugin fixture"
 echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the hostile-path fixture"
 git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt || die "could not add the worktree"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"; make_stale "$D" commit-msg
+cp "$D/.ai/hooks/commit-msg" "$D/.ai/worktrees/wt/.ai/hooks/commit-msg"
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
-CMD=$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')
-S=$(cd "$(mktemp -d)" && pwd -P)
-PASTED=$(cd "$S" && HOME="$D/fakehome" bash -c "$CMD" 2>&1); PRC=$?
-say "$PRC" "0" "a main checkout whose path holds \$(…) and spaces: the pasted command exits 0"
-say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…syncs the stale copy"
-say "$(ls "$S" | wc -l | tr -d ' ')" "0" "…and runs nothing the path spells out"
-rm -rf "$D" "$P" "$S"
+CMD=$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+PASTED=$(cd "$D/.ai/worktrees/wt" && HOME="$D/fakehome" bash -c "$CMD" 2>&1); PRC=$?
+say "$PRC" "0" "a plugin whose path holds \$(…) and spaces: the pasted command exits 0"
+say "$(same "$D/.ai/worktrees/wt/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…syncs the stale copy"
+say "$([ -e "$D/.ai/worktrees/wt/pwned" ] && echo ran || echo not)" "not" "…and runs nothing the path spells out"
+rm -rf "$D" "$P"
 D=$(mkrepo); P=$(mkplugin); git -C "$D" config core.hooksPath .ai/gone
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "a hooksPath that does not exist: --stale-only refuses rather than re-pointing"

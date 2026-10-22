@@ -5,6 +5,8 @@
 #   bash <flight-rules>/hooks/git/install.sh --from <flight-rules>/hooks/git
 #                                                           # after a plugin update
 #   … --from <dir> --stale-only                             # what HOOK_SYNC=auto runs
+#   … --from <dir> --stale-only --check-only                # …on a protected branch
+#   … --from <dir> --stale-only --this-checkout             # a worktree's own copy
 #
 # A plugin update refreshes the agent hooks but cannot touch these: they are the
 # project's own committed files (AppliHawk, 2026-10-12: four hooks stayed at 0.22.0
@@ -24,15 +26,19 @@ set -euo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 HOOKS='pre-merge-commit post-merge commit-msg pre-rebase reference-transaction pre-commit'
 
-FROM=""; STALE_ONLY=0
+FROM=""; STALE_ONLY=0; CHECK_ONLY=0; THIS_CHECKOUT=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --from) [ $# -ge 2 ] || { echo "❌ --from needs a directory"; exit 1; }; FROM="$2"; shift 2 ;;
         --stale-only) STALE_ONLY=1; shift ;;
-        *) echo "❌ unknown argument: $1 (usage: install.sh [--from <dir> [--stale-only]])"; exit 1 ;;
+        --check-only) CHECK_ONLY=1; shift ;;
+        --this-checkout) THIS_CHECKOUT=1; shift ;;
+        *) echo "❌ unknown argument: $1 (usage: install.sh [--from <dir> [--stale-only [--check-only | --this-checkout]]])"; exit 1 ;;
     esac
 done
 [ "$STALE_ONLY" -eq 1 ] && [ -z "$FROM" ] && { echo "❌ --stale-only needs --from <dir>"; exit 1; }
+[ "$CHECK_ONLY" -eq 1 ] && [ "$STALE_ONLY" -eq 0 ] && { echo "❌ --check-only needs --stale-only"; exit 1; }
+[ "$THIS_CHECKOUT" -eq 1 ] && [ "$STALE_ONLY" -eq 0 ] && { echo "❌ --this-checkout needs --stale-only"; exit 1; }
 
 # The directory git runs hooks from. LOCAL config only: the global one can name a
 # directory outside every repo (~/.githooks), and a sync that followed it wrote seven
@@ -107,6 +113,17 @@ if [ -n "$FROM" ]; then
             if [ -z "$MAIN" ] || ! inside "$HOOKS_DIR" "$MAIN"; then
                 echo "❌ core.hooksPath=$HOOKS_PATH is outside this repository — not touched; sync it by hand"; exit 1
             fi
+            # --this-checkout: the same files at the same path in THIS checkout — the
+            # copy a branch commits, which a merge then brings to the main checkout. The
+            # way to land an update when the main checkout is on a protected branch: told
+            # to run there, a worktree session was sent back to the branch nothing can be
+            # committed on (#99, 2026-10-21). Git runs the main checkout's copy meanwhile.
+            if [ "$THIS_CHECKOUT" -eq 1 ]; then
+                _rel=$(cd "$HOOKS_DIR" && pwd -P); _rel=${_rel#"$(cd "$MAIN" && pwd -P)"/}
+                [ -d "$REPO_ROOT/$_rel" ] || { echo "❌ $_rel is not in this checkout — nothing here to update (is it committed in the main checkout?)"; exit 1; }
+                HOOKS_DIR="$REPO_ROOT/$_rel"; MAIN=""
+                echo "   updating this checkout's copy, $_rel — git runs the main checkout's until this is merged there"
+            fi
         fi
     fi
     mkdir -p "$HOOKS_DIR"
@@ -116,7 +133,11 @@ if [ -n "$FROM" ]; then
     fi
     # Decide everything before copying anything, so a refusal leaves the directory as
     # it was rather than half updated.
-    TO_COPY=""; ACT=updating; [ -n "${MAIN:-}" ] && ACT=stale
+    # Nothing is written from a worktree into the main checkout (MAIN), nor with
+    # --check-only, which session-start passes on a protected branch, where the diff
+    # could not be committed (#99): the comparison runs, and what is behind is named.
+    NOWRITE=0; { [ -n "${MAIN:-}" ] || [ "$CHECK_ONLY" -eq 1 ]; } && NOWRITE=1
+    TO_COPY=""; ACT=updating; [ "$NOWRITE" -eq 1 ] && ACT=stale
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
@@ -126,7 +147,7 @@ if [ -n "$FROM" ]; then
             # names it, with the cp that restores it (owner, 2026-10-21). A missing hook
             # is still copied in. The full install still restores it.
             [ "$STALE_ONLY" -eq 1 ] && [ "$h" = install.sh ] && continue
-            [ -z "$MAIN" ] || echo "   $h: missing"
+            [ "$NOWRITE" -eq 0 ] || echo "   $h: missing"
             TO_COPY="$TO_COPY $h"
         elif cmp -s "$src" "$dst"; then
             :
@@ -176,12 +197,17 @@ if [ -n "$FROM" ]; then
             TO_COPY="$TO_COPY $h"
         fi
     done
+    if [ "$CHECK_ONLY" -eq 1 ]; then
+        [ -n "$TO_COPY" ] || exit 0
+        exit 3   # behind or missing, nothing written: the caller says why
+    fi
     if [ -n "${MAIN:-}" ]; then
         [ -n "$TO_COPY" ] || exit 0
-        echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. Start a session there, or run:"
+        echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. To update this worktree's copy instead, on its branch, then commit and merge it:"
         # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it was
-        # (0.26.0 release review).
-        printf '   cd %q && bash %q --from %q --stale-only\n' "$MAIN" "$FROM/install.sh" "$FROM"
+        # (0.26.0 release review). Not `cd <main> && …`: a main checkout on a protected
+        # branch is where the diff could not be committed (#99).
+        printf '   bash %q --from %q --stale-only --this-checkout\n' "$FROM/install.sh" "$FROM"
         exit 1
     fi
     # Via a temporary name: when this script is the project's copy, install.sh is

@@ -390,6 +390,14 @@ D=$(mkrepo); echo "# this project's own change" >> "$D/.ai/hooks/post-merge"
 say "$(rc "$D")" "0" "a copy matching no release is a warning, not a problem"
 say "$(has "$D" "post-merge differs from this flight-rules' copy")" "0" "…that names the hook"
 say "$(has "$D" "to update: bash")" "0" "…and still prints the sync command"
+# "re-run without <flags> to replace it", followed as written, replaces it: the hint
+# named only --stale-only, and --this-checkout without it is refused (fix review, F12).
+OUT=$(run "$D")
+FULL=$(grep -o 'to update: bash .*--this-checkout   (' <<<"$OUT" | sed 's/^to update: //; s/   ($//' | head -1)
+DROP=$(grep -o 're-run without [^)]* to replace it' <<<"$OUT" | sed 's/^re-run without //; s/ to replace it$//')
+(cd "$D" && HOME="$D/fakehome" eval "${FULL% $DROP}") >/dev/null 2>&1; RC=$?
+say "$RC" "0" "…and the command without the flags the hint names runs"
+say "$(cmp -s "$D/.ai/hooks/post-merge" "$H/git/post-merge" && echo replaced)" "replaced" "…and replaces the differing copy"
 rm -rf "$D"
 
 # Marked adapted, the project's own hook is accepted: a ⚠️ every session with no way to
