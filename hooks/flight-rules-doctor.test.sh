@@ -391,15 +391,18 @@ say "$(rc "$D")" "0" "a copy matching no release is a warning, not a problem"
 say "$(has "$D" "post-merge differs from this flight-rules' copy")" "0" "…that names the hook"
 say "$(has "$D" "to update: bash")" "0" "…and still prints the sync command"
 # "re-run without <flags> to replace it", followed as written, replaces it: the hint
-# named only --stale-only, and --this-checkout without it was refused (fix review, F12).
+# named only --stale-only, and --this-checkout without it was refused (group A fix review, F12).
 # Since F1 that is one flag, --stale-only, wherever it sits in the command.
 OUT=$(run "$D")
 FULL=$(grep -o 'to update: bash .*--this-checkout   (' <<<"$OUT" | sed 's/^to update: //; s/   ($//' | head -1)
-DROP=$(grep -o 're-run without [^)]* to replace it' <<<"$OUT" | sed 's/^re-run without //; s/ to replace it$//')
+DROP=$(grep -o 're-run without [^)]* to replace every' <<<"$OUT" | sed 's/^re-run without //; s/ to replace every$//')
 (cd "$D" && HOME="$D/fakehome" eval "${FULL/ $DROP/}") >/dev/null 2>&1; RC=$?
 say "$DROP" "--stale-only" "…the hint naming --stale-only alone, so --this-checkout stays"
 say "$RC" "0" "…and the command without the flags the hint names runs"
 say "$(cmp -s "$D/.ai/hooks/post-merge" "$H/git/post-merge" && echo replaced)" "replaced" "…and replaces the differing copy"
+# "to replace it" undersold that: the full form replaces every copy that differs, adapted
+# ones too (group A fix review round 2, D2).
+say "$(grep -c 'to replace every copy that differs, adapted ones included' <<<"$OUT")" "1" "…a hint that says it replaces every differing copy, adapted ones included"
 rm -rf "$D"
 
 # Marked adapted, the project's own hook is accepted: a ⚠️ every session with no way to
@@ -529,7 +532,7 @@ say "$(cmp -s "$W/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "
 say "$([ -e "$D/.ai/hooks/install.sh" ] && echo written || echo untouched)" "untouched" "…not the main checkout's"
 rm -rf "$D"
 # …but when the hooks directory is untracked in the main checkout, this worktree has none,
-# and the cp keeps the main checkout's path: redirected, it failed (fix review, F9 again).
+# and the cp keeps the main checkout's path: redirected, it failed (group A fix review, F9).
 D=$(mkrepo); echo base > "$D/f"; git -C "$D" add f && git -C "$D" commit -qm base --no-verify
 git -C "$D" config core.hooksPath "$D/.ai/hooks"
 git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt 2>/dev/null || die "could not add a worktree in $D"
@@ -540,6 +543,18 @@ say "$([ -n "$CMD" ] && echo printed)" "printed" "from a worktree, hooks untrack
 say "$RC" "0" "…and, run as printed, succeeds"
 say "$(cmp -s "$D/.ai/hooks/install.sh" "$H/git/install.sh" && echo restored)" "restored" "…restoring the main checkout's copy, the only one there is"
 rm -rf "$D"
+# …nor when the worktree's hooks directory is a link to the main checkout's: redirected,
+# the cp printed this worktree's path and wrote through the link into the main checkout
+# (group A fix review round 2, F0). It names the main checkout's path instead.
+D=$(mkrepo); git -C "$D" add -A && git -C "$D" commit -qm base --no-verify
+git -C "$D" config core.hooksPath "$D/.ai/hooks"
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt 2>/dev/null || die "could not add a worktree in $D"
+W="$D/.ai/worktrees/wt"; mkdir -p "$W/fakehome"
+mv "$W/.ai/hooks" "$W/.ai/hooks.real"; ln -s "$D/.ai/hooks" "$W/.ai/hooks"
+CMD=$(run "$W" | grep -o 'to restore it, on a branch: .*' | sed 's/^to restore it, on a branch: //')
+say "$([ -n "$CMD" ] && echo printed)" "printed" "from a worktree whose hooks directory links to the main checkout's: the cp is printed"
+say "${CMD##* }" "$(printf '%q' "$(cd "$D" && pwd -P)/.ai/hooks/install.sh")" "…naming the main checkout's path, where it writes"
+rm "$W/.ai/hooks"; rm -rf "$D"
 # An unreadable hook could not be checked: said so, not "may be a stub", and grep's
 # error is not on screen (fix review, F15). Git cannot run it, so it is a problem.
 D=$(mkrepo); chmod 111 "$D/.ai/hooks/post-merge"
@@ -566,7 +581,7 @@ say "$(grep -c 'post-merge does not look like' <<<"$OUT")" "0" "…not called a 
 say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the other hooks"
 rm -rf "$D" "$SHIM"
 # The adapted-mark grep that errors: could not check it either, not "not adapted" with
-# grep's error on screen (fix review, F13).
+# grep's error on screen (group A fix review, F13).
 D=$(mkrepo)
 SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
 printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/post-merge) case "$1" in -qE) echo "grep: shim I/O error" >&2; exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
@@ -576,6 +591,18 @@ say "$RC" "0" "an adapted-mark grep that errors: a warning, doctor exits 0"
 say "$(grep -c 'post-merge could not be read (grep exited 2) — could not check it' <<<"$OUT")" "1" "…said as could not check"
 say "$(grep -c 'shim I/O error' <<<"$OUT")" "0" "…with grep's error not on screen"
 say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the other hooks"
+rm -rf "$D" "$SHIM"
+# The same for install.sh's adapted-mark grep, which F13 missed (group A fix review
+# round 2, F1): an error read as "not marked", with grep's error on screen.
+D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
+SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/install.sh) case "$1" in -qE) echo "grep: shim I/O error" >&2; exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
+chmod +x "$SHIM/grep"
+OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
+say "$RC" "0" "install.sh's adapted-mark grep that errors: doctor exits 0"
+say "$(grep -c 'install.sh could not be read (grep exited 2) — could not check it' <<<"$OUT")" "1" "…said as could not check"
+say "$(grep -c 'shim I/O error' <<<"$OUT")" "0" "…with grep's error not on screen"
+say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the hooks"
 rm -rf "$D" "$SHIM"
 # A copy identical to this version's own release, while this checkout's differs: the
 # development case, worded as such rather than as an old release.

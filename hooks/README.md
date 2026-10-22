@@ -92,7 +92,7 @@ with all five git hooks installed.
 
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh` | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch, and the guard's block names it, until it is fixed (#103: it used to protect none). The git hooks still read such a pattern as matching nothing (#103). `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh`, git hooks, doctor | Branches the guard defends. POSIX ERE, matched case-insensitively — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch, and the guard's block names it, until it is fixed (#103: it used to protect none). The git hooks still read such a pattern as matching nothing (#103). `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
 | PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured here too — the ref gate and the local merge gate stand down, while `PROTECTED_BRANCHES` still applies. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
@@ -310,7 +310,10 @@ that the logic has exactly one home.
   copies the six hooks and itself into the project first, then installs as usual —
   the update refreshes the agent hooks but cannot touch these, which are the
   project's committed files (AppliHawk ran four 0.22.0 hooks under a 0.23.0 plugin,
-  2026-10-12). `--stale-only` replaces only a copy byte-identical to some release in
+  2026-10-12). From a linked worktree whose hooks are in the main checkout, that form
+  is refused — it would write into the main checkout's working tree — and prints the
+  one to use there, `--this-checkout`, which updates the worktree's own copy for its
+  branch to commit and merge. `--stale-only` replaces only a copy byte-identical to some release in
   the plugin cache, so a project's own adaptation is left alone and named — mark it
   with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
   left alone without a word: an `install.sh` that is the project's own script, not

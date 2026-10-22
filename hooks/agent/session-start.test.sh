@@ -386,7 +386,7 @@ say "$(grep -c '^rc=0$' <<<"$J")" "1" "status.branch=true: session-start exits 0
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…still says the uncommitted change"
 say "$(usr <<<"$J" | grep -c 'could not fully check')" "0" "…and not that the hooks could not be checked"
 # status.showUntrackedFiles=no hid an untracked file there — a hook the sync copied in
-# (fix review, F12).
+# (group A fix review, F12).
 git -C "$D" config status.branch false; git -C "$D" checkout -q -- .ai/hooks/post-merge
 git -C "$D" config status.showUntrackedFiles no; : > "$D/.ai/hooks/pre-push"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
@@ -456,8 +456,8 @@ say "$(grep -c '^rc=0$' <<<"$J")" "1" "a pattern that does not compile: session-
 say "$(usr <<<"$J" | grep -c 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read, so "trunk" is taken as protected')" "1" "…says the pattern is broken and the branch taken as protected"
 say "$(cksum < "$D/.ai/hooks/commit-msg")" "$BEFORE" "…and writes nothing"
 # The fix is the owner's, as the guard says: "fix the pattern" told the assistant to edit
-# the setting the guard tells it not to (fix review, F10).
-say "$(usr <<<"$J" | grep -c 'Tell the project owner: it is set in .ai/flight-rules.conf')" "1" "…sends the fix to the project owner"
+# the setting the guard tells it not to (group A fix review, F10).
+say "$(usr <<<"$J" | grep -c "It is the project owner's to fix, in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it")" "1" "…leaves the fix to the project owner, in words that read right to them on screen"
 say "$(usr <<<"$J" | grep -c 'Fix the pattern')" "0" "…not to the assistant"
 rm -rf "$D"
 # Behind is stale or missing; what the command leaves alone is listed apart, not as
@@ -487,7 +487,7 @@ else
     say "$(usr <<<"$J" | grep -c 'post-merge: unreadable — could not check it')" "1" "…naming it"
   done
   # …and the uncommitted-changes check still runs beside it: an elif in the same chain,
-  # the notice hid it (fix review, F2).
+  # the notice hid it (group A fix review, F2).
   : > "$D/.ai/hooks/notes.txt"
   rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
   J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")

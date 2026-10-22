@@ -597,13 +597,13 @@ while IFS= read -r _raw; do
   IS_PROTECTED=1; break
 done < <(command_segments_marked "$COMMAND")
 
-# First, for every refusal: a branch-create one, ahead of it, offered PROTECTED_BRANCHES=off
-# and never named the broken pattern (fix review, F3). The branch is named only when it
-# is one: on a mirror push it read `every branch, "every branch (--mirror)" included`
-# (fix review, F7).
-if [[ -n "$PATTERN_BAD" && ( "$ACTION" == "branch-create" || "$IS_PROTECTED" == "1" ) ]]; then
+# A broken pattern's refusal, only where the pattern decided it: a mirror push and a
+# branch create are refused under any pattern but off, so "until it is fixed" was false
+# for both, and they keep their own blocks (group A fix review round 2, 2026-10-22, F7).
+if [[ -n "$PATTERN_BAD" && "$IS_PROTECTED" == "1" && "$ACTION" != "branch-create" \
+      && "$BLOCKED_BRANCH" != "every branch (--mirror)" ]]; then
   _every="every branch"
-  [[ -n "$BLOCKED_BRANCH" && "$BLOCKED_BRANCH" != "every branch"* ]] && _every="every branch, \"$BLOCKED_BRANCH\" included,"
+  [[ -n "$BLOCKED_BRANCH" ]] && _every="every branch, \"$BLOCKED_BRANCH\" included,"
   deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so $_every is treated as protected until it is fixed.
 
 The pattern is set in .ai/flight-rules.conf, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."

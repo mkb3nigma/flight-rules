@@ -245,7 +245,7 @@ say "$(git -C "$D/.ai/worktrees/wt" status --porcelain -- .ai/hooks)" " M .ai/ho
 git -C "$D/.ai/worktrees/wt" checkout -q -- .ai/hooks
 # --this-checkout without --stale-only replaces what differs too — doctor's "re-run
 # without --stale-only to replace it". Run with no flag, that command wrote into the main
-# checkout, on whatever branch it was (fix review, F1).
+# checkout, on whatever branch it was (group A fix review, F1).
 echo "# this project's own change" >> "$D/.ai/worktrees/wt/.ai/hooks/post-merge"
 git -C "$D/.ai/worktrees/wt" commit -qam "chore: an adapted copy" --no-verify || die "could not commit the worktree's adapted copy"
 MAINST=$(git -C "$D" status --porcelain -- .ai/hooks 2>&1)
@@ -258,6 +258,25 @@ say "$(git -C "$D" status --porcelain -- .ai/hooks 2>&1)" "$MAINST" "…and the 
 say "$(git -C "$D" config --local core.hooksPath)" "$D/.ai/hooks" "…and core.hooksPath unchanged"
 git -C "$D/.ai/worktrees/wt" reset -q --hard HEAD~1
 say "$(rc "$D" "$P/hooks/git/install.sh" --this-checkout)" "1" "--this-checkout without --from is refused"
+# The plain form, from that worktree, wrote into the main checkout — and README, the
+# installer's header and /rules-sync all gave it (group A fix review round 2, D1).
+WTBEFORE=$(sums "$D/.ai/worktrees/wt/.ai/hooks")
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "plain --from, from a worktree whose hooks are in the main checkout: refused"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…writing nothing into the main checkout"
+say "$(sums "$D/.ai/worktrees/wt/.ai/hooks")" "$WTBEFORE" "…nor into the worktree"
+say "$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | sed 's/^[[:space:]]*//')" \
+    "$(printf 'bash %q --from %q --this-checkout' "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the --this-checkout form"
+say "$(grep -c "main checkout's copy instead" <<<"$OUT")" "1" "…and the way to update the main checkout's copy"
+# A link in the worktree to the main checkout's copy passed the redirect's -d, and the
+# write went through it into the main checkout (group A fix review round 2, F0).
+mv "$D/.ai/worktrees/wt/.ai/hooks" "$D/.ai/worktrees/wt/.ai/hooks.real"
+ln -s "$D/.ai/hooks" "$D/.ai/worktrees/wt/.ai/hooks"
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --this-checkout)
+say "$(head -1 <<<"$OUT")" "1" "--this-checkout, the worktree's hooks a link into the main checkout: refused"
+say "$(grep -c 'outside it — not touched' <<<"$OUT")" "1" "…saying where it leads"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing through it"
+rm "$D/.ai/worktrees/wt/.ai/hooks"; mv "$D/.ai/worktrees/wt/.ai/hooks.real" "$D/.ai/worktrees/wt/.ai/hooks"
 # A path truly outside the repository, from the same worktree, keeps the old refusal.
 O=$(cd "$(mktemp -d)" && pwd -P); cp "$D"/.ai/hooks/* "$O/"; git -C "$D" config core.hooksPath "$O"
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)

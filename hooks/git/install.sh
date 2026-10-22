@@ -4,6 +4,7 @@
 #   bash .ai/hooks/install.sh                               # one-time setup
 #   bash <flight-rules>/hooks/git/install.sh --from <flight-rules>/hooks/git
 #                                                           # after a plugin update
+#                                                           # (a worktree: --this-checkout)
 #   … --from <dir> --stale-only                             # what HOOK_SYNC=auto runs
 #   … --from <dir> --stale-only --check-only                # …on a protected branch
 #   … --from <dir> --stale-only --this-checkout             # a worktree's own copy
@@ -84,7 +85,7 @@ release_of() {
 
 # MAIN here, not only on the --stale-only path: it is read on every path below, and one
 # exported by the caller made a plain install a silent no-op (#93 batch review, B1).
-SYNCED=0; LEFT=0; MAIN=""
+SYNCED=0; LEFT=0; MAIN=""; ACTIVE="Active hooks"
 if [ -n "$FROM" ]; then
     [ -d "$FROM" ] || { echo "❌ --from $FROM is not a directory"; exit 1; }
     FROM=$(cd "$FROM" && pwd -P)
@@ -97,11 +98,11 @@ if [ -n "$FROM" ]; then
         "$FROM/../../.claude-plugin/plugin.json" 2>/dev/null | head -1 || true)
     # --this-checkout without --stale-only takes this path too: it is the full replace
     # doctor's hint points at for a hook left alone as differing. Without it, that
-    # command run in a worktree wrote into the main checkout (fix review, F1).
+    # command run in a worktree wrote into the main checkout (group A fix review, F1).
     if [ "$STALE_ONLY" -eq 1 ] || [ "$THIS_CHECKOUT" -eq 1 ]; then
-        # Unattended (HOOK_SYNC=auto): only an install that exists, inside this repo,
-        # is updated. Installing from nothing is the owner's step; a directory outside
-        # the repo is not this repo's to write; a missing one is doctor's to report.
+        # The sync and --this-checkout update only an install that exists, inside this
+        # repo. Installing from nothing is the owner's step; a directory outside the
+        # repo is not this repo's to write; a missing one is doctor's to report.
         [ "$PATH_IS_SET" -eq 1 ] || { echo "❌ no local core.hooksPath — nothing is installed here to update (run install.sh --from <dir>, with neither --stale-only nor --this-checkout, to install)"; exit 1; }
         [ -d "$HOOKS_DIR" ] || { echo "❌ core.hooksPath=$HOOKS_PATH does not exist — git runs no hooks; not touched"; exit 1; }
         # From a linked worktree, the usual install — an absolute path into the main
@@ -125,10 +126,21 @@ if [ -n "$FROM" ]; then
             if [ "$THIS_CHECKOUT" -eq 1 ]; then
                 _rel=$(cd "$HOOKS_DIR" && pwd -P); _rel=${_rel#"$(cd "$MAIN" && pwd -P)"/}
                 [ -d "$REPO_ROOT/$_rel" ] || { echo "❌ $_rel is not in this checkout — nothing here to update (is it committed in the main checkout?)"; exit 1; }
-                HOOKS_DIR="$REPO_ROOT/$_rel"; MAIN=""
+                # Resolved, not only present: a link there to the main checkout's copy
+                # took the write back into it (group A fix review round 2, F0).
+                inside_repo "$REPO_ROOT/$_rel" || { echo "❌ $_rel in this checkout leads to $(cd "$REPO_ROOT/$_rel" && pwd -P), outside it — not touched"; exit 1; }
+                HOOKS_DIR="$REPO_ROOT/$_rel"; MAIN=""; ACTIVE="This checkout's copy (git runs the main checkout's until it is merged there)"
                 echo "   updating this checkout's copy, $_rel — git runs the main checkout's until this is merged there"
             fi
         fi
+    # The plain form, from a linked worktree whose hooks are in the main checkout, wrote
+    # into that checkout's working tree — the docs said to run it (group A fix review
+    # round 2, 2026-10-22, D1). Refused before anything is compared, with both ways on.
+    elif [ "$PATH_IS_SET" -eq 1 ] && ! inside_repo "$HOOKS_DIR" && _m=$(main_checkout) && inside "$HOOKS_DIR" "$_m"; then
+        echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $_m — not written from this worktree. To update this worktree's copy, on its branch, then commit and merge it:"
+        printf '   bash %q --from %q --this-checkout\n' "$FROM/install.sh" "$FROM"
+        echo "   To update the main checkout's copy instead, run the command without --this-checkout there."
+        exit 1
     fi
     mkdir -p "$HOOKS_DIR"
     if [ "$FROM" = "$(cd "$HOOKS_DIR" && pwd -P)" ]; then
@@ -263,7 +275,7 @@ git config merge.ff false
 echo "✅ git hooks installed"
 echo "   core.hooksPath = $(git config --local core.hooksPath)"
 echo ""
-echo "   Active hooks:"
+echo "   $ACTIVE:"
 for f in "$HOOKS_DIR"/*; do
     [[ -d "$f" ]] && continue                    # a project's own agent/ scripts are not git hooks
     [[ "$(basename "$f")" == *.* ]] && continue  # skip .sh/.md — git only runs bare hook names

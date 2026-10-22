@@ -204,16 +204,16 @@ broken_conf() {
 broken_conf "broken pattern in the conf: denied, naming the pattern" feature/x 'git commit -m x' \
   deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read, so every branch, \"feature/x\" included,' ''
 # Off in the env wins over a broken conf. The case it replaces set off with no broken
-# pattern anywhere, so it pinned nothing about the two together (fix review, F4).
+# pattern anywhere, so it pinned nothing about the two together (group A fix review, F4).
 broken_conf "broken pattern in the conf, off in the env: allowed" trunk 'git commit -m x' \
   allow '' '' FLIGHT_RULES_PROTECTED_BRANCHES=off
-# A branch create was refused by the worktree block, which offered `off` and never named
-# the pattern (fix review, F3).
-broken_conf "broken pattern, checkout -b: denied, naming the pattern" feature/x 'git checkout -b feature/y' \
-  deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' 'PROTECTED_BRANCHES=off'
-# A mirror push names no branch: `every branch, "every branch (--mirror)" included` (F7).
-broken_conf "broken pattern, mirror push: denied, without naming a branch" feature/x 'git push --mirror origin' \
-  deny 'so every branch is treated as protected' 'included'
+# A branch create and a mirror push are refused under any pattern, so they keep their
+# own blocks: the pattern's said fixing it would let them through (group A fix review
+# round 2, F7).
+broken_conf "broken pattern, checkout -b: the worktree block" feature/x 'git checkout -b feature/y' \
+  deny 'branches are created as worktrees' 'is not a pattern bash can read'
+broken_conf "broken pattern, mirror push: the protected-branch block" feature/x 'git push --mirror origin' \
+  deny 'protected branch \"every branch (--mirror)\"' 'is not a pattern bash can read'
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR='.worktrees' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
