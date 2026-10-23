@@ -98,8 +98,10 @@ box_row() {
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
 
-# A refusal a broken pattern decided: the pattern named, where it is set, and the one
-# command that lands its fix past the gate it broke (#103). <key> <value> <what>
+# A refusal a broken pattern decided: the pattern named, where it is set, and the
+# command that gets past the gate it broke from where this refusal leaves you — the
+# refused command again, not `git merge`, which an unfinished merge refuses (#103
+# review; #100 was the same mistake). <key> <value> <what> <command to run again>
 broken_box() {
     echo ""
     box_top
@@ -111,9 +113,12 @@ broken_box() {
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
     box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
-    box_row "branch, or in FLIGHT_RULES_$1. To land that fix past"
-    box_row "this gate, give the pattern meant for that one command:"
-    box_row "  FLIGHT_RULES_$1='<pattern>' git merge <fix branch>"
+    box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
+    box_row "has landed, give the pattern meant in front of each command"
+    box_row "it refuses. This one:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' $4"
+    box_row "keeping any other FLIGHT_RULES_ setting it carried. A"
+    box_row "branch the pattern means still moves only by pull request."
     box_row ""
     box_bot
     echo ""
@@ -123,9 +128,15 @@ broken_box() {
 # broken pattern used to read as "no match" (#103). Where a match imposes a gate, 2
 # counts as a match; where it grants an exemption, it does not — so a broken pattern
 # turns no gate off and no exemption on. `off` matches nothing (#103 review).
+# Case-insensitively, as the agent guard matches: `^(MAIN|DEV)$` let an unstamped
+# merge into dev through (#103 review).
 re_rc() {
+    local r=0
     [ "$2" = "off" ] && return 1
-    [[ "$1" =~ $2 ]]
+    shopt -s nocasematch
+    [[ "$1" =~ $2 ]] || r=$?
+    shopt -u nocasematch
+    return "$r"
 }
 
 # --- Squash guard for PR-only branches ----------------------------------------
@@ -135,7 +146,8 @@ re_rc() {
 # ordinary commit. That commit is the one to refuse.
 _rc=0; re_rc "$CURRENT_BRANCH" "$PR_ONLY_RE" || _rc=$?
 if [ "$_rc" -eq 2 ] && [ -f "$GIT_DIR/SQUASH_MSG" ]; then
-    broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "SQUASH MERGE"
+    broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "SQUASH MERGE" "git commit <same arguments>"
+    echo "Undo:   git reset --merge   (drops the squashed changes)"
     exit 1
 fi
 if [ "$_rc" -eq 0 ] && [ -f "$GIT_DIR/SQUASH_MSG" ]; then
@@ -160,18 +172,18 @@ fi
 # PR-only": a PR-only branch takes no local merge at all (the ref gate refuses it),
 # so the branches left needing a stamp are exactly the other protected ones —
 # whatever this project calls them.
-# BROKEN names a gating pattern that does not compile, for the refusal to say.
-BROKEN=""
+# BROKEN names a gating key whose pattern does not compile, for the refusal to say.
+BROKEN=""; BROKEN_RE=""
 if [ -n "$NOTE_GATED_RE" ]; then
     [ "$NOTE_GATED_RE" = "off" ] && exit 0
     _rc=0; re_rc "$CURRENT_BRANCH" "$NOTE_GATED_RE" || _rc=$?
     [ "$_rc" -eq 1 ] && exit 0
-    [ "$_rc" -eq 2 ] && BROKEN="NOTE_GATED_BRANCHES ($NOTE_GATED_RE)"
+    [ "$_rc" -eq 2 ] && { BROKEN=NOTE_GATED_BRANCHES; BROKEN_RE=$NOTE_GATED_RE; }
 else
     [ "$PROTECTED_RE_CONF" = "off" ] && exit 0
     _rc=0; re_rc "$CURRENT_BRANCH" "$PROTECTED_RE_CONF" || _rc=$?
     [ "$_rc" -eq 1 ] && exit 0
-    [ "$_rc" -eq 2 ] && BROKEN="PROTECTED_BRANCHES ($PROTECTED_RE_CONF)"
+    [ "$_rc" -eq 2 ] && { BROKEN=PROTECTED_BRANCHES; BROKEN_RE=$PROTECTED_RE_CONF; }
     # An exemption: only a real match counts.
     _rc=0; re_rc "$CURRENT_BRANCH" "$PR_ONLY_RE" || _rc=$?
     [ "$_rc" -eq 0 ] && exit 0
@@ -303,10 +315,16 @@ box_row "Merging: $MERGE_BRANCH"
 box_row "Into:    $CURRENT_BRANCH"
 box_row ""
 if [ -n "$BROKEN" ]; then
-    box_row "Gated because $BROKEN"
+    # The refused merge is still in progress, so the route finishes it with a commit
+    # (#103 review): a sync merge into a feature branch had no route here at all.
+    box_row "Gated because $BROKEN ($BROKEN_RE)"
     box_row "does not compile: every branch is taken as gated until"
     box_row "the project owner fixes it (.ai/flight-rules.conf, or"
-    box_row "its FLIGHT_RULES_ variable in the environment)."
+    box_row "FLIGHT_RULES_$BROKEN in the environment). If"
+    box_row "$CURRENT_BRANCH is not a branch it means, give the pattern"
+    box_row "meant in front of the command:"
+    box_row "  FLIGHT_RULES_$BROKEN='<pattern>' \\"
+    box_row "    git commit --no-edit"
     box_row ""
 fi
 box_row "Run /pre-merge-check in the feature worktree first. When"

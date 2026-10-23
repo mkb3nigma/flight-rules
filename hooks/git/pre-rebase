@@ -41,8 +41,11 @@ BRANCH="${2:-$(git branch --show-current)}"
 # (#103 review, 2026-10-22).
 [ "$PR_ONLY_RE" = "off" ] && exit 0
 # A pattern that does not compile matches every branch, not none: [[ =~ ]] returns 2
-# for it, which read as "no match" and turned the gate off (#103).
+# for it, which read as "no match" and turned the gate off (#103). Case-insensitively,
+# as the agent guard matches: `^MAIN$` let main be rebased (#103 review).
+shopt -s nocasematch
 _rc=0; [[ "$BRANCH" =~ $PR_ONLY_RE ]] || _rc=$?
+shopt -u nocasematch
 [ "$_rc" -eq 1 ] && exit 0
 
 # --- Box drawing (duplicated verbatim in pre-merge-commit and commit-msg) ------
@@ -58,8 +61,10 @@ box_row() {
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
 
-# A refusal a broken pattern decided: the pattern named, where it is set, and the one
-# command that lands its fix past the gate it broke (#103). <key> <value> <what>
+# A refusal a broken pattern decided: the pattern named, where it is set, and the
+# command that gets past the gate it broke from where this refusal leaves you — the
+# refused command again, not `git merge`, which an unfinished merge refuses (#103
+# review; #100 was the same mistake). <key> <value> <what> <command to run again>
 broken_box() {
     echo ""
     box_top
@@ -71,16 +76,19 @@ broken_box() {
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
     box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
-    box_row "branch, or in FLIGHT_RULES_$1. To land that fix past"
-    box_row "this gate, give the pattern meant for that one command:"
-    box_row "  FLIGHT_RULES_$1='<pattern>' git merge <fix branch>"
+    box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
+    box_row "has landed, give the pattern meant in front of each command"
+    box_row "it refuses. This one:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' $4"
+    box_row "keeping any other FLIGHT_RULES_ setting it carried. A"
+    box_row "branch the pattern means still moves only by pull request."
     box_row ""
     box_bot
     echo ""
 }
 
 if [ "$_rc" -eq 2 ]; then
-    broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" REBASE
+    broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" REBASE "git rebase <same arguments>"
     exit 1
 fi
 

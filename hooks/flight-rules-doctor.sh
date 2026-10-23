@@ -284,18 +284,18 @@ else
               _pr=$(sed -n -E 's/^[[:space:]]*PR_ONLY_BRANCHES[[:space:]]*=[[:space:]]*"?([^"[:space:]#]+)"?.*$/\1/p' "$CONF" | tail -1)
               _ib_is_pr_only=0
               if [[ -n "$_pr" && "$_pr" != "off" && "$_pr" != "none" && -n "$_ib" ]]; then
-                ( [[ "$_ib" =~ $_pr ]] ) 2>/dev/null && _ib_is_pr_only=1
+                ( shopt -s nocasematch; [[ "$_ib" =~ $_pr ]] ) 2>/dev/null && _ib_is_pr_only=1
               fi
               if ! grep -qE '^[[:space:]]*NOTE_GATED_BRANCHES[[:space:]]*=' "$CONF" \
                  && [[ -n "$_ib" && "$_ib" != "main" && "$_ib_is_pr_only" -eq 0 ]]; then
                 warn "…and with NOTE_GATED_BRANCHES unset, that empties the note gate as well — a merge into $_ib needs no pre-merge-check note. Name NOTE_GATED_BRANCHES to keep it"
               fi
               ;;
-            PR_ONLY_BRANCHES)    warn "$key=$val — no branch is PR-only: the ref gate and the local merge gate stand down (PROTECTED_BRANCHES still applies)" ;;
+            PR_ONLY_BRANCHES)    warn "$key=$val — no branch is PR-only: the ref gate, the local merge and rebase gates and the squash guard stand down (PROTECTED_BRANCHES still applies)" ;;
             NOTE_GATED_BRANCHES) warn "$key=$val — no branch requires a pre-merge-check note" ;;
           esac
         elif ( [[ "x" =~ $val ]] ) 2>/dev/null; [[ $? -eq 2 ]]; then
-          bad "$key='$val' is not a valid regex — bash rejects it and the hook fails closed or open depending on the path"
+          bad "$key='$val' is not a valid regex — every branch is taken as matching it, so each gate it sets is closed on every branch until it is fixed"
         elif [[ "$val" != ^* ]]; then
           warn "$key='$val' is unanchored — 'main' also matches 'maintenance'; use ^main\$"
         else ok "$key=$val"; fi ;;

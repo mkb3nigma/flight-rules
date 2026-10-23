@@ -722,6 +722,10 @@ rm -rf "$D"
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\nPR_ONLY_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
 say "$(has "$D" "empties the note gate")" "1" "integration branch is PR-only → not warned, there is no gate to lose"
 rm -rf "$D"
+# Case-insensitively, as the hooks decide PR-only (#103 review).
+D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\nPR_ONLY_BRANCHES=^(MAIN|DEV)$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "empties the note gate")" "1" "…matched case-insensitively, as the hooks match it"
+rm -rf "$D"
 
 echo "Guard wiring — once, not twice, not a stale copy:"
 D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"

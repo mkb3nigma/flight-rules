@@ -23,6 +23,7 @@ trap 'rm -rf "$TMPROOT"' EXIT
 MAINPID=$$
 trap 'printf "\n%s\n" "ABORTED: the fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
 die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
 # A clone of a bare upstream: two commits on main, plus feature/x off-upstream.
 # $1: conf body, "default", or "none". $2: "armed" (default) or "bare" (no hook).
@@ -214,10 +215,14 @@ conf_case "env override wins"                      "env:^nothing\$"            a
 # which read as "no match" and let main move off its upstream (#103).
 conf_case "a PR_ONLY_BRANCHES that does not compile gates main" "PR_ONLY_BRANCHES=^(main" blocked
 conf_case "…from the environment too"                "env:^(main"                blocked
+# Case-insensitively, as the agent guard matches (#103 review).
+conf_case "PR_ONLY_BRANCHES=^MAIN\$ gates main"        "PR_ONLY_BRANCHES=^MAIN\$"  blocked
+# grep read a pattern starting with `-` as an option, exited 2, and gated every branch.
+conf_case "a pattern starting with - is a pattern"   "PR_ONLY_BRANCHES=-x|^nope\$" allowed
 D=$(make_repo "PR_ONLY_BRANCHES=^(main" armed); off_main "$D"
 OUT=$(git -C "$D" branch -f main "$(git -C "$D" rev-parse feature/x)" 2>&1); RC=$?
 if [ "$RC" -ne 0 ] && grep -qF 'PR_ONLY_BRANCHES DOES NOT COMPILE' <<<"$OUT" && grep -qF '^(main' <<<"$OUT" \
-   && grep -qF "FLIGHT_RULES_PR_ONLY_BRANCHES='<pattern>' git merge <fix branch>" <<<"$OUT"; then
+   && grep -qF "FLIGHT_RULES_PR_ONLY_BRANCHES='<pattern>' <the same command>" <<<"$OUT"; then
     PASS=$((PASS+1)); printf '  ✅ …refused naming the pattern, with the command that lands its fix\n'
 else
     FAIL=$((FAIL+1)); printf '  ❌ …refused naming the pattern (rc=%s)\n%s\n' "$RC" "$OUT"
@@ -240,6 +245,23 @@ if [ "$RC" -eq 0 ] && [ "$(git -C "$D" rev-parse feature/x)" != "$(git -C "$D" r
 else
     FAIL=$((FAIL+1)); printf '  ❌ …the pattern meant, in the environment, did not lift it (rc=%s)\n' "$RC"
 fi
+# An update that moves nothing is no move. With feature/x now ahead of its upstream,
+# `reset --hard HEAD` and `merge --abort` write it to the value it has, and were refused
+# as moves off origin/feature/x, leaving no undo (#103 review).
+AHEAD=$(git -C "$D" rev-parse feature/x)
+git -C "$D" reset -q --hard HEAD >/dev/null 2>&1
+say "$?" "0" "…but git reset --hard HEAD on it, ahead of its upstream, is not refused"
+git -C "$D" branch side origin/feature/x
+git -C "$D" checkout -q side; echo theirs > "$D/g.txt"; git -C "$D" commit -qam "feature: side" >/dev/null 2>&1 \
+  || die "could not commit on side"
+git -C "$D" checkout -q feature/x
+git -C "$D" merge side >/dev/null 2>&1 && die "the merge of side was meant to conflict"
+git -C "$D" merge --abort >/dev/null 2>&1
+say "$?" "0" "…nor is git merge --abort"
+say "$(git -C "$D" rev-parse feature/x)" "$AHEAD" "…and feature/x stays where it was"
+echo again >> "$D/g.txt"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: again" >/dev/null 2>&1; RC=$?
+say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse feature/x)" "$AHEAD" "…while a commit that does move it is still refused"
 conf_case "no conf at all falls back to ^main\$"   "none"                      blocked
 
 # The working-tree conf must NOT lift the gate: editing it is the bypass the agent

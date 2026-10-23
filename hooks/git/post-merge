@@ -77,10 +77,12 @@ MERGED_BRANCH=$(printf '%s\n' "$MERGE_MSG" | sed -nE \
 # branch's name makes it come back as `heads/<name>` — which passes both filters below
 # and put `git branch -d heads/main` in the note. `refs/heads/` on --merged for the same
 # reason: a bare name there resolves to the tag. (Found by review, 2026-09-12.)
+# -i: protected is matched case-insensitively, as every other layer matches it (#103
+# review).
 ALL_MERGED=$(git for-each-ref --merged "refs/heads/$INTEGRATION_BRANCH" --format='%(refname:lstrip=2)' refs/heads 2>/dev/null \
   | grep -v '^$' \
   | grep -vxF "$INTEGRATION_BRANCH" \
-  | grep -vE "$PROTECTED_RE")
+  | grep -viE -e "$PROTECTED_RE")
 
 JUST_MERGED="$MERGED_BRANCH"
 # -x: a substring match drops `fix/ab` from the list whenever `fix/a` was the branch

@@ -71,8 +71,10 @@ box_row() {
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
 
-# A refusal a broken pattern decided: the pattern named, where it is set, and the one
-# command that lands its fix past the gate it broke (#103). <key> <value> <what>
+# A refusal a broken pattern decided: the pattern named, where it is set, and the
+# command that gets past the gate it broke from where this refusal leaves you — the
+# refused command again, not `git merge`, which an unfinished merge refuses (#103
+# review; #100 was the same mistake). <key> <value> <what> <command to run again>
 broken_box() {
     echo ""
     box_top
@@ -84,9 +86,12 @@ broken_box() {
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
     box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
-    box_row "branch, or in FLIGHT_RULES_$1. To land that fix past"
-    box_row "this gate, give the pattern meant for that one command:"
-    box_row "  FLIGHT_RULES_$1='<pattern>' git merge <fix branch>"
+    box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
+    box_row "has landed, give the pattern meant in front of each command"
+    box_row "it refuses. This one:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' $4"
+    box_row "keeping any other FLIGHT_RULES_ setting it carried. A"
+    box_row "branch the pattern means still moves only by pull request."
     box_row ""
     box_bot
     echo ""
@@ -122,15 +127,23 @@ while read -r _old new ref; do
     [ "$PROT_RE" = "off" ] && continue
 
     # A pattern that does not compile matches every branch, not none: grep exits 2
-    # for it, which read as "no match" and let the move through (#103).
-    _rc=0; printf '%s' "$short" | grep -qE "$PR_ONLY_RE" 2>/dev/null || _rc=$?
+    # for it, which read as "no match" and let the move through (#103). -i, as the
+    # agent guard matches; -e, or a pattern starting with `-` is read as an option
+    # (#103 review).
+    _rc=0; printf '%s' "$short" | grep -qiE -e "$PR_ONLY_RE" 2>/dev/null || _rc=$?
     [ "$_rc" -eq 1 ] && continue
 
     # A ref that does not exist yet is being CREATED (clone, `git branch <new>`),
     # not moved. `_old` cannot be used to detect this: `git update-ref <ref> <sha>`
     # with no old value reports all-zeros for a ref that plainly exists, which would
     # turn the creation exemption into a bypass for the exact command it must catch.
-    git rev-parse -q --verify "$ref" >/dev/null 2>&1 || continue
+    cur=$(git rev-parse -q --verify "$ref" 2>/dev/null) || continue
+
+    # An update to the value the ref already has moves nothing: `merge --abort`,
+    # `reset --merge` and `reset --hard HEAD` write one. Refused as a move, they left a
+    # branch ahead of its upstream with no undo (#103 review). Compared against the
+    # ref's current value, for the reason above: `_old` can read as all-zeros.
+    [ "$new" = "$cur" ] && continue
 
     # Deleting a local branch is not moving it onto unreviewed work. `git push
     # --delete` (the destructive one) is the agent guard's job and does not reach here.
@@ -145,7 +158,10 @@ while read -r _old new ref; do
     git merge-base --is-ancestor "$new" "$upstream" 2>/dev/null && continue
 
     if [ "$_rc" -ne 0 ]; then
-        broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "MOVE OF $short" >&2
+        {
+            broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "REF MOVE" "<the same command>"
+            echo "Refused: this would move $short to a commit not on origin/$short."
+        } >&2
         exit 1
     fi
     {
