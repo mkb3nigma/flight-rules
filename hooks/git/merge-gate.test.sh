@@ -904,6 +904,17 @@ OUT=$(cd "$D" && eval "$CMD" 2>&1)
 say "$?" "0" "…and the route it prints, with the pattern in main's case, lands it"
 say "$(grep -c 'Back-merge of PR-only branch main' <<<"$OUT")" "1" "…as a back-merge"
 rm -rf "$D"
+# The case is named only where it is the whole reason: a local main forced onto an
+# unstamped commit fails origin's check as well, and the case route would not land it.
+D=$(mkrepo_with_origin); conf_on "$D" dev 'PR_ONLY_BRANCHES=^MAIN$'; git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/z dev; echo z > "$D/z"; git -C "$D" add -A; git -C "$D" commit -qm "feature: z" >/dev/null
+git -C "$D" branch -f main feature/z || die "could not point main at feature/z in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES=^MAIN\$: a local main forced off origin/main is refused"
+say "$(grep -c 'Not taken for a back-merge' <<<"$OUT")" "0" "…without blaming the case"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
+rm -rf "$D"
 # The two ways in, with prod PR-only so that no branch of the same name is there for a
 # case-variant one to collide with on a case-insensitive filesystem. A local PROD at an
 # unstamped commit:

@@ -224,13 +224,17 @@ while read -r ref sha; do
     # An exemption: only a real match, in the pattern's case, counts. Read as matching
     # every branch, a broken PR_ONLY_BRANCHES would take every merge for a back-merge
     # needing no note (#103); see re_rc for the case.
+    case_only=""
     if ! re_rc "$short" "$PR_ONLY_RE" exact; then
-        re_rc "$short" "$PR_ONLY_RE" && CASE_ONLY="$short"
-        continue
+        re_rc "$short" "$PR_ONLY_RE" || continue
+        case_only=1
     fi
     if origin_sha=$(git rev-parse -q --verify "refs/remotes/origin/$short" 2>/dev/null); then
         git merge-base --is-ancestor "$MERGE_SHA" "$origin_sha" 2>/dev/null || continue
     fi
+    # Named only once the rest has passed: blamed on the case, a forced local main
+    # printed a route that the check above still refused (#103 review).
+    [ -n "$case_only" ] && { CASE_ONLY="$short"; continue; }
     echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
     exit 0
 done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin)
