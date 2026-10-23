@@ -222,7 +222,8 @@ conf_case "a pattern starting with - is a pattern"   "PR_ONLY_BRANCHES=-x|^nope\
 D=$(make_repo "PR_ONLY_BRANCHES=^(main" armed); off_main "$D"
 OUT=$(git -C "$D" branch -f main "$(git -C "$D" rev-parse feature/x)" 2>&1); RC=$?
 if [ "$RC" -ne 0 ] && grep -qF 'PR_ONLY_BRANCHES DOES NOT COMPILE' <<<"$OUT" && grep -qF '^(main' <<<"$OUT" \
-   && grep -qF "FLIGHT_RULES_PR_ONLY_BRANCHES='<pattern>' <the same command>" <<<"$OUT"; then
+   && grep -A1 -F "FLIGHT_RULES_PR_ONLY_BRANCHES='<pattern>' \\" <<<"$OUT" | grep -qF '<the same command>' \
+   && grep -qF 'if main is not a branch it means' <<<"$OUT"; then
     PASS=$((PASS+1)); printf '  ✅ …refused naming the pattern, with the command that lands its fix\n'
 else
     FAIL=$((FAIL+1)); printf '  ❌ …refused naming the pattern (rc=%s)\n%s\n' "$RC" "$OUT"
@@ -262,6 +263,18 @@ say "$(git -C "$D" rev-parse feature/x)" "$AHEAD" "…and feature/x stays where 
 echo again >> "$D/g.txt"; git -C "$D" add -A
 git -C "$D" commit -qm "feature: again" >/dev/null 2>&1; RC=$?
 say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse feature/x)" "$AHEAD" "…while a commit that does move it is still refused"
+# A refused cherry-pick stays in progress, so "the same command" again fails there; the
+# refusal names --continue, and that, with the pattern meant, lands it (#103 review).
+git -C "$D" reset -q --hard HEAD >/dev/null 2>&1 || die "could not clear feature/x"
+git -C "$D" checkout -q -b pick feature/x; echo p > "$D/p.txt"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: p" >/dev/null 2>&1 || die "could not commit on pick"
+git -C "$D" checkout -q feature/x
+OUT=$(git -C "$D" cherry-pick pick 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse feature/x)" "$AHEAD" "…a cherry-pick onto it is refused"
+say "$(grep -c 'git cherry-pick --continue' <<<"$OUT")" "1" "…naming its --continue"
+FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' GIT_EDITOR=true git -C "$D" cherry-pick --continue >/dev/null 2>&1
+say "$?" "0" "…which, with the pattern meant, lands it"
+say "$(git -C "$D" rev-parse feature/x^)" "$AHEAD" "…on feature/x"
 conf_case "no conf at all falls back to ^main\$"   "none"                      blocked
 
 # The working-tree conf must NOT lift the gate: editing it is the bypass the agent

@@ -72,9 +72,11 @@ box_row() {
 }
 
 # A refusal a broken pattern decided: the pattern named, where it is set, and the
-# command that gets past the gate it broke from where this refusal leaves you — the
-# refused command again, not `git merge`, which an unfinished merge refuses (#103
-# review; #100 was the same mistake). <key> <value> <what> <command to run again>
+# command that gets past the gate it broke from where this refusal leaves you — the one
+# that finishes or repeats what was refused, never a second `git merge`, which an
+# unfinished merge refuses (#103 review; #100 was the same mistake). The route is for a
+# branch the pattern does not mean; on one it does, the pattern meant refuses as well.
+# <key> <value> <what> <branch> <command>
 broken_box() {
     echo ""
     box_top
@@ -87,11 +89,11 @@ broken_box() {
     box_row ""
     box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
     box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
-    box_row "has landed, give the pattern meant in front of each command"
-    box_row "it refuses. This one:"
-    box_row "  FLIGHT_RULES_$1='<pattern>' $4"
-    box_row "keeping any other FLIGHT_RULES_ setting it carried. A"
-    box_row "branch the pattern means still moves only by pull request."
+    box_row "has landed, and if $4 is not a branch it means,"
+    box_row "give the pattern meant in front of this command:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' \\"
+    box_row "    $5"
+    box_row "keeping any other FLIGHT_RULES_ setting it carried."
     box_row ""
     box_bot
     echo ""
@@ -159,8 +161,12 @@ while read -r _old new ref; do
 
     if [ "$_rc" -ne 0 ]; then
         {
-            broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "REF MOVE" "<the same command>"
+            broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "REF MOVE" "$short" "<the same command>"
             echo "Refused: this would move $short to a commit not on origin/$short."
+            # A refused cherry-pick, revert or am stays in progress, and running it again
+            # fails there; its --continue is what finishes it (#103 review).
+            echo "A cherry-pick, revert or am it stopped is still in progress: give the"
+            echo "pattern to its --continue (git cherry-pick --continue, …) instead."
         } >&2
         exit 1
     fi
