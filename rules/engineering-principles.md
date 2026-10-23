@@ -17,8 +17,9 @@
 
 - A blocked command is information, not an obstacle: read the reason, do what it says,
   re-run. Never slip past a guard by editing it or its config, adding `--no-verify`, or
-  reshaping the command to dodge it. If the block is wrong, stop and say so — the owner
-  decides
+  reshaping the command to dodge it — nor by handing the refused command to the person
+  to run instead. If the block is wrong, or it stands in the way of the normal workflow,
+  stop and say so: that is a finding, and the owner decides
 - An action nothing can undo — force-pushing or rewriting shared history, deleting an
   unmerged branch, discarding uncommitted or stashed work you did not make, dropping
   data — needs a person's yes first; a request that names the action is that yes. With
@@ -105,7 +106,9 @@
 - Lead with what needs deciding and your recommendation. Every decision you ask for is
   decidable from that message alone — what it is, why it came up, the evidence (or that
   there is none), what each option costs; one line for a small one. A label or ID may
-  name it, never stand in for it
+  name it, never stand in for it. A command you hand the person to run is a decision you
+  are asking for: say what it does, why now, what waits on it, and the evidence it is
+  ready. Asks piling up are themselves the thing to report
 - Three or more findings is a register — one row each, stable IDs, severity. Issues
   woven through paragraphs cannot be tracked back to the sentence that raised them
 - Separate what you ran from what you concluded, and label which is which. Done means
