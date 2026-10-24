@@ -17,13 +17,38 @@
 # result is a working-tree diff for the owner to review and commit.
 #
 # --stale-only overwrites a hook only when it is byte-identical to some release in the
-# plugin cache — provably unmodified — and copies in one that is missing. A copy that
-# matches no release may be the project's own adaptation, so it is left alone and
-# named. Without --stale-only every differing hook is replaced, except a pre-commit
-# that is not flight-rules' at all (a linter): that one is refused with the rename
-# that keeps it running.
+# plugin cache — provably unmodified — not newer than the one named, and copies in one
+# that is missing. A copy that matches no release may be the project's own adaptation,
+# and a newer release's copy another session's, so each is left alone and named — from
+# 0.27.0 on: an older release's installer has no such check, so a session still on
+# 0.26.x and left open writes its copies over newer ones again on its first session
+# start (startup, resume, clear or compact) each day it stays open, until it is closed.
+# A current session's doctor names them behind, and its sync restores them, at its next
+# daily check — the first session start of a later day, or after a version change; one
+# that already ran today says nothing until then, so the two can trade copies daily.
+# Without --stale-only every differing hook is replaced (a newer release's copy named
+# as a downgrade), except one that is not
+# flight-rules' at all (a linter's pre-commit, the project's own commit-msg): that is
+# refused, nothing is written, and the rename that keeps it is printed. A project's
+# own install.sh is left alone. A first install names the hooks git will stop running
+# where it read them before (.git/hooks, a global core.hooksPath), and carries on.
 
 set -euo pipefail
+
+# shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
+# ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
+# leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
+# Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
+# Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
+# range like A-Z follows the locale's collation. Kept verbatim in step across
+# post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
+shq() {
+  local q="'\\''"
+  case "$1" in
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "${1//\'/$q}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 HOOKS='pre-merge-commit post-merge commit-msg pre-rebase reference-transaction pre-commit'
@@ -96,6 +121,36 @@ release_of() {
     if [ -n "$best" ]; then printf '%s' "$best"; else printf '%s' "$found" | head -1; fi
 }
 
+# newer_than <a> <b>: a is a later release than b. Both dotted-numeric, or no answer
+# (false): a sha or "latest" as a cache directory, or a source with no plugin.json,
+# orders nothing, and the copy is synced as before.
+newer_than() {
+    printf '%s\n%s\n' "$1" "$2" | grep -cE '^[0-9]+(\.[0-9]+)+$' | grep -qx 2 || return 1
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]
+}
+
+# What makes a file flight-rules': a phrase every release of it carries. The same table
+# is flight-rules-doctor.sh's hook_marker; keep them in step (install.test.sh compares
+# them). A heuristic, not a signature. 0.1.0's pre-merge-commit predates its marker;
+# release_of still knows it. reference-transaction is known by PR_ONLY, in all six
+# committed revisions: `is-ancestor` is a common git idiom, and a project's own hook
+# using it was taken for flight-rules' and replaced (#97 review, D12).
+# An unknown name has no marker and returns 1: with none, the empty pattern matched any
+# file, so a project's hook in a slot added to HOOKS without a row here was replaced
+# (#97 review, G8). The caller then trusts only a release's exact copy. Doctor's table
+# falls back to 'flight-rules' instead: it only reports.
+hook_marker() {
+    case "$1" in
+        pre-merge-commit|pre-rebase) printf 'PR_ONLY' ;;
+        commit-msg)                  printf 'pre-merge-check' ;;
+        post-merge)                  printf 'post-merge-note' ;;
+        reference-transaction)       printf 'PR_ONLY' ;;
+        pre-commit)                  printf 'PRIVATE KEY' ;;
+        install.sh)                  printf 'committed git hooks into git' ;;
+        *)                           return 1 ;;
+    esac
+}
+
 # MAIN here, not only on the --stale-only path: it is read on every path below, and one
 # exported by the caller made a plain install a silent no-op (#93 batch review, B1).
 SYNCED=0; LEFT=0; MAIN=""; ACTIVE="Active hooks"
@@ -143,13 +198,13 @@ if [ -n "$FROM" ]; then
                 # took the write back into it (group A fix review round 2, F0).
                 # With the way on: a refusal that named only its cause left the next step
                 # to guess (round 3, V5).
-                # The command to paste on a line of its own, %q-quoted (round 4, W2), and
+                # The command to paste on a line of its own, shq-quoted (round 4, W2), and
                 # only when $_rel itself is the link: a linked parent is not its to remove.
                 inside_repo "$REPO_ROOT/$_rel" || {
                     echo "❌ $_rel in this checkout leads to $(cd "$REPO_ROOT/$_rel" && pwd -P), outside it — not touched."
                     if [ -L "$REPO_ROOT/$_rel" ]; then
                         echo "   Replace the link with the committed directory, then re-run:"
-                        printf '   rm %q && git checkout -- %q\n' "$REPO_ROOT/$_rel" "$_rel"
+                        printf '   rm %s && git checkout -- %s\n' "$(shq "$REPO_ROOT/$_rel")" "$(shq "$_rel")"
                     else
                         echo "   A directory above it is a link; replace that with the committed directory, then re-run."
                     fi
@@ -168,11 +223,11 @@ if [ -n "$FROM" ]; then
         # route printed — and git runs no hooks anywhere meanwhile (round 4, W1).
         if [ ! -d "$HOOKS_DIR" ]; then
             echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $_m, and does not exist — git runs no hooks in any checkout until it does. Not made from this worktree; install it there, on a branch the diff can be committed on, not a protected one:"
-            printf '   cd %q && bash %q --from %q\n' "$_m" "$FROM/install.sh" "$FROM"
+            printf '   cd %s && bash %s --from %s\n' "$(shq "$_m")" "$(shq "$FROM/install.sh")" "$(shq "$FROM")"
             exit 1
         fi
         echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $_m — not written from this worktree. To update this worktree's copy, on its branch, then commit and merge it:"
-        printf '   bash %q --from %q --this-checkout\n' "$FROM/install.sh" "$FROM"
+        printf '   bash %s --from %s --this-checkout\n' "$(shq "$FROM/install.sh")" "$(shq "$FROM")"
         echo "   To update the main checkout's copy instead, run the command without --this-checkout there, on a branch the diff can be committed on, not a protected one."
         exit 1
     fi
@@ -187,7 +242,7 @@ if [ -n "$FROM" ]; then
     # --check-only, which session-start passes on a protected branch, where the diff
     # could not be committed (#99): the comparison runs, and what is behind is named.
     NOWRITE=0; { [ -n "${MAIN:-}" ] || [ "$CHECK_ONLY" -eq 1 ]; } && NOWRITE=1
-    TO_COPY=""; ACT=updating; [ "$NOWRITE" -eq 1 ] && ACT=stale
+    TO_COPY=""; DOWN=""; FOREIGN=""; REFUSED=0; ACT=updating; [ "$NOWRITE" -eq 1 ] && ACT=stale
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
@@ -208,17 +263,22 @@ if [ -n "$FROM" ]; then
             echo "   $h: unreadable — could not check it; left alone"
             LEFT=$((LEFT+1))
         elif [ "$STALE_ONLY" -eq 1 ]; then
-            if ver=$(release_of "$dst"); then
+            # A release's copy NEWER than the one installing is not stale: an older
+            # session's sync replaced 0.28.0's hooks with its own 0.27.0 ones, because
+            # being a release's copy was all this asked (#94 review, G1). Left alone and
+            # named; the newer session that wrote it keeps it current.
+            if ver=$(release_of "$dst") && newer_than "$ver" "${FROM_VERSION:-}"; then
+                echo "   $h: the flight-rules $ver copy, newer than ${FROM_VERSION} — left alone"
+                LEFT=$((LEFT+1))
+            elif [ -n "${ver:-}" ]; then
                 echo "   $h: the flight-rules $ver copy — $ACT"
                 TO_COPY="$TO_COPY $h"
             # An install.sh without this header phrase is the project's own script, not
             # an edited copy of flight-rules': no stale copy, and not one to tell anyone
-            # to mark `adapted` (second review, C4). The phrase is in every revision of
-            # this file; flight-rules-doctor.sh's hook_marker holds the same one — keep
-            # them in step. A heuristic, not a signature. The full install still
-            # replaces such a file: #97. Exit 1 only — no match — so a grep that fails
-            # (an unreadable file) is not taken for "the project's own" and skipped.
-            elif [ "$h" = install.sh ] && { grep -qF 'committed git hooks into git' "$dst"; [ $? -eq 1 ]; }; then
+            # to mark `adapted` (second review, C4). Exit 1 only — no match — so a grep
+            # that fails (an unreadable file) is not taken for "the project's own" and
+            # skipped.
+            elif [ "$h" = install.sh ] && { grep -qF -e "$(hook_marker install.sh)" "$dst"; [ $? -eq 1 ]; }; then
                 :
             # A comment line of its own, `# flight-rules: adapted`: the phrase also sits in
             # this script's text, so an unanchored match took an edited install.sh as
@@ -235,18 +295,59 @@ if [ -n "$FROM" ]; then
                 echo "   $h: differs from every flight-rules release in the plugin cache — left alone (adapted here? diff it against $src, and add a line '# flight-rules: adapted' if so)"
                 LEFT=$((LEFT+1))
             fi
-        # 'PRIVATE KEY' is what makes a pre-commit flight-rules' — the same marker
-        # flight-rules-doctor.sh's hook_marker holds for it; keep them in step.
-        elif [ "$h" = pre-commit ] && ! grep -q 'PRIVATE KEY' "$dst"; then
-            echo "❌ $dst is not flight-rules' pre-commit (a linter? lint-staged?) and would be lost."
-            echo "   Rename it first (merge by hand if a .local exists) and re-run: the flight-rules one runs it after a clean scan."
-            # A line of its own, %q not '…': it is pasted (0.26.0 fix review).
-            printf '   mv -n %q %q\n' "$dst" "$dst.local"
-            exit 1
+        # A differing file with no marker, and no release's exact copy, is the project's
+        # own. Only pre-commit was checked, so a project's commit-msg or install.sh was
+        # replaced without a word (#97). A hook is refused, all of them named before
+        # anything is written: replacing it drops whatever it ran. The project's own
+        # install.sh is left alone, as --stale-only leaves it: nothing runs it, and
+        # refusing every full install over it would be the price of keeping it. A grep
+        # that errors could not check the file: refused, and said so.
         else
-            TO_COPY="$TO_COPY $h"
+            _m=1; _mk=$(hook_marker "$h") || _mk=""
+            [ -z "$_mk" ] || { _m=0; grep -qF -e "$_mk" "$dst" || _m=$?; }
+            _v=$(release_of "$dst") || _v=""
+            if [ "$_m" -eq 0 ] || [ -n "$_v" ]; then
+                TO_COPY="$TO_COPY $h"
+                # Asked for by name, a full install from an older release still replaces
+                # a newer one's copy — but says it is a downgrade, not "synced" (fix
+                # review, 2026-10-24: doctor's hint led here and it went by unremarked).
+                if newer_than "$_v" "${FROM_VERSION:-}"; then DOWN="$DOWN $h=$_v"; fi
+            elif [ "$_m" -ne 1 ]; then
+                echo "❌ $dst could not be read (grep exited $_m) — could not check whose it is; not replaced"
+                REFUSED=1
+            elif [ "$h" = install.sh ]; then
+                echo "   install.sh: the project's own, not flight-rules' — left alone"
+                LEFT=$((LEFT+1))
+            else
+                FOREIGN="$FOREIGN $h"
+            fi
         fi
     done
+    for h in $FOREIGN; do
+        dst="$HOOKS_DIR/$h"; REFUSED=1
+        # The rename only where its target is free: `mv -n` onto a .orig mergetool left
+        # behind did nothing and exited 0, and the re-run refused with the same message
+        # (#97 review, G7). A line of its own, quoted (shq): it is pasted (0.26.0 fix review).
+        if [ "$h" = pre-commit ]; then
+            echo "❌ $dst is not flight-rules' pre-commit (a linter? lint-staged?) and would be lost."
+            if [ -e "$dst.local" ] || [ -L "$dst.local" ]; then
+                echo "   $dst.local already exists — merge this one into it by hand, then remove this one and re-run: the flight-rules one runs pre-commit.local after a clean scan."
+            else
+                echo "   Rename it first: the flight-rules one runs it after a clean scan."
+                printf '   mv -n %s %s\n' "$(shq "$dst")" "$(shq "$dst.local")"
+            fi
+        else
+            _mk=$(hook_marker "$h") && _mk="no '$_mk' in it" || _mk="no marker known for it"
+            echo "❌ $dst is not flight-rules' $h ($_mk) and would be lost."
+            if [ -e "$dst.orig" ] || [ -L "$dst.orig" ]; then
+                echo "   flight-rules' $h runs no other, so what this one does must be merged into it by hand to keep it. $dst.orig already exists — set this one aside under another name, then re-run."
+            else
+                echo "   flight-rules' $h runs no other, so what this one does must be merged into it by hand to keep it. To set it aside:"
+                printf '   mv -n %s %s\n' "$(shq "$dst")" "$(shq "$dst.orig")"
+            fi
+        fi
+    done
+    [ "$REFUSED" -eq 0 ] || { echo "   Nothing was written. Re-run once each is dealt with."; exit 1; }
     if [ "$CHECK_ONLY" -eq 1 ]; then
         [ -n "$TO_COPY" ] || exit 0
         exit 3   # behind or missing, nothing written: the caller says why
@@ -254,10 +355,10 @@ if [ -n "$FROM" ]; then
     if [ -n "${MAIN:-}" ]; then
         [ -n "$TO_COPY" ] || exit 0
         echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. To update this worktree's copy instead, on its branch, then commit and merge it:"
-        # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it was
+        # Quoted (shq), not "…": the line is pasted, and a path holding `$(…)` ran when it was
         # (0.26.0 release review). Not `cd <main> && …`: a main checkout on a protected
         # branch is where the diff could not be committed (#99).
-        printf '   bash %q --from %q --stale-only --this-checkout\n' "$FROM/install.sh" "$FROM"
+        printf '   bash %s --from %s --stale-only --this-checkout\n' "$(shq "$FROM/install.sh")" "$(shq "$FROM")"
         exit 1
     fi
     # Via a temporary name: when this script is the project's copy, install.sh is
@@ -269,7 +370,11 @@ if [ -n "$FROM" ]; then
     for h in $TO_COPY; do
         cp "$FROM/$h" "$HOOKS_DIR/.$h.sync.$$" || { echo "❌ could not write $h into $HOOKS_DIR"; exit 1; }
         mv -f "$HOOKS_DIR/.$h.sync.$$" "$HOOKS_DIR/$h" || { echo "❌ could not replace $h in $HOOKS_DIR"; exit 1; }
-        echo "   synced $h${FROM_VERSION:+ (flight-rules $FROM_VERSION)}"
+        case " $DOWN " in
+            *" $h="*) _dv=${DOWN#* "$h"=}; _dv=${_dv%% *}
+                      echo "   $h: replaced the flight-rules $_dv copy with older $FROM_VERSION — a downgrade, as asked" ;;
+            *)        echo "   synced $h${FROM_VERSION:+ (flight-rules $FROM_VERSION)}" ;;
+        esac
         SYNCED=$((SYNCED+1))
     done
 fi
@@ -295,7 +400,46 @@ done
 # repo config, and when the worktree was removed git ran no hooks in any checkout
 # (review, 2026-10-12). A fresh install writes a path relative to the repo root when
 # the directory is inside it, so every worktree resolves its own copy.
+#
+# Setting it moves git off wherever it read hooks before — a global or system
+# core.hooksPath, else the repository's own hooks/ — and the project's hooks there stop
+# running, with nothing said: a commit-msg in .git/hooks ran before the install and not
+# after (probe, 2026-10-24). Named, never refused: running them from flight-rules' hooks
+# in place of displacing them is #111. Only executable files git would run; a fresh
+# `git init`'s *.sample files are none.
+# --show-scope is git 2.26+; an older git refuses the option (129), and reading that as
+# "no global value" named .git/hooks, which git was not running (fix review, D7). There,
+# the global value, else the system one, as git itself prefers them.
 if [ "$PATH_IS_SET" -eq 0 ]; then
+    _sc=0; _scope=$(git config --show-scope --path --get-all core.hooksPath 2>/dev/null) || _sc=$?
+    if [ "$_sc" -le 1 ]; then
+        _old=$(printf '%s\n' "$_scope" \
+            | awk -F'\t' '$1!="local" && $1!="worktree" && NF>1 {v=substr($0, length($1)+2)} END {print v}' || true)
+    else
+        _old=$(git config --global --path core.hooksPath 2>/dev/null || git config --system --path core.hooksPath 2>/dev/null || true)
+    fi
+    if [ -n "$_old" ]; then
+        case "$_old" in /*) ;; *) _old="$REPO_ROOT/$_old" ;; esac
+    else
+        _old=$(cd "$(git rev-parse --git-common-dir)" && pwd -P) && _old="$_old/hooks" || _old=""
+    fi
+    _pc=""; _ours=""; _theirs=""
+    if [ -d "$_old" ] && [ "$(cd "$_old" && pwd -P)" != "$(cd "$HOOKS_DIR" && pwd -P)" ]; then
+        for f in "$_old"/*; do
+            [ -f "$f" ] && [ -x "$f" ] || continue
+            case "${f##*/}" in *.sample) continue ;; esac
+            [ "${f##*/}" != pre-commit ] || { _pc=" pre-commit"; continue; }
+            case " $HOOKS " in *" ${f##*/} "*) _ours="$_ours ${f##*/}" ;; *) _theirs="$_theirs ${f##*/}" ;; esac
+        done
+    fi
+    if [ -n "$_pc$_ours$_theirs" ]; then
+        echo "⚠️ git runs these hooks from $_old today, and stops once core.hooksPath points at $HOOKS_DIR:$_pc$_ours$_theirs"
+        echo "   They are not moved or changed. To keep one running:"
+        [ -z "$_theirs" ] || echo "   -$_theirs: copy it into $HOOKS_DIR under the same name."
+        [ -z "$_pc" ] || echo "   - pre-commit: copy it in as pre-commit.local; flight-rules' pre-commit runs it after a clean scan."
+        [ -z "$_ours" ] || echo "   -$_ours: flight-rules' runs no other, so merge it into flight-rules' copy by hand."
+        echo "   Running them where they are, in place of displacing them, is #111."
+    fi
     if inside_repo "$HOOKS_DIR"; then
         git config core.hooksPath "${HOOKS_DIR#"$REPO_ROOT"/}"
     else

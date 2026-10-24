@@ -306,7 +306,11 @@ that the logic has exactly one home.
   the directory the **local** `core.hooksPath` names, else `.ai/hooks/`, and writes
   the path once, relative to the repo root, so every worktree resolves its own copy;
   a path already set is never rewritten (an absolute one written from a worktree
-  outlived the worktree and left every checkout running no hooks).
+  outlived the worktree and left every checkout running no hooks). Setting it moves git
+  off wherever it read hooks before — a global `core.hooksPath`, else `.git/hooks/` — so
+  a first install names each executable hook there that will stop running, with the way
+  to keep it, and carries on: nothing there is moved or changed. Running them in place
+  of displacing them is #111.
   **After a plugin update**, `bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git`
   copies the six hooks and itself into the project first, then installs as usual —
   the update refreshes the agent hooks but cannot touch these, which are the
@@ -316,13 +320,25 @@ that the logic has exactly one home.
   one to use there, `--this-checkout`, which updates the worktree's own copy for its
   branch to commit and merge. If that directory does not exist, git runs no hooks in
   any checkout; the refusal says so and prints the install to run in the main checkout. `--stale-only` replaces only a copy byte-identical to some release in
-  the plugin cache, so a project's own adaptation is left alone and named — mark it
+  the plugin cache no newer than the one installing — a newer release's copy, which a
+  session on a later version wrote, is left alone and named, so an older session's sync
+  does not downgrade it — from 0.27.0 on: a session still on 0.26.x or earlier runs an
+  installer without that check and, left open, writes its copies over newer ones again
+  on its first session start (startup, resume, clear or compact) each day until it is
+  closed. A current session's doctor names them behind, and its sync restores them, at
+  its next daily check (a later day's first session start, or after a version change);
+  one that already ran today says nothing until then;
+  doctor itself names a newer release's copy as a ⚠️, not as behind — and a project's own adaptation is left alone and named — mark it
   with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
   left alone without a word: an `install.sh` that is the project's own script, not
   flight-rules' (it lacks the installer's header phrase), and a missing `install.sh`,
   which doctor names instead; without the flag
-  every differing hook is replaced, except a `pre-commit` that is not flight-rules'
-  at all, which is refused with the rename that keeps it running. A copy that fails
+  every differing hook is replaced — a newer release's copy too, named as a downgrade —
+  except one that is not flight-rules' at all (no
+  marker, and no release's copy: a linter's `pre-commit`, the project's own
+  `commit-msg`), which is refused — nothing written — with the rename that keeps it, or
+  word that the name it would take is already taken;
+  the project's own `install.sh` is left alone. A copy that fails
   is an exit, never a "synced" line. `flight-rules-doctor.sh` prints the command
   whenever a hook is missing or behind, or the project's `install.sh` is behind,
   differs while still carrying flight-rules' marker, or cannot be read (a warning,
