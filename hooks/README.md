@@ -323,8 +323,10 @@ that the logic has exactly one home.
   the plugin cache no newer than the one installing — a newer release's copy, which a
   session on a later version wrote, is left alone and named, so an older session's sync
   does not downgrade it — from 0.27.0 on: a session still on 0.26.x or earlier runs an
-  installer without that check and can write its copies over newer ones once, after
-  which the next current session's doctor names them behind and its sync restores them;
+  installer without that check and, left open, writes its copies over newer ones again
+  on its first session start (startup, resume, clear or compact) each day until it is
+  closed; each time the next current session's doctor names them behind and its sync
+  restores them;
   doctor itself names a newer release's copy as a ⚠️, not as behind — and a project's own adaptation is left alone and named — mark it
   with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
   left alone without a word: an `install.sh` that is the project's own script, not

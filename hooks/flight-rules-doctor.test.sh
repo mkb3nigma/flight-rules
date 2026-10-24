@@ -385,6 +385,21 @@ say "$([ -n "$SYNC" ] && echo yes)" "yes" "…which can be lifted from the outpu
 say "$(rc "$D")" "0" "…and, run as printed, clears it"
 say "$(has "$D" "to update:")" "1" "…after which no sync command is printed"
 rm -rf "$D"
+# The plugin under a path with ß and a quote, under a UTF-8 locale: printf %q in macOS
+# bash 3.2 split the ß and left a raw byte, so the command on screen was not UTF-8 and
+# named a path that does not exist (fix review, 2026-10-24). shq keeps the bytes.
+U8=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -1); U8=${U8:-en_US.UTF-8}
+L="$(cd "$(mktemp -d)" && pwd -P)/Straße it's"; mkdir -p "$L/hooks" && cp -R "$H/git" "$L/hooks/" && cp "$DOCTOR" "$L/hooks/" || die "could not lay out the ß plugin"
+D=$(mkrepo); mkcache "$D" commit-msg
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" "$D/.ai/hooks/commit-msg"
+OUT=$(cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" bash "$L/hooks/flight-rules-doctor.sh" 2>&1)
+SYNC=$(sed -n 's/.*to update: \(bash .* --stale-only --this-checkout\)   (.*/\1/p' <<<"$OUT" | head -1)
+say "$(grep -c 'Straße' <<<"$SYNC")" "1" "a plugin path with ß and a quote: the sync command names it"
+say "$([ -n "$SYNC" ] && printf '%s' "$SYNC" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 && echo utf8)" "utf8" "…in valid UTF-8"
+(cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1; SRC_RC=$?
+say "$SRC_RC" "0" "…which, run as printed, exits 0"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$L/hooks/git/commit-msg" && echo same)" "same" "…and syncs from that exact path"
+rm -rf "$D" "$(dirname "$L")"
 
 D=$(mkrepo); echo "# this project's own change" >> "$D/.ai/hooks/post-merge"
 say "$(rc "$D")" "0" "a copy matching no release is a warning, not a problem"

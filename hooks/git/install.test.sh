@@ -140,6 +140,21 @@ say "$PRC" "0" "…which, pasted, exits 0"
 say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "…moves the project's pre-commit to pre-commit.local"
 say "$(ls "$S" | wc -l | tr -d ' ')" "0" "…and runs nothing the path spells out"
 rm -rf "$D" "$P" "$S"
+# …and a path with a non-ASCII letter and a quote, under a UTF-8 locale. printf %q in
+# macOS bash 3.2 split the ß and left a raw byte: the line on screen was not UTF-8 and
+# named another path (fix review, 2026-10-24). shq keeps the bytes, in '…'.
+U8=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -1); U8=${U8:-en_US.UTF-8}
+D0=$(mkrepo); P=$(mkplugin); D="$(dirname "$D0")/Straße it's"; mv "$D0" "$D" || die "could not rename the fixture"
+printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
+OUT=$(LC_ALL=$U8 run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+CMD=$(grep -E '^[[:space:]]+mv -n ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$(printf '%s\n' "$CMD" | grep -c .)" "1" "a path with ß and a quote: the rename is a line of its own"
+say "$(printf '%s' "$CMD" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 && echo utf8)" "utf8" "…in valid UTF-8"
+S=$(cd "$(mktemp -d)" && pwd -P)
+(cd "$S" && LC_ALL=$U8 bash -c "$CMD") >/dev/null 2>&1; PRC=$?
+say "$PRC" "0" "…which, pasted, exits 0"
+say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "…and moves the file at that exact path"
+rm -rf "$D" "$P" "$S"
 
 echo "Any hook that is not flight-rules' is refused, not only pre-commit (#97):"
 # Only pre-commit was checked: a project's own commit-msg or post-merge was replaced
@@ -705,6 +720,11 @@ say "$(head -1 <<<"$OUT")" "0" "exit 0"
 say "$(grep -c 'nothing to sync' <<<"$OUT")" "1" "says there is nothing to sync"
 say "$(git -C "$D" config core.hooksPath)" ".ai/hooks" "core.hooksPath is left exactly as it was"
 rm -rf "$D"
+
+# shq is doctor's too, and the four scripts that print a command to paste must quote it
+# alike: compared verbatim, as newer_than and read_conf are.
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/../flight-rules-doctor.sh")" "shq is doctor's, verbatim"
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh" | grep -c .)" "6" "…and is there to compare (6 lines)"
 
 echo
 echo "$PASS passed, $FAIL failed"

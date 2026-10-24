@@ -21,8 +21,10 @@
 # that is missing. A copy that matches no release may be the project's own adaptation,
 # and a newer release's copy another session's, so each is left alone and named — from
 # 0.27.0 on: an older release's installer has no such check, so a session still on
-# 0.26.x can write its copies over newer ones once; the next current session's doctor
-# names them behind and its sync restores them.
+# 0.26.x and left open writes its copies over newer ones again on its first session
+# start (startup, resume, clear or compact) each day it stays open, until it is closed;
+# each time, the next current session's doctor names them behind and its sync restores
+# them.
 # Without --stale-only every differing hook is replaced (a newer release's copy named
 # as a downgrade), except one that is not
 # flight-rules' at all (a linter's pre-commit, the project's own commit-msg): that is
@@ -31,6 +33,19 @@
 # where it read them before (.git/hooks, a global core.hooksPath), and carries on.
 
 set -euo pipefail
+
+# shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
+# ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
+# leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
+# Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
+# range like A-Z follows the locale's collation. Kept verbatim in step across
+# post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
+shq() {
+  case "$1" in
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 HOOKS='pre-merge-commit post-merge commit-msg pre-rebase reference-transaction pre-commit'
@@ -180,13 +195,13 @@ if [ -n "$FROM" ]; then
                 # took the write back into it (group A fix review round 2, F0).
                 # With the way on: a refusal that named only its cause left the next step
                 # to guess (round 3, V5).
-                # The command to paste on a line of its own, %q-quoted (round 4, W2), and
+                # The command to paste on a line of its own, shq-quoted (round 4, W2), and
                 # only when $_rel itself is the link: a linked parent is not its to remove.
                 inside_repo "$REPO_ROOT/$_rel" || {
                     echo "❌ $_rel in this checkout leads to $(cd "$REPO_ROOT/$_rel" && pwd -P), outside it — not touched."
                     if [ -L "$REPO_ROOT/$_rel" ]; then
                         echo "   Replace the link with the committed directory, then re-run:"
-                        printf '   rm %q && git checkout -- %q\n' "$REPO_ROOT/$_rel" "$_rel"
+                        printf '   rm %s && git checkout -- %s\n' "$(shq "$REPO_ROOT/$_rel")" "$(shq "$_rel")"
                     else
                         echo "   A directory above it is a link; replace that with the committed directory, then re-run."
                     fi
@@ -205,11 +220,11 @@ if [ -n "$FROM" ]; then
         # route printed — and git runs no hooks anywhere meanwhile (round 4, W1).
         if [ ! -d "$HOOKS_DIR" ]; then
             echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $_m, and does not exist — git runs no hooks in any checkout until it does. Not made from this worktree; install it there, on a branch the diff can be committed on, not a protected one:"
-            printf '   cd %q && bash %q --from %q\n' "$_m" "$FROM/install.sh" "$FROM"
+            printf '   cd %s && bash %s --from %s\n' "$(shq "$_m")" "$(shq "$FROM/install.sh")" "$(shq "$FROM")"
             exit 1
         fi
         echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $_m — not written from this worktree. To update this worktree's copy, on its branch, then commit and merge it:"
-        printf '   bash %q --from %q --this-checkout\n' "$FROM/install.sh" "$FROM"
+        printf '   bash %s --from %s --this-checkout\n' "$(shq "$FROM/install.sh")" "$(shq "$FROM")"
         echo "   To update the main checkout's copy instead, run the command without --this-checkout there, on a branch the diff can be committed on, not a protected one."
         exit 1
     fi
@@ -309,14 +324,14 @@ if [ -n "$FROM" ]; then
         dst="$HOOKS_DIR/$h"; REFUSED=1
         # The rename only where its target is free: `mv -n` onto a .orig mergetool left
         # behind did nothing and exited 0, and the re-run refused with the same message
-        # (#97 review, G7). A line of its own, %q not '…': it is pasted (0.26.0 fix review).
+        # (#97 review, G7). A line of its own, quoted (shq): it is pasted (0.26.0 fix review).
         if [ "$h" = pre-commit ]; then
             echo "❌ $dst is not flight-rules' pre-commit (a linter? lint-staged?) and would be lost."
             if [ -e "$dst.local" ] || [ -L "$dst.local" ]; then
                 echo "   $dst.local already exists — merge this one into it by hand, then remove this one and re-run: the flight-rules one runs pre-commit.local after a clean scan."
             else
                 echo "   Rename it first: the flight-rules one runs it after a clean scan."
-                printf '   mv -n %q %q\n' "$dst" "$dst.local"
+                printf '   mv -n %s %s\n' "$(shq "$dst")" "$(shq "$dst.local")"
             fi
         else
             _mk=$(hook_marker "$h") && _mk="no '$_mk' in it" || _mk="no marker known for it"
@@ -325,7 +340,7 @@ if [ -n "$FROM" ]; then
                 echo "   flight-rules' $h runs no other, so what this one does must be merged into it by hand to keep it. $dst.orig already exists — set this one aside under another name, then re-run."
             else
                 echo "   flight-rules' $h runs no other, so what this one does must be merged into it by hand to keep it. To set it aside:"
-                printf '   mv -n %q %q\n' "$dst" "$dst.orig"
+                printf '   mv -n %s %s\n' "$(shq "$dst")" "$(shq "$dst.orig")"
             fi
         fi
     done
@@ -337,10 +352,10 @@ if [ -n "$FROM" ]; then
     if [ -n "${MAIN:-}" ]; then
         [ -n "$TO_COPY" ] || exit 0
         echo "❌ core.hooksPath=$HOOKS_PATH is in the main checkout, $MAIN, which this worktree shares — not touched from here, because the write would land in that checkout's working tree. To update this worktree's copy instead, on its branch, then commit and merge it:"
-        # %q, not "…": the line is pasted, and a path holding `$(…)` ran when it was
+        # Quoted (shq), not "…": the line is pasted, and a path holding `$(…)` ran when it was
         # (0.26.0 release review). Not `cd <main> && …`: a main checkout on a protected
         # branch is where the diff could not be committed (#99).
-        printf '   bash %q --from %q --stale-only --this-checkout\n' "$FROM/install.sh" "$FROM"
+        printf '   bash %s --from %s --stale-only --this-checkout\n' "$(shq "$FROM/install.sh")" "$(shq "$FROM")"
         exit 1
     fi
     # Via a temporary name: when this script is the project's copy, install.sh is
