@@ -27,7 +27,8 @@ for having gone unenforced.
 3. Letting open branches pile up: at `OPEN_BRANCH_LIMIT` (default 5, set in the conf)
    branches open and not yet merged into `{INTEGRATION_BRANCH}`, start another only
    once the person says it is okay — told how many are open, which wait to merge, and
-   where the limit is set. A question, never a block on anything else — skill
+   where the limit is set; with no one to ask, the branch is not opened. Nothing else
+   waits on it — skill
    (`feature-start` 5 asks); reminded (`session-start` warns at the limit)
 4. Merging without tests passing — skill (`pre-merge-check` 1–3 runs them; on note-gated
    branches `commit-msg` requires its stamp, which proves the skill ran, not that it

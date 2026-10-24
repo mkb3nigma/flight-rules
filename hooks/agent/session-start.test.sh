@@ -933,6 +933,10 @@ say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the sta
 say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
 say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT is 2')" "1" "…telling the assistant too"
 say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: the open-branch warning")" "1" "…which is told the user saw it"
+# Set from the environment, it says so: raising the conf's value would change nothing.
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=2 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
+say "$(usr <<<"$J" | grep -c '(OPEN_BRANCH_LIMIT is 2, from FLIGHT_RULES_OPEN_BRANCH_LIMIT)')" "1" "…set by FLIGHT_RULES_OPEN_BRANCH_LIMIT, the warning names it, not the conf"
 rm -rf "$D"
 # Below the limit, nothing — paired with the exit status and with the same run's
 # reminder, so a hook that died cannot pass it. A merged branch is not open.

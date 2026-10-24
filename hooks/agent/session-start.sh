@@ -351,6 +351,8 @@ fi
 OPEN_MSG=$(
   [ -f "$PROJECT_ROOT/.ai/flight-rules.conf" ] || exit 0
   _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(read_conf OPEN_BRANCH_LIMIT "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+  # Where it came from, said: raising it in the conf does nothing when the environment set it.
+  _src="in .ai/flight-rules.conf"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
   [ "$_lim" = off ] && exit 0
   [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
   _base="refs/heads/$INTEGRATION_BRANCH"
@@ -379,7 +381,7 @@ OPEN_MSG=$(
   done < <(printf '%s\n' "$_list" | sed -n 's|^branch refs/heads/||p')
   [ -z "$_fail" ] || echo "?OPEN_BRANCH_LIMIT: could not compare with ${_base#refs/*/}:$_fail — not counted"
   [ "$_n" -ge "$_lim" ] || exit 0
-  echo "⏳ flight-rules: $_n branches are open and not yet merged into ${_base#refs/*/} (OPEN_BRANCH_LIMIT is $_lim, in .ai/flight-rules.conf). A warning, not a block — merging some before opening more keeps them from depending on each other."
+  echo "⏳ flight-rules: $_n branches are open and not yet merged into ${_base#refs/*/} (OPEN_BRANCH_LIMIT is $_lim, $_src). A warning, not a block — merging some before opening more keeps them from depending on each other."
   [ -z "$_wait" ] || echo "  Passed pre-merge-check, waiting to merge:$_wait"
   [ -z "$_work" ] || echo "  Not yet passed:$_work"
 )

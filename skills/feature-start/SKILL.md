@@ -63,23 +63,35 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
        both ranges, ask. Never `git merge` here yourself.
    - **No remote** (`git remote` is empty): branch from the local
      `{INTEGRATION_BRANCH}`, skip fetch and reconcile, say so.
-5. **Count the open branches — past the limit, ask.** The limit is `OPEN_BRANCH_LIMIT`
-   in `.ai/flight-rules.conf` (unset or not a positive whole number: 5; `off`: skip this
-   step). Open means a branch checked out in a worktree with commits not yet in
-   `{INTEGRATION_BRANCH}` — the local one when it exists, as `session-start` counts,
-   else `origin/{INTEGRATION_BRANCH}` — leaving out `{INTEGRATION_BRANCH}` itself and
-   any branch `{PROTECTED_BRANCHES}` matches:
+5. **Count the open branches — past the limit, ask.** The limit is
+   `FLIGHT_RULES_OPEN_BRANCH_LIMIT` if set, else `OPEN_BRANCH_LIMIT` in
+   `.ai/flight-rules.conf` (unset or not a positive whole number: 5; `off`: skip this
+   step) — as `session-start` reads it. Open means a branch checked out in a worktree
+   with commits not yet in `{INTEGRATION_BRANCH}` — the local one when it exists, else
+   `origin/{INTEGRATION_BRANCH}` — leaving out `{INTEGRATION_BRANCH}` itself and any
+   branch `{PROTECTED_BRANCHES}` matches (case-insensitive; drop that `grep` when it is
+   `off`):
    ```bash
-   git worktree list --porcelain | sed -n 's|^branch refs/heads/||p' | while IFS= read -r b; do
-     [ -n "$(git log --oneline -1 "{INTEGRATION_BRANCH}..refs/heads/$b" 2>/dev/null)" ] && echo "$b"
-   done
+   base=refs/heads/{INTEGRATION_BRANCH}
+   git rev-parse -q --verify "$base" >/dev/null || base=refs/remotes/origin/{INTEGRATION_BRANCH}
+   git rev-parse -q --verify "$base" >/dev/null || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"
+   git worktree list --porcelain | sed -n 's|^branch refs/heads/||p' \
+     | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e '{PROTECTED_BRANCHES}' \
+     | while IFS= read -r b; do
+         n=$(git rev-list --count "$base..refs/heads/$b") || { echo "COULD NOT COUNT: $b"; continue; }
+         [ "$n" -gt 0 ] && echo "$b"
+       done
    ```
-   At or over the limit, show the person how many are open and which, which of them
-   have a passing note (`git notes --ref=pre-merge-check show <branch>` begins
-   `passed:`) and only wait to merge, and say where the limit is set: *"OPEN_BRANCH_LIMIT
-   is <n> in .ai/flight-rules.conf — raise it, or set it to off, there."* Create the
-   branch only once they say it is okay. Under the limit, say nothing. With no one to
-   ask, create nothing and report the count as the blocker. A pile of open branches is
+   A `COULD NOT COUNT` line is never "under the limit": say what could not be counted
+   and ask, as at the limit (an error sent to `/dev/null` once read as zero open — fix
+   review, 2026-10-24). At or over the limit, show the person how many are open and
+   which, which of them have a passing note (`git notes --ref=pre-merge-check show
+   <branch>` begins `passed:`) and only wait to merge, and say where the limit is set:
+   *"OPEN_BRANCH_LIMIT is <n> in .ai/flight-rules.conf — raise it, or set it to off,
+   there"* (or that `FLIGHT_RULES_OPEN_BRANCH_LIMIT` set it). Create the branch only once
+   they say it is okay. Under the limit, say nothing. With no one to ask, create
+   nothing and report the count as the blocker — a question that cannot be put is not
+   a yes. A pile of open branches is
    how this repo's own work came to depend on itself: more than ten sat unmerged
    (2026-10-20 to 10-23), and the owner saw it only once they did (#108).
 6. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
