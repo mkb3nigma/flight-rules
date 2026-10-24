@@ -338,8 +338,8 @@ Add the comic to the PR? (y/N)
 ````
 
 The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
-with `DG_COMIC_PR=ask` on a review that is for a PR. The decisions close the reply,
-where a reader in a terminal lands; a numbered list, not a table, because each one is
+with `DG_COMIC_PR=ask` on a review that is for a PR. The decisions are the reply's last
+section — only that optional line follows them — where a reader in a terminal lands; a numbered list, not a table, because each one is
 sentences, and a table of sentences wrapped past reading at terminal width
 (2026-10-24). With none, the section says so: `## Decisions waiting (0)`.
 
