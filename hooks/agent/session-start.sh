@@ -45,6 +45,20 @@ conf_get() {
   sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]]+)\"?.*$/\\1/p" \
     "$PROJECT_ROOT/.ai/flight-rules.conf" 2>/dev/null | tail -1
 }
+# shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
+# ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
+# leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
+# Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
+# Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
+# range like A-Z follows the locale's collation. Kept verbatim in step across
+# post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
+shq() {
+  local q="'\\''"
+  case "$1" in
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "${1//\'/$q}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 INTEGRATION_BRANCH="$(conf_get INTEGRATION_BRANCH)"; INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # {INTEGRATION_BRANCH}
 WORKTREE_DIR="$(conf_get WORKTREE_DIR)";             WORKTREE_DIR="${WORKTREE_DIR:-.ai/worktrees}"     # {WORKTREE_DIR}
 
@@ -135,6 +149,12 @@ if [ -f "$LAST_RUN_FILE" ]; then
   exit 0
 fi
 
+# Protected as pre-commit-check.sh decides it: the environment first, then the conf
+# read by the same read_conf, the same default (session-start.test.sh compares them).
+# Read once, for the sync and the open-branch count below.
+PROT="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+PROT="${PROT:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
+
 # A headless session (`claude -p`, observed; other callers only if they set the variable
 # below) has no screen. Spending the flag on
 # it hid that day's ❌ from every attended session after it, and silently — the miss
@@ -192,7 +212,7 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   OP=$(in_progress)
   if [ -n "$OP" ]; then
     echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress. Once it is finished:"
-    printf '  bash %q --from %q --stale-only\n' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"   # %q: it is pasted
+    printf '  bash %s --from %s --stale-only\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
     echo "Not doing one? A leftover never finishes: \`git status\` names it and the command that clears it."
     echo ""
     exit 0
@@ -202,13 +222,10 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
   # Compared only, and said when something is behind, with the command for a branch.
   # Not a worktree made on the developer's behalf (owner, 2026-10-21): they choose
-  # where to run it. Protected is decided as pre-commit-check.sh decides it: the
-  # environment first, then the conf read by the same read_conf, the same default, and
-  # bash's =~ case-insensitively. Its own parse, grep and case missed `'^trunk$'`, `QA`
-  # and the environment, and wrote where the guard refuses (fix review, F1).
-  # session-start.test.sh compares the copies.
-  _prot="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.ai/flight-rules.conf")}"
-  _prot="${_prot:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
+  # where to run it. Protected is decided as pre-commit-check.sh decides it: PROT above,
+  # and bash's =~ case-insensitively. Its own parse, grep and case missed `'^trunk$'`,
+  # `QA` and the environment, and wrote where the guard refuses (fix review, F1).
+  _prot="$PROT"
   _br=$(git branch --show-current 2>/dev/null)
   _check=""; _bad=""
   if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
@@ -243,7 +260,7 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     # --this-checkout: from a worktree whose git runs the hooks from this checkout, the
     # plain form refused and sent the user back here (#99 review, 2026-10-21).
     echo "To update them, run this in a worktree on a branch, then commit and merge it:"
-    printf '  bash %q --from %q --stale-only --this-checkout\n' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"   # %q: it is pasted
+    printf '  bash %s --from %s --stale-only --this-checkout\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
     [ -z "$_left" ] || { echo "Left alone (the command does not touch these):"; echo "$_left"; }
     echo ""
   elif [ "$SYNC_RC" -ne 0 ]; then
@@ -330,8 +347,68 @@ if [ -n "$DOCTOR_SCREEN" ]; then
     [ -f "$HINT_FILE" ] && { DOCTOR_SCREEN=""; HINT_FILE=""; }
   fi
 fi
+
+# OPEN_BRANCH_LIMIT: how many branches are open at once, warned at the limit and never
+# refused (#108). More than ten sat unmerged in this repo (2026-10-20 to 10-23), each
+# small alone, and the owner saw the backlog only once they had begun to depend on each
+# other. Open is a worktree's branch with commits not in the integration branch, a
+# protected one aside; waiting is one whose tip has a passing pre-merge-check note.
+# Default 5, warning only (owner, 2026-10-24); `off` stands it down; anything but a
+# positive whole number is 5, which doctor says. Only where the project uses
+# flight-rules: a repo without the conf is not told how to run its branches. The key
+# is read as doctor reads it (read_conf strips the quotes doctor strips): `'2'` was
+# ✅ to doctor and 5 here (batch review, G6). Merged as git sees it in this clone: the
+# local integration branch, else origin's — a clone with only origin/dev was silently
+# never counted (P1). A count that cannot be made is said, to the assistant only, as
+# "?" lines split off below: a missed reminder, but never one that reads as "under
+# the limit".
+OPEN_MSG=$(
+  [ -f "$PROJECT_ROOT/.ai/flight-rules.conf" ] || exit 0
+  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(read_conf OPEN_BRANCH_LIMIT "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+  # Where it came from, said: raising it in the conf does nothing when the environment set it.
+  _src="in .ai/flight-rules.conf"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
+  [ "$_lim" = off ] && exit 0
+  [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
+  _base="refs/heads/$INTEGRATION_BRANCH"
+  git rev-parse --verify -q "$_base" >/dev/null || _base="refs/remotes/origin/$INTEGRATION_BRANCH"
+  git rev-parse --verify -q "$_base" >/dev/null \
+    || { echo "?OPEN_BRANCH_LIMIT: no $INTEGRATION_BRANCH here, local or origin/ — open branches not counted"; exit 0; }
+  _list=$(git worktree list --porcelain 2>/dev/null) \
+    || { echo "?OPEN_BRANCH_LIMIT: git worktree list failed — open branches not counted"; exit 0; }
+  _prot="$PROT"
+  _n=0; _wait=""; _work=""; _fail=""
+  while IFS= read -r _b; do
+    [ "$_b" = "$INTEGRATION_BRANCH" ] && continue
+    # A pattern that does not compile (2) protects, as the sync above takes it — and the
+    # count is then not made, said so: silent, it read as under the limit (fourth review).
+    if [ "$_prot" != off ] && [ "$_prot" != none ]; then
+      shopt -s nocasematch; [[ "$_b" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+      [ "$_m" -eq 2 ] && { echo "?OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted"; exit 0; }
+      [ "$_m" -eq 1 ] || continue
+    fi
+    _ahead=$(git rev-list --count "$_base..refs/heads/$_b" 2>/dev/null) || { _fail="$_fail $_b"; continue; }
+    [ "$_ahead" -gt 0 ] || continue
+    _n=$((_n+1))
+    if git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null | grep -q '^passed:'; then
+      _wait="$_wait $_b"
+    else
+      _work="$_work $_b"
+    fi
+  done < <(printf '%s\n' "$_list" | sed -n 's|^branch refs/heads/||p')
+  [ -z "$_fail" ] || echo "?OPEN_BRANCH_LIMIT: could not compare with ${_base#refs/*/}:$_fail — not counted"
+  [ "$_n" -ge "$_lim" ] || exit 0
+  echo "⏳ flight-rules: $_n branches are open and not yet merged into ${_base#refs/*/} (OPEN_BRANCH_LIMIT is $_lim, $_src). A warning, not a block — merging some before opening more keeps them from depending on each other."
+  [ -z "$_wait" ] || echo "  Passed pre-merge-check, waiting to merge:$_wait"
+  [ -z "$_work" ] || echo "  Not yet passed:$_work"
+)
+OPEN_NOTE=$(printf '%s\n' "$OPEN_MSG" | sed -n 's/^?//p')
+OPEN_MSG=$(printf '%s\n' "$OPEN_MSG" | grep -v '^?')
+
 FOR_USER="$SYNC_MSG${SYNC_MSG:+${DOCTOR_SCREEN:+
 }}$DOCTOR_SCREEN"
+FOR_USER="$FOR_USER${FOR_USER:+${OPEN_MSG:+
+
+}}$OPEN_MSG"
 
 WORKTREES_DIR="$PROJECT_ROOT/$WORKTREE_DIR"
 
@@ -376,6 +453,12 @@ fi
 
 FOR_ASSISTANT="$SYNC_MSG${SYNC_MSG:+${DOCTOR_MSG:+
 }}$DOCTOR_MSG"
+FOR_ASSISTANT="$FOR_ASSISTANT${FOR_ASSISTANT:+${OPEN_MSG:+
+
+}}$OPEN_MSG"
+FOR_ASSISTANT="$FOR_ASSISTANT${FOR_ASSISTANT:+${OPEN_NOTE:+
+
+}}$OPEN_NOTE"
 [ -n "$FOR_ASSISTANT$REMINDER" ] || exit 0
 PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 
@@ -385,6 +468,7 @@ PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 SHOWN=""
 [ -n "$SYNC_MSG" ] && SHOWN="the hook-sync result"
 [ -n "$DOCTOR_SCREEN" ] && SHOWN="${SHOWN:+$SHOWN and }doctor's ❌ lines"
+[ -n "$OPEN_MSG" ] && SHOWN="${SHOWN:+$SHOWN and }the open-branch warning"
 NOTE=""
 [ -n "$SHOWN" ] && NOTE="
 

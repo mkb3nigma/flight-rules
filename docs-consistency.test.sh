@@ -352,6 +352,35 @@ else
   bad "the default differs: skill $W_SKILL, doctor $W_DOC, hooks/README.md $W_README"
 fi
 
+echo "A rule's (\`skill\` N) reference names the step it means:"
+# feature-start gained a step 5 (#108) and #109 rewrote Required 7 on the old numbering:
+# merged as either side wrote it, Required 6 pointed at "Create the worktree", and every
+# suite passed (fix review, 2026-10-24). Each reference is pinned to a word of its step's
+# title, so a renumber that leaves a reference behind fails, and so does a new reference
+# nobody pinned: add it here. <skill> <step> <a word of the title>
+STEPS='commit 4 Validate
+feature-start 3 branch name
+feature-start 4 Sync the base
+feature-start 5 open branches
+feature-start 7 Symlink
+pre-merge-check 1 test suite
+pre-merge-check 3 E2E
+pre-merge-check 8 Conventional
+pre-merge-check 9 Single-purpose
+pre-merge-check 16 Commit-count'
+REFS=$(grep -o -E '`[a-z-]+` [0-9]+(–[0-9]+)?' rules/*.md | sed -E 's/^[^:]*://; s/`//g; s/–/ /' \
+  | awk '{print $1, $2; if ($3 != "") print $1, $3}' | sort -u)
+[ -n "$REFS" ] || bad "no (\`skill\` N) references found in rules/ — the extraction broke"
+while read -r sk n; do
+  [ -n "$sk" ] || continue
+  want=$(printf '%s\n' "$STEPS" | awk -v s="$sk" -v n="$n" '$1==s && $2==n {$1=""; $2=""; sub(/^  /, ""); print}')
+  if [ -z "$want" ]; then bad "rules/ cites \`$sk\` $n, which this test has not pinned — add it to STEPS"; continue; fi
+  title=$(grep -E "^ {0,3}$n\. \*\*" "skills/$sk/SKILL.md" | head -1)
+  if [ -z "$title" ]; then bad "rules/ cites \`$sk\` $n; skills/$sk/SKILL.md has no step $n"
+  elif printf '%s' "$title" | grep -qiF -e "$want"; then ok "\`$sk\` $n is \"${want}…\""
+  else bad "rules/ cites \`$sk\` $n for \"$want\"; step $n is now: $(printf '%s' "$title" | cut -c1-60)"; fi
+done <<<"$REFS"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
