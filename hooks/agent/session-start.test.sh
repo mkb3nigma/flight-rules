@@ -431,7 +431,11 @@ say "$(sed -n '/^read_conf() {/,/^}/p' "$H/session-start.sh")" \
 # a branch in another case, the environment over the conf. The sync's own parse, grep
 # and case wrote on each while the guard refused the commit (fix review, F1/D7).
 # <description> % <conf line> % <branch> % <env>
+# Counted: a command in the loop that reads stdin eats the cases after it, and the
+# suite still says "passed" — the hook's stdin read did, 2026-10-24, three of four.
+NCASE=0
 while IFS='%' read -r desc line br envv; do
+  NCASE=$((NCASE+1))
   D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n%s\n' "$line" >> "$D/.ai/flight-rules.conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
   [ "$br" = trunk ] || git -C "$D" checkout -qb "$br"
@@ -449,6 +453,7 @@ a double-quoted pattern with a comment%PROTECTED_BRANCHES="^trunk$"   # the trun
 a branch in another case than the pattern%PROTECTED_BRANCHES=^(main|qa)$%QA%
 the environment over the conf%PROTECTED_BRANCHES=^main$%trunk%FLIGHT_RULES_PROTECTED_BRANCHES=^trunk$
 CASES
+say "$NCASE" "4" "…all four protected-branch cases ran"
 # A pattern bash cannot compile protects nothing to =~; the sync takes the branch as
 # protected and says the pattern is broken, rather than writing (fix review, F5).
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(trunk\n' >> "$D/.ai/flight-rules.conf"
@@ -782,9 +787,10 @@ T=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.
 D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify
 SF="$D/fakehome/.claude/hooks/.session-version-"
-# SS <session id> [dir] [plugin]: SessionStart; UP: the same as a prompt. rc on the last line.
-SS() { (cd "${2:-$D}" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "${3:-$T}/hooks/agent/session-start.sh" 2>&1 <<<"{\"session_id\":\"$1\",\"hook_event_name\":\"SessionStart\"}"); echo "rc=$?"; }
-UP() { (cd "${2:-$D}" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "${3:-$T}/hooks/agent/session-start.sh" --prompt 2>&1 <<<"{\"session_id\":\"$1\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hi\"}"); echo "rc=$?"; }
+# SS <session id> [dir] [plugin] [flag, default --plugin; "" for a hand-wired run]:
+# SessionStart; UP: the same as a prompt. rc on the last line.
+SS() { (cd "${2:-$D}" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "${3:-$T}/hooks/agent/session-start.sh" ${4---plugin} 2>&1 <<<"{\"session_id\":\"$1\",\"hook_event_name\":\"SessionStart\"}"); echo "rc=$?"; }
+UP() { (cd "${2:-$D}" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "${3:-$T}/hooks/agent/session-start.sh" --prompt ${4---plugin} 2>&1 <<<"{\"session_id\":\"$1\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hi\"}"); echo "rc=$?"; }
 body() { grep -v '^rc=' <<<"$1" | grep -c .; }
 rc() { tail -1 <<<"$1"; }
 J=$(SS s-a)
@@ -862,16 +868,34 @@ say "$([ $((t1 - t0)) -lt 10 ] && echo bounded)" "bounded" "…within seconds, n
 rm -rf "$D" "$T0"
 # Headless: no record at SessionStart, and a prompt is skipped outright.
 D=$(mkrepo); git -C "$D" config --unset merge.ff
-J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" 2>&1 <<<'{"session_id":"h1"}'); echo "rc=$?")
+J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --plugin 2>&1 <<<'{"session_id":"h1"}'); echo "rc=$?")
 say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "headless SessionStart still runs"
 say "$(ls -a "$D/fakehome/.claude/hooks" 2>/dev/null | grep -c 'session-version')" "0" "…recording no session version"
 # Even with a record from another version (a session id seen attended before).
 printf '0.0.1\n' > "$D/fakehome/.claude/hooks/.session-version-h1"
-J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --prompt 2>&1 <<<'{"session_id":"h1"}'); echo "rc=$?")
+J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --prompt --plugin 2>&1 <<<'{"session_id":"h1"}'); echo "rc=$?")
 say "$(rc "$J")" "rc=0" "headless, a prompt: exits 0"
 say "$(body "$J")" "0" "…saying nothing, though the record is another version's"
 say "$(cat "$D/fakehome/.claude/hooks/.session-version-h1")" "0.0.1" "…and leaving the record alone"
 rm -rf "$D" "$T1"
+# Two copies in one session — the plugin and a hand-wired copy that has a plugin.json
+# (a vendored tree, or this repo's own wiring in a release worktree): only the plugin's
+# records, so prompts through both never flip the notice (fix review: six in three).
+T2=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T2/.claude-plugin/plugin.json"
+V=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$V/.claude-plugin/plugin.json"
+D=$(mkrepo); SF="$D/fakehome/.claude/hooks/.session-version-"
+SS two "$D" "$T2" >/dev/null; SS two "$D" "$V" "" >/dev/null
+say "$(cat "${SF}two" 2>/dev/null)" "1.0.0" "two copies: SessionStart records the plugin's version only"
+n=0; for c in "$T2" "$V" "$T2" "$V"; do
+  [ "$c" = "$V" ] && J=$(UP two "$D" "$V" "") || J=$(UP two "$D" "$c")
+  [ "$(rc "$J")" = rc=0 ] || n=$((n+100)); n=$((n + $(usr <<<"$J" | grep -c 'flight-rules is now')))
+done
+say "$n" "0" "…and four prompts through both copies: exit 0, no notice"
+# The environment does not make a copy the plugin: only the flag hooks.json passes.
+(cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED CLAUDE_PLUGIN_ROOT="$V" HOME="$D/fakehome" bash "$V/hooks/agent/session-start.sh" <<<'{"session_id":"envonly"}' >/dev/null 2>&1)
+say "$?" "0" "CLAUDE_PLUGIN_ROOT set, no --plugin: SessionStart exits 0"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c 'session-version-envonly')" "0" "CLAUDE_PLUGIN_ROOT set, no --plugin: nothing recorded"
+rm -rf "$D" "$T2" "$V"
 # Hand-wired, with no plugin.json beside the hook: no version, so no record and no
 # notice — the hook copied where ../../.claude-plugin does not exist.
 L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/x/hooks/agent"; cp "$HOOK" "$L/x/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/x/hooks/"

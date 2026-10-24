@@ -48,11 +48,17 @@ if command -v jq >/dev/null 2>&1; then
   M=$(jq '[.hooks.SessionStart[]?.hooks[]?] | length' "$H/hooks.json")
   [ "$M" = "2" ]; say "$?" "both SessionStart hooks are registered (got $M)"
   # No event fires on /reload-plugins, so the next prompt says when it changed the
-  # session's version (#94): session-start.sh --prompt, wired once, in every path.
-  P='[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | test("agent/session-start\\.sh.* --prompt"))] | length'
-  [ "$(jq "$P" "$H/hooks.json")" = 1 ]; say "$?" "hooks.json wires session-start.sh --prompt to UserPromptSubmit once"
-  [ "$(jq "$P" "$ROOT/.claude/settings.json")" = 1 ]; say "$?" ".claude/settings.json does too"
-  [ "$(sed -n '/^```json$/,/^```$/p' <<<"$SNIPPET" | sed '1d;$d' | jq "$P" 2>/dev/null)" = 1 ]; say "$?" "…and the README snippet"
+  # session's version (#94) — the plugin's copy only, which says so with --plugin: a
+  # hand-wired copy beside it recorded its own version and flipped the notice (fix
+  # review, 2026-10-24). The flag, not CLAUDE_PLUGIN_ROOT in the hook's environment,
+  # which no test here can show the loader exports.
+  P='[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | test("agent/session-start\\.sh\" --prompt --plugin$"))] | length'
+  [ "$(jq "$P" "$H/hooks.json")" = 1 ]; say "$?" "hooks.json wires session-start.sh --prompt --plugin to UserPromptSubmit once"
+  S='[.hooks.SessionStart[]?.hooks[]? | select(.command | test("agent/session-start\\.sh\" --plugin$"))] | length'
+  [ "$(jq "$S" "$H/hooks.json")" = 1 ]; say "$?" "…and session-start.sh --plugin to SessionStart"
+  W='[.. | objects | select(has("command")) | .command | select(test("agent/session-start\\.sh") and (test("--plugin") or test("--prompt")))] | length'
+  [ "$(jq "$W" "$ROOT/.claude/settings.json")" = 0 ]; say "$?" ".claude/settings.json, hand-wired, wires neither --plugin nor --prompt"
+  [ "$(sed -n '/^```json$/,/^```$/p' <<<"$SNIPPET" | sed '1d;$d' | jq "$W" 2>/dev/null)" = 0 ]; say "$?" "…nor does the README snippet"
 else
   echo "  ⚠️  jq absent — skipping the JSON assertions"
 fi

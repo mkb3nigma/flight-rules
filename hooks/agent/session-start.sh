@@ -72,12 +72,24 @@ PLUGIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/
 # had run the new version first, and a prompt from a subdirectory or worktree ran
 # everything again. Keyed on the session, none of the three can happen. Only
 # characters a session id has: the id names a file. A session started before this was
-# recorded, hand-wired with no version, or with no id on stdin is never told.
+# recorded, or with no id on stdin, is never told. Only as the plugin, which hooks.json
+# says with --plugin: /reload-plugins swaps only the plugin's copy, and a session
+# running two copies (the plugin and a hand-wired one, or this repo's own wiring, which
+# follows the cwd into a release worktree's bumped plugin.json) recorded whichever ran
+# last and flipped the notice on every prompt (fix review, 2026-10-24: six notices in
+# three prompts). A flag, not CLAUDE_PLUGIN_ROOT in the environment: that the loader
+# exports it to a hook was never shown, and the notice would have failed silently;
+# hooks.json's ${CLAUDE_PLUGIN_ROOT} substitution is what every plugin hook runs on,
+# and wiring.test.sh checks the flag is there. Hand-wired, it is never told.
 # `read -t`, not `cat`: Claude Code closes stdin after the JSON, but a caller that
 # leaves it open (a test runner's socket did, 2026-10-24) would hold the hook until
 # its timeout, and a timed-out run's whole output is dropped — the day's doctor with it.
 SESSION_FILE=""; _in=""
-if [ -n "$PLUGIN_VERSION" ] && [ ! -t 0 ]; then
+_as_plugin=""; _prompt=""
+for _a in "$@"; do
+  case "$_a" in --plugin) _as_plugin=1 ;; --prompt) _prompt=1 ;; esac
+done
+if [ -n "$_as_plugin" ] && [ -n "$PLUGIN_VERSION" ] && [ ! -t 0 ]; then
   while IFS= read -r -t 2 _l; do _in="$_in$_l"; done; _in="$_in${_l-}"
   _sid=$(printf '%s' "$_in" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9-]\{1,64\}\)".*/\1/p' | head -1)
   [ -n "$_sid" ] && SESSION_FILE="$FLAG_DIR/.session-version-$_sid"
@@ -85,7 +97,7 @@ fi
 # On a prompt, not on PreToolUse, which fires mid-turn. Not headless: `claude -p` does
 # not reload. Every other prompt costs the reads above and one of the record (about
 # 15 ms, measured 2026-10-24).
-if [ "${1-}" = --prompt ]; then
+if [ -n "$_prompt" ]; then
   [ "${CLAUDE_CODE_SESSION_ATTENDED-}" = "0" ] && exit 0
   [ -n "$SESSION_FILE" ] && [ -f "$SESSION_FILE" ] || exit 0
   _was=$(head -1 "$SESSION_FILE" 2>/dev/null)
