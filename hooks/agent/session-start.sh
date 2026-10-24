@@ -48,12 +48,14 @@ conf_get() {
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
 # leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
+# Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
 # Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
 # range like A-Z follows the locale's collation. Kept verbatim in step across
 # post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
 shq() {
+  local q="'\\''"
   case "$1" in
-    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "${1//\'/$q}" ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -377,9 +379,11 @@ OPEN_MSG=$(
   _n=0; _wait=""; _work=""; _fail=""
   while IFS= read -r _b; do
     [ "$_b" = "$INTEGRATION_BRANCH" ] && continue
-    # A pattern that does not compile (2) protects, as the sync above takes it.
+    # A pattern that does not compile (2) protects, as the sync above takes it — and the
+    # count is then not made, said so: silent, it read as under the limit (fourth review).
     if [ "$_prot" != off ] && [ "$_prot" != none ]; then
       shopt -s nocasematch; [[ "$_b" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+      [ "$_m" -eq 2 ] && { echo "?OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted"; exit 0; }
       [ "$_m" -eq 1 ] || continue
     fi
     _ahead=$(git rev-list --count "$_base..refs/heads/$_b" 2>/dev/null) || { _fail="$_fail $_b"; continue; }

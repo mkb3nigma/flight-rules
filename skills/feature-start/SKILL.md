@@ -73,11 +73,11 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it (drop that
    `grep` when it is `off`):
    ```bash
-   p="${FLIGHT_RULES_PROTECTED_BRANCHES:-{PROTECTED_BRANCHES}}"
+   p=${FLIGHT_RULES_PROTECTED_BRANCHES-}; [ -n "$p" ] || p='{PROTECTED_BRANCHES}'
    base=refs/heads/{INTEGRATION_BRANCH}
    git rev-parse -q --verify "$base" >/dev/null || base=refs/remotes/origin/{INTEGRATION_BRANCH}
    git rev-parse -q --verify "$base" >/dev/null || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"
-   printf '' | grep -E -e "$p"; [ $? -le 1 ] || echo "COULD NOT COUNT: the protected pattern does not compile"
+   printf '' | grep -E -e "$p" >/dev/null 2>&1 || [ $? -eq 1 ] || echo "COULD NOT COUNT: the protected pattern does not compile"
    l=$(git worktree list --porcelain) || echo "COULD NOT COUNT: git worktree list failed"
    printf '%s\n' "$l" | sed -n 's|^branch refs/heads/||p' \
      | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \

@@ -9,6 +9,9 @@ HOOK="$H/session-start.sh"
 # The hook reads the session id from stdin (#94). A runner's stdin left open is a case
 # of its own, below; everywhere else the runs see what Claude Code gives — a closed one.
 exec </dev/null
+# The hook's own shq, for the commands it prints: built with printf %q, the expected
+# lines matched only while TMPDIR held nothing to quote (fourth review, G6).
+eval "$(sed -n '/^shq() {/,/^}/p' "$HOOK")"
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
@@ -312,7 +315,7 @@ say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, in a worktree, hooks in the main ch
 say "$(grep -c 'could not update the git hooks' <<<"$OUT")" "1" "…says it did not sync"
 say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…because the hooks are the main checkout's"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…not because they are outside the repository"
-say "$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | grep -cF "$(printf 'bash %q --from %q --stale-only --this-checkout' "$T/hooks/git/install.sh" "$T/hooks/git")")" "1" "…and gives the command for this worktree's copy, its paths shell-quoted"
+say "$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | grep -cF "bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only --this-checkout")" "1" "…and gives the command for this worktree's copy, its paths shell-quoted"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" && echo stale)" "stale" "…leaving the main checkout's copy as it was"
 rm -rf "$D"
 # …and with every copy there current, nothing to say: the warning came every day
@@ -517,7 +520,7 @@ say "$(grep -c 'skipped the git hooks: a merge is in progress' <<<"$OUT")" "1" "
 say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and how to clear one left behind"
 # The command is pasted, so its paths are quoted for the shell, not wrapped in "…": a
 # path holding `$(…)` or `"` ran or broke when pasted (0.26.0 release review, P2).
-say "$(grep -cxF "  $(printf 'bash %q --from %q --stale-only' "$T/hooks/git/install.sh" "$T/hooks/git")" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
+say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 # A plugin under a path with a multibyte character and a space (a home directory named
@@ -525,10 +528,15 @@ say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…w
 # command named a path that does not exist (fix review, 2026-10-24). shq quotes it whole.
 U=$(cd "$(mktemp -d)" && pwd -P)/"Stra ße"; mkdir -p "$U" && cp -R "$T/." "$U/" || die "could not lay out the ß plugin"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*   # the day's run was spent above
-OUT=$( { (cd "$D" && HOME="$D/fakehome" bash "$U/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
+# A UTF-8 locale, as the install and doctor cases pin: under C, %q left the ß alone and
+# the case passed against the bug (fourth review, G1).
+U8=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -1); U8=${U8:-en_US.UTF-8}
+OUT=$( { (cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" bash "$U/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
 CMD=$(grep -E '^  bash .*--stale-only$' <<<"$OUT" | head -1)
 say "$(grep -cE '^  bash .*--stale-only$' <<<"$OUT")" "1" "a plugin path with ß and a space: the sync command is printed"
-say "$(printf '%s' "$CMD" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 && echo valid)" "valid" "…as valid UTF-8"
+# jq turns a stray byte into U+FFFD, so the check is for that, not for valid UTF-8, which
+# jq's output always is (fourth review, D6b).
+say "$(grep -c "$(printf '\357\277\275')" <<<"$CMD")" "0" "…with no byte replaced on the way"
 say "$(bash() { printf '%s|' "$@"; }; eval "$CMD")" "$U/hooks/git/install.sh|--from|$U/hooks/git|--stale-only|" "…and, pasted, hands bash the exact paths"
 rm -rf "$D" "$(dirname "$U")"
 # Mid-cherry-pick too, not only merge and rebase (release review, 2026-10-12).
@@ -993,6 +1001,7 @@ J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "PROTECTED_BRANCHES that does not compile: exits 0"
 say "$(usr <<<"$J" | grep -c 'PROTECTED_BRANCHES')" "1" "…doctor's ❌ names it"
 say "$(usr <<<"$J" | grep -c 'branches are open')" "0" "…and no branch is counted as open"
+say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted')" "1" "…and the assistant is told the count was not made"
 # Without the conf, the project does not use flight-rules: not told how to run branches.
 # A main for the default INTEGRATION_BRANCH to find, so it is the conf that silences it.
 git -C "$D" branch main trunk || die "could not make main"
