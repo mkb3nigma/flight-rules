@@ -724,6 +724,10 @@ rm -rf "$D"
 # shq is doctor's too, and the four scripts that print a command to paste must quote it
 # alike: compared verbatim, as newer_than and read_conf are.
 say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/../flight-rules-doctor.sh")" "shq is doctor's, verbatim"
+# …and post-merge's and session-start's: four copies, each saying "(tested)" — until
+# the four branches met, only these two were compared (fifth review, G3).
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/post-merge")" "…and post-merge's, verbatim"
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/../agent/session-start.sh")" "…and session-start's, verbatim"
 say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh" | grep -c .)" "7" "…and is there to compare (7 lines)"
 # shq itself, sourced from install.sh: bytes that are not UTF-8 made BSD sed stop and
 # shq print '' (fourth review, D1) — a branch reftable or packed-refs can hold.

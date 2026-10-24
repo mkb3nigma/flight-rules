@@ -297,7 +297,14 @@ that the logic has exactly one home.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
   unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
-  (stale worktrees, deletable branches) that the next AI session picks up.
+  (stale worktrees, deletable branches) to `.claude/post-merge-note.md` and, when it has
+  something to do, prints it to whoever merged (at most 40 lines; no flight-rules hook
+  reads the file, #110). Each command is on a line of its own, quoted to be pasted, with
+  what to know about it — just merged, or refused until a push — on the line below. Under each stale worktree it names what still runs from it — processes
+  working there or with its path in their command line, and Docker Compose containers
+  from it, stopped ones included — so what a check started is stopped or removed before
+  the worktree goes. It lists them and stops nothing; a `ps`, `lsof` or `docker` that
+  fails is said so, not read as nothing running (#109).
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
   conversations for the project so the next session starts fresh — read the guarded
   block in the script before enabling.

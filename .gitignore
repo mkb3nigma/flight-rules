@@ -3,8 +3,9 @@
 # branching rule must not leave a nested working tree staged for commit.
 .ai/worktrees/
 
-# Written by hooks/git/post-merge for the next session to read. Per-machine state
-# (it names local worktrees and undeleted branches), regenerated on every merge.
+# Written (and printed) by hooks/git/post-merge at a merge; no flight-rules hook reads
+# the file (#110). Per-machine state (it names local worktrees and undeleted branches),
+# regenerated on every merge.
 # .claude/settings.json IS tracked — ignore the artifact, not the directory.
 .claude/post-merge-note.md
 
