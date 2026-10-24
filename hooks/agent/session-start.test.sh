@@ -903,7 +903,7 @@ D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >>
 git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/a" fix/a || die "could not stamp fix/a"
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "at the limit: exits 0"
-say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2)')" "1" "…warns on screen, with the count and the limit"
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…warns on screen, with the count, the limit and where it is set"
 say "$(usr <<<"$J" | grep -c 'A warning, not a block')" "1" "…as a warning"
 say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the stamped one as waiting to merge"
 say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
@@ -921,23 +921,40 @@ say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-bra
 # The default is 5; the environment comes first; off stands it down.
 open "$D" fix/b; open "$D" fix/c; open "$D" fix/d
 sed -i.bak '/OPEN_BRANCH_LIMIT/d' "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
-say "$(OB | ctx | grep -c 'branches are open')" "0" "four open, no setting: no warning (default 5)"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "four open, no setting: exits 0"
+say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports (the merged worktree's reminder)"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no warning (default 5)"
 open "$D" fix/e; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
-say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 5)')" "1" "…five: the warning"
+say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 5, in .ai/flight-rules.conf)')" "1" "…five: the warning"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
-say "$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=9 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) | ctx | grep -c 'branches are open')" "0" "…FLIGHT_RULES_OPEN_BRANCH_LIMIT=9 overrides it"
+J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=9 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "…FLIGHT_RULES_OPEN_BRANCH_LIMIT=9: exits 0"
+say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and the environment overrides the default"
 printf 'OPEN_BRANCH_LIMIT=off\n' >> "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "OPEN_BRANCH_LIMIT=off: exits 0"
 say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no warning"
 sed -i.bak 's/OPEN_BRANCH_LIMIT=off/OPEN_BRANCH_LIMIT=lots/' "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
-say "$(OB | usr | grep -c 'OPEN_BRANCH_LIMIT is 5')" "1" "…a value that is not a number is taken as 5"
+say "$(OB | usr | grep -c 'OPEN_BRANCH_LIMIT is 5,')" "1" "…a value that is not a number is taken as 5"
+# Quoted, as doctor accepts it: doctor said ✅ 2 and the hook ran at 5 (batch review).
+sed -i.bak "s/OPEN_BRANCH_LIMIT=lots/OPEN_BRANCH_LIMIT='3'/" "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 3,')" "1" "…a quoted '3' is read as 3, as doctor reads it"
 # A protected branch is not open work: main ahead of trunk after a release is not.
 printf 'PROTECTED_BRANCHES=^(trunk|rel)$\nOPEN_BRANCH_LIMIT=5\n' >> "$D/.ai/flight-rules.conf"; open "$D" rel
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$(OB)
 say "$(usr <<<"$J" | grep -c '5 branches are open')" "1" "a protected branch is not counted: five open, not six"
 say "$(usr <<<"$J" | grep -cE ' rel( |$)')" "0" "…and it is not named"
+# A protected pattern that does not compile protects, as the sync takes it; doctor's ❌
+# says so on the same run.
+sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.ai/flight-rules.conf"; printf 'PROTECTED_BRANCHES=^(trunk\n' >> "$D/.ai/flight-rules.conf"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "PROTECTED_BRANCHES that does not compile: exits 0"
+say "$(usr <<<"$J" | grep -c 'PROTECTED_BRANCHES')" "1" "…doctor's ❌ names it"
+say "$(usr <<<"$J" | grep -c 'branches are open')" "0" "…and no branch is counted as open"
 # Without the conf, the project does not use flight-rules: not told how to run branches.
 # A main for the default INTEGRATION_BRANCH to find, so it is the conf that silences it.
 git -C "$D" branch main trunk || die "could not make main"
@@ -946,6 +963,20 @@ J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "no conf: exits 0"
 say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "…the run reports (doctor's warning)"
 say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-branch warning"
+rm -rf "$D"
+# A clone with no local integration branch counts against origin's; with neither, the
+# assistant is told the count was not made — never silence that reads as "under".
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" update-ref refs/remotes/origin/trunk trunk; git -C "$D" checkout -q -b elsewhere
+git -C "$D" branch -D trunk >/dev/null || die "could not drop the local trunk"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "only origin/trunk: exits 0"
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into origin/trunk')" "1" "…counts against origin/trunk"
+git -C "$D" update-ref -d refs/remotes/origin/trunk; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "no trunk, local or origin: exits 0"
+say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT: no trunk here, local or origin/ — open branches not counted')" "1" "…the assistant is told the count was not made"
+say "$(usr <<<"$J" | grep -c 'not counted')" "0" "…off the screen"
 rm -rf "$D"
 
 echo "$PASS passed, $FAIL failed"

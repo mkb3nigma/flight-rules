@@ -329,35 +329,50 @@ fi
 # protected one aside; waiting is one whose tip has a passing pre-merge-check note.
 # Default 5, warning only (owner, 2026-10-24); `off` stands it down; anything but a
 # positive whole number is 5, which doctor says. Only where the project uses
-# flight-rules: a repo without the conf is not told how to run its branches.
+# flight-rules: a repo without the conf is not told how to run its branches. The key
+# is read as doctor reads it (read_conf strips the quotes doctor strips): `'2'` was
+# ✅ to doctor and 5 here (batch review, G6). Merged as git sees it in this clone: the
+# local integration branch, else origin's — a clone with only origin/dev was silently
+# never counted (P1). A count that cannot be made is said, to the assistant only, as
+# "?" lines split off below: a missed reminder, but never one that reads as "under
+# the limit".
 OPEN_MSG=$(
   [ -f "$PROJECT_ROOT/.ai/flight-rules.conf" ] || exit 0
-  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(conf_get OPEN_BRANCH_LIMIT)}"
+  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(read_conf OPEN_BRANCH_LIMIT "$PROJECT_ROOT/.ai/flight-rules.conf")}"
   [ "$_lim" = off ] && exit 0
   [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
-  git rev-parse --verify -q "refs/heads/$INTEGRATION_BRANCH" >/dev/null || exit 0
+  _base="refs/heads/$INTEGRATION_BRANCH"
+  git rev-parse --verify -q "$_base" >/dev/null || _base="refs/remotes/origin/$INTEGRATION_BRANCH"
+  git rev-parse --verify -q "$_base" >/dev/null \
+    || { echo "?OPEN_BRANCH_LIMIT: no $INTEGRATION_BRANCH here, local or origin/ — open branches not counted"; exit 0; }
+  _list=$(git worktree list --porcelain 2>/dev/null) \
+    || { echo "?OPEN_BRANCH_LIMIT: git worktree list failed — open branches not counted"; exit 0; }
   _prot="$PROT"
-  _n=0; _wait=""; _work=""
+  _n=0; _wait=""; _work=""; _fail=""
   while IFS= read -r _b; do
     [ "$_b" = "$INTEGRATION_BRANCH" ] && continue
+    # A pattern that does not compile (2) protects, as the sync above takes it.
     if [ "$_prot" != off ] && [ "$_prot" != none ]; then
       shopt -s nocasematch; [[ "$_b" =~ $_prot ]]; _m=$?; shopt -u nocasematch
-      [ "$_m" -eq 0 ] && continue
+      [ "$_m" -eq 1 ] || continue
     fi
-    _ahead=$(git rev-list --count "refs/heads/$INTEGRATION_BRANCH..refs/heads/$_b" 2>/dev/null)
-    [ "${_ahead:-0}" -gt 0 ] || continue
+    _ahead=$(git rev-list --count "$_base..refs/heads/$_b" 2>/dev/null) || { _fail="$_fail $_b"; continue; }
+    [ "$_ahead" -gt 0 ] || continue
     _n=$((_n+1))
     if git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null | grep -q '^passed:'; then
       _wait="$_wait $_b"
     else
       _work="$_work $_b"
     fi
-  done < <(git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p')
+  done < <(printf '%s\n' "$_list" | sed -n 's|^branch refs/heads/||p')
+  [ -z "$_fail" ] || echo "?OPEN_BRANCH_LIMIT: could not compare with ${_base#refs/*/}:$_fail — not counted"
   [ "$_n" -ge "$_lim" ] || exit 0
-  echo "⏳ flight-rules: $_n branches are open and not yet merged into $INTEGRATION_BRANCH (OPEN_BRANCH_LIMIT is $_lim). A warning, not a block — merging some before opening more keeps them from depending on each other."
+  echo "⏳ flight-rules: $_n branches are open and not yet merged into ${_base#refs/*/} (OPEN_BRANCH_LIMIT is $_lim, in .ai/flight-rules.conf). A warning, not a block — merging some before opening more keeps them from depending on each other."
   [ -z "$_wait" ] || echo "  Passed pre-merge-check, waiting to merge:$_wait"
   [ -z "$_work" ] || echo "  Not yet passed:$_work"
 )
+OPEN_NOTE=$(printf '%s\n' "$OPEN_MSG" | sed -n 's/^?//p')
+OPEN_MSG=$(printf '%s\n' "$OPEN_MSG" | grep -v '^?')
 
 FOR_USER="$SYNC_MSG${SYNC_MSG:+${DOCTOR_SCREEN:+
 }}$DOCTOR_SCREEN"
@@ -411,6 +426,9 @@ FOR_ASSISTANT="$SYNC_MSG${SYNC_MSG:+${DOCTOR_MSG:+
 FOR_ASSISTANT="$FOR_ASSISTANT${FOR_ASSISTANT:+${OPEN_MSG:+
 
 }}$OPEN_MSG"
+FOR_ASSISTANT="$FOR_ASSISTANT${FOR_ASSISTANT:+${OPEN_NOTE:+
+
+}}$OPEN_NOTE"
 [ -n "$FOR_ASSISTANT$REMINDER" ] || exit 0
 PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 

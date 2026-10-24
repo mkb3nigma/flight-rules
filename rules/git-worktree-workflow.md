@@ -24,10 +24,11 @@ for having gone unenforced.
 ### 🚫 Forbidden
 1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
 2. Multiple features in one branch — one purpose per branch — skill (`pre-merge-check` 9, ⚠️)
-3. Letting open branches pile up: at `OPEN_BRANCH_LIMIT` (default 5) branches open and
-   not yet merged into `{INTEGRATION_BRANCH}`, say how many are open, and which wait to
-   merge, before starting another. A warning, not a stop — the owner decides —
-   reminded (`session-start` warns at the limit)
+3. Letting open branches pile up: at `OPEN_BRANCH_LIMIT` (default 5, set in the conf)
+   branches open and not yet merged into `{INTEGRATION_BRANCH}`, start another only
+   once the person says it is okay — told how many are open, which wait to merge, and
+   where the limit is set. A question, never a block on anything else — skill
+   (`feature-start` 5 asks); reminded (`session-start` warns at the limit)
 4. Merging without tests passing — skill (`pre-merge-check` 1–3 runs them; on note-gated
    branches `commit-msg` requires its stamp, which proves the skill ran, not that it
    passed honestly); on PR-only branches the host's CI and review are the gate
@@ -65,7 +66,7 @@ for having gone unenforced.
    (`pre-merge-check` 16 only warns at the other extreme, ~20+)
 6. Symlink untracked env files from the main checkout into new worktrees
    (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`.
-   Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 6)
+   Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 7)
 7. Clean up after merging: `git worktree remove …` + `git branch -d …` — reminded (`post-merge`, `session-start`)
 8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main`, first fast-forward any `main`-only commits into it; if that is not a fast-forward, **stop and ask** — skill (`feature-start` 4)
 

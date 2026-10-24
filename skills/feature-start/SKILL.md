@@ -63,11 +63,30 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
        both ranges, ask. Never `git merge` here yourself.
    - **No remote** (`git remote` is empty): branch from the local
      `{INTEGRATION_BRANCH}`, skip fetch and reconcile, say so.
-5. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
+5. **Count the open branches — past the limit, ask.** The limit is `OPEN_BRANCH_LIMIT`
+   in `.ai/flight-rules.conf` (unset or not a positive whole number: 5; `off`: skip this
+   step). Open means a branch checked out in a worktree with commits not yet in
+   `{INTEGRATION_BRANCH}` — the local one when it exists, as `session-start` counts,
+   else `origin/{INTEGRATION_BRANCH}` — leaving out `{INTEGRATION_BRANCH}` itself and
+   any branch `{PROTECTED_BRANCHES}` matches:
+   ```bash
+   git worktree list --porcelain | sed -n 's|^branch refs/heads/||p' | while IFS= read -r b; do
+     [ -n "$(git log --oneline -1 "{INTEGRATION_BRANCH}..refs/heads/$b" 2>/dev/null)" ] && echo "$b"
+   done
+   ```
+   At or over the limit, show the person how many are open and which, which of them
+   have a passing note (`git notes --ref=pre-merge-check show <branch>` begins
+   `passed:`) and only wait to merge, and say where the limit is set: *"OPEN_BRANCH_LIMIT
+   is <n> in .ai/flight-rules.conf — raise it, or set it to off, there."* Create the
+   branch only once they say it is okay. Under the limit, say nothing. With no one to
+   ask, create nothing and report the count as the blocker. A pile of open branches is
+   how this repo's own work came to depend on itself: more than ten sat unmerged
+   (2026-10-20 to 10-23), and the owner saw it only once they did (#108).
+6. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
    ```bash
    git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> origin/{INTEGRATION_BRANCH}
    ```
-6. **Symlink untracked env files** from the main checkout (symlinks, not copies —
+7. **Symlink untracked env files** from the main checkout (symlinks, not copies —
    copies go stale):
    ```bash
    ln -s "$PWD/<path>/.env" {WORKTREE_DIR}/<slug>/<path>/.env
@@ -81,10 +100,10 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    tolerate a symlink, but **do not symlink `node_modules`** — dev tools that resolve
    real paths (e.g. the Vite dev server) break through the link. Run a fresh
    `npm ci` in the worktree instead.
-7. **Confirm** — print the worktree path, the `cd` command, and the reminder:
+8. **Confirm** — print the worktree path, the `cd` command, and the reminder:
    "Work only in this directory. ONE purpose per branch." If the repo ships git hooks
    and `core.hooksPath` isn't set, print the one-time install command.
-8. **List worktrees** — `git worktree list`.
+9. **List worktrees** — `git worktree list`.
 
 ## Cleanup (after merge — required, never leave stale worktrees)
 
