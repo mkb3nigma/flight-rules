@@ -120,8 +120,8 @@ refused_until() {
   git rev-parse -q --verify "$up^{commit}" >/dev/null 2>&1 || return 0
   git merge-base --is-ancestor "refs/heads/$1" "$up" 2>/dev/null && return 0
   case "$up" in
-    refs/remotes/*) printf 'refused until %s has it — push that first' "${up#refs/remotes/}" ;;
-    *)              printf 'refused until %s contains it' "${up#refs/heads/}" ;;
+    refs/remotes/*) printf 'refused until %s has it — push that first' "$(shq "${up#refs/remotes/}")" ;;
+    *)              printf 'refused until %s contains it' "$(shq "${up#refs/heads/}")" ;;
   esac
 }
 
@@ -195,7 +195,7 @@ load_containers() {
   else
     wait "$pid" || rc=$?
     if [[ $rc -ne 0 ]]; then
-      DOCKER_ERR="could not list containers (docker exited $rc: $(head -1 "$err" | cut -c1-100))"
+      DOCKER_ERR="could not list containers (docker exited $rc: $(shq "$(head -1 "$err" | cut -c1-100)"))"
     else
       CONTAINERS=$(cat "$out")
     fi
@@ -210,6 +210,10 @@ running_from() {
   local d="$1" p
   d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
   printf '%s\n--\n%s\n' "$CWDS" "$PROCS" | D="$d" P="$p" SELF="$$" NOPS="${PROCS:+0}" awk '
+    # q: shq in awk — the same rule, for the same reason: a whole note gets pasted.
+    # Split on the quote, not gsub: the backslashes in a gsub replacement differ between
+    # awks (macOS awk doubled one and left the quote unmatched).
+    function q(s,   t, n, i, part) { if (s != "" && s ~ /^[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._\/@+,:-]+$/ && s !~ /^[=~]/) return s; n = split(s, part, "\047"); t = "\047" part[1]; for (i = 2; i <= n; i++) t = t "\047\\\047\047" part[i]; return t "\047" }
     function under(s) { return s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1 }
     function at(s, x,   i, j, c) {
       j = 0
@@ -225,7 +229,7 @@ running_from() {
     {
       pid = $1; if (pid == "" || pid == ENVIRON["SELF"]) next
       cmd = $0; sub(/^[ \t]*[0-9]+[ \t]+[^ \t]+[ \t]+/, "", cmd)
-      if (cwd[pid] || names(cmd)) { printf "    pid %s, up %s: %s\n", pid, $2, substr(cmd, 1, 120); done[pid] = 1 }
+      if (cwd[pid] || names(cmd)) { printf "    pid %s, up %s: %s\n", pid, $2, q(substr(cmd, 1, 120)); done[pid] = 1 }
     }
     END { if (ENVIRON["NOPS"] == "") for (pid in cwd) if (!done[pid] && pid != ENVIRON["SELF"]) printf "    pid %s (command not known: ps failed)\n", pid }'
 }
@@ -234,8 +238,12 @@ containers_from() {
   d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
   [[ -n "$CONTAINERS" ]] || return 0
   printf '%s\n' "$CONTAINERS" | D="$d" P="$p" awk -F '\t' '
+    # q: shq in awk — the same rule, for the same reason: a whole note gets pasted.
+    # Split on the quote, not gsub: the backslashes in a gsub replacement differ between
+    # awks (macOS awk doubled one and left the quote unmatched).
+    function q(s,   t, n, i, part) { if (s != "" && s ~ /^[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._\/@+,:-]+$/ && s !~ /^[=~]/) return s; n = split(s, part, "\047"); t = "\047" part[1]; for (i = 2; i <= n; i++) t = t "\047\\\047\047" part[i]; return t "\047" }
     function under(s) { return s != "" && (s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1) }
-    under($2) { printf "    container %s (%s), %s — from %s\n", $1, $3, $4, $2 }'
+    under($2) { printf "    container %s (%s), %s — from %s\n", q($1), q($3), q($4), q($2) }'
 }
 if [[ ${#STALE_WORKTREES[@]} -gt 0 ]]; then
   load_running
@@ -285,7 +293,12 @@ note_branch() {
 # --- Write note file ---
 mkdir -p "$(dirname "$NOTE_FILE")"
 {
-  echo "## Post-merge to $INTEGRATION_BRANCH: \`$MERGED_BRANCH\`"
+  # Every name from outside the hook — a branch, a path, an upstream, a command line, a
+  # container, docker's own words — goes through shq, on every line, not only the
+  # commands: a whole note gets pasted, and a name holding ; or a backtick ran what
+  # followed it on whatever line it sat (security review, 2026-10-24). The header lost
+  # its backticks: pasted, `name` is a command substitution.
+  echo "## Post-merge to $(shq "$INTEGRATION_BRANCH"): $(shq "$MERGED_BRANCH")"
   echo ""
 
   if [[ ${#STALE_WORKTREES[@]} -gt 0 ]]; then
@@ -298,11 +311,11 @@ mkdir -p "$(dirname "$NOTE_FILE")"
     for wt in "${STALE_WORKTREES[@]}"; do
       rel="${wt#$REPO_ROOT/}"
       wt_branch=$(git -C "$wt" branch --show-current 2>/dev/null || echo "?")
-      echo "  Branch: $wt_branch  →  $rel"
+      echo "  Branch: $(shq "$wt_branch")  →  $(shq "$rel")"
       _run=$(running_from "$wt"; containers_from "$wt")
       _run=$(printf '%s\n' "$_run" | grep -v '^$' || true)
       if [[ -n "$_run" ]]; then
-        echo "  Still running from it, or left by it — stop or remove what a check started there before removing the worktree (\`docker compose down\` from its directory, \`docker rm <id>\`); ask before stopping anything you did not start:"
+        echo "  Still running from it, or left by it — stop or remove what a check started there before removing the worktree — docker compose down from its directory, or docker rm and the container id; ask before stopping anything you did not start:"
         echo "$_run"
       fi
       # Quoted by shq: the line is printed to be pasted, and a path — or a branch name
@@ -317,7 +330,7 @@ mkdir -p "$(dirname "$NOTE_FILE")"
   echo ""
 
   if [[ -n "$ALL_MERGED" ]]; then
-    echo "### ⚠ Branches merged into $INTEGRATION_BRANCH (safe to delete):"
+    echo "### ⚠ Branches merged into $(shq "$INTEGRATION_BRANCH") (safe to delete):"
     # Merged straight from origin/<x> with no local <x>, there is nothing to delete.
     if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]] \
        && git show-ref --verify -q "refs/heads/$JUST_MERGED"; then

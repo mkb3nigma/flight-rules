@@ -446,11 +446,26 @@ git -C "$HR" worktree add -q -b fix/q "$QWT" trunk 2>/dev/null || die "could not
 echo q > "$QWT/q.txt"; git -C "$QWT" add q.txt; git -C "$QWT" commit -qm "chore: q" --no-verify >/dev/null
 cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$HR/.ai/hooks/"
 chmod +x "$HR"/.ai/hooks/*; git -C "$HR" config core.hooksPath .ai/hooks
-OUT=$(cd "$HR" && LC_ALL=en_US.UTF-8 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
+# The rest of the note carries names too, not only its commands: the upstream of a
+# merged branch that does not have it yet, a process run from a worktree, a Compose
+# container — each holding `;`, and a whole note gets pasted (security review,
+# 2026-10-24). fix/up's upstream is an unrelated commit, so `-d` names it.
+EUP="u;touch\${IFS}PWNED2"
+git -C "$HR" branch fix/up || die "could not make fix/up"
+git -C "$HR" remote add origin "$HB/no-such-remote" || die "could not add origin"
+_orphan=$(git -C "$HR" commit-tree "$(git -C "$HR" mktree </dev/null)" -m orphan) || die "could not make an unrelated commit"
+git -C "$HR" update-ref "refs/remotes/origin/$EUP" "$_orphan" || die "could not make the hostile upstream"
+git -C "$HR" config branch.fix/up.remote origin; git -C "$HR" config branch.fix/up.merge "refs/heads/$EUP"
+(cd / && exec -a "srv;touch\${IFS}PWNED3 $UWT/x" sleep 300) & HS=$!
+trap 'kill $HS 2>/dev/null' EXIT
+mkdir -p "$HB/shim"; { printf '#!/bin/sh\n'
+  printf 'printf "c9\\t%s\\tweb;touch\\${IFS}PWNED4\\tUp 1 hour\\n"\n' "$UWT"; } > "$HB/shim/docker"; chmod +x "$HB/shim/docker"
+OUT=$(cd "$HR" && PATH="$HB/shim:$PATH" LC_ALL=en_US.UTF-8 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
+kill $HS 2>/dev/null
 say "$RC" "0" "a merge with a hostile branch name and a quoted worktree path lands"
 # Every command line exactly as printed — nothing stripped before it is judged.
 CMDS=$(printf '%s\n' "$OUT" | sed -n -E 's/^  (git (branch -d|worktree remove) .*)$/\1/p')
-say "$(grep -c . <<<"$CMDS")" "5" "…printing five commands: two worktrees, the merged branch, the hostile one, the ß one"
+say "$(grep -c . <<<"$CMDS")" "6" "…printing six commands: two worktrees, the merged branch, fix/up, the hostile one, the ß one"
 _bad=0; _got=""; _argc=""
 while IFS= read -r c; do
   bash -n -c "$c" 2>/dev/null || _bad=$((_bad+1))
@@ -461,7 +476,7 @@ while IFS= read -r c; do
 done <<<"$CMDS"
 say "$_bad" "0" "…each parses as one command"
 say "$([ -e "$SB/PWNED" ] || [ -e "$HR/PWNED" ] && echo ran || echo clean)" "clean" "…and pasting them runs nothing but git"
-say "$_argc" "3 3 3 3 3 " "…each hands git exactly three arguments, no annotation among them"
+say "$_argc" "3 3 3 3 3 3 " "…each hands git exactly three arguments, no annotation among them"
 say "$(grep -cxF "$EVIL" <<<"$_got")" "1" "…git is handed the hostile branch name exactly"
 say "$(grep -cxF ".ai/worktrees/it's" <<<"$_got")" "1" "…and the worktree path exactly"
 say "$(grep -cxF 'fix/ü-ß' <<<"$_got")" "1" "…and the ß branch exactly"
@@ -469,8 +484,21 @@ say "$(grep -cxF '.ai/worktrees/straße' <<<"$_got")" "1" "…and the ß worktre
 HNOTE="$HR/.claude/post-merge-note.md"
 iconv -f UTF-8 -t UTF-8 "$HNOTE" >/dev/null 2>&1; say "$?" "0" "…the note file is valid UTF-8"
 printf '%s\n' "$OUT" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; say "$?" "0" "…and so is what was printed"
-say "$(grep -cF 'straße' "$HNOTE")" "2" "…which names the ß worktree as it is (its line and its command)"
+say "$(grep -cE "^  (Branch: 'fix/ü-ß'  →  |git worktree remove )'\.ai/worktrees/straße'$" "$HNOTE")" "2" "…which names the ß worktree as it is (its line and its command)"
 say "$(after "$HNOTE" "  git branch -d fix/q")" "    ↑ just merged" "…and says 'just merged' on the line below the command"
+say "$(after "$HNOTE" "  git branch -d fix/up")" "    ↑ refused until 'origin/$EUP' has it — push that first" "…and names an upstream it is refused until, quoted"
+say "$(grep -cF ": 'srv;touch\${IFS}PWNED3 $UWT" <<<"$OUT")" "1" "…names the process run from the worktree, its command line quoted"
+say "$(grep -cF "container c9 ('web;touch\${IFS}PWNED4')" <<<"$OUT")" "1" "…and the container, its name quoted"
+# Every line of the note, printed and written, pasted into bash and into zsh — with git
+# and docker stubbed, since pasting the commands is meant to run them.
+_n=0
+while IFS= read -r l; do
+  _n=$((_n+1))
+  (cd "$SB" && bash -c 'git() { :; }; docker() { :; }; eval "$1"' _ "$l") >/dev/null 2>&1
+  command -v zsh >/dev/null 2>&1 && (cd "$SB" && zsh -fc 'git() { :; }; docker() { :; }; eval "$1"' _ "$l") >/dev/null 2>&1
+done < <(printf '%s\n' "$OUT"; cat "$HNOTE")
+say "$([ "$_n" -gt 20 ] && echo many)" "many" "…every line of the note pasted ($_n lines)"
+say "$(ls "$SB" "$HR" "$UWT" 2>/dev/null | grep -c PWNED)" "0" "…runs no name's payload, in bash or zsh"
 # Run every printed line for real, in order, as someone pasting the note would.
 while IFS= read -r c; do (cd "$HR" && eval "$c") >/dev/null 2>&1; done <<<"$CMDS"
 say "$(git -C "$HR" branch --list just merged | wc -l | tr -d ' ')" "2" "…and pasting all of them leaves the branches named just and merged"
@@ -637,7 +665,7 @@ FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/d
 say "$?" "0" "merging origin/feature/x into dev lands"
 [ "$(git -C "$D" log -1 --pretty=%s)" = "Merge remote-tracking branch 'origin/feature/x' into dev" ]
 say "$?" "0" "…with the remote-tracking subject (the fixture is the real shape)"
-grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qx '## Post-merge to dev: feature/x' "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…and the note names feature/x, not unknown"
 say "$(after "$D/.claude/post-merge-note.md" "  git branch -d feature/x")" "    ↑ just merged" "…and offers the local branch for deletion as just merged"
 grep -q "refused until" "$D/.claude/post-merge-note.md" 2>/dev/null
@@ -652,7 +680,7 @@ git -C "$D" push -q origin main dev feature/x 2>/dev/null || die "could not push
 git -C "$D" branch -qD feature/x || die "could not delete the local feature/x"
 git -C "$D" branch -q fix/old dev || die "could not make fix/old"   # so the list is not empty
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/dev/null 2>&1
-grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qx '## Post-merge to dev: feature/x' "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "with no local feature/x, the note still names it"
 grep -qE "git branch -d feature/x( |$)" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "1" "…but does not offer a branch that is not there for deletion"
@@ -1081,8 +1109,8 @@ say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "a process working in the 
 say "$(section fix/srv | grep -c 'Still running from it')" "1" "…with what to do about it"
 say "$(section fix/srv | grep -c 'ask before stopping anything you did not start')" "1" "…and to ask before stopping what you did not start"
 say "$(section fix/srv | grep -c "pid $S3,")" "0" "…and not one in wt-srvx, whose name only extends it"
-say "$(section fix/db | grep -c "pid $S2, up .*: dbserver -D $PB/wt-db/data")" "1" "a process whose command line names the worktree is named under it"
-say "$(section fix/last | grep -c "pid $S5, up .*: pg --data=$PB/wt-last/pg")" "1" "…so is one naming it after ="
+say "$(section fix/db | grep -c "pid $S2, up .*: 'dbserver -D $PB/wt-db/data ")" "1" "a process whose command line names the worktree is named under it"
+say "$(section fix/last | grep -c "pid $S5, up .*: 'pg --data=$PB/wt-last/pg ")" "1" "…so is one naming it after ="
 say "$(section fix/quiet | grep -c 'Branch: fix/quiet ')" "1" "a worktree with nothing running is listed"
 say "$(section fix/quiet | grep -c 'Still running')" "0" "…with nothing said about processes"
 say "$(grep -c "pid $S4" "$PNOTE")" "0" "…nor about one naming /mnt<its path>, a different directory"
@@ -1116,8 +1144,8 @@ rerun() { (cd "$PR" && PATH="$1:$PATH" "$PR/.ai/hooks/post-merge" 0 2>&1); }
 
 shims "$PB/a" log list; OUT=$(rerun "$PB/a"); RC=$?
 say "$RC" "0" "with Compose containers: the hook still exits 0"
-say "$(section fix/srv | grep -c 'container c1 (srv-web-1), Up 2 hours')" "1" "a running container started from the worktree is named under it"
-say "$(section fix/srv | grep -c 'container c2 (srv-db-1), Exited')" "1" "…so is a stopped one under it (ps -a: old containers take disk space)"
+say "$(section fix/srv | grep -c "container c1 (srv-web-1), 'Up 2 hours'")" "1" "a running container started from the worktree is named under it"
+say "$(section fix/srv | grep -c "container c2 (srv-db-1), 'Exited")" "1" "…so is a stopped one under it (ps -a: old containers take disk space)"
 say "$(section fix/srv | grep -c 'container c3')" "0" "…not one from wt-srvx, whose name only extends it"
 say "$(section fix/srvx | grep -c 'container c3 (srvx-1)')" "1" "…which is named under wt-srvx, its own"
 say "$(grep -c 'container c4' "$PNOTE")" "0" "…nor one from /mnt<its path>"
@@ -1140,7 +1168,7 @@ fi
 
 shims "$PB/c" log fail; OUT=$(rerun "$PB/c"); RC=$?
 say "$RC" "0" "with docker failing: the hook still exits 0"
-say "$(top | grep -c 'could not list containers (docker exited 1: Cannot connect to the Docker daemon')" "1" "…and the note says so, not 'no containers'"
+say "$(top | grep -c "could not list containers (docker exited 1: 'Cannot connect to the Docker daemon")" "1" "…and the note says so, not 'no containers'"
 say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "…with the processes still listed"
 say "$(grep -c 'could not list containers' "$PNOTE")" "1" "…once, above the worktrees, not under each of them"
 say "$(section fix/quiet | grep -c 'Still running')" "0" "…where it is not mistaken for something still running"
@@ -1158,7 +1186,7 @@ done
 [ -x "$NB/git" ] && [ -x "$NB/bash" ] || die "could not build a PATH without docker"
 OUT=$(cd "$PR" && PATH="$NB" "$PR/.ai/hooks/post-merge" 0 2>&1); RC=$?
 say "$RC" "0" "with no docker installed: the hook exits 0"
-say "$(grep -c -e 'container' -e 'docker exited' "$PNOTE")" "0" "…and says nothing about containers"
+say "$(grep -c -e '^    container ' -e 'docker exited' "$PNOTE")" "0" "…and says nothing about containers"
 say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "…while still listing the processes"
 kill "$S1" "$S2" "$S3" "$S4" "$S5" 2>/dev/null; wait "$S1" "$S2" "$S3" "$S4" "$S5" 2>/dev/null
 trap - EXIT
