@@ -4,6 +4,96 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.27.0 — 2026-10-24
+
+### Upgrading
+
+**Git hooks changed** — `commit-msg`, `pre-commit`, `pre-merge-commit`, `pre-rebase`,
+`reference-transaction`, `post-merge` and `install.sh` — so sync them. With
+`HOOK_SYNC=auto` a session's first run does it and leaves the diff to commit; with the
+default `report`, doctor names each stale copy and prints the command. From this release
+on, the automatic sync never replaces a copy that is a newer release's than the one
+syncing. A session still on 0.26.x has an installer without that check: left open, it
+can write its older copies back over newer ones on its first session start each day,
+until it is closed, and the next current session's daily check restores them. Close
+sessions on older versions after updating.
+
+**After `/plugin update` and `/reload-plugins`**, the next prompt now says the session is
+on the new version and that a new session loads its rules and runs the checks (#94). It
+comes from the plugin's own wiring (`hooks.json` passes `--plugin`); hand-wired setups
+get no such notice and need no change. A session already open when 0.27.0 arrives is not
+told: the version it started on was never recorded.
+
+**A full install no longer overwrites a project's own hooks** (#97). Before, only
+`pre-commit` was protected. And when the install points git at flight-rules' hooks
+folder, it names any hooks git will stop running from `.git/hooks/` or a global hooks
+folder; running them alongside flight-rules' is #111.
+
+**The post-merge cleanup list looks different** (#109): it is printed at the merge, not
+only written to `.claude/post-merge-note.md`; names that need quoting are in `'…'` (plain
+ones are bare); and an annotation such as `↑ just merged` sits on its own line.
+
+One new optional key in `.ai/flight-rules.conf`, `OPEN_BRANCH_LIMIT` (default 5), below.
+
+### Added
+
+- **Open-branch limit** (#108). At `OPEN_BRANCH_LIMIT` branches open and not yet merged
+  into the integration branch, session start warns — on screen and to the assistant,
+  naming which have passed `pre-merge-check` and wait to merge — and never blocks.
+  `/feature-start` counts before opening another and, at the limit, opens it only once
+  you say it is okay, naming where the limit is set. `off` stands both down. A count
+  that cannot be made (no integration branch, a git failure, a protected pattern that
+  does not compile) is said to the assistant, never read as "under the limit".
+- **What testing started is stopped** (#109). The post-merge list names processes still
+  running from each merged worktree — by working directory or a path in the command
+  line — and Docker Compose containers started from it (`docker ps -a`, bounded to 3 s;
+  silent without docker, said when docker fails). It stops nothing. `pre-merge-check`
+  item 21 asks that what a branch's checks started is stopped before the stamp.
+- **`/dg` Review Domains** (#96): the classes a reviewer is asked to look for —
+  authorisation, untrusted input, fail-open defaults, races, magic values, swallowed
+  errors, time, unbounded work, compatibility, tests — reach every reviewer's brief.
+- **`pre-merge-check`**: item 4 gates new type errors against the destination's set;
+  item 20 flags swallowed errors.
+
+### Fixed
+
+- **Hook downgrade**: the automatic sync took any release's exact copy as replaceable,
+  so a session on an older version replaced newer hooks with its own (batch review).
+  Doctor also called a newer copy "behind" and pointed at a command that downgraded it;
+  it is now a ⚠️ that says a newer session wrote it.
+- **Pasting the cleanup list could run code** (#109 reviews): git allows `'`, `;`, `$`
+  and backticks in a branch name, and the list printed names raw — in its commands and
+  on every other line. Every value from outside the hook is now quoted, with one shared
+  quoting function (`shq`, kept identical in the four scripts that print commands to
+  paste, and tested), which also fixes `printf %q` on macOS bash 3.2 splitting
+  non-ASCII names. A process row forged by a newline in a command line is dropped.
+- **A protected-branch pattern that does not compile protected nothing** (#103): the
+  guard and the git hooks now treat it as protecting every branch, say so, and print a
+  way out that works from where the refusal leaves you. Patterns match
+  case-insensitively everywhere.
+- **The secret scan skipped a merge's concluding commit** (#101), the hand-written
+  conflict resolution included; it now scans what the resolution adds.
+- **The merge-authorisation box printed a `git merge` that always failed** (#100) while
+  the refused merge was still in progress; it prints the command that concludes it.
+- **`HOOK_SYNC=auto` wrote into a checkout on a protected branch** (#99), leaving a diff
+  nobody could commit; there it now only compares and prints the command for a branch.
+- **The guard looked for `MERGE_HEAD` in its own working directory**, not the `-C`
+  target (#98): a false block from a worktree, and a waiver that leaked across repos.
+- **`HOOK_SYNC=auto` warned daily in every worktree whose hooks live in the main
+  checkout** (#93), even with nothing stale; it compares first and is silent when current.
+- **Doctor did not report a stale `.ai/hooks/install.sh`** (#90).
+
+### Changed
+
+- **`/dg` output order**: header, comic, rounds, verdict, then the decisions waiting — a
+  numbered list, not a table — so they are where a terminal leaves the reader.
+- **`/dg`**: an extension's own pre-reviewer timeout is an inner limit under
+  `DG_WAIT_MINUTES` (#95). The release-review check's three known Markdown limits are
+  accepted rather than parsed further (#91).
+- **Principles**: a refused command may go to the person, told it was refused, by what
+  and why — an ask that carries its reasons; the UTC line moved to the checklists;
+  flight-rules assumes a competent developer and does not babysit.
+
 ## 0.26.0 — 2026-10-20
 
 ### Upgrading
