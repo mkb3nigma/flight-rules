@@ -47,6 +47,12 @@ if command -v jq >/dev/null 2>&1; then
   [ "$N" = "1" ]; say "$?" "the guard is registered once (got $N)"
   M=$(jq '[.hooks.SessionStart[]?.hooks[]?] | length' "$H/hooks.json")
   [ "$M" = "2" ]; say "$?" "both SessionStart hooks are registered (got $M)"
+  # No event fires on /reload-plugins, so after an update the sync and doctor run on the
+  # next prompt (#94): session-start.sh --prompt, wired once, in every path.
+  P='[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | test("agent/session-start\\.sh.* --prompt"))] | length'
+  [ "$(jq "$P" "$H/hooks.json")" = 1 ]; say "$?" "hooks.json wires session-start.sh --prompt to UserPromptSubmit once"
+  [ "$(jq "$P" "$ROOT/.claude/settings.json")" = 1 ]; say "$?" ".claude/settings.json does too"
+  [ "$(sed -n '/^```json$/,/^```$/p' <<<"$SNIPPET" | sed '1d;$d' | jq "$P" 2>/dev/null)" = 1 ]; say "$?" "…and the README snippet"
 else
   echo "  ⚠️  jq absent — skipping the JSON assertions"
 fi

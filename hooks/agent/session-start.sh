@@ -1,7 +1,7 @@
 #!/bin/bash
 # Agent hook: Worktree Cleanup Reminder
-# Wire as a Claude Code SessionStart hook (see hooks/README.md).
-# Runs the stale-worktree check at most once per day (flag file).
+# Wire as a Claude Code SessionStart hook, and as a UserPromptSubmit one with --prompt
+# (see hooks/README.md). Runs at most once per day and plugin version (flag file).
 #
 # Output is one JSON object (plain text only when neither jq nor python3 can build it,
 # see the end). What the PERSON must act on — doctor's ❌ problems, a hook
@@ -51,19 +51,50 @@ WORKTREE_DIR="$(conf_get WORKTREE_DIR)";             WORKTREE_DIR="${WORKTREE_DI
 # project opened each day took the reminder for all of them; and nothing pruned
 # the flags, so they accumulated one per day forever.
 FLAG_DIR="$HOME/.claude/hooks"
-mkdir -p "$FLAG_DIR"
-find "$FLAG_DIR" -maxdepth 1 -name '.worktree-check-*' -mtime +1 -delete 2>/dev/null
 # The plugin version is in the name too, so an update re-runs doctor that day: it is
 # where an upgrade's missing git hook is reported, and a flag touched that morning made
 # the report wait a day (/dg, 2026-10-08). Hand-wired, there is no plugin.json and no
 # version, and the flag is per day only.
 PLUGIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
   "$(dirname "${BASH_SOURCE[0]}")/../../.claude-plugin/plugin.json" 2>/dev/null | head -1)
-LAST_RUN_FILE="$FLAG_DIR/.worktree-check-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')-$(date +%Y%m%d)${PLUGIN_VERSION:+-$PLUGIN_VERSION}"
+FLAG_KEY="$FLAG_DIR/.worktree-check-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')-"
+LAST_RUN_FILE="$FLAG_KEY$(date +%Y%m%d)${PLUGIN_VERSION:+-$PLUGIN_VERSION}"
+
+# --prompt, from UserPromptSubmit: the same run, on the first prompt that finds no flag
+# for this day and version (#94). /plugin update then /reload-plugins loads the new
+# version's hooks, but no hook event fires on a reload and SessionStart does not fire
+# again, so the sync and doctor waited for a new session with nothing saying one was
+# needed: three hooks stayed stale under 0.26.0 (AppliHawk, 2026-10-21). On a prompt,
+# not on PreToolUse, which fires mid-turn and could land a sync inside the assistant's
+# own commit or merge. Every later prompt costs the sed above and the stat below. Not
+# headless: the flag is left untouched there (below), so every prompt would run it,
+# and SessionStart already covers a `claude -p` session, which does not reload.
+EVENT=SessionStart
+if [ "${1-}" = --prompt ]; then
+  EVENT=UserPromptSubmit
+  [ "${CLAUDE_CODE_SESSION_ATTENDED-}" = "0" ] && exit 0
+fi
 
 if [ -f "$LAST_RUN_FILE" ]; then
   exit 0
 fi
+mkdir -p "$FLAG_DIR"
+
+# A prompt that finds the newest flag for this project from another version is a
+# session whose plugin was updated under it. Its hooks are now the new version's, but
+# the rules injected at its start are the old one's, and only a new session loads them:
+# said, rather than injected a second time beside the first copy (owner, 2026-10-24).
+# The newest day's flags, not any day's: a session crossing midnight on one version
+# would find an older one from the day before (pruned below only past a day).
+RULES_MSG=""
+if [ "$EVENT" = UserPromptSubmit ] && [ -n "$PLUGIN_VERSION" ]; then
+  _last=$(ls -1 "$FLAG_KEY"[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-* 2>/dev/null | sort | tail -1)
+  _day=${_last#"$FLAG_KEY"}; _day=${_day%%-*}
+  if [ -n "$_last" ] && [ ! -f "$FLAG_KEY$_day-$PLUGIN_VERSION" ]; then
+    RULES_MSG="🔄 flight-rules is now $PLUGIN_VERSION in this session (it was ${_last##*"$_day"-}). Its hooks are running; its rules are not — the ones injected when this session started are the old version's. Start a new session to load them."
+  fi
+fi
+find "$FLAG_DIR" -maxdepth 1 -name '.worktree-check-*' -mtime +1 -delete 2>/dev/null
 
 # A headless session (`claude -p`, observed; other callers only if they set the variable
 # below) has no screen. Spending the flag on
@@ -262,6 +293,9 @@ if [ -n "$DOCTOR_SCREEN" ]; then
 fi
 FOR_USER="$SYNC_MSG${SYNC_MSG:+${DOCTOR_SCREEN:+
 }}$DOCTOR_SCREEN"
+FOR_USER="$RULES_MSG${RULES_MSG:+${FOR_USER:+
+
+}}$FOR_USER"
 
 WORKTREES_DIR="$PROJECT_ROOT/$WORKTREE_DIR"
 
@@ -306,6 +340,9 @@ fi
 
 FOR_ASSISTANT="$SYNC_MSG${SYNC_MSG:+${DOCTOR_MSG:+
 }}$DOCTOR_MSG"
+FOR_ASSISTANT="$RULES_MSG${RULES_MSG:+${FOR_ASSISTANT:+
+
+}}$FOR_ASSISTANT"
 [ -n "$FOR_ASSISTANT$REMINDER" ] || exit 0
 PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 
@@ -313,12 +350,13 @@ PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 # Said only on the JSON branches: with plain text the user saw nothing, and the
 # assistant is the relay (pre-review, 2026-10-13).
 SHOWN=""
-[ -n "$SYNC_MSG" ] && SHOWN="the hook-sync result"
+[ -n "$RULES_MSG" ] && SHOWN="the new version's notice"
+[ -n "$SYNC_MSG" ] && SHOWN="${SHOWN:+$SHOWN and }the hook-sync result"
 [ -n "$DOCTOR_SCREEN" ] && SHOWN="${SHOWN:+$SHOWN and }doctor's ❌ lines"
-NOTE=""
+NOTE=""; WHEN="at session start"; [ "$EVENT" = UserPromptSubmit ] && WHEN="with this prompt"
 [ -n "$SHOWN" ] && NOTE="
 
-(Already on the user's screen at session start: $SHOWN. Anything else above was not shown to them.)"
+(Already on the user's screen $WHEN: $SHOWN. Anything else above was not shown to them.)"
 CONTEXT="$FOR_ASSISTANT$NOTE${FOR_ASSISTANT:+${REMINDER:+
 
 }}$REMINDER"
@@ -330,15 +368,15 @@ CONTEXT="$FOR_ASSISTANT$NOTE${FOR_ASSISTANT:+${REMINDER:+
 # Command Line Tools exits non-zero with no output — falls back to plain text, not
 # to silence.
 if command -v jq >/dev/null 2>&1; then
-  jq -n --arg u "$FOR_USER" --arg c "$CONTEXT" \
+  jq -n --arg u "$FOR_USER" --arg c "$CONTEXT" --arg e "$EVENT" \
     '(if $u == "" then {} else {systemMessage: $u} end)
-     + {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}' \
+     + {hookSpecificOutput: {hookEventName: $e, additionalContext: $c}}' \
     && { [ -z "$HINT_FILE" ] || touch "$HINT_FILE" 2>/dev/null; true; }
 elif command -v python3 >/dev/null 2>&1; then
   python3 -I -c 'import json, sys
-out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": sys.argv[2]}}
+out = {"hookSpecificOutput": {"hookEventName": sys.argv[3], "additionalContext": sys.argv[2]}}
 if sys.argv[1]: out["systemMessage"] = sys.argv[1]
-print(json.dumps(out))' "$FOR_USER" "$CONTEXT" 2>/dev/null \
+print(json.dumps(out))' "$FOR_USER" "$CONTEXT" "$EVENT" 2>/dev/null \
     && { [ -z "$HINT_FILE" ] || touch "$HINT_FILE" 2>/dev/null; true; } || printf '%s\n' "$PLAIN"
 else
   printf '%s\n' "$PLAIN"

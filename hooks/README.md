@@ -185,6 +185,8 @@ rules injected at all** — half of what this playbook does. Register all three.
         "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/session-start-rules.sh\"'" },
       { "type": "command",
         "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\"'" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command",
+      "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\" --prompt'" }] }],
     "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command",
       "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/pre-commit-check.sh\"'" }] }]
   }
@@ -421,7 +423,10 @@ Guards that fire on the assistant's own events, before git ever runs:
   Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project (a headless session spends no
   flag, so it runs until an attended one has that day), and again after a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
-  so they get cleaned up. Doctor's ❌ problems, the command that fixes them, and a hook sync
+  so they get cleaned up. Wired to UserPromptSubmit too, with `--prompt`: no event fires
+  on `/reload-plugins`, so after an update and a reload the same run happens on the next
+  prompt, with a line saying the rules need a new session (#94). Every later prompt
+  costs one `sed` and one `stat`; a headless session skips it. Doctor's ❌ problems, the command that fixes them, and a hook sync
   are printed as `systemMessage`, so they appear on the user's screen — in a project
   that uses flight-rules (`.ai/flight-rules.conf` at the root, or flight-rules' hooks
   installed). A repo with no `core.hooksPath` is shown the install hint
@@ -443,7 +448,8 @@ Guards that fire on the assistant's own events, before git ever runs:
   keeps the text it was given — reported 2026-09-15 by a session that had just read the
   new version's SKILL.md from disk and was still following the previous version's
   principles. Nothing in this repo can re-inject into a live session; **a new session is
-  what picks up a rules change.** So the header names the plugin version, which turns
+  what picks up a rules change.** `session-start.sh --prompt` says so on the first prompt
+  after a reload brings in a new version. And the header names the plugin version, which turns
   invisible staleness into something a reader can check against the plugin directory.
   Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
   install shape, because reading the version must never cost the rules.

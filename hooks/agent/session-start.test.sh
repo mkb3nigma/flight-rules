@@ -768,6 +768,63 @@ say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "the merged worktree beside 
 say "$(grep -c 'detached' <<<"$OUT")" "0" "a detached worktree is not reported stale"
 rm -rf "$D"
 
+echo "After /reload-plugins, the next prompt runs what SessionStart would have (#94):"
+# No hook event fires on a reload, and SessionStart does not fire again, so a project
+# kept three stale hooks under 0.26.0 with HOOK_SYNC=auto set (AppliHawk, 2026-10-21).
+# UserPromptSubmit runs the hook with --prompt; the day-and-version flag decides alone.
+T=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify
+SS() { (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; }
+UP() { (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" --prompt 2>&1); echo "rc=$?"; }
+SS >/dev/null
+J=$(UP)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "a prompt in the session that ran SessionStart exits 0"
+say "$(grep -v '^rc=' <<<"$J" | grep -c .)" "0" "…saying nothing: the flag for this day and version is there"
+# The update and reload: the hooks are now 1.0.1's, one git hook is an older release's.
+printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"; stale "$D" commit-msg
+J=$(UP)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "the first prompt after the update exits 0"
+say "$(grep -v '^rc=' <<<"$J" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit" "…answering as UserPromptSubmit"
+say "$(usr <<<"$J" | grep -c 'synced commit-msg (flight-rules 1.0.1)')" "1" "…syncs the stale hook, on screen"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "…which is now the new release's"
+say "$(usr <<<"$J" | grep -c 'flight-rules is now 1.0.1 in this session (it was 1.0.0)')" "1" "…says on screen the plugin changed under the session"
+say "$(usr <<<"$J" | grep -c 'Start a new session to load them')" "1" "…and that the rules need a new session"
+say "$(ctx <<<"$J" | grep -c 'its rules are not')" "1" "…telling the assistant too"
+say "$(ctx <<<"$J" | grep -c "Already on the user's screen with this prompt: the new version's notice and the hook-sync result")" "1" "…which is told what the user saw, and when"
+J=$(UP)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "the prompt after that exits 0"
+say "$(grep -v '^rc=' <<<"$J" | grep -c .)" "0" "…saying nothing"
+rm -rf "$D"
+# Headless: the flag is never spent there, so every prompt would run it; skipped.
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" --prompt 2>&1); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "headless, a prompt with no flag: exits 0"
+say "$(grep -v '^rc=' <<<"$J" | grep -c .)" "0" "…saying nothing"
+say "$(ls -A "$D/fakehome/.claude/hooks" 2>/dev/null | grep -c .)" "0" "…and spending no flag"
+# A session that crossed midnight on one version: the day's run, and no version notice
+# though an older version's flag from before is still there.
+yday() { date -v-"$1"d +%Y%m%d 2>/dev/null || date -d "$1 days ago" +%Y%m%d; }
+K="$D/fakehome/.claude/hooks/.worktree-check-$(printf '%s' "$D" | tr '/' '-')-"
+mkdir -p "$D/fakehome/.claude/hooks"; touch "$K$(yday 2)-1.0.0" "$K$(yday 1)-1.0.1"
+J=$( (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" --prompt 2>&1); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "past midnight, same version: exits 0"
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "…runs the day's checks"
+say "$(usr <<<"$J" | grep -c 'flight-rules is now')" "0" "…without a version notice"
+# The same, updated past midnight: yesterday's flag is the old version's.
+rm -f "$K"*; touch "$K$(yday 1)-1.0.0"
+J=$( (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" --prompt 2>&1); echo "rc=$?")
+say "$(usr <<<"$J" | grep -c 'flight-rules is now 1.0.1 in this session (it was 1.0.0)')" "1" "updated past midnight: the notice names both versions"
+rm -rf "$D" "$T"
+# Hand-wired, with no plugin.json: no version to compare, so no notice; the run itself
+# still happens.
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+J=$( (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$HOOK" --prompt 2>&1); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "hand-wired, a prompt with no flag: exits 0"
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "…runs doctor"
+say "$(usr <<<"$J" | grep -c 'flight-rules is now')" "0" "…with no version notice"
+rm -rf "$D"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
