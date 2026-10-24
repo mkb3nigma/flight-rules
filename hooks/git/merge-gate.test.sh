@@ -415,6 +415,20 @@ cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$QR/.a
 chmod +x "$QR"/.ai/hooks/*; git -C "$QR" config core.hooksPath "$QR/.ai/hooks"
 git -C "$QR" merge --no-verify --no-edit 'fix/a&b' >/dev/null 2>&1
 QNOTE="$QR/.claude/post-merge-note.md"
+# The header too: pasted into an interactive zsh, which has comments off, `name` in
+# backticks ran (security review, 2026-10-24).
+say "$(grep -cxF "## Post-merge to trunk: 'fix/a&b'" "$QNOTE")" "1" "the header names the merged branch quoted"
+# Pasted as a person would: the whole note into interactive shells, where zsh runs a
+# `#`-led line. A `;>` payload acts in bash and zsh alike (${IFS} does not split in
+# zsh), and this one is the merged branch, so it sits in the header (fifth review).
+git -C "$QR" checkout -qb 'm;>PWNED8' 2>/dev/null; echo m > "$QR/m.txt"; git -C "$QR" add -A; git -C "$QR" commit -qm "chore: m"
+git -C "$QR" checkout -q trunk; git -C "$QR" merge --no-verify --no-edit 'm;>PWNED8' >/dev/null 2>&1
+say "$(grep -cxF "## Post-merge to trunk: 'm;>PWNED8'" "$QNOTE")" "1" "…a hostile merged branch, quoted in the header"
+QSB="$QB/sandbox"; mkdir -p "$QSB"
+{ echo 'git() { :; }; docker() { :; }'; cat "$QNOTE"; echo ': > ran-bash'; } | (cd "$QSB" && bash --norc --noprofile -i) >/dev/null 2>&1
+command -v zsh >/dev/null 2>&1 && { echo 'git() { :; }; docker() { :; }'; cat "$QNOTE"; echo ': > ran-zsh'; } | (cd "$QSB" && zsh -fi) >/dev/null 2>&1
+say "$(ls "$QSB" | grep -c '^ran-')" "$(command -v zsh >/dev/null 2>&1 && echo 2 || echo 1)" "…the pastes ran to the end (each shell's last line wrote its file)"
+say "$(ls "$QSB" "$QR" | grep -c PWNED8)" "0" "…and the whole note, pasted into interactive bash and zsh, runs it nowhere"
 if grep -qxF "  git branch -d 'fix/a&b'" "$QNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a name with shell metacharacters is quoted\n'
 else
@@ -457,7 +471,13 @@ _orphan=$(git -C "$HR" commit-tree "$(git -C "$HR" mktree </dev/null)" -m orphan
 git -C "$HR" update-ref "refs/remotes/origin/$EUP" "$_orphan" || die "could not make the hostile upstream"
 git -C "$HR" config branch.fix/up.remote origin; git -C "$HR" config branch.fix/up.merge "refs/heads/$EUP"
 (cd / && exec -a "srv;touch\${IFS}PWNED3 $UWT/x" sleep 300) & HS=$!
-trap 'kill $HS 2>/dev/null' EXIT
+# A command line holding a byte that is not UTF-8, run from the worktree, and one after
+# it: macOS awk under a UTF-8 locale died on the first in a bracket regex, and the second
+# fell out (fifth review). From the worktree, not naming it: after such a byte macOS ps
+# escapes the rest of the line (ß prints as \303M-^_), so a path in it cannot match.
+(cd "$UWT" && exec -a "$(printf 'bad\351x') --title" sleep 300) & HS2=$!
+(cd / && exec -a "after-it $UWT/z" sleep 300) & HS3=$!
+trap 'kill $HS $HS2 $HS3 2>/dev/null' EXIT
 mkdir -p "$HB/shim"; { printf '#!/bin/sh\n'
   printf 'printf "c9\\t%s\\tweb;touch\\${IFS}PWNED4\\tUp 1 hour\\n"\n' "$UWT"; } > "$HB/shim/docker"; chmod +x "$HB/shim/docker"
 # A command line holding a newline reaches the parser as two rows, the second one's
@@ -467,7 +487,7 @@ mkdir -p "$HB/shim"; { printf '#!/bin/sh\n'
   # Each forged row fails one check only — the pid, or the time — so each check is tested.
   printf 'printf "%%s\\n" "  4242 00:01 srv %s" ";touch\\${IFS}PWNED6 00:01 %s" "4243 ;touch\\${IFS}PWNED7 %s"\n' "$UWT/a" "$UWT/b" "$UWT/c"; } > "$HB/shim/ps"; chmod +x "$HB/shim/ps"
 OUT=$(cd "$HR" && PATH="$HB/shim:$PATH" LC_ALL=en_US.UTF-8 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
-kill $HS 2>/dev/null
+kill $HS $HS2 $HS3 2>/dev/null
 say "$RC" "0" "a merge with a hostile branch name and a quoted worktree path lands"
 # Every command line exactly as printed — nothing stripped before it is judged.
 CMDS=$(printf '%s\n' "$OUT" | sed -n -E 's/^  (git (branch -d|worktree remove) .*)$/\1/p')
@@ -504,6 +524,8 @@ while IFS= read -r l; do
   command -v zsh >/dev/null 2>&1 && (cd "$SB" && zsh -fc 'git() { :; }; docker() { :; }; eval "$1"' _ "$l") >/dev/null 2>&1
 done < <(printf '%s\n' "$OUT"; cat "$HNOTE")
 say "$(grep -c '^    pid 4242, up 00:01: ' <<<"$OUT")" "1" "…a well-formed row from ps is listed"
+say "$(grep -c "^    pid $HS2, " <<<"$OUT")" "1" "…a process whose command line holds a byte that is not UTF-8 is listed"
+say "$(grep -c "^    pid $HS3, .*after-it" <<<"$OUT")" "1" "…and so is the one after it"
 say "$(grep -c 'PWNED6' <<<"$OUT")" "0" "…a row whose pid is not digits is not: it is the rest of a name"
 say "$(grep -c 'PWNED7' <<<"$OUT")" "0" "…nor one whose time is not ps etime"
 say "$([ "$_n" -gt 20 ] && echo many)" "many" "…every line of the note pasted ($_n lines)"
