@@ -1,7 +1,8 @@
 #!/bin/bash
 # Agent hook: Worktree Cleanup Reminder
-# Wire as a Claude Code SessionStart hook (see hooks/README.md).
-# Runs the stale-worktree check at most once per day (flag file).
+# Wire as a Claude Code SessionStart hook, and as a UserPromptSubmit one with --prompt
+# (see hooks/README.md). Runs the stale-worktree check at most once per day (flag file);
+# --prompt only says when this session's plugin version has changed.
 #
 # Output is one JSON object (plain text only when neither jq nor python3 can build it,
 # see the end). What the PERSON must act on — doctor's ❌ problems, a hook
@@ -51,14 +52,83 @@ WORKTREE_DIR="$(conf_get WORKTREE_DIR)";             WORKTREE_DIR="${WORKTREE_DI
 # project opened each day took the reminder for all of them; and nothing pruned
 # the flags, so they accumulated one per day forever.
 FLAG_DIR="$HOME/.claude/hooks"
-mkdir -p "$FLAG_DIR"
-find "$FLAG_DIR" -maxdepth 1 -name '.worktree-check-*' -mtime +1 -delete 2>/dev/null
 # The plugin version is in the name too, so an update re-runs doctor that day: it is
 # where an upgrade's missing git hook is reported, and a flag touched that morning made
 # the report wait a day (/dg, 2026-10-08). Hand-wired, there is no plugin.json and no
 # version, and the flag is per day only.
 PLUGIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
   "$(dirname "${BASH_SOURCE[0]}")/../../.claude-plugin/plugin.json" 2>/dev/null | head -1)
+
+# The version this session started on, recorded at SessionStart under the session id
+# Claude Code passes on stdin, and compared by --prompt (#94). /plugin update then
+# /reload-plugins loads the new version's hooks, but no hook event fires on a reload
+# and SessionStart does not fire again, so nothing said the session's rules, and the
+# project's git hooks, were still the old version's: three hooks stayed stale under
+# 0.26.0 (AppliHawk, 2026-10-21). --prompt only says so; the new session it asks for
+# runs the sync and doctor. It once ran them itself, keyed on the per-project daily
+# flag, and the batch review (2026-10-24) found what that flag cannot tell apart: an
+# older session left open past midnight re-synced the hooks back to its own version
+# and called itself updated, a reloaded session missed the notice whenever another
+# had run the new version first, and a prompt from a subdirectory or worktree ran
+# everything again. Keyed on the session, none of the three can happen. Only
+# characters a session id has: the id names a file. A session started before this was
+# recorded, or with no id on stdin, is never told. Only as the plugin, which hooks.json
+# says with --plugin: /reload-plugins swaps only the plugin's copy, and a session
+# running two copies (the plugin and a hand-wired one, or this repo's own wiring, which
+# follows the cwd into a release worktree's bumped plugin.json) recorded whichever ran
+# last and flipped the notice on every prompt (fix review, 2026-10-24: six notices in
+# three prompts). A flag, not CLAUDE_PLUGIN_ROOT in the environment: that the loader
+# exports it to a hook was never shown, and the notice would have failed silently;
+# hooks.json's ${CLAUDE_PLUGIN_ROOT} substitution is what every plugin hook runs on,
+# and wiring.test.sh checks the flag is there. Hand-wired, it is never told.
+# `read -t`, not `cat`: Claude Code closes stdin after the JSON, but a caller that
+# leaves it open (a test runner's socket did, 2026-10-24) would hold the hook until
+# its timeout, and a timed-out run's whole output is dropped — the day's doctor with it.
+SESSION_FILE=""; _in=""
+_as_plugin=""; _prompt=""
+for _a in "$@"; do
+  case "$_a" in --plugin) _as_plugin=1 ;; --prompt) _prompt=1 ;; esac
+done
+if [ -n "$_as_plugin" ] && [ -n "$PLUGIN_VERSION" ] && [ ! -t 0 ]; then
+  while IFS= read -r -t 2 _l; do _in="$_in$_l"; done; _in="$_in${_l-}"
+  _sid=$(printf '%s' "$_in" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9-]\{1,64\}\)".*/\1/p' | head -1)
+  [ -n "$_sid" ] && SESSION_FILE="$FLAG_DIR/.session-version-$_sid"
+fi
+# On a prompt, not on PreToolUse, which fires mid-turn. Not headless: `claude -p` does
+# not reload. Every other prompt costs the reads above and one of the record (about
+# 15 ms, measured 2026-10-24).
+if [ -n "$_prompt" ]; then
+  [ "${CLAUDE_CODE_SESSION_ATTENDED-}" = "0" ] && exit 0
+  [ -n "$SESSION_FILE" ] && [ -f "$SESSION_FILE" ] || exit 0
+  _was=$(head -1 "$SESSION_FILE" 2>/dev/null)
+  [ -n "$_was" ] && [ "$_was" != "$PLUGIN_VERSION" ] || exit 0
+  printf '%s\n' "$PLUGIN_VERSION" > "$SESSION_FILE" 2>/dev/null
+  # Said rather than injected a second time beside the first copy (owner, 2026-10-24).
+  MSG="🔄 flight-rules is now $PLUGIN_VERSION in this session (it was $_was). Its agent hooks are running; its rules are not — the ones injected when this session started are the old version's — and the git hook sync and doctor checks for $PLUGIN_VERSION run at session start. Start a new session to get both."
+  CTX="$MSG
+
+(Already on the user's screen with this prompt.)"
+  if command -v jq >/dev/null 2>&1; then
+    jq -n --arg u "$MSG" --arg c "$CTX" \
+      '{systemMessage: $u, hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -I -c 'import json, sys
+print(json.dumps({"systemMessage": sys.argv[1], "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": sys.argv[2]}}))' "$MSG" "$CTX" 2>/dev/null \
+      || printf '%s\n' "$MSG"
+  else
+    printf '%s\n' "$MSG"
+  fi
+  exit 0
+fi
+mkdir -p "$FLAG_DIR"
+# Attended only: the record exists for --prompt, which a headless session never runs.
+# Every SessionStart (startup, resume, clear, compact) rewrites it: each one injects
+# the running version's rules. Pruned at a week, so a session open longer is not told.
+if [ -n "$SESSION_FILE" ] && [ "${CLAUDE_CODE_SESSION_ATTENDED-}" != "0" ]; then
+  printf '%s\n' "$PLUGIN_VERSION" > "$SESSION_FILE" 2>/dev/null
+fi
+find "$FLAG_DIR" -maxdepth 1 -name '.worktree-check-*' -mtime +1 -delete 2>/dev/null
+find "$FLAG_DIR" -maxdepth 1 -name '.session-version-*' -mtime +7 -delete 2>/dev/null
 LAST_RUN_FILE="$FLAG_DIR/.worktree-check-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')-$(date +%Y%m%d)${PLUGIN_VERSION:+-$PLUGIN_VERSION}"
 
 if [ -f "$LAST_RUN_FILE" ]; then

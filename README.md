@@ -113,7 +113,8 @@ hooks folder, the install names the ones that stop running. Running them alongsi
 flight-rules' is [#111](https://github.com/mkb3nigma/flight-rules/issues/111).
 
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run
-only when one starts. If a git hook is behind the new release, that session's doctor
+only when one starts. After `/reload-plugins` instead, your next prompt says the session
+is on the new version and that a new session is what loads its rules and runs the checks. If a git hook is behind the new release, that session's doctor
 message prints the sync command with `--stale-only`: it replaces only copies identical
 to an older release, and leaves a hook you changed alone and names it. A project copy of
 `install.sh` that is behind, differs while carrying flight-rules' marker, or cannot be read

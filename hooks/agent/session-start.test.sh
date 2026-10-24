@@ -6,6 +6,9 @@
 set -uo pipefail
 H="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK="$H/session-start.sh"
+# The hook reads the session id from stdin (#94). A runner's stdin left open is a case
+# of its own, below; everywhere else the runs see what Claude Code gives — a closed one.
+exec </dev/null
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
@@ -428,7 +431,11 @@ say "$(sed -n '/^read_conf() {/,/^}/p' "$H/session-start.sh")" \
 # a branch in another case, the environment over the conf. The sync's own parse, grep
 # and case wrote on each while the guard refused the commit (fix review, F1/D7).
 # <description> % <conf line> % <branch> % <env>
+# Counted: a command in the loop that reads stdin eats the cases after it, and the
+# suite still says "passed" — the hook's stdin read did, 2026-10-24, three of four.
+NCASE=0
 while IFS='%' read -r desc line br envv; do
+  NCASE=$((NCASE+1))
   D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n%s\n' "$line" >> "$D/.ai/flight-rules.conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
   [ "$br" = trunk ] || git -C "$D" checkout -qb "$br"
@@ -446,6 +453,7 @@ a double-quoted pattern with a comment%PROTECTED_BRANCHES="^trunk$"   # the trun
 a branch in another case than the pattern%PROTECTED_BRANCHES=^(main|qa)$%QA%
 the environment over the conf%PROTECTED_BRANCHES=^main$%trunk%FLIGHT_RULES_PROTECTED_BRANCHES=^trunk$
 CASES
+say "$NCASE" "4" "…all four protected-branch cases ran"
 # A pattern bash cannot compile protects nothing to =~; the sync takes the branch as
 # protected and says the pattern is broken, rather than writing (fix review, F5).
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(trunk\n' >> "$D/.ai/flight-rules.conf"
@@ -767,6 +775,139 @@ OUT=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "the merged worktree beside it is reported"
 say "$(grep -c 'detached' <<<"$OUT")" "0" "a detached worktree is not reported stale"
 rm -rf "$D"
+
+echo "After /reload-plugins, the next prompt says the session's version changed (#94):"
+# No hook event fires on a reload, and SessionStart does not fire again, so a project
+# kept three stale hooks under 0.26.0 and nothing said a new session was needed
+# (AppliHawk, 2026-10-21). SessionStart records the version under the session id on
+# stdin; UserPromptSubmit runs the hook with --prompt, which compares and does nothing
+# else (batch review, 2026-10-24: a prompt that ran the sync downgraded hooks from an
+# older session, and re-ran everything from a subdirectory).
+T=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify
+SF="$D/fakehome/.claude/hooks/.session-version-"
+# SS <session id> [dir] [plugin] [flag, default --plugin; "" for a hand-wired run]:
+# SessionStart; UP: the same as a prompt. rc on the last line.
+SS() { (cd "${2:-$D}" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "${3:-$T}/hooks/agent/session-start.sh" ${4---plugin} 2>&1 <<<"{\"session_id\":\"$1\",\"hook_event_name\":\"SessionStart\"}"); echo "rc=$?"; }
+UP() { (cd "${2:-$D}" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "${3:-$T}/hooks/agent/session-start.sh" --prompt ${4---plugin} 2>&1 <<<"{\"session_id\":\"$1\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hi\"}"); echo "rc=$?"; }
+body() { grep -v '^rc=' <<<"$1" | grep -c .; }
+rc() { tail -1 <<<"$1"; }
+J=$(SS s-a)
+say "$(rc "$J")" "rc=0" "SessionStart with a session id exits 0"
+say "$(cat "${SF}s-a" 2>/dev/null)" "1.0.0" "…and records the version it started on"
+J=$(UP s-a)
+say "$(rc "$J")" "rc=0" "a prompt in that session, same version: exits 0"
+say "$(body "$J")" "0" "…saying nothing"
+say "$(cat "${SF}s-a" 2>/dev/null)" "1.0.0" "…and leaving the record as it was"
+# The update and reload: this session's hooks are now 1.0.1's; a git hook is behind.
+printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"; stale "$D" commit-msg
+cp "$D/.ai/hooks/commit-msg" "$D/before-commit-msg"
+J=$(UP s-a)
+say "$(rc "$J")" "rc=0" "the first prompt after the reload exits 0"
+say "$(grep -v '^rc=' <<<"$J" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit" "…answering as UserPromptSubmit"
+say "$(usr <<<"$J" | grep -c 'flight-rules is now 1.0.1 in this session (it was 1.0.0)')" "1" "…says on screen the plugin changed under the session"
+say "$(usr <<<"$J" | grep -c 'Start a new session to get both')" "1" "…and that a new session loads the rules and runs the checks"
+say "$(ctx <<<"$J" | grep -c 'its rules are not')" "1" "…telling the assistant too"
+say "$(ctx <<<"$J" | grep -c "Already on the user's screen with this prompt")" "1" "…which is told the user saw it"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/before-commit-msg" && echo same)" "same" "…and syncs nothing: the stale hook waits for the new session"
+say "$(usr <<<"$J" | grep -c 'merge.ff\|synced')" "0" "…nor runs doctor or the sync"
+say "$(cat "${SF}s-a" 2>/dev/null)" "1.0.1" "…and records the new version"
+J=$(UP s-a)
+say "$(rc "$J")" "rc=0" "the prompt after that exits 0"
+say "$(body "$J")" "0" "…saying nothing: it was said once"
+# Another session that already ran the new version must not hide the notice from this
+# one (the per-project flag did).
+printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"; SS s-b >/dev/null
+printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"; SS s-c >/dev/null
+J=$(UP s-b)
+say "$(usr <<<"$J" | grep -c 'now 1.0.1 in this session (it was 1.0.0)')" "1" "a reloaded session is told even when another ran the new version first"
+rm -rf "$D" "$T"
+# An older session left open, on the older plugin, after a newer one synced the hooks:
+# its prompts, on any day, change nothing and say nothing (it used to sync back down).
+T0=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T0/.claude-plugin/plugin.json"
+T1=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T1/.claude-plugin/plugin.json"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify
+SF="$D/fakehome/.claude/hooks/.session-version-"
+SS old "$D" "$T0" >/dev/null; SS new "$D" "$T1" >/dev/null
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*   # the next day: no daily flag
+before=$(git -C "$D" status --porcelain; find "$D/.ai/hooks" -type f -exec cksum {} + | sort)
+J=$(UP old "$D" "$T0")
+say "$(rc "$J")" "rc=0" "an older session's prompt the next day exits 0"
+say "$(body "$J")" "0" "…saying nothing: its own version has not changed"
+say "$( [ "$(git -C "$D" status --porcelain; find "$D/.ai/hooks" -type f -exec cksum {} + | sort)" = "$before" ] && echo same)" "same" "…and writing nothing in the project"
+say "$(ls -a "$D"/fakehome/.claude/hooks/ | grep -c '^\.worktree-check-')" "0" "…nor running the day's checks"
+# From a subdirectory or a worktree: the session is the same, and so is the answer.
+mkdir -p "$D/sub"; git -C "$D" worktree add -q "$D/.ai/worktrees/w" -b feat/w 2>/dev/null
+J=$(UP new "$D/sub" "$T1")
+say "$(rc "$J")" "rc=0" "a prompt from a subdirectory exits 0"
+say "$(body "$J")" "0" "…saying nothing, running nothing"
+J=$(UP new "$D/.ai/worktrees/w" "$T1")
+say "$(rc "$J")" "rc=0" "a prompt from a worktree exits 0"
+say "$(body "$J")" "0" "…saying nothing, running nothing"
+say "$(ls -a "$D"/fakehome/.claude/hooks/ | grep -c '^\.worktree-check-')" "0" "…neither one spending a day's flag"
+# A session with no record (it started before versions were recorded): never told.
+J=$(UP never-started "$D" "$T1")
+say "$(rc "$J")" "rc=0" "a session with no record: exits 0"
+say "$(body "$J")" "0" "…saying nothing"
+say "$(ls -a "$D"/fakehome/.claude/hooks/ | grep -c '^\.session-version-never-started')" "0" "…and recording nothing"
+# An id with characters a session id does not have names no file.
+J=$(SS 'a*b c' "$D" "$T1")
+say "$(rc "$J")" "rc=0" "a session id with * and a space: SessionStart exits 0"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c 'session-version-a')" "0" "…and no file is made from it"
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "0" "…the day's run having been spent above"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+# stdin left open with nothing on it: the read gives up, and the run goes on (a test
+# runner's socket held it until killed, 2026-10-24; Claude Code's timeout drops the output).
+t0=$(date +%s)
+J=$( { sleep 20 & echo $! > "$D/sleeper"; } | (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+kill "$(cat "$D/sleeper")" 2>/dev/null; t1=$(date +%s)
+say "$(rc "$J")" "rc=0" "stdin left open: SessionStart exits 0"
+say "$([ $((t1 - t0)) -lt 10 ] && echo bounded)" "bounded" "…within seconds, not when stdin closes (took $((t1 - t0))s)"
+rm -rf "$D" "$T0"
+# Headless: no record at SessionStart, and a prompt is skipped outright.
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --plugin 2>&1 <<<'{"session_id":"h1"}'); echo "rc=$?")
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "headless SessionStart still runs"
+say "$(ls -a "$D/fakehome/.claude/hooks" 2>/dev/null | grep -c 'session-version')" "0" "…recording no session version"
+# Even with a record from another version (a session id seen attended before).
+printf '0.0.1\n' > "$D/fakehome/.claude/hooks/.session-version-h1"
+J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --prompt --plugin 2>&1 <<<'{"session_id":"h1"}'); echo "rc=$?")
+say "$(rc "$J")" "rc=0" "headless, a prompt: exits 0"
+say "$(body "$J")" "0" "…saying nothing, though the record is another version's"
+say "$(cat "$D/fakehome/.claude/hooks/.session-version-h1")" "0.0.1" "…and leaving the record alone"
+rm -rf "$D" "$T1"
+# Two copies in one session — the plugin and a hand-wired copy that has a plugin.json
+# (a vendored tree, or this repo's own wiring in a release worktree): only the plugin's
+# records, so prompts through both never flip the notice (fix review: six in three).
+T2=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T2/.claude-plugin/plugin.json"
+V=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$V/.claude-plugin/plugin.json"
+D=$(mkrepo); SF="$D/fakehome/.claude/hooks/.session-version-"
+SS two "$D" "$T2" >/dev/null; SS two "$D" "$V" "" >/dev/null
+say "$(cat "${SF}two" 2>/dev/null)" "1.0.0" "two copies: SessionStart records the plugin's version only"
+n=0; for c in "$T2" "$V" "$T2" "$V"; do
+  [ "$c" = "$V" ] && J=$(UP two "$D" "$V" "") || J=$(UP two "$D" "$c")
+  [ "$(rc "$J")" = rc=0 ] || n=$((n+100)); n=$((n + $(usr <<<"$J" | grep -c 'flight-rules is now')))
+done
+say "$n" "0" "…and four prompts through both copies: exit 0, no notice"
+# The environment does not make a copy the plugin: only the flag hooks.json passes.
+(cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED CLAUDE_PLUGIN_ROOT="$V" HOME="$D/fakehome" bash "$V/hooks/agent/session-start.sh" <<<'{"session_id":"envonly"}' >/dev/null 2>&1)
+say "$?" "0" "CLAUDE_PLUGIN_ROOT set, no --plugin: SessionStart exits 0"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c 'session-version-envonly')" "0" "CLAUDE_PLUGIN_ROOT set, no --plugin: nothing recorded"
+rm -rf "$D" "$T2" "$V"
+# Hand-wired, with no plugin.json beside the hook: no version, so no record and no
+# notice — the hook copied where ../../.claude-plugin does not exist.
+L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/x/hooks/agent"; cp "$HOOK" "$L/x/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/x/hooks/"
+[ ! -e "$L/x/.claude-plugin" ] || die "hand-wired copy has a plugin.json"
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+J=$(SS hw "$D" "$L/x")
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "hand-wired, SessionStart runs doctor"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c 'session-version')" "0" "…and records no version, having none"
+J=$(UP hw "$D" "$L/x")
+say "$(rc "$J")" "rc=0" "hand-wired, a prompt: exits 0"
+say "$(body "$J")" "0" "…saying nothing"
+rm -rf "$D" "$L"
 
 echo
 echo "$PASS passed, $FAIL failed"

@@ -437,7 +437,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project (a headless session spends no
   flag, so it runs until an attended one has that day), and again after a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
-  so they get cleaned up. Doctor's ❌ problems, the command that fixes them, and a hook sync
+  so they get cleaned up. The plugin wires it to UserPromptSubmit too, as `--prompt
+  --plugin`: no event fires on `/reload-plugins`, so the first prompt after a reload that
+  changed this session's plugin version says so, and that a new session loads the rules
+  and runs these checks (#94). It compares the version recorded for the session id at
+  session start, and runs nothing else; a headless session skips it. Hand-wired there is
+  no plugin to reload, so the snippet above does not wire it, and without `--plugin` a
+  copy records nothing. Doctor's ❌ problems, the command that fixes them, and a hook sync
   are printed as `systemMessage`, so they appear on the user's screen — in a project
   that uses flight-rules (`.ai/flight-rules.conf` at the root, or flight-rules' hooks
   installed). A repo with no `core.hooksPath` is shown the install hint
@@ -459,7 +465,8 @@ Guards that fire on the assistant's own events, before git ever runs:
   keeps the text it was given — reported 2026-09-15 by a session that had just read the
   new version's SKILL.md from disk and was still following the previous version's
   principles. Nothing in this repo can re-inject into a live session; **a new session is
-  what picks up a rules change.** So the header names the plugin version, which turns
+  what picks up a rules change.** `session-start.sh --prompt` says so on the first prompt
+  after a reload changes the session's version. And the header names the plugin version, which turns
   invisible staleness into something a reader can check against the plugin directory.
   Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
   install shape, because reading the version must never cost the rules.
