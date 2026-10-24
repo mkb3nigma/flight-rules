@@ -21,12 +21,13 @@ INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # project parameter: {INTEGRAT
 # {PROTECTED_BRANCHES}: which branches must never be offered for deletion. This used
 # to be the literal list `main|staging`, which meant a project calling its branches
 # anything else — trunk, qa, release-2 — had them listed as "safe to delete" in the
-# note the next session is told to act on, with no layer objecting. The names a
+# note offered as commands to run, with no layer objecting. The names a
 # project uses are its own; the conf is where they are declared.
 PROTECTED_RE=$(_conf PROTECTED_BRANCHES)
 PROTECTED_RE="${PROTECTED_RE:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
 [ "$PROTECTED_RE" = "off" ] && PROTECTED_RE='^$'
-NOTE_PATH='.claude/post-merge-note.md'  # where the next-session note is written
+NOTE_PATH='.claude/post-merge-note.md'  # where the note is written (and printed; no
+                                        # hook reads the file yet: #110)
 CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
                                            # files for this project (keeps memory/).
                                            # Read the block below before enabling.
@@ -195,7 +196,6 @@ load_containers() {
 running_from() {
   local d="$1" p
   d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
-  [[ -n "$RUN_ERR" ]] && echo "    ⚠ $RUN_ERR"
   printf '%s\n--\n%s\n' "$CWDS" "$PROCS" | D="$d" P="$p" SELF="$$" NOPS="${PROCS:+0}" awk '
     function under(s) { return s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1 }
     function at(s, x,   i, j, c) {
@@ -219,7 +219,6 @@ running_from() {
 containers_from() {
   local d="$1" p
   d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
-  [[ -n "$DOCKER_ERR" ]] && echo "    ⚠ $DOCKER_ERR"
   [[ -n "$CONTAINERS" ]] || return 0
   printf '%s\n' "$CONTAINERS" | D="$d" P="$p" awk -F '\t' '
     function under(s) { return s != "" && (s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1) }
@@ -266,19 +265,25 @@ mkdir -p "$(dirname "$NOTE_FILE")"
 
   if [[ ${#STALE_WORKTREES[@]} -gt 0 ]]; then
     echo "### ⚠ Worktrees still present (remove after confirming work is merged):"
+    # A tool that failed is said once, here: it failed for every worktree alike, and
+    # under each one it repeated (Docker Desktop not running: one line per worktree —
+    # fix review, 2026-10-24, D4). It is never read as nothing running.
+    [[ -n "$RUN_ERR" ]] && echo "  ⚠ $RUN_ERR"
+    [[ -n "$DOCKER_ERR" ]] && echo "  ⚠ $DOCKER_ERR"
     for wt in "${STALE_WORKTREES[@]}"; do
       rel="${wt#$REPO_ROOT/}"
       wt_branch=$(git -C "$wt" branch --show-current 2>/dev/null || echo "?")
       echo "  Branch: $wt_branch  →  $rel"
-      # A tool that failed is its own line, apart from what was found.
       _run=$(running_from "$wt"; containers_from "$wt")
-      printf '%s\n' "$_run" | grep '^    ⚠' || true
-      _run=$(printf '%s\n' "$_run" | grep -v -e '^    ⚠' -e '^$' || true)
+      _run=$(printf '%s\n' "$_run" | grep -v '^$' || true)
       if [[ -n "$_run" ]]; then
         echo "  Still running from it, or left by it — stop or remove what a check started there before removing the worktree (\`docker compose down\` from its directory, \`docker rm <id>\`); ask before stopping anything you did not start:"
         echo "$_run"
       fi
-      echo "  git worktree remove '$rel'"
+      # %q, not '…': the line is printed to be pasted, and a path — or a branch name
+      # below, which git allows to hold ' ; $ { } — closed '…' and ran what followed:
+      # `x';touch${IFS}PWNED;'` is a valid branch (fix review, 2026-10-24, Q2).
+      printf '  git worktree remove %q\n' "$rel"
     done
   else
     echo "### Worktrees: none stale ✓"
@@ -291,12 +296,12 @@ mkdir -p "$(dirname "$NOTE_FILE")"
     # Merged straight from origin/<x> with no local <x>, there is nothing to delete.
     if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]] \
        && git show-ref --verify -q "refs/heads/$JUST_MERGED"; then
-      echo "  git branch -d '$JUST_MERGED'  ← just merged$(refused_until "$JUST_MERGED")"
+      printf '  git branch -d %q  ← just merged%s\n' "$JUST_MERGED" "$(refused_until "$JUST_MERGED")"
     fi
     if [[ -n "$PREVIOUSLY_MERGED" ]]; then
       echo "  (previously merged, not yet deleted:)"
       while IFS= read -r branch; do
-        [[ -n "$branch" ]] && echo "  git branch -d '$branch'$(refused_until "$branch")"
+        [[ -n "$branch" ]] && printf '  git branch -d %q%s\n' "$branch" "$(refused_until "$branch")"
       done <<< "$PREVIOUSLY_MERGED"
     fi
   else

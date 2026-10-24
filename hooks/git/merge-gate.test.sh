@@ -276,13 +276,13 @@ for b in qa release-2 feature/real; do
 done
 NOTE="$PM/.claude/post-merge-note.md"
 for prot in qa release-2 trunk; do
-  if grep -q "git branch -d '$prot'" "$NOTE" 2>/dev/null; then
+  if grep -qE "git branch -d '?$prot'?( |$)" "$NOTE" 2>/dev/null; then
     FAIL=$((FAIL+1)); printf '  ❌ offered protected branch "%s" for deletion\n' "$prot"
   else
     PASS=$((PASS+1)); printf '  ✅ protected branch "%s" is not offered for deletion\n' "$prot"
   fi
 done
-if grep -q "git branch -d 'feature/real'" "$NOTE" 2>/dev/null; then
+if grep -qE "git branch -d feature/real( |$)" "$NOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a real feature branch is still offered\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ the note no longer offers merged feature branches\n'
@@ -333,7 +333,7 @@ if grep -qE "^  git branch -d '?[*+]" "$WNOTE" 2>/dev/null; then
 else
   PASS=$((PASS+1)); printf '  ✅ no `*`/`+` marker reaches a git branch -d line\n'
 fi
-if grep -q "git branch -d 'fix/c'" "$WNOTE" 2>/dev/null; then
+if grep -qE "git branch -d fix/c( |$)" "$WNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a worktree-held merged branch is offered by its bare name\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/c is not offered under its bare name\n'
@@ -343,7 +343,7 @@ if grep -q 'wt-det' "$WNOTE" 2>/dev/null; then
 else
   PASS=$((PASS+1)); printf '  ✅ a detached-HEAD worktree is not reported stale\n'
 fi
-if grep -q "git branch -d 'fix/ab'" "$WNOTE" 2>/dev/null; then
+if grep -qE "git branch -d fix/ab( |$)" "$WNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ fix/ab survives the just-merged filter alongside fix/a\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/ab was dropped as a substring of the just-merged fix/a\n'
@@ -386,7 +386,7 @@ if grep -qE "git branch -d '?(heads/)?trunk" "$ANOTE" 2>/dev/null; then
 else
   PASS=$((PASS+1)); printf '  ✅ the integration branch is not offered even when a tag shadows it\n'
 fi
-if grep -q "git branch -d 'fix/old'" "$ANOTE" 2>/dev/null; then
+if grep -qE "git branch -d fix/old( |$)" "$ANOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ the real merged branch is still offered\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/old was not offered — the merged set was computed against the tag\n'
@@ -411,12 +411,46 @@ cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$QR/.a
 chmod +x "$QR"/.ai/hooks/*; git -C "$QR" config core.hooksPath "$QR/.ai/hooks"
 git -C "$QR" merge --no-verify --no-edit 'fix/a&b' >/dev/null 2>&1
 QNOTE="$QR/.claude/post-merge-note.md"
-if grep -q "git branch -d 'fix/a&b'" "$QNOTE" 2>/dev/null; then
+if grep -qF 'git branch -d fix/a\&b' "$QNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a name with shell metacharacters is quoted\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/a&b is emitted unquoted: %s\n' "$(grep -m1 'branch -d' "$QNOTE")"
 fi
 rm -rf "$QB"
+# '…' is not quoting when the name holds a quote: git allows ' ; $ { } in a branch,
+# so `x';touch${IFS}PWNED;'` closed it and the pasted line ran touch (fix review,
+# 2026-10-24, Q2). A worktree path may hold one too. Each printed command must parse,
+# run nothing but git, and hand git the name exactly.
+HB=$(cd "$(mktemp -d)" && pwd -P); HR="$HB/repo"; SB="$HB/sandbox"; mkdir -p "$SB"
+EVIL="x';touch\${IFS}PWNED;'"
+git check-ref-format --branch "$EVIL" >/dev/null 2>&1 || die "git no longer allows the hostile branch name"
+git init -q -b trunk "$HR" || die "git init failed in $HR"
+git -C "$HR" config user.email t@t.t; git -C "$HR" config user.name t; git -C "$HR" config merge.ff false
+mkdir -p "$HR/.ai/hooks"
+printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.ai/worktrees\n' > "$HR/.ai/flight-rules.conf"
+echo base > "$HR/f.txt"; git -C "$HR" add -A; git -C "$HR" commit -qm "chore: base"
+git -C "$HR" branch "$EVIL" || die "could not make the hostile branch"
+QWT="$HR/.ai/worktrees/it's"
+git -C "$HR" worktree add -q -b fix/q "$QWT" trunk 2>/dev/null || die "could not add a worktree whose path holds a quote"
+echo q > "$QWT/q.txt"; git -C "$QWT" add q.txt; git -C "$QWT" commit -qm "chore: q" --no-verify >/dev/null
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$HR/.ai/hooks/"
+chmod +x "$HR"/.ai/hooks/*; git -C "$HR" config core.hooksPath .ai/hooks
+OUT=$(cd "$HR" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
+say "$RC" "0" "a merge with a hostile branch name and a quoted worktree path lands"
+CMDS=$(printf '%s\n' "$OUT" | sed -n -E 's/^  (git (branch -d|worktree remove) .*)$/\1/p' | sed -E 's/  ← just merged.*$//; s/  \(refused until.*$//')
+say "$(grep -c . <<<"$CMDS")" "3" "…printing three commands: the worktree, the merged branch, the hostile one"
+_bad=0; _got=""
+while IFS= read -r c; do
+  bash -n -c "$c" 2>/dev/null || _bad=$((_bad+1))
+  # git a function that prints its last argument; nothing else may run.
+  _got="$_got$( (cd "$SB" && bash -c 'git() { for a; do :; done; printf "%s\n" "$a"; }; eval "$1"' _ "$c") 2>/dev/null)
+"
+done <<<"$CMDS"
+say "$_bad" "0" "…each parses as one command"
+say "$([ -e "$SB/PWNED" ] || [ -e "$HR/PWNED" ] && echo ran || echo clean)" "clean" "…and pasting them runs nothing but git"
+say "$(grep -cxF "$EVIL" <<<"$_got")" "1" "…git is handed the hostile branch name exactly"
+say "$(grep -cxF ".ai/worktrees/it's" <<<"$_got")" "1" "…and the worktree path exactly"
+rm -rf "$HB"
 
 echo "The note gate covers protected branches this project actually has:"
 # With no NOTE_GATED_BRANCHES the gated set is "protected but not PR-only", so a
@@ -580,7 +614,7 @@ say "$?" "0" "merging origin/feature/x into dev lands"
 say "$?" "0" "…with the remote-tracking subject (the fixture is the real shape)"
 grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…and the note names feature/x, not unknown"
-grep -q "git branch -d 'feature/x'  ← just merged" "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -q "git branch -d feature/x  ← just merged" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…and offers the local branch for deletion as just merged"
 grep -q "refused until" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "1" "…with no push warning: feature/x has no upstream, so -d works now"
@@ -596,9 +630,9 @@ git -C "$D" branch -q fix/old dev || die "could not make fix/old"   # so the lis
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/dev/null 2>&1
 grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "with no local feature/x, the note still names it"
-grep -q "git branch -d 'feature/x'" "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qE "git branch -d feature/x( |$)" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "1" "…but does not offer a branch that is not there for deletion"
-grep -q "git branch -d 'fix/old'" "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qE "git branch -d fix/old( |$)" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…while a merged one that is there is still offered"
 rm -rf "$D" "$O"
 
@@ -617,9 +651,9 @@ FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null
 say "$?" "0" "merging feature/x (tracking origin/dev) into dev lands"
 git -C "$D" branch -d feature/x >/dev/null 2>&1
 say "$?" "1" "…and git branch -d refuses it before dev is pushed (the case is real)"
-grep -qF "git branch -d 'feature/x'  ← just merged  (refused until origin/dev has it — push that first)" "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qF "git branch -d feature/x  ← just merged  (refused until origin/dev has it — push that first)" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…and the note says origin/dev must have it first"
-grep -q "git branch -d 'plain'$" "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -q "git branch -d plain$" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…but not for a branch its upstream already has"
 git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev in the fixture"
 git -C "$D" branch -d feature/x >/dev/null 2>&1
@@ -645,11 +679,11 @@ FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null
 git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev"
 (cd "$D" && .ai/hooks/post-merge 0) >/dev/null 2>&1 || die "post-merge failed when run directly"
 NOTE="$D/.claude/post-merge-note.md"
-grep -qE "^  git branch -d 'feature/x'  ← just merged$" "$NOTE" 2>/dev/null
+grep -qE "^  git branch -d feature/x  ← just merged$" "$NOTE" 2>/dev/null
 say "$?" "0" "an upstream gone from the remote: no annotation"
-grep -qE "^  git branch -d 'tagged'$" "$NOTE" 2>/dev/null
+grep -qE "^  git branch -d tagged$" "$NOTE" 2>/dev/null
 say "$?" "0" "a tag named origin/dev beside the branch: no annotation"
-grep -qE "^  git branch -d 'local-up'  \(refused until main contains it\)$" "$NOTE" 2>/dev/null
+grep -qE "^  git branch -d local-up  \(refused until main contains it\)$" "$NOTE" 2>/dev/null
 say "$?" "0" "a local upstream that lacks it: 'contains', not 'push'"
 for b in feature/x tagged; do git -C "$D" branch -d "$b" >/dev/null 2>&1 || echo "$b"; done > "$D/undeleted"
 say "$(cat "$D/undeleted")" "" "…and -d really deletes the unannotated ones"
@@ -962,8 +996,8 @@ done
 git -C "$PM" checkout -q trunk
 mkdir -p "$PM/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PM/.ai/hooks/"; chmod +x "$PM"/.ai/hooks/*; git -C "$PM" config core.hooksPath "$PM/.ai/hooks"
 for b in qa feature/real; do git -C "$PM" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
-say "$(grep -c "git branch -d 'qa'" "$PM/.claude/post-merge-note.md" 2>/dev/null)" "0" "post-merge with PROTECTED_BRANCHES=^(TRUNK|QA)\$: qa is not offered for deletion"
-say "$(grep -c "git branch -d 'feature/real'" "$PM/.claude/post-merge-note.md" 2>/dev/null)" "1" "…while a merged feature branch is"
+say "$(grep -cE "git branch -d '?qa'?( |$)" "$PM/.claude/post-merge-note.md" 2>/dev/null)" "0" "post-merge with PROTECTED_BRANCHES=^(TRUNK|QA)\$: qa is not offered for deletion"
+say "$(grep -cE "git branch -d feature/real( |$)" "$PM/.claude/post-merge-note.md" 2>/dev/null)" "1" "…while a merged feature branch is"
 rm -rf "$PM"
 
 echo "A trailing comment in the conf does not turn a gate off (#103 review):"
@@ -1017,6 +1051,8 @@ OUT=$(PATH="$PB/nod:$PATH" git -C "$PR" merge --no-verify --no-edit fix/last 2>&
 PNOTE="$PR/.claude/post-merge-note.md"
 # section <branch>: the note's lines for that worktree, Branch: line to its remove line.
 section() { awk -v b="Branch: $1 " 'index($0, b) {p=1} p; p && /git worktree remove/ {exit}' "$PNOTE"; }
+# top: the worktree section's head, above the first worktree — where a tool failure goes.
+top() { awk '/^### ⚠ Worktrees still present/ {p=1; next} p && /^  Branch: / {exit} p' "$PNOTE"; }
 say "$RC" "0" "the merge lands"
 say "$(grep -c 'Branch: fix/srv ' "$PNOTE" 2>/dev/null)" "1" "…and the note lists wt-srv for removal"
 say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "a process working in the worktree is named under it"
@@ -1076,20 +1112,20 @@ if [ -r /proc/self/cmdline ]; then
   say "$(section fix/srv | grep -c "pid $S1, up ?: sleep 3001")" "1" "…and the processes come from /proc instead"
   say "$(grep -c 'could not list processes' "$PNOTE")" "0" "…with nothing to report about ps"
 else
-  say "$(section fix/srv | grep -c 'could not list processes (ps exited 127)')" "1" "…and the note says so, not 'nothing running'"
+  say "$(top | grep -c 'could not list processes (ps exited 127)')" "1" "…and the note says so, not 'nothing running'"
   say "$(section fix/srv | grep -c "pid $S1 (command not known: ps failed)")" "1" "…still naming what works in the worktree, from lsof"
 fi
 
 shims "$PB/c" log fail; OUT=$(rerun "$PB/c"); RC=$?
 say "$RC" "0" "with docker failing: the hook still exits 0"
-say "$(section fix/srv | grep -c 'could not list containers (docker exited 1: Cannot connect to the Docker daemon')" "1" "…and the note says so, not 'no containers'"
+say "$(top | grep -c 'could not list containers (docker exited 1: Cannot connect to the Docker daemon')" "1" "…and the note says so, not 'no containers'"
 say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "…with the processes still listed"
-say "$(section fix/quiet | grep -c 'could not list containers')" "1" "…under a worktree with nothing running too"
+say "$(grep -c 'could not list containers' "$PNOTE")" "1" "…once, above the worktrees, not under each of them"
 say "$(section fix/quiet | grep -c 'Still running')" "0" "…where it is not mistaken for something still running"
 
 shims "$PB/d" log hang; T0=$SECONDS; OUT=$(rerun "$PB/d"); RC=$?; T1=$SECONDS
 say "$RC" "0" "with docker hanging: the hook still exits 0"
-say "$(section fix/srv | grep -c 'could not list containers (docker ps gave no answer in 3s)')" "1" "…and says it was cut short"
+say "$(top | grep -c 'could not list containers (docker ps gave no answer in 3s)')" "1" "…and says it was cut short"
 say "$([ $((T1 - T0)) -lt 8 ] && echo bounded)" "bounded" "…within seconds, not the 10 the stand-in sleeps"
 
 # No docker on PATH at all: a PATH of links to the tools the hook needs, docker left out.
@@ -1126,9 +1162,9 @@ say "$([ -f "$PQ/s/ps.log" ] && echo ran || echo not-run)" "not-run" "…and rea
 for i in $(seq 1 50); do git -C "$QQ" branch "old/b$i" trunk; done
 OUT=$(cd "$QQ" && .ai/hooks/post-merge 0 2>&1); RC=$?
 say "$RC" "0" "fifty merged branches: the hook exits 0"
-say "$(grep -c "git branch -d 'old/b" "$QQ/.claude/post-merge-note.md")" "50" "…the note file has every one"
+say "$(grep -c "git branch -d old/b" "$QQ/.claude/post-merge-note.md")" "50" "…the note file has every one"
 say "$(grep -c "more lines in .claude/post-merge-note.md" <<<"$OUT")" "1" "…the printed copy stops at 40 lines and says where the rest is"
-say "$([ "$(grep -c "git branch -d 'old/b" <<<"$OUT")" -lt 50 ] && echo cut)" "cut" "…having printed fewer than all fifty"
+say "$([ "$(grep -c "git branch -d old/b" <<<"$OUT")" -lt 50 ] && echo cut)" "cut" "…having printed fewer than all fifty"
 rm -rf "$PQ"
 
 echo
