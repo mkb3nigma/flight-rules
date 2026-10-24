@@ -1,7 +1,8 @@
 #!/bin/bash
 # Agent hook: Worktree Cleanup Reminder
 # Wire as a Claude Code SessionStart hook, and as a UserPromptSubmit one with --prompt
-# (see hooks/README.md). Runs at most once per day and plugin version (flag file).
+# (see hooks/README.md). Runs the stale-worktree check at most once per day (flag file);
+# --prompt only says when this session's plugin version has changed.
 #
 # Output is one JSON object (plain text only when neither jq nor python3 can build it,
 # see the end). What the PERSON must act on — doctor's ❌ problems, a hook
@@ -57,44 +58,70 @@ FLAG_DIR="$HOME/.claude/hooks"
 # version, and the flag is per day only.
 PLUGIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
   "$(dirname "${BASH_SOURCE[0]}")/../../.claude-plugin/plugin.json" 2>/dev/null | head -1)
-FLAG_KEY="$FLAG_DIR/.worktree-check-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')-"
-LAST_RUN_FILE="$FLAG_KEY$(date +%Y%m%d)${PLUGIN_VERSION:+-$PLUGIN_VERSION}"
 
-# --prompt, from UserPromptSubmit: the same run, on the first prompt that finds no flag
-# for this day and version (#94). /plugin update then /reload-plugins loads the new
-# version's hooks, but no hook event fires on a reload and SessionStart does not fire
-# again, so the sync and doctor waited for a new session with nothing saying one was
-# needed: three hooks stayed stale under 0.26.0 (AppliHawk, 2026-10-21). On a prompt,
-# not on PreToolUse, which fires mid-turn and could land a sync inside the assistant's
-# own commit or merge. Every later prompt costs the sed above and the stat below. Not
-# headless: the flag is left untouched there (below), so every prompt would run it,
-# and SessionStart already covers a `claude -p` session, which does not reload.
-EVENT=SessionStart
-if [ "${1-}" = --prompt ]; then
-  EVENT=UserPromptSubmit
-  [ "${CLAUDE_CODE_SESSION_ATTENDED-}" = "0" ] && exit 0
+# The version this session started on, recorded at SessionStart under the session id
+# Claude Code passes on stdin, and compared by --prompt (#94). /plugin update then
+# /reload-plugins loads the new version's hooks, but no hook event fires on a reload
+# and SessionStart does not fire again, so nothing said the session's rules, and the
+# project's git hooks, were still the old version's: three hooks stayed stale under
+# 0.26.0 (AppliHawk, 2026-10-21). --prompt only says so; the new session it asks for
+# runs the sync and doctor. It once ran them itself, keyed on the per-project daily
+# flag, and the batch review (2026-10-24) found what that flag cannot tell apart: an
+# older session left open past midnight re-synced the hooks back to its own version
+# and called itself updated, a reloaded session missed the notice whenever another
+# had run the new version first, and a prompt from a subdirectory or worktree ran
+# everything again. Keyed on the session, none of the three can happen. Only
+# characters a session id has: the id names a file. A session started before this was
+# recorded, hand-wired with no version, or with no id on stdin is never told.
+# `read -t`, not `cat`: Claude Code closes stdin after the JSON, but a caller that
+# leaves it open (a test runner's socket did, 2026-10-24) would hold the hook until
+# its timeout, and a timed-out run's whole output is dropped — the day's doctor with it.
+SESSION_FILE=""; _in=""
+if [ -n "$PLUGIN_VERSION" ] && [ ! -t 0 ]; then
+  while IFS= read -r -t 2 _l; do _in="$_in$_l"; done; _in="$_in${_l-}"
+  _sid=$(printf '%s' "$_in" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9-]\{1,64\}\)".*/\1/p' | head -1)
+  [ -n "$_sid" ] && SESSION_FILE="$FLAG_DIR/.session-version-$_sid"
 fi
+# On a prompt, not on PreToolUse, which fires mid-turn. Not headless: `claude -p` does
+# not reload. Every other prompt costs the reads above and one of the record (about
+# 15 ms, measured 2026-10-24).
+if [ "${1-}" = --prompt ]; then
+  [ "${CLAUDE_CODE_SESSION_ATTENDED-}" = "0" ] && exit 0
+  [ -n "$SESSION_FILE" ] && [ -f "$SESSION_FILE" ] || exit 0
+  _was=$(head -1 "$SESSION_FILE" 2>/dev/null)
+  [ -n "$_was" ] && [ "$_was" != "$PLUGIN_VERSION" ] || exit 0
+  printf '%s\n' "$PLUGIN_VERSION" > "$SESSION_FILE" 2>/dev/null
+  # Said rather than injected a second time beside the first copy (owner, 2026-10-24).
+  MSG="🔄 flight-rules is now $PLUGIN_VERSION in this session (it was $_was). Its agent hooks are running; its rules are not — the ones injected when this session started are the old version's — and the git hook sync and doctor checks for $PLUGIN_VERSION run at session start. Start a new session to get both."
+  CTX="$MSG
+
+(Already on the user's screen with this prompt.)"
+  if command -v jq >/dev/null 2>&1; then
+    jq -n --arg u "$MSG" --arg c "$CTX" \
+      '{systemMessage: $u, hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -I -c 'import json, sys
+print(json.dumps({"systemMessage": sys.argv[1], "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": sys.argv[2]}}))' "$MSG" "$CTX" 2>/dev/null \
+      || printf '%s\n' "$MSG"
+  else
+    printf '%s\n' "$MSG"
+  fi
+  exit 0
+fi
+mkdir -p "$FLAG_DIR"
+# Attended only: the record exists for --prompt, which a headless session never runs.
+# Every SessionStart (startup, resume, clear, compact) rewrites it: each one injects
+# the running version's rules. Pruned at a week, so a session open longer is not told.
+if [ -n "$SESSION_FILE" ] && [ "${CLAUDE_CODE_SESSION_ATTENDED-}" != "0" ]; then
+  printf '%s\n' "$PLUGIN_VERSION" > "$SESSION_FILE" 2>/dev/null
+fi
+find "$FLAG_DIR" -maxdepth 1 -name '.worktree-check-*' -mtime +1 -delete 2>/dev/null
+find "$FLAG_DIR" -maxdepth 1 -name '.session-version-*' -mtime +7 -delete 2>/dev/null
+LAST_RUN_FILE="$FLAG_DIR/.worktree-check-$(printf '%s' "$PROJECT_ROOT" | tr '/' '-')-$(date +%Y%m%d)${PLUGIN_VERSION:+-$PLUGIN_VERSION}"
 
 if [ -f "$LAST_RUN_FILE" ]; then
   exit 0
 fi
-mkdir -p "$FLAG_DIR"
-
-# A prompt that finds the newest flag for this project from another version is a
-# session whose plugin was updated under it. Its hooks are now the new version's, but
-# the rules injected at its start are the old one's, and only a new session loads them:
-# said, rather than injected a second time beside the first copy (owner, 2026-10-24).
-# The newest day's flags, not any day's: a session crossing midnight on one version
-# would find an older one from the day before (pruned below only past a day).
-RULES_MSG=""
-if [ "$EVENT" = UserPromptSubmit ] && [ -n "$PLUGIN_VERSION" ]; then
-  _last=$(ls -1 "$FLAG_KEY"[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-* 2>/dev/null | sort | tail -1)
-  _day=${_last#"$FLAG_KEY"}; _day=${_day%%-*}
-  if [ -n "$_last" ] && [ ! -f "$FLAG_KEY$_day-$PLUGIN_VERSION" ]; then
-    RULES_MSG="🔄 flight-rules is now $PLUGIN_VERSION in this session (it was ${_last##*"$_day"-}). Its hooks are running; its rules are not — the ones injected when this session started are the old version's. Start a new session to load them."
-  fi
-fi
-find "$FLAG_DIR" -maxdepth 1 -name '.worktree-check-*' -mtime +1 -delete 2>/dev/null
 
 # A headless session (`claude -p`, observed; other callers only if they set the variable
 # below) has no screen. Spending the flag on
@@ -293,9 +320,6 @@ if [ -n "$DOCTOR_SCREEN" ]; then
 fi
 FOR_USER="$SYNC_MSG${SYNC_MSG:+${DOCTOR_SCREEN:+
 }}$DOCTOR_SCREEN"
-FOR_USER="$RULES_MSG${RULES_MSG:+${FOR_USER:+
-
-}}$FOR_USER"
 
 WORKTREES_DIR="$PROJECT_ROOT/$WORKTREE_DIR"
 
@@ -340,9 +364,6 @@ fi
 
 FOR_ASSISTANT="$SYNC_MSG${SYNC_MSG:+${DOCTOR_MSG:+
 }}$DOCTOR_MSG"
-FOR_ASSISTANT="$RULES_MSG${RULES_MSG:+${FOR_ASSISTANT:+
-
-}}$FOR_ASSISTANT"
 [ -n "$FOR_ASSISTANT$REMINDER" ] || exit 0
 PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 
@@ -350,13 +371,12 @@ PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 # Said only on the JSON branches: with plain text the user saw nothing, and the
 # assistant is the relay (pre-review, 2026-10-13).
 SHOWN=""
-[ -n "$RULES_MSG" ] && SHOWN="the new version's notice"
-[ -n "$SYNC_MSG" ] && SHOWN="${SHOWN:+$SHOWN and }the hook-sync result"
+[ -n "$SYNC_MSG" ] && SHOWN="the hook-sync result"
 [ -n "$DOCTOR_SCREEN" ] && SHOWN="${SHOWN:+$SHOWN and }doctor's ❌ lines"
-NOTE=""; WHEN="at session start"; [ "$EVENT" = UserPromptSubmit ] && WHEN="with this prompt"
+NOTE=""
 [ -n "$SHOWN" ] && NOTE="
 
-(Already on the user's screen $WHEN: $SHOWN. Anything else above was not shown to them.)"
+(Already on the user's screen at session start: $SHOWN. Anything else above was not shown to them.)"
 CONTEXT="$FOR_ASSISTANT$NOTE${FOR_ASSISTANT:+${REMINDER:+
 
 }}$REMINDER"
@@ -368,15 +388,15 @@ CONTEXT="$FOR_ASSISTANT$NOTE${FOR_ASSISTANT:+${REMINDER:+
 # Command Line Tools exits non-zero with no output — falls back to plain text, not
 # to silence.
 if command -v jq >/dev/null 2>&1; then
-  jq -n --arg u "$FOR_USER" --arg c "$CONTEXT" --arg e "$EVENT" \
+  jq -n --arg u "$FOR_USER" --arg c "$CONTEXT" \
     '(if $u == "" then {} else {systemMessage: $u} end)
-     + {hookSpecificOutput: {hookEventName: $e, additionalContext: $c}}' \
+     + {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}' \
     && { [ -z "$HINT_FILE" ] || touch "$HINT_FILE" 2>/dev/null; true; }
 elif command -v python3 >/dev/null 2>&1; then
   python3 -I -c 'import json, sys
-out = {"hookSpecificOutput": {"hookEventName": sys.argv[3], "additionalContext": sys.argv[2]}}
+out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": sys.argv[2]}}
 if sys.argv[1]: out["systemMessage"] = sys.argv[1]
-print(json.dumps(out))' "$FOR_USER" "$CONTEXT" "$EVENT" 2>/dev/null \
+print(json.dumps(out))' "$FOR_USER" "$CONTEXT" 2>/dev/null \
     && { [ -z "$HINT_FILE" ] || touch "$HINT_FILE" 2>/dev/null; true; } || printf '%s\n' "$PLAIN"
 else
   printf '%s\n' "$PLAIN"
