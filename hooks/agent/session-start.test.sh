@@ -520,7 +520,17 @@ say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and
 say "$(grep -cxF "  $(printf 'bash %q --from %q --stale-only' "$T/hooks/git/install.sh" "$T/hooks/git")" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
-rm -rf "$D"
+# A plugin under a path with a multibyte character and a space (a home directory named
+# so): printf %q under macOS bash 3.2 split the ß and left a raw byte, so the pasted
+# command named a path that does not exist (fix review, 2026-10-24). shq quotes it whole.
+U=$(cd "$(mktemp -d)" && pwd -P)/"Stra ße"; mkdir -p "$U" && cp -R "$T/." "$U/" || die "could not lay out the ß plugin"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*   # the day's run was spent above
+OUT=$( { (cd "$D" && HOME="$D/fakehome" bash "$U/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
+CMD=$(grep -E '^  bash .*--stale-only$' <<<"$OUT" | head -1)
+say "$(grep -cE '^  bash .*--stale-only$' <<<"$OUT")" "1" "a plugin path with ß and a space: the sync command is printed"
+say "$(printf '%s' "$CMD" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 && echo valid)" "valid" "…as valid UTF-8"
+say "$(bash() { printf '%s|' "$@"; }; eval "$CMD")" "$U/hooks/git/install.sh|--from|$U/hooks/git|--stale-only|" "…and, pasted, hands bash the exact paths"
+rm -rf "$D" "$(dirname "$U")"
 # Mid-cherry-pick too, not only merge and rebase (release review, 2026-10-12).
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify

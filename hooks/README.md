@@ -450,8 +450,9 @@ Guards that fire on the assistant's own events, before git ever runs:
   keeps the text it was given — reported 2026-09-15 by a session that had just read the
   new version's SKILL.md from disk and was still following the previous version's
   principles. Nothing in this repo can re-inject into a live session; **a new session is
-  what picks up a rules change.** `session-start.sh --prompt` says so on the first prompt
-  after a reload changes the session's version. And the header names the plugin version, which turns
+  what picks up a rules change.** the plugin's `session-start.sh --prompt --plugin` says
+  so on the first prompt after a reload changes the session's version; hand-wired,
+  nothing does. And the header names the plugin version, which turns
   invisible staleness into something a reader can check against the plugin directory.
   Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
   install shape, because reading the version must never cost the rules.

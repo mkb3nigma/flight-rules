@@ -69,14 +69,18 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    step) — as `session-start` reads it. Open means a branch checked out in a worktree
    with commits not yet in `{INTEGRATION_BRANCH}` — the local one when it exists, else
    `origin/{INTEGRATION_BRANCH}` — leaving out `{INTEGRATION_BRANCH}` itself and any
-   branch `{PROTECTED_BRANCHES}` matches (case-insensitive; drop that `grep` when it is
-   `off`):
+   branch the protected pattern matches: `FLIGHT_RULES_PROTECTED_BRANCHES` if set, else
+   `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it (drop that
+   `grep` when it is `off`):
    ```bash
+   p="${FLIGHT_RULES_PROTECTED_BRANCHES:-{PROTECTED_BRANCHES}}"
    base=refs/heads/{INTEGRATION_BRANCH}
    git rev-parse -q --verify "$base" >/dev/null || base=refs/remotes/origin/{INTEGRATION_BRANCH}
    git rev-parse -q --verify "$base" >/dev/null || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"
-   git worktree list --porcelain | sed -n 's|^branch refs/heads/||p' \
-     | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e '{PROTECTED_BRANCHES}' \
+   printf '' | grep -E -e "$p"; [ $? -le 1 ] || echo "COULD NOT COUNT: the protected pattern does not compile"
+   l=$(git worktree list --porcelain) || echo "COULD NOT COUNT: git worktree list failed"
+   printf '%s\n' "$l" | sed -n 's|^branch refs/heads/||p' \
+     | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \
      | while IFS= read -r b; do
          n=$(git rev-list --count "$base..refs/heads/$b") || { echo "COULD NOT COUNT: $b"; continue; }
          [ "$n" -gt 0 ] && echo "$b"
