@@ -50,16 +50,21 @@ jobs:
           # as `## ` only, a bare verdict before one took the text after it (0.26.0
           # fourth review).
           #
-          # Known limits, each failing closed or needing a body written to get past
-          # it, not one a skipped step leaves (#91 tracks replacing this parsing with
-          # a fixed marker line): a setext heading (`Testing` over `---`) is text; a
-          # fence line is recognised at any indent, though four spaces would make it
-          # code; a fence opened on a list-marker line (`- ````) is not seen, so its
-          # contents count as structure, and a verdict written inside one passes
-          # (0.26.0 fourth review's cross-check); and the
-          # `## Adversarial review` line itself must start in column 1. Any text
-          # counts, a lone `---` or table header too: an honest verdict with no
-          # findings has to pass, and this checks for a skipped step, not a forger.
+          # Known limits, each failing closed or needing a body written to get past it,
+          # not one a skipped step leaves, and accepted rather than parsed further (#91,
+          # owner, 2026-10-24): a setext heading (`Testing` over `---`) is text; a fence
+          # line is recognised at any indent, though four spaces would make it code; a
+          # fence opened on a list-marker line (`- ````) is not seen, so its contents
+          # count as structure, and a verdict written inside one passes (0.26.0 fourth
+          # review's cross-check), while its closing line opens a fence that never closes,
+          # so a real `### Verdict` after it is missed and the step fails "has no
+          # '### Verdict'" (start the fence on its own line); fence delimiter lines count as
+          # verdict text, so an empty fence pair under `### Verdict` passes; the grep
+          # above does not know fences, so a body whose only `## Adversarial review` is
+          # fenced fails as empty, not as missing; and the `## Adversarial review` line
+          # itself must start in column 1. Any text counts, a lone `---` or table header
+          # too: an honest verdict with no findings has to pass, and this checks for a
+          # skipped step, not a forger.
           #
           # A code fence is text, never structure: a `### Verdict` inside one is an
           # example, and a `## ` inside one does not end the section (0.26.0 fix
