@@ -24,7 +24,12 @@ for having gone unenforced.
 ### 🚫 Forbidden
 1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
 2. Multiple features in one branch — one purpose per branch — skill (`pre-merge-check` 9, ⚠️)
-3. Starting a new feature before merging (or parking) the current one — advisory
+3. Letting open branches pile up: at `OPEN_BRANCH_LIMIT` (default 5, set in the conf)
+   branches open and not yet merged into `{INTEGRATION_BRANCH}`, start another only
+   once the person says it is okay — told how many are open, which wait to merge, and
+   where the limit is set; with no one to ask, the branch is not opened. Nothing else
+   waits on it — skill
+   (`feature-start` 5 asks); reminded (`session-start` warns at the limit)
 4. Merging without tests passing — skill (`pre-merge-check` 1–3 runs them; on note-gated
    branches `commit-msg` requires its stamp, which proves the skill ran, not that it
    passed honestly); on PR-only branches the host's CI and review are the gate
@@ -62,7 +67,7 @@ for having gone unenforced.
    (`pre-merge-check` 16 only warns at the other extreme, ~20+)
 6. Symlink untracked env files from the main checkout into new worktrees
    (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`.
-   Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 6)
+   Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 7)
 7. Clean up after merging: stop what a check started from the worktree (a server, a
    database, a watcher, a container), then `git worktree remove …` + `git branch -d …` —
    skill (`pre-merge-check` 21, for what the checks started), reminded (`post-merge`
