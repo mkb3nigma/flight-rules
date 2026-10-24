@@ -348,7 +348,7 @@ else
       DG_COMIC)
         case "$val" in
           always|never) ok "$key=$val" ;;
-          *) warn "$key='$val' is neither always nor never — /dg treats it as always and ends every verdict with the comic" ;;
+          *) warn "$key='$val' is neither always nor never — /dg treats it as always and opens every verdict with the comic" ;;
         esac ;;
       DG_COMIC_PR)
         case "$val" in

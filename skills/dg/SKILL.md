@@ -220,17 +220,17 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
    silently dropped), the dependency scan's results and concrete recommended actions.
-   It goes to the person in the format below, ending with step 6's comic (unless the
-   project turned it off), and **the turn ends there**: apply no finding and run no further
+   It goes to the person in the format below, ending with the decisions waiting, and
+   **the turn ends there**: apply no finding and run no further
    step of a calling workflow (such as `pr-create` 2b) until the person replies. A
    verdict printed and then fixed past in the same reply is the skip again, in a
    different order. The 0.25.0 release review went straight from the debate to fixes:
    the verdict reached only the PR body, and the comic was never offered (2026-10-17).
 
-6. **Comic strip, last** — two settings in `.ai/flight-rules.conf`, read like every
+6. **Comic strip, first** — two settings in `.ai/flight-rules.conf`, read like every
    other key there (unset, no conf, or any other value: the default — `flight-rules-doctor.sh`
    warns about the value):
-   - `DG_COMIC` — `always` (default) or `never`. With `always` the reply ends with the
+   - `DG_COMIC` — `always` (default) or `never`. With `always` the reply carries the
      comic as ASCII art, never offered: an offer at the end of a step list was skipped
      (2026-10-17). With `never` there is no comic and no banter score anywhere.
    - `DG_COMIC_PR` — `never` (default), `ask` or `always`: whether the comic, banter
@@ -245,8 +245,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    fenced with more backticks than any run inside it (a quoted ` ``` ` would close a
    shorter fence), each a box headed `[N] GILFOYLE` or `[N] DINESH` with a small ASCII
    face and the quote, then the banter score and one line per verdict finding tagged
-   `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the rules below). It is the last thing in
-   the reply but for the `ask` line, after the recommended actions, so a reader who reaches the end has seen it.
+   `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the rules below). It comes right after the
+   header, before the rounds: a terminal shows a reply's end, and with the comic last the
+   owner scrolled back past it for the decisions — "while the banter is fun, it seems to
+   overshadow the actual content" (2026-10-24). First, it is read or skipped; last, it
+   stood between the reader and what needs deciding.
 
    **A page, on request only.** If the person asks for the comic as a page, fill
    `comic-template.html` from this skill's directory with the same panels; a copy of
@@ -307,8 +310,10 @@ place a long verdict turns back into paragraphs.
 > Pre-review: <one of the forms in step 2>
 > Dependency scan: ✅ <tool> — <n> findings | ⚠️ not run — <why> | n/a (no dependency files, or not code)
 
-## Decisions waiting
-| # | Decision | Recommendation |
+## Comic
+```
+<the ASCII strip — step 6: panels, banter score, one tagged line per finding>
+```
 
 ### Pre-review findings
 | ID | Location | Finding | Severity | Verified? |
@@ -325,22 +330,27 @@ place a long verdict turns back into paragraphs.
 ### Dependency scan
 ### Recommended Actions
 
-## Comic
-```
-<the ASCII strip — step 6: panels, banter score, one tagged line per finding>
-```
+## Decisions waiting (<n>)
+1. **<the decision>** — what it is, why it came up, the evidence, what each option
+   costs, and the recommendation: decidable from this item alone.
 
 Add the comic to the PR? (y/N)
 ````
 
 The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
-with `DG_COMIC_PR=ask` on a review that is for a PR. `## Verdict` ends at Recommended
-Actions, so wherever a PR body takes "the verdict", it takes neither the comic nor the
-round tables' BANTER lines; the comic follows only by `DG_COMIC_PR`.
+with `DG_COMIC_PR=ask` on a review that is for a PR. The decisions are the reply's last
+section — only that optional line follows them — where a reader in a terminal lands; a numbered list, not a table, because each one is
+sentences, and a table of sentences wrapped past reading at terminal width
+(2026-10-24). With none, the section says so: `## Decisions waiting (0)`.
+
+`## Verdict` ends at Recommended Actions, so wherever a PR body takes "the verdict", it
+takes neither the comic, nor the round tables' BANTER lines, nor the decisions (the PR
+body records each finding's disposition instead); the comic follows only by
+`DG_COMIC_PR`.
 
 **Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
-measure of the work, and it lives in the comic, after the findings, because it decides
-nothing; they do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
+measure of the work, and it lives in the comic, ahead of the findings and kept out of
+them, because it decides nothing; they do. Only a finding one persona raised and the other argued counts: Gilfoyle's if
 Dinesh conceded it under pressure or a `[defend]` broke, Dinesh's if his `[defend]`
 held or Gilfoyle `[concede]`d. Gilfoyle's `[dismiss]` (rejecting Dinesh's defence)
 scores nothing by itself: the point goes to whichever way the defence then went. Unscored: findings both

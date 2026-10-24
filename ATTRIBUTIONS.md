@@ -18,8 +18,8 @@ Modifications in this repo: condensed the persona definitions; generalized the r
 domains beyond code (architecture, product/business, decisions); added the optional
 independent pre-review stage, convergence handling, and the merged-verdict output
 format; parameterized project-specific behavior into local-extension sections; the
-dependency scan runs only tools already installed; the comic is drawn as text at the
-end of every verdict rather than offered, governed per project by `DG_COMIC` and
+dependency scan runs only tools already installed; the comic is drawn as text after the
+header of every verdict rather than offered, governed per project by `DG_COMIC` and
 `DG_COMIC_PR`, and the HTML page is made only on request.
 `skills/dg/comic-template.html` is upstream's `dg/comic-template.html` at `48d2f642`,
 with a Content-Security-Policy meta tag added (no script, form or
