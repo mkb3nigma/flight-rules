@@ -166,13 +166,13 @@ load_running() {
     PROCS=""
     if [[ -r /proc/self/cmdline ]]; then
       for p in /proc/[0-9]*; do
-        c=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) && [[ -n "$c" ]] && PROCS="$PROCS${p#/proc/} ? $c"$'\n'
+        c=$(tr '\0\n' '  ' < "$p/cmdline" 2>/dev/null) && [[ -n "$c" ]] && PROCS="$PROCS${p#/proc/} ? $c"$'\n'
       done
     fi
     [[ -n "$PROCS" ]] || RUN_ERR="could not list processes (ps exited $rc)"
   fi
   if [[ -r /proc/self/cwd ]]; then
-    CWDS=$(for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null) && printf '%s %s\n' "${p#/proc/}" "$c"; done)
+    CWDS=$(for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null) && printf '%s %s\n' "${p#/proc/}" "${c//$'\n'/ }"; done)
   elif command -v lsof >/dev/null 2>&1; then
     rc=0; CWDS=$(lsof -b -nP -w -a -d cwd -Fpn 2>/dev/null) || rc=$?
     CWDS=$(printf '%s\n' "$CWDS" | awk '/^p/{p=substr($0,2)} /^n/ && p != "" {print p, substr($0,2)}')
@@ -225,9 +225,13 @@ running_from() {
     }
     function names(s) { s = s " "; return at(s, ENVIRON["D"] "/") || at(s, ENVIRON["D"] " ") || at(s, ENVIRON["P"] "/") || at(s, ENVIRON["P"] " ") }
     !body && $0 == "--" { body = 1; next }
-    !body { pid = $1; sub(/^[^ ]+ /, ""); if (pid != "" && under($0)) cwd[pid] = 1; next }
+    # A row whose pid is not digits, or whose time is not ps etime, is not a process:
+    # it is the rest of a name that held a newline, and its fields would be printed
+    # unquoted (security review, 2026-10-24). Newlines are spaces where /proc is read.
+    !body { pid = $1; sub(/^[^ ]+ /, ""); if (pid ~ /^[0-9]+$/ && under($0)) cwd[pid] = 1; next }
     {
-      pid = $1; if (pid == "" || pid == ENVIRON["SELF"]) next
+      pid = $1; if (pid !~ /^[0-9]+$/ || pid == ENVIRON["SELF"]) next
+      if ($2 !~ /^([?]|([0-9]+-)?([0-9]+:)?[0-9]+:[0-9]+)$/) next
       cmd = $0; sub(/^[ \t]*[0-9]+[ \t]+[^ \t]+[ \t]+/, "", cmd)
       if (cwd[pid] || names(cmd)) { printf "    pid %s, up %s: %s\n", pid, $2, q(substr(cmd, 1, 120)); done[pid] = 1 }
     }

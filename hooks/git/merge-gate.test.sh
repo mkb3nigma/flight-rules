@@ -460,6 +460,12 @@ git -C "$HR" config branch.fix/up.remote origin; git -C "$HR" config branch.fix/
 trap 'kill $HS 2>/dev/null' EXIT
 mkdir -p "$HB/shim"; { printf '#!/bin/sh\n'
   printf 'printf "c9\\t%s\\tweb;touch\\${IFS}PWNED4\\tUp 1 hour\\n"\n' "$UWT"; } > "$HB/shim/docker"; chmod +x "$HB/shim/docker"
+# A command line holding a newline reaches the parser as two rows, the second one's
+# "pid" and "time" fields the name's (where /proc is read raw, or a ps that does not
+# escape it): such a row is no process, and is dropped, not printed (security review).
+{ printf '#!/bin/sh\n%s "$@"\n' "$(command -v ps)"
+  # Each forged row fails one check only — the pid, or the time — so each check is tested.
+  printf 'printf "%%s\\n" "  4242 00:01 srv %s" ";touch\\${IFS}PWNED6 00:01 %s" "4243 ;touch\\${IFS}PWNED7 %s"\n' "$UWT/a" "$UWT/b" "$UWT/c"; } > "$HB/shim/ps"; chmod +x "$HB/shim/ps"
 OUT=$(cd "$HR" && PATH="$HB/shim:$PATH" LC_ALL=en_US.UTF-8 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
 kill $HS 2>/dev/null
 say "$RC" "0" "a merge with a hostile branch name and a quoted worktree path lands"
@@ -497,6 +503,9 @@ while IFS= read -r l; do
   (cd "$SB" && bash -c 'git() { :; }; docker() { :; }; eval "$1"' _ "$l") >/dev/null 2>&1
   command -v zsh >/dev/null 2>&1 && (cd "$SB" && zsh -fc 'git() { :; }; docker() { :; }; eval "$1"' _ "$l") >/dev/null 2>&1
 done < <(printf '%s\n' "$OUT"; cat "$HNOTE")
+say "$(grep -c '^    pid 4242, up 00:01: ' <<<"$OUT")" "1" "…a well-formed row from ps is listed"
+say "$(grep -c 'PWNED6' <<<"$OUT")" "0" "…a row whose pid is not digits is not: it is the rest of a name"
+say "$(grep -c 'PWNED7' <<<"$OUT")" "0" "…nor one whose time is not ps etime"
 say "$([ "$_n" -gt 20 ] && echo many)" "many" "…every line of the note pasted ($_n lines)"
 say "$(ls "$SB" "$HR" "$UWT" 2>/dev/null | grep -c PWNED)" "0" "…runs no name's payload, in bash or zsh"
 # Run every printed line for real, in order, as someone pasting the note would.
