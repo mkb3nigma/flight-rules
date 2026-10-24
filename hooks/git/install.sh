@@ -22,9 +22,10 @@
 # and a newer release's copy another session's, so each is left alone and named — from
 # 0.27.0 on: an older release's installer has no such check, so a session still on
 # 0.26.x and left open writes its copies over newer ones again on its first session
-# start (startup, resume, clear or compact) each day it stays open, until it is closed;
-# each time, the next current session's doctor names them behind and its sync restores
-# them.
+# start (startup, resume, clear or compact) each day it stays open, until it is closed.
+# A current session's doctor names them behind, and its sync restores them, at its next
+# daily check — the first session start of a later day, or after a version change; one
+# that already ran today says nothing until then, so the two can trade copies daily.
 # Without --stale-only every differing hook is replaced (a newer release's copy named
 # as a downgrade), except one that is not
 # flight-rules' at all (a linter's pre-commit, the project's own commit-msg): that is
@@ -37,12 +38,14 @@ set -euo pipefail
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
 # leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
+# Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
 # Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
 # range like A-Z follows the locale's collation. Kept verbatim in step across
 # post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
 shq() {
+  local q="'\\''"
   case "$1" in
-    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "${1//\'/$q}" ;;
     *) printf '%s' "$1" ;;
   esac
 }

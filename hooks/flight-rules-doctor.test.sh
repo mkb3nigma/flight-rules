@@ -128,7 +128,7 @@ say "$(rc "$D")" "1" "pre-commit missing → problem"
 say "$(has "$D" "pre-commit missing")" "0" "…names the hook"
 # A plugin upgrade cannot copy it in, so this line is how an upgraded project learns of
 # it — and it must say how. Following it must actually clear the problem.
-FIX=$(run "$D" | grep -o "cp '[^']*/git/pre-commit' '[^']*/' && chmod +x '[^']*'" | head -1)
+FIX=$(run "$D" | sed -n 's/.*Copy it in from this flight-rules: \(cp .*\/git\/pre-commit .* && chmod +x .*\)$/\1/p' | head -1)
 say "$([ -n "$FIX" ] && echo yes)" "yes" "…and gives the command that copies it in"
 (cd "$D" && eval "$FIX") >/dev/null 2>&1
 say "$(rc "$D")" "0" "…which, run, clears it"
@@ -399,6 +399,15 @@ say "$([ -n "$SYNC" ] && printf '%s' "$SYNC" | iconv -f UTF-8 -t UTF-8 >/dev/nul
 (cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1; SRC_RC=$?
 say "$SRC_RC" "0" "…which, run as printed, exits 0"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$L/hooks/git/commit-msg" && echo same)" "same" "…and syncs from that exact path"
+# A missing hook's cp line was quoted by hand in '…', so the quote in that path broke it
+# (fourth review, D2).
+rm -f "$D/.ai/hooks/post-merge"
+OUT=$(cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" bash "$L/hooks/flight-rules-doctor.sh" 2>&1)
+CP=$(sed -n 's/.*Copy it in from this flight-rules: \(cp .*\)$/\1/p' <<<"$OUT" | head -1)
+say "$(grep -c "post-merge" <<<"$CP")" "1" "…a missing hook's cp line names it"
+bash -n -c "$CP" 2>/dev/null; say "$?" "0" "…and parses, the quote in the path and all"
+(cd "$D" && eval "$CP") >/dev/null 2>&1
+say "$(cmp -s "$D/.ai/hooks/post-merge" "$L/hooks/git/post-merge" && [ -x "$D/.ai/hooks/post-merge" ] && echo copied)" "copied" "…and, run as printed, copies it in executable"
 rm -rf "$D" "$(dirname "$L")"
 
 D=$(mkrepo); echo "# this project's own change" >> "$D/.ai/hooks/post-merge"
@@ -630,7 +639,9 @@ say "$(has "$D" "to update: bash")" "0" "…with the sync command"
 say "$(rc "$D")" "0" "…as a warning"
 rm -rf "$D"
 D=$(mkrepo)
-say "$(run "$D" | grep -c -e '[⚠❌].*install.sh' -e 'to update:')" "0" "a missing install.sh is no warning and asks for no sync"
+# Two -e, not [⚠❌]: under LC_ALL=C a bracket of multibyte characters is a set of bytes,
+# and ✅ shares one (fourth review, D10).
+say "$(run "$D" | grep -c -e '⚠.*install.sh' -e '❌.*install.sh' -e 'to update:')" "0" "a missing install.sh is no warning and asks for no sync"
 say "$(rc "$D")" "0" "…and doctor passes"
 cp "$H/git/install.sh" "$D/.ai/hooks/"
 say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a current install.sh is not reported"

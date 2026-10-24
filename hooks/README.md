@@ -325,8 +325,9 @@ that the logic has exactly one home.
   does not downgrade it — from 0.27.0 on: a session still on 0.26.x or earlier runs an
   installer without that check and, left open, writes its copies over newer ones again
   on its first session start (startup, resume, clear or compact) each day until it is
-  closed; each time the next current session's doctor names them behind and its sync
-  restores them;
+  closed. A current session's doctor names them behind, and its sync restores them, at
+  its next daily check (a later day's first session start, or after a version change);
+  one that already ran today says nothing until then;
   doctor itself names a newer release's copy as a ⚠️, not as behind — and a project's own adaptation is left alone and named — mark it
   with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
   left alone without a word: an `install.sh` that is the project's own script, not

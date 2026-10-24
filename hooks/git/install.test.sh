@@ -724,7 +724,16 @@ rm -rf "$D"
 # shq is doctor's too, and the four scripts that print a command to paste must quote it
 # alike: compared verbatim, as newer_than and read_conf are.
 say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/../flight-rules-doctor.sh")" "shq is doctor's, verbatim"
-say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh" | grep -c .)" "6" "…and is there to compare (6 lines)"
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh" | grep -c .)" "7" "…and is there to compare (7 lines)"
+# shq itself, sourced from install.sh: bytes that are not UTF-8 made BSD sed stop and
+# shq print '' (fourth review, D1) — a branch reftable or packed-refs can hold.
+eval "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")"
+_bad=0
+for s in "$(printf 'fix/caf\351')" "it's" "x';touch\${IFS}PWNED;'" 'fix/ü-ß' '=ls' 'plain/x' "$(printf 'a\nb')"; do
+  q=$(LC_ALL=$U8 shq "$s"); back=$(eval "printf '%s' $q")
+  [ "$back" = "$s" ] && [ "$q" != "''" ] || _bad=$((_bad+1))
+done
+say "$_bad" "0" "shq round-trips non-UTF-8 bytes, quotes, ß, = and a newline, never as ''"
 
 echo
 echo "$PASS passed, $FAIL failed"
