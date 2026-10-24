@@ -16,7 +16,7 @@ branch — feature work physically cannot dirty the main checkout.
 ## Rules
 
 Each item says how it is enforced — **hook**, **skill**, **advisory**, or **reminded**
-(no gate, but `post-merge` and `session-start.sh` put it in front of the next session).
+(no gate, but `post-merge` shows it at the merge and `session-start.sh` at the next session).
 Advisory items are re-examined at every plugin release for enforcement that has become
 possible; one is deleted only when its warrant is gone or another item covers it, never
 for having gone unenforced.
@@ -64,9 +64,10 @@ for having gone unenforced.
    (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`.
    Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 6)
 7. Clean up after merging: stop what a check started from the worktree (a server, a
-   database, a watcher), then `git worktree remove …` + `git branch -d …` — skill
-   (`pre-merge-check` 21, for what the checks started), reminded (`post-merge` names
-   what still runs from the worktree; `session-start`)
+   database, a watcher, a container), then `git worktree remove …` + `git branch -d …` —
+   skill (`pre-merge-check` 21, for what the checks started), reminded (`post-merge`
+   prints what still runs from the worktree, containers included, at the merge;
+   `session-start`)
 8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main`, first fast-forward any `main`-only commits into it; if that is not a fast-forward, **stop and ask** — skill (`feature-start` 4)
 
 ## The cwd-drift trap (learned the hard way)

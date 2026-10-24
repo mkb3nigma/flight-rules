@@ -986,7 +986,11 @@ echo "post-merge names what still runs from a worktree it lists for removal (#10
 # A server, database or watcher a check started in a worktree outlived the branch, and
 # nothing said so (AppliHawk, 2026-10-24). Listed, never stopped. Each fixture process
 # is a sleep: one whose working directory is the worktree, one whose command line
-# names another, one in a worktree whose name extends the first's (not a match).
+# names another, one in a worktree whose name extends the first's (not a match), one
+# whose command line names a path that only ends with a worktree's (not a match), and
+# one naming a worktree after `=`. The EXIT trap stops them if the run is cut short.
+S1=""; S2=""; S3=""; S4=""; S5=""
+trap 'kill ${S1:-} ${S2:-} ${S3:-} ${S4:-} ${S5:-} 2>/dev/null' EXIT
 PB=$(cd "$(mktemp -d)" && pwd -P); PR="$PB/repo"
 git init -q -b trunk "$PR" || die "git init failed in $PR"
 git -C "$PR" config user.email t@t.t; git -C "$PR" config user.name t; git -C "$PR" config merge.ff false
@@ -1002,9 +1006,14 @@ chmod +x "$PR"/.ai/hooks/*; git -C "$PR" config core.hooksPath "$PR/.ai/hooks"
 (cd "$PB/wt-srv" && exec sleep 3001) & S1=$!
 (cd / && exec -a "dbserver -D $PB/wt-db/data" sleep 3002) & S2=$!
 (cd "$PB/wt-srvx" && exec sleep 3003) & S3=$!
+(cd / && exec -a "tool /mnt$PB/wt-quiet/data" sleep 3004) & S4=$!
+(cd / && exec -a "pg --data=$PB/wt-last/pg" sleep 3005) & S5=$!
 sleep 1
-for b in fix/srv fix/db fix/quiet; do git -C "$PR" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
-git -C "$PR" merge --no-verify --no-edit fix/last >/dev/null 2>&1; RC=$?
+# A docker that answers with nothing, so the machine's own Docker — down, or holding
+# containers — cannot change the result.
+mkdir -p "$PB/nod"; printf '#!/bin/sh\nexit 0\n' > "$PB/nod/docker"; chmod +x "$PB/nod/docker"
+for b in fix/srv fix/db fix/quiet; do PATH="$PB/nod:$PATH" git -C "$PR" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
+OUT=$(PATH="$PB/nod:$PATH" git -C "$PR" merge --no-verify --no-edit fix/last 2>&1); RC=$?
 PNOTE="$PR/.claude/post-merge-note.md"
 # section <branch>: the note's lines for that worktree, Branch: line to its remove line.
 section() { awk -v b="Branch: $1 " 'index($0, b) {p=1} p; p && /git worktree remove/ {exit}' "$PNOTE"; }
@@ -1012,13 +1021,115 @@ say "$RC" "0" "the merge lands"
 say "$(grep -c 'Branch: fix/srv ' "$PNOTE" 2>/dev/null)" "1" "…and the note lists wt-srv for removal"
 say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "a process working in the worktree is named under it"
 say "$(section fix/srv | grep -c 'Still running from it')" "1" "…with what to do about it"
+say "$(section fix/srv | grep -c 'ask before stopping anything you did not start')" "1" "…and to ask before stopping what you did not start"
 say "$(section fix/srv | grep -c "pid $S3,")" "0" "…and not one in wt-srvx, whose name only extends it"
 say "$(section fix/db | grep -c "pid $S2, up .*: dbserver -D $PB/wt-db/data")" "1" "a process whose command line names the worktree is named under it"
+say "$(section fix/last | grep -c "pid $S5, up .*: pg --data=$PB/wt-last/pg")" "1" "…so is one naming it after ="
 say "$(section fix/quiet | grep -c 'Branch: fix/quiet ')" "1" "a worktree with nothing running is listed"
 say "$(section fix/quiet | grep -c 'Still running')" "0" "…with nothing said about processes"
+say "$(grep -c "pid $S4" "$PNOTE")" "0" "…nor about one naming /mnt<its path>, a different directory"
+say "$(grep -c "Branch: fix/srv " <<<"$OUT")" "1" "the note is printed at merge time, not only written"
+say "$(grep -c "pid $S1, up " <<<"$OUT")" "1" "…what still runs included"
 say "$(kill -0 "$S1" "$S2" 2>/dev/null && echo alive)" "alive" "nothing is stopped by the hook"
-kill "$S1" "$S2" "$S3" 2>/dev/null; wait "$S1" "$S2" "$S3" 2>/dev/null
+
+# The hook again on the same merge, with stand-ins on PATH. A stand-in ps or lsof logs
+# each call and runs the real one; the docker stand-in prints what each case needs.
+PSB=$(command -v ps); LSB=$(command -v lsof || true)
+shims() {   # shims <dir> <ps: log|fail> <docker: list|fail|hang|empty>
+  mkdir -p "$1"
+  case "$2" in
+    log)  printf '#!/bin/sh\necho x >> %q/ps.log\nexec %q "$@"\n' "$1" "$PSB" > "$1/ps" ;;
+    fail) printf '#!/bin/sh\nexit 127\n' > "$1/ps" ;;
+  esac
+  [ -n "$LSB" ] && printf '#!/bin/sh\necho x >> %q/lsof.log\nexec %q "$@"\n' "$1" "$LSB" > "$1/lsof"
+  case "$3" in
+    list)  { printf '#!/bin/sh\necho x >> %q/docker.log\n' "$1"
+             printf 'printf "c1\\t%s\\tsrv-web-1\\tUp 2 hours\\n"\n' "$PB/wt-srv"
+             printf 'printf "c4\\t%s\\tother-1\\tUp 1 hour\\n"\n' "/mnt$PB/wt-srv"
+             printf 'case " $* " in *" -a "*) printf "c2\\t%s\\tsrv-db-1\\tExited (0) 3 days ago\\n"; printf "c3\\t%s\\tsrvx-1\\tExited (1) 2 days ago\\n";; esac\n' "$PB/wt-srv/sub" "$PB/wt-srvx"
+           } > "$1/docker" ;;
+    fail)  printf '#!/bin/sh\necho "Cannot connect to the Docker daemon at unix:///x.sock" >&2\nexit 1\n' > "$1/docker" ;;
+    hang)  printf '#!/bin/sh\nexec sleep 10\n' > "$1/docker" ;;
+    empty) printf '#!/bin/sh\nexit 0\n' > "$1/docker" ;;
+  esac
+  chmod +x "$1"/*
+}
+rerun() { (cd "$PR" && PATH="$1:$PATH" "$PR/.ai/hooks/post-merge" 0 2>&1); }
+
+shims "$PB/a" log list; OUT=$(rerun "$PB/a"); RC=$?
+say "$RC" "0" "with Compose containers: the hook still exits 0"
+say "$(section fix/srv | grep -c 'container c1 (srv-web-1), Up 2 hours')" "1" "a running container started from the worktree is named under it"
+say "$(section fix/srv | grep -c 'container c2 (srv-db-1), Exited')" "1" "…so is a stopped one under it (ps -a: old containers take disk space)"
+say "$(section fix/srv | grep -c 'container c3')" "0" "…not one from wt-srvx, whose name only extends it"
+say "$(section fix/srvx | grep -c 'container c3 (srvx-1)')" "1" "…which is named under wt-srvx, its own"
+say "$(grep -c 'container c4' "$PNOTE")" "0" "…nor one from /mnt<its path>"
+say "$(section fix/quiet | grep -c 'container')" "0" "…and none under a worktree with none"
+say "$(wc -l < "$PB/a/ps.log" | tr -d ' ')" "1" "ps runs once per merge, not once per worktree"
+say "$(wc -l < "$PB/a/docker.log" | tr -d ' ')" "1" "…docker too"
+if [ ! -r /proc/self/cwd ] && [ -n "$LSB" ]; then
+  say "$(wc -l < "$PB/a/lsof.log" | tr -d ' ')" "1" "…lsof too"
+fi
+
+shims "$PB/b" fail empty; OUT=$(rerun "$PB/b"); RC=$?
+say "$RC" "0" "with ps failing: the hook still exits 0"
+if [ -r /proc/self/cmdline ]; then
+  say "$(section fix/srv | grep -c "pid $S1, up ?: sleep 3001")" "1" "…and the processes come from /proc instead"
+  say "$(grep -c 'could not list processes' "$PNOTE")" "0" "…with nothing to report about ps"
+else
+  say "$(section fix/srv | grep -c 'could not list processes (ps exited 127)')" "1" "…and the note says so, not 'nothing running'"
+  say "$(section fix/srv | grep -c "pid $S1 (command not known: ps failed)")" "1" "…still naming what works in the worktree, from lsof"
+fi
+
+shims "$PB/c" log fail; OUT=$(rerun "$PB/c"); RC=$?
+say "$RC" "0" "with docker failing: the hook still exits 0"
+say "$(section fix/srv | grep -c 'could not list containers (docker exited 1: Cannot connect to the Docker daemon')" "1" "…and the note says so, not 'no containers'"
+say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "…with the processes still listed"
+say "$(section fix/quiet | grep -c 'could not list containers')" "1" "…under a worktree with nothing running too"
+say "$(section fix/quiet | grep -c 'Still running')" "0" "…where it is not mistaken for something still running"
+
+shims "$PB/d" log hang; T0=$SECONDS; OUT=$(rerun "$PB/d"); RC=$?; T1=$SECONDS
+say "$RC" "0" "with docker hanging: the hook still exits 0"
+say "$(section fix/srv | grep -c 'could not list containers (docker ps gave no answer in 3s)')" "1" "…and says it was cut short"
+say "$([ $((T1 - T0)) -lt 8 ] && echo bounded)" "bounded" "…within seconds, not the 10 the stand-in sleeps"
+
+# No docker on PATH at all: a PATH of links to the tools the hook needs, docker left out.
+NB="$PB/nodocker"; mkdir -p "$NB"
+for t in bash sh env git awk sed grep tr head tail wc cut cat mktemp sleep readlink dirname basename find rm mkdir ps lsof; do
+  _p=$(command -v "$t") && ln -s "$_p" "$NB/$t"
+done
+[ -x "$NB/git" ] && [ -x "$NB/bash" ] || die "could not build a PATH without docker"
+OUT=$(cd "$PR" && PATH="$NB" "$PR/.ai/hooks/post-merge" 0 2>&1); RC=$?
+say "$RC" "0" "with no docker installed: the hook exits 0"
+say "$(grep -c -e 'container' -e 'docker exited' "$PNOTE")" "0" "…and says nothing about containers"
+say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "…while still listing the processes"
+kill "$S1" "$S2" "$S3" "$S4" "$S5" 2>/dev/null; wait "$S1" "$S2" "$S3" "$S4" "$S5" 2>/dev/null
+trap - EXIT
 rm -rf "$PB"
+
+echo "post-merge prints its note only when there is something to do, and at most 40 lines (#109):"
+# A `git pull` runs post-merge too; with nothing stale and nothing to delete it stays
+# one line, and reads no process list.
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+git -C "$QQ" checkout -qb fix/a && echo a > "$QQ/a" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: a" && git -C "$QQ" checkout -q trunk || die "could not build fix/a"
+git -C "$QQ" merge --no-edit fix/a >/dev/null 2>&1 && git -C "$QQ" branch -qd fix/a || die "could not merge and delete fix/a"
+mkdir -p "$PQ/s"; printf '#!/bin/sh\necho x >> %q/ps.log\nexec %q "$@"\n' "$PQ/s" "$(command -v ps)" > "$PQ/s/ps"; chmod +x "$PQ/s/ps"
+OUT=$(cd "$QQ" && PATH="$PQ/s:$PATH" .ai/hooks/post-merge 0 2>&1); RC=$?
+say "$RC" "0" "nothing to do: the hook exits 0"
+say "$(grep -c 'cleanup note written' <<<"$OUT")" "1" "…saying the note was written"
+say "$(grep -c -e 'Branch' -e 'Branches' -e 'Worktrees' <<<"$OUT")" "0" "…and printing none of it"
+say "$([ -f "$PQ/s/ps.log" ] && echo ran || echo not-run)" "not-run" "…and reading no process list"
+for i in $(seq 1 50); do git -C "$QQ" branch "old/b$i" trunk; done
+OUT=$(cd "$QQ" && .ai/hooks/post-merge 0 2>&1); RC=$?
+say "$RC" "0" "fifty merged branches: the hook exits 0"
+say "$(grep -c "git branch -d 'old/b" "$QQ/.claude/post-merge-note.md")" "50" "…the note file has every one"
+say "$(grep -c "more lines in .claude/post-merge-note.md" <<<"$OUT")" "1" "…the printed copy stops at 40 lines and says where the rest is"
+say "$([ "$(grep -c "git branch -d 'old/b" <<<"$OUT")" -lt 50 ] && echo cut)" "cut" "…having printed fewer than all fifty"
+rm -rf "$PQ"
 
 echo
 echo "$PASS passed, $FAIL failed"

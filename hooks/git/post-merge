@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # post-merge hook — cleanup reminder after merging into the integration branch.
 #   1. Flags worktrees whose branch is now merged (stale — remove them)
-#      and the processes still running from each (#109)
+#      and what still runs from each: processes, Compose containers (#109)
 #   2. Lists merged branches safe to delete
-#   3. Writes a note file the next AI session picks up as context
+#   3. Writes a note file, and prints it when it has something to do (no hook reads
+#      the file yet: #110)
 #   4. (Optional, off by default) clears the AI assistant's stored conversation
 #      context for this project so the next session starts fresh
 #
@@ -125,38 +126,109 @@ while IFS= read -r line; do
   fi
 done < <(git worktree list --porcelain 2>/dev/null)
 
-# Processes still running from a worktree about to be removed: a server, database or
-# watcher a check started there outlives the branch, and once the directory is gone it
-# runs on from nowhere (AppliHawk, 2026-10-24: dev servers up for days, #109). One whose
-# working directory is inside the worktree, or whose command line names it. Listed, not
-# stopped: a shell the owner has open there is no leftover. The working directory from
-# /proc where there is one, else lsof (macOS), else the command line alone. The path as
-# given and as `pwd -P` spells it: lsof reports /private/var for /var. Read once, and
-# only when a worktree is listed.
-PROCS=""; CWDS=""
+# What still runs from a worktree about to be removed: a server, database or watcher a
+# check started there outlives the branch, and once the directory is gone it runs on
+# from nowhere (AppliHawk, 2026-10-24: dev servers up for days, #109). Processes whose
+# working directory is inside the worktree, or whose command line names it; Docker
+# Compose containers whose project directory is inside it, stopped ones too — what
+# they leave is disk space (owner, 2026-10-24: many old containers). Listed, never
+# stopped: a shell the owner has open there is no leftover, and the reader of the note
+# cannot tell a check's server from someone's editor.
+#
+# Read once per merge, here in the hook's own shell — a cache filled inside $(…) is
+# thrown away with the subshell, and was (0.27.0 review) — and only when a worktree is
+# listed. A tool that fails is said so under each worktree, never read as "nothing
+# running": an empty list is what a clean worktree looks like too.
+#   processes: `ps`; on Linux with no working ps, /proc/<pid>/cmdline.
+#   working directories: /proc/<pid>/cwd, else `lsof -b` (macOS; -b so a dead network
+#     mount cannot hang the merge), else none and said so.
+#   containers: `docker ps -a`, only when docker is installed, and given 3 seconds —
+#     a daemon that is down or starting can hang it, and macOS has no timeout(1).
+PROCS=""; CWDS=""; RUN_ERR=""; CONTAINERS=""; DOCKER_ERR=""
+load_running() {
+  local rc=0 p c
+  PROCS=$(ps ax -o pid= -o etime= -o command= 2>/dev/null) || rc=$?
+  if [[ $rc -ne 0 || -z "$PROCS" ]]; then
+    PROCS=""
+    if [[ -r /proc/self/cmdline ]]; then
+      for p in /proc/[0-9]*; do
+        c=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) && [[ -n "$c" ]] && PROCS="$PROCS${p#/proc/} ? $c"$'\n'
+      done
+    fi
+    [[ -n "$PROCS" ]] || RUN_ERR="could not list processes (ps exited $rc)"
+  fi
+  if [[ -r /proc/self/cwd ]]; then
+    CWDS=$(for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null) && printf '%s %s\n' "${p#/proc/}" "$c"; done)
+  elif command -v lsof >/dev/null 2>&1; then
+    rc=0; CWDS=$(lsof -b -nP -w -a -d cwd -Fpn 2>/dev/null) || rc=$?
+    CWDS=$(printf '%s\n' "$CWDS" | awk '/^p/{p=substr($0,2)} /^n/ && p != "" {print p, substr($0,2)}')
+    [[ -n "$CWDS" ]] || RUN_ERR="${RUN_ERR:+$RUN_ERR; }could not read working directories (lsof exited $rc) — command lines only"
+  else
+    RUN_ERR="${RUN_ERR:+$RUN_ERR; }could not read working directories (no /proc, no lsof) — command lines only"
+  fi
+}
+load_containers() {
+  command -v docker >/dev/null 2>&1 || return 0
+  local out err pid rc=0 i=0
+  out=$(mktemp) && err=$(mktemp) || { DOCKER_ERR="could not list containers (mktemp failed)"; return 0; }
+  docker ps -a --filter label=com.docker.compose.project.working_dir \
+    --format '{{.ID}}\t{{.Label "com.docker.compose.project.working_dir"}}\t{{.Names}}\t{{.Status}}' >"$out" 2>"$err" &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [[ $i -lt 30 ]]; do sleep 0.1; i=$((i+1)); done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    DOCKER_ERR="could not list containers (docker ps gave no answer in 3s)"
+  else
+    wait "$pid" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+      DOCKER_ERR="could not list containers (docker exited $rc: $(head -1 "$err" | cut -c1-100))"
+    else
+      CONTAINERS=$(cat "$out")
+    fi
+  fi
+  rm -f "$out" "$err"
+}
+# running_from <worktree>: the lines for it. A path in a command line counts only at
+# the start of a word (after a space, =, or a quote), so /mnt/x/wt does not name /x/wt.
+# The path as given and as `pwd -P` spells it: lsof reports /private/var for /var.
+# Through the environment, not awk -v, which reads a backslash in the path as an escape.
 running_from() {
   local d="$1" p
   d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
-  if [[ -z "$PROCS" ]]; then
-    PROCS=$(ps ax -o pid= -o etime= -o command= 2>/dev/null)
-    if [[ -r /proc/self/cwd ]]; then
-      CWDS=$(for _p in /proc/[0-9]*; do _c=$(readlink "$_p/cwd" 2>/dev/null) && printf '%s %s\n' "${_p#/proc/}" "$_c"; done)
-    elif command -v lsof >/dev/null 2>&1; then
-      CWDS=$(lsof -nP -w -a -d cwd -Fpn 2>/dev/null | awk '/^p/{p=substr($0,2)} /^n/ && p != "" {print p, substr($0,2)}')
-    fi
-  fi
-  # Through the environment, not awk -v, which reads a backslash in the path as an escape.
-  printf '%s\n--\n%s\n' "$CWDS" "$PROCS" | D="$d" P="$p" SELF="$$" awk '
+  [[ -n "$RUN_ERR" ]] && echo "    ⚠ $RUN_ERR"
+  printf '%s\n--\n%s\n' "$CWDS" "$PROCS" | D="$d" P="$p" SELF="$$" NOPS="${PROCS:+0}" awk '
     function under(s) { return s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1 }
-    function names(s) { s = s " "; return index(s, ENVIRON["D"] "/") || index(s, ENVIRON["D"] " ") || index(s, ENVIRON["P"] "/") || index(s, ENVIRON["P"] " ") }
+    function at(s, x,   i, j, c) {
+      j = 0
+      while ((i = index(substr(s, j + 1), x)) > 0) {
+        j += i; c = (j == 1) ? " " : substr(s, j - 1, 1)
+        if (c == " " || c == "=" || c == "\047" || c == "\"") return 1
+      }
+      return 0
+    }
+    function names(s) { s = s " "; return at(s, ENVIRON["D"] "/") || at(s, ENVIRON["D"] " ") || at(s, ENVIRON["P"] "/") || at(s, ENVIRON["P"] " ") }
     !body && $0 == "--" { body = 1; next }
-    !body { pid = $1; sub(/^[^ ]+ /, ""); if (under($0)) cwd[pid] = 1; next }
+    !body { pid = $1; sub(/^[^ ]+ /, ""); if (pid != "" && under($0)) cwd[pid] = 1; next }
     {
       pid = $1; if (pid == "" || pid == ENVIRON["SELF"]) next
       cmd = $0; sub(/^[ \t]*[0-9]+[ \t]+[^ \t]+[ \t]+/, "", cmd)
-      if (cwd[pid] || names(cmd)) printf "    pid %s, up %s: %s\n", pid, $2, substr(cmd, 1, 120)
-    }'
+      if (cwd[pid] || names(cmd)) { printf "    pid %s, up %s: %s\n", pid, $2, substr(cmd, 1, 120); done[pid] = 1 }
+    }
+    END { if (ENVIRON["NOPS"] == "") for (pid in cwd) if (!done[pid] && pid != ENVIRON["SELF"]) printf "    pid %s (command not known: ps failed)\n", pid }'
 }
+containers_from() {
+  local d="$1" p
+  d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
+  [[ -n "$DOCKER_ERR" ]] && echo "    ⚠ $DOCKER_ERR"
+  [[ -n "$CONTAINERS" ]] || return 0
+  printf '%s\n' "$CONTAINERS" | D="$d" P="$p" awk -F '\t' '
+    function under(s) { return s != "" && (s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1) }
+    under($2) { printf "    container %s (%s), %s — from %s\n", $1, $3, $4, $2 }'
+}
+if [[ ${#STALE_WORKTREES[@]} -gt 0 ]]; then
+  load_running
+  load_containers
+fi
 
 # --- Optional: clear Claude Code conversation context (keeps memory/) ---
 # Deletes conversation .jsonl files + their artifact dirs for THIS project under
@@ -198,9 +270,12 @@ mkdir -p "$(dirname "$NOTE_FILE")"
       rel="${wt#$REPO_ROOT/}"
       wt_branch=$(git -C "$wt" branch --show-current 2>/dev/null || echo "?")
       echo "  Branch: $wt_branch  →  $rel"
-      _run=$(running_from "$wt")
+      # A tool that failed is its own line, apart from what was found.
+      _run=$(running_from "$wt"; containers_from "$wt")
+      printf '%s\n' "$_run" | grep '^    ⚠' || true
+      _run=$(printf '%s\n' "$_run" | grep -v -e '^    ⚠' -e '^$' || true)
       if [[ -n "$_run" ]]; then
-        echo "  Still running from it — stop what a check started there (a server, a database, a watcher) before removing it; a shell of yours there is not a leftover:"
+        echo "  Still running from it, or left by it — stop or remove what a check started there before removing the worktree (\`docker compose down\` from its directory, \`docker rm <id>\`); ask before stopping anything you did not start:"
         echo "$_run"
       fi
       echo "  git worktree remove '$rel'"
@@ -229,7 +304,16 @@ mkdir -p "$(dirname "$NOTE_FILE")"
   fi
 } > "$NOTE_FILE"
 
+# Printed as well as written: no hook reads the file (#110), so the merger — the owner
+# or an assistant — is who sees it. Only when there is something to do: a `git pull`
+# runs this hook too, and a clean one stays one line. At most 40 lines; the file has all.
 echo ""
+if [[ ${#STALE_WORKTREES[@]} -gt 0 || -n "$ALL_MERGED" ]]; then
+  _n=$(wc -l < "$NOTE_FILE" | tr -d ' ')
+  head -40 "$NOTE_FILE"
+  [[ "$_n" -gt 40 ]] && echo "  … $((_n - 40)) more lines in $NOTE_PATH"
+  echo ""
+fi
 if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
   echo "✅ post-merge: context cleared ($CLEARED_COUNT items), cleanup note written to $NOTE_PATH."
 else
