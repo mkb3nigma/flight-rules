@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # post-merge hook — cleanup reminder after merging into the integration branch.
 #   1. Flags worktrees whose branch is now merged (stale — remove them)
+#      and the processes still running from each (#109)
 #   2. Lists merged branches safe to delete
 #   3. Writes a note file the next AI session picks up as context
 #   4. (Optional, off by default) clears the AI assistant's stored conversation
@@ -124,6 +125,39 @@ while IFS= read -r line; do
   fi
 done < <(git worktree list --porcelain 2>/dev/null)
 
+# Processes still running from a worktree about to be removed: a server, database or
+# watcher a check started there outlives the branch, and once the directory is gone it
+# runs on from nowhere (AppliHawk, 2026-10-24: dev servers up for days, #109). One whose
+# working directory is inside the worktree, or whose command line names it. Listed, not
+# stopped: a shell the owner has open there is no leftover. The working directory from
+# /proc where there is one, else lsof (macOS), else the command line alone. The path as
+# given and as `pwd -P` spells it: lsof reports /private/var for /var. Read once, and
+# only when a worktree is listed.
+PROCS=""; CWDS=""
+running_from() {
+  local d="$1" p
+  d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
+  if [[ -z "$PROCS" ]]; then
+    PROCS=$(ps ax -o pid= -o etime= -o command= 2>/dev/null)
+    if [[ -r /proc/self/cwd ]]; then
+      CWDS=$(for _p in /proc/[0-9]*; do _c=$(readlink "$_p/cwd" 2>/dev/null) && printf '%s %s\n' "${_p#/proc/}" "$_c"; done)
+    elif command -v lsof >/dev/null 2>&1; then
+      CWDS=$(lsof -nP -w -a -d cwd -Fpn 2>/dev/null | awk '/^p/{p=substr($0,2)} /^n/ && p != "" {print p, substr($0,2)}')
+    fi
+  fi
+  # Through the environment, not awk -v, which reads a backslash in the path as an escape.
+  printf '%s\n--\n%s\n' "$CWDS" "$PROCS" | D="$d" P="$p" SELF="$$" awk '
+    function under(s) { return s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1 }
+    function names(s) { s = s " "; return index(s, ENVIRON["D"] "/") || index(s, ENVIRON["D"] " ") || index(s, ENVIRON["P"] "/") || index(s, ENVIRON["P"] " ") }
+    !body && $0 == "--" { body = 1; next }
+    !body { pid = $1; sub(/^[^ ]+ /, ""); if (under($0)) cwd[pid] = 1; next }
+    {
+      pid = $1; if (pid == "" || pid == ENVIRON["SELF"]) next
+      cmd = $0; sub(/^[ \t]*[0-9]+[ \t]+[^ \t]+[ \t]+/, "", cmd)
+      if (cwd[pid] || names(cmd)) printf "    pid %s, up %s: %s\n", pid, $2, substr(cmd, 1, 120)
+    }'
+}
+
 # --- Optional: clear Claude Code conversation context (keeps memory/) ---
 # Deletes conversation .jsonl files + their artifact dirs for THIS project under
 # ~/.claude/projects/. Guards: skips files touched in the last 5 minutes (active
@@ -164,6 +198,11 @@ mkdir -p "$(dirname "$NOTE_FILE")"
       rel="${wt#$REPO_ROOT/}"
       wt_branch=$(git -C "$wt" branch --show-current 2>/dev/null || echo "?")
       echo "  Branch: $wt_branch  →  $rel"
+      _run=$(running_from "$wt")
+      if [[ -n "$_run" ]]; then
+        echo "  Still running from it — stop what a check started there (a server, a database, a watcher) before removing it; a shell of yours there is not a leftover:"
+        echo "$_run"
+      fi
       echo "  git worktree remove '$rel'"
     done
   else

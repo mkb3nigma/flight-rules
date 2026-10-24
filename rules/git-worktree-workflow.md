@@ -63,7 +63,10 @@ for having gone unenforced.
 6. Symlink untracked env files from the main checkout into new worktrees
    (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`.
    Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 6)
-7. Clean up after merging: `git worktree remove …` + `git branch -d …` — reminded (`post-merge`, `session-start`)
+7. Clean up after merging: stop what a check started from the worktree (a server, a
+   database, a watcher), then `git worktree remove …` + `git branch -d …` — skill
+   (`pre-merge-check` 21, for what the checks started), reminded (`post-merge` names
+   what still runs from the worktree; `session-start`)
 8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main`, first fast-forward any `main`-only commits into it; if that is not a fast-forward, **stop and ask** — skill (`feature-start` 4)
 
 ## The cwd-drift trap (learned the hard way)

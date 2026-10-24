@@ -982,6 +982,44 @@ say "$(grep -c 'main IS PR-ONLY — REBASE BLOCKED' <<<"$OUT")" "1" "…by the P
 git -C "$D" rebase --abort 2>/dev/null
 rm -rf "$D"
 
+echo "post-merge names what still runs from a worktree it lists for removal (#109):"
+# A server, database or watcher a check started in a worktree outlived the branch, and
+# nothing said so (AppliHawk, 2026-10-24). Listed, never stopped. Each fixture process
+# is a sleep: one whose working directory is the worktree, one whose command line
+# names another, one in a worktree whose name extends the first's (not a match).
+PB=$(cd "$(mktemp -d)" && pwd -P); PR="$PB/repo"
+git init -q -b trunk "$PR" || die "git init failed in $PR"
+git -C "$PR" config user.email t@t.t; git -C "$PR" config user.name t; git -C "$PR" config merge.ff false
+mkdir -p "$PR/.ai"; printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$PR/.ai/flight-rules.conf"
+echo base > "$PR/f.txt"; git -C "$PR" add -A; git -C "$PR" commit -qm "chore: base"
+for b in fix/srv fix/db fix/quiet fix/last; do
+  git -C "$PR" branch "$b" trunk && git -C "$PR" worktree add -q "$PB/wt-${b#fix/}" "$b" || die "could not add a worktree for $b"
+  echo "$b" > "$PB/wt-${b#fix/}/${b#fix/}.txt"; git -C "$PB/wt-${b#fix/}" add -A; git -C "$PB/wt-${b#fix/}" commit -qm "chore: $b" || die "could not commit on $b"
+done
+git -C "$PR" branch fix/srvx trunk && git -C "$PR" worktree add -q "$PB/wt-srvx" fix/srvx || die "could not add wt-srvx"
+mkdir -p "$PR/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PR/.ai/hooks/"
+chmod +x "$PR"/.ai/hooks/*; git -C "$PR" config core.hooksPath "$PR/.ai/hooks"
+(cd "$PB/wt-srv" && exec sleep 3001) & S1=$!
+(cd / && exec -a "dbserver -D $PB/wt-db/data" sleep 3002) & S2=$!
+(cd "$PB/wt-srvx" && exec sleep 3003) & S3=$!
+sleep 1
+for b in fix/srv fix/db fix/quiet; do git -C "$PR" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
+git -C "$PR" merge --no-verify --no-edit fix/last >/dev/null 2>&1; RC=$?
+PNOTE="$PR/.claude/post-merge-note.md"
+# section <branch>: the note's lines for that worktree, Branch: line to its remove line.
+section() { awk -v b="Branch: $1 " 'index($0, b) {p=1} p; p && /git worktree remove/ {exit}' "$PNOTE"; }
+say "$RC" "0" "the merge lands"
+say "$(grep -c 'Branch: fix/srv ' "$PNOTE" 2>/dev/null)" "1" "…and the note lists wt-srv for removal"
+say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "a process working in the worktree is named under it"
+say "$(section fix/srv | grep -c 'Still running from it')" "1" "…with what to do about it"
+say "$(section fix/srv | grep -c "pid $S3,")" "0" "…and not one in wt-srvx, whose name only extends it"
+say "$(section fix/db | grep -c "pid $S2, up .*: dbserver -D $PB/wt-db/data")" "1" "a process whose command line names the worktree is named under it"
+say "$(section fix/quiet | grep -c 'Branch: fix/quiet ')" "1" "a worktree with nothing running is listed"
+say "$(section fix/quiet | grep -c 'Still running')" "0" "…with nothing said about processes"
+say "$(kill -0 "$S1" "$S2" 2>/dev/null && echo alive)" "alive" "nothing is stopped by the hook"
+kill "$S1" "$S2" "$S3" 2>/dev/null; wait "$S1" "$S2" "$S3" 2>/dev/null
+rm -rf "$PB"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
