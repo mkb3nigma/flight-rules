@@ -44,6 +44,14 @@ release_of() {
   if [[ -n "$best" ]]; then printf '%s' "$best"; else printf '%s' "$found" | head -1; fi
 }
 
+# newer_than <a> <b>: a is a later release than b. Both dotted-numeric, or no answer
+# (false): a sha or "latest" as a cache directory, or a source with no plugin.json,
+# orders nothing, and the copy is reported behind as before. install.sh's, verbatim.
+newer_than() {
+    printf '%s\n%s\n' "$1" "$2" | grep -cE '^[0-9]+(\.[0-9]+)+$' | grep -qx 2 || return 1
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]
+}
+
 # A hook that is present, executable and EMPTY passes every other check here while
 # enforcing nothing. doctor already content-checks the agent guard (for a pre-conf copy);
 # these are the same idea for the six git hooks — one string each that a real copy must
@@ -145,18 +153,26 @@ else
         # line above green (AppliHawk, 2026-10-12). Byte-identical to an older cached
         # release is a stale copy, no doubt about it; matching no release may be the
         # project's own adaptation, which is a question, not a problem.
+        _newer=0
         if _ver=$(release_of "$HOOKS_DIR/$h"); then
           if [[ -n "$SRC_VERSION" && "$_ver" == "$SRC_VERSION" ]]; then
             # The copy IS the current release's; this doctor runs from a checkout whose
             # hooks/git has moved on since. Only a checkout can show this, never the plugin.
             warn "$h is the released $_ver copy, and this flight-rules checkout carries unreleased changes to it"
+          # A later release's copy is not behind: a session on that release wrote it, and
+          # this one runs the older plugin. A ❌ and a sync hint here pointed at a full
+          # install that downgraded it (fix review, 2026-10-24). install.sh's newer_than,
+          # verbatim (flight-rules-doctor.test.sh compares them).
+          elif newer_than "$_ver" "$SRC_VERSION"; then
+            warn "$h is the flight-rules $_ver copy, newer than this flight-rules ($SRC_VERSION) — a session on $_ver wrote it; start a new session to run $_ver here too"
+            _newer=1
           else
             bad "$h is the flight-rules $_ver copy — this flight-rules is ${SRC_VERSION:-newer}, so the hook running here is behind the one you installed"
           fi
         else
           warn "$h differs from this flight-rules' copy (${SRC_VERSION:-hooks/git/$h}) — adapted here on purpose, or a stale copy? diff it against $GIT_HOOKS_SRC/$h; if adapted, add a line '# flight-rules: adapted' to it and this stops"
         fi
-        NEEDS_SYNC=1
+        [[ $_newer -eq 1 ]] || NEEDS_SYNC=1
       else
         ok "$h installed and executable"
       fi
@@ -204,10 +220,13 @@ else
       elif _ver=$(release_of "$HOOKS_DIR/install.sh"); then
         if [[ -n "$SRC_VERSION" && "$_ver" == "$SRC_VERSION" ]]; then
           warn "install.sh is the released $_ver copy, and this flight-rules checkout carries unreleased changes to it"
+          NEEDS_SYNC=1
+        elif newer_than "$_ver" "$SRC_VERSION"; then
+          warn "install.sh is the flight-rules $_ver copy, newer than this flight-rules ($SRC_VERSION) — a session on $_ver wrote it; start a new session to run $_ver here too"
         else
           warn "install.sh is the flight-rules $_ver copy — this flight-rules is ${SRC_VERSION:-newer}; only running $HOOKS_PATH/install.sh by hand gets the old one"
+          NEEDS_SYNC=1
         fi
-        NEEDS_SYNC=1
       else
         grep -qF "$(hook_marker install.sh)" "$HOOKS_DIR/install.sh"; _m=$?
         if [[ $_m -eq 0 ]]; then

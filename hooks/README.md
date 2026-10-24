@@ -322,12 +322,16 @@ that the logic has exactly one home.
   any checkout; the refusal says so and prints the install to run in the main checkout. `--stale-only` replaces only a copy byte-identical to some release in
   the plugin cache no newer than the one installing — a newer release's copy, which a
   session on a later version wrote, is left alone and named, so an older session's sync
-  never downgrades it — and a project's own adaptation is left alone and named — mark it
+  does not downgrade it — from 0.27.0 on: a session still on 0.26.x or earlier runs an
+  installer without that check and can write its copies over newer ones once, after
+  which the next current session's doctor names them behind and its sync restores them;
+  doctor itself names a newer release's copy as a ⚠️, not as behind — and a project's own adaptation is left alone and named — mark it
   with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
   left alone without a word: an `install.sh` that is the project's own script, not
   flight-rules' (it lacks the installer's header phrase), and a missing `install.sh`,
   which doctor names instead; without the flag
-  every differing hook is replaced, except one that is not flight-rules' at all (no
+  every differing hook is replaced — a newer release's copy too, named as a downgrade —
+  except one that is not flight-rules' at all (no
   marker, and no release's copy: a linter's `pre-commit`, the project's own
   `commit-msg`), which is refused — nothing written — with the rename that keeps it, or
   word that the name it would take is already taken;

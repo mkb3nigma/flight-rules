@@ -19,8 +19,12 @@
 # --stale-only overwrites a hook only when it is byte-identical to some release in the
 # plugin cache — provably unmodified — not newer than the one named, and copies in one
 # that is missing. A copy that matches no release may be the project's own adaptation,
-# and a newer release's copy another session's, so each is left alone and named.
-# Without --stale-only every differing hook is replaced, except one that is not
+# and a newer release's copy another session's, so each is left alone and named — from
+# 0.27.0 on: an older release's installer has no such check, so a session still on
+# 0.26.x can write its copies over newer ones once; the next current session's doctor
+# names them behind and its sync restores them.
+# Without --stale-only every differing hook is replaced (a newer release's copy named
+# as a downgrade), except one that is not
 # flight-rules' at all (a linter's pre-commit, the project's own commit-msg): that is
 # refused, nothing is written, and the rename that keeps it is printed. A project's
 # own install.sh is left alone. A first install names the hooks git will stop running
@@ -220,7 +224,7 @@ if [ -n "$FROM" ]; then
     # --check-only, which session-start passes on a protected branch, where the diff
     # could not be committed (#99): the comparison runs, and what is behind is named.
     NOWRITE=0; { [ -n "${MAIN:-}" ] || [ "$CHECK_ONLY" -eq 1 ]; } && NOWRITE=1
-    TO_COPY=""; FOREIGN=""; REFUSED=0; ACT=updating; [ "$NOWRITE" -eq 1 ] && ACT=stale
+    TO_COPY=""; DOWN=""; FOREIGN=""; REFUSED=0; ACT=updating; [ "$NOWRITE" -eq 1 ] && ACT=stale
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
@@ -283,8 +287,13 @@ if [ -n "$FROM" ]; then
         else
             _m=1; _mk=$(hook_marker "$h") || _mk=""
             [ -z "$_mk" ] || { _m=0; grep -qF -e "$_mk" "$dst" || _m=$?; }
-            if [ "$_m" -eq 0 ] || release_of "$dst" >/dev/null; then
+            _v=$(release_of "$dst") || _v=""
+            if [ "$_m" -eq 0 ] || [ -n "$_v" ]; then
                 TO_COPY="$TO_COPY $h"
+                # Asked for by name, a full install from an older release still replaces
+                # a newer one's copy — but says it is a downgrade, not "synced" (fix
+                # review, 2026-10-24: doctor's hint led here and it went by unremarked).
+                if newer_than "$_v" "${FROM_VERSION:-}"; then DOWN="$DOWN $h=$_v"; fi
             elif [ "$_m" -ne 1 ]; then
                 echo "❌ $dst could not be read (grep exited $_m) — could not check whose it is; not replaced"
                 REFUSED=1
@@ -343,7 +352,11 @@ if [ -n "$FROM" ]; then
     for h in $TO_COPY; do
         cp "$FROM/$h" "$HOOKS_DIR/.$h.sync.$$" || { echo "❌ could not write $h into $HOOKS_DIR"; exit 1; }
         mv -f "$HOOKS_DIR/.$h.sync.$$" "$HOOKS_DIR/$h" || { echo "❌ could not replace $h in $HOOKS_DIR"; exit 1; }
-        echo "   synced $h${FROM_VERSION:+ (flight-rules $FROM_VERSION)}"
+        case " $DOWN " in
+            *" $h="*) _dv=${DOWN#* "$h"=}; _dv=${_dv%% *}
+                      echo "   $h: replaced the flight-rules $_dv copy with older $FROM_VERSION — a downgrade, as asked" ;;
+            *)        echo "   synced $h${FROM_VERSION:+ (flight-rules $FROM_VERSION)}" ;;
+        esac
         SYNCED=$((SYNCED+1))
     done
 fi
@@ -376,9 +389,17 @@ done
 # after (probe, 2026-10-24). Named, never refused: running them from flight-rules' hooks
 # in place of displacing them is #111. Only executable files git would run; a fresh
 # `git init`'s *.sample files are none.
+# --show-scope is git 2.26+; an older git refuses the option (129), and reading that as
+# "no global value" named .git/hooks, which git was not running (fix review, D7). There,
+# the global value, else the system one, as git itself prefers them.
 if [ "$PATH_IS_SET" -eq 0 ]; then
-    _old=$(git config --show-scope --path --get-all core.hooksPath 2>/dev/null \
-        | awk -F'\t' '$1!="local" && $1!="worktree" {v=substr($0, length($1)+2)} END {print v}' || true)
+    _sc=0; _scope=$(git config --show-scope --path --get-all core.hooksPath 2>/dev/null) || _sc=$?
+    if [ "$_sc" -le 1 ]; then
+        _old=$(printf '%s\n' "$_scope" \
+            | awk -F'\t' '$1!="local" && $1!="worktree" && NF>1 {v=substr($0, length($1)+2)} END {print v}' || true)
+    else
+        _old=$(git config --global --path core.hooksPath 2>/dev/null || git config --system --path core.hooksPath 2>/dev/null || true)
+    fi
     if [ -n "$_old" ]; then
         case "$_old" in /*) ;; *) _old="$REPO_ROOT/$_old" ;; esac
     else

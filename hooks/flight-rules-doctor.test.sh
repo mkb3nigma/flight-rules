@@ -622,6 +622,29 @@ say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a current insta
 say "$(rc "$D")" "0" "…and doctor passes"
 rm -rf "$D"
 
+echo "A later release's copy is not behind (fix review, 2026-10-24):"
+# Run from an older plugin, doctor called a newer release's commit-msg "behind" with a
+# ❌, and its sync hint led to a full install that downgraded it. Here the doctor is
+# 0.0.5's, the project holds 0.0.9's commit-msg and install.sh.
+say "$(sed -n '/^newer_than() {/,/^}/p' "$DOCTOR")" "$(sed -n '/^newer_than() {/,/^}/p' "$H/git/install.sh")" "newer_than is install.sh's, verbatim"
+P=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$P/.claude-plugin" "$P/hooks"; cp -R "$H/git" "$P/hooks/git"; cp "$DOCTOR" "$P/hooks/"
+printf '{ "name": "flight-rules", "version": "0.0.5" }\n' > "$P/.claude-plugin/plugin.json"
+D=$(mkrepo); N="$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.9/hooks/git"; mkdir -p "$N"
+for h in commit-msg install.sh; do { cat "$H/git/$h"; echo "# flight-rules 0.0.9"; } > "$N/$h"; cp "$N/$h" "$D/.ai/hooks/$h"; done
+OUT=$(cd "$D" && HOME="$D/fakehome" bash "$P/hooks/flight-rules-doctor.sh" 2>&1); RC=$?
+say "$RC" "0" "newer copies only: doctor exits 0"
+say "$(grep -c '⚠️  commit-msg is the flight-rules 0.0.9 copy, newer than this flight-rules (0.0.5) — a session on 0.0.9 wrote it; start a new session' <<<"$OUT")" "1" "…names the newer commit-msg as a warning"
+say "$(grep -c '⚠️  install.sh is the flight-rules 0.0.9 copy, newer than this flight-rules (0.0.5)' <<<"$OUT")" "1" "…and the newer install.sh"
+say "$(grep -c -e '❌' -e 'behind' -e 'to update:' -e 're-run without' <<<"$OUT")" "0" "…with no ❌, no 'behind', and no sync hint"
+say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the hooks"
+# An older copy beside them is still behind, with the hint: the newer case silences only itself.
+mkcache "$D" pre-rebase; cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/pre-rebase" "$D/.ai/hooks/pre-rebase"
+OUT=$(cd "$D" && HOME="$D/fakehome" bash "$P/hooks/flight-rules-doctor.sh" 2>&1); RC=$?
+say "$RC" "1" "an older pre-rebase beside them: a problem"
+say "$(grep -c '❌ pre-rebase is the flight-rules 0.0.1 copy' <<<"$OUT")$(grep -c 'to update:' <<<"$OUT")" "11" "…named behind, with the sync hint"
+say "$(grep -c '❌ commit-msg' <<<"$OUT")" "0" "…while the newer commit-msg stays a warning"
+rm -rf "$D" "$P"
+
 echo "The conf — typos and bad values must not pass silently:"
 D=$(mkrepo); printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "HOOK_SYNC=auto is a known key"

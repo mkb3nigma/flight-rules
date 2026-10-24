@@ -616,6 +616,15 @@ say "$(same "$D/.ai/hooks/commit-msg" "$N/commit-msg")" "same" "…and is still 
 say "$(grep -c 'install.sh: the flight-rules 0.0.9 copy, newer than 0.0.5 — left alone' <<<"$OUT")" "1" "so is install.sh"
 say "$(same "$D/.ai/hooks/install.sh" "$N/install.sh")" "same" "…still 0.0.9's"
 say "$(same "$D/.ai/hooks/pre-rebase" "$P/hooks/git/pre-rebase")" "same" "the older pre-rebase IS updated on the same run"
+# Without --stale-only the install was asked for by name, and still replaces the newer
+# copy — saying it is a downgrade, where it said "synced" (fix review, 2026-10-24).
+make_stale "$D" post-merge
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "a full install from 0.0.5 over 0.0.9's copies: exit 0"
+say "$(grep -c 'commit-msg: replaced the flight-rules 0.0.9 copy with older 0.0.5 — a downgrade, as asked' <<<"$OUT")" "1" "…names the commit-msg it downgraded"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…which is now 0.0.5's"
+say "$(grep -c 'synced commit-msg' <<<"$OUT")" "0" "…not called synced"
+say "$(grep -c 'synced post-merge (flight-rules 0.0.5)' <<<"$OUT")" "1" "…while the older post-merge is plainly synced"
 rm -rf "$D" "$P"
 
 echo "A fresh install names the hooks git will stop running, and carries on (#111):"
@@ -650,7 +659,19 @@ W=$(grep '^⚠️ git runs these hooks from' <<<"$OUT")
 say "$(head -1 <<<"$OUT")" "0" "a global core.hooksPath with a commit-msg: exit 0"
 say "$(grep -c "from $G today" <<<"$W")" "1" "…warned, naming the global folder"
 say "$(grep -c ' commit-msg' <<<"$W")$(grep -c 'pre-push' <<<"$W")" "10" "…its commit-msg, not .git/hooks' pre-push, which git was not reading"
-rm -rf "$D" "$G"
+# A git older than 2.26 refuses --show-scope (129); read as "no global value", the
+# warning named .git/hooks (fix review, D7). A git that refuses the option, else real.
+GS=$(cd "$(mktemp -d)" && pwd -P); REALGIT=$(command -v git)
+printf '#!/bin/sh
+for a in "$@"; do [ "$a" = --show-scope ] && { echo "error: unknown option show-scope" >&2; exit 129; }; done
+exec "%s" "$@"
+' "$REALGIT" > "$GS/git"; chmod +x "$GS/git"
+OUT=$(cd "$D" && git config --unset core.hooksPath; HOME="$D/fakehome" GIT_CONFIG_GLOBAL="$D/gcfg" GIT_CONFIG_NOSYSTEM=1 PATH="$GS:$PATH" bash .ai/hooks/install.sh 2>&1); RC=$?
+W=$(grep '^⚠️ git runs these hooks from' <<<"$OUT")
+say "$RC" "0" "a git without --show-scope, a global core.hooksPath: exit 0"
+say "$(grep -c "from $G today" <<<"$W")" "1" "…the warning still names the global folder"
+say "$(grep -c ' commit-msg' <<<"$W")$(grep -c 'pre-push' <<<"$W")" "10" "…its commit-msg, not .git/hooks' pre-push"
+rm -rf "$D" "$G" "$GS"
 D=$(fresh); git -C "$D" config core.hooksPath .ai/hooks; own "$D/.git/hooks/commit-msg"
 OUT=$(grun "$D" .ai/hooks/install.sh)
 say "$(head -1 <<<"$OUT")" "0" "a local core.hooksPath already set: exit 0"
