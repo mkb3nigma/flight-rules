@@ -9,7 +9,17 @@
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/agent/session-start.sh\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/agent/session-start.sh\" --plugin"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/agent/session-start.sh\" --prompt --plugin"
           }
         ]
       }

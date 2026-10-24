@@ -99,6 +99,7 @@ with all five git hooks installed.
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, skills | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
 | Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones (not a missing `install.sh`: nothing needs it to run the hooks, so doctor names it with the `cp` that restores it), then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the checkout the session runs in is touched — from a linked worktree, hooks in the main checkout are not synced (the write would land in that checkout's working tree); when one there is stale or missing the session says so and prints the command that updates this worktree's own copy instead (`--this-checkout`), to commit on its branch and merge, and when all are current it says nothing — never during a merge, rebase, `git am`, cherry-pick, revert or bisect — that skip is said, with the command to run once it is finished — nor on a protected branch, where the diff could not be committed — protected as the agent guard decides it, `FLIGHT_RULES_PROTECTED_BRANCHES` first and case-insensitively, and a `PROTECTED_BRANCHES` pattern that does not compile counts as protected, said as such: there it only compares, names what is behind or missing, lists apart what the command leaves alone, and prints the command to run in a worktree on a branch (silent when all are current); with `--this-checkout` it updates that worktree's copy even when git runs the hooks from the main checkout (without `--stale-only`, replacing what differs there too), and the merge brings it there — and the config is never rewritten. A headless session (`CLAUDE_CODE_SESSION_ATTENDED=0`) syncs until an attended session has run that day, spending no flag, and its notice reaches no screen — so an attended session says on screen when the hook directory has uncommitted changes, whoever made them, and when git cannot fully tell (it shows what git said). A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted; one the sync cannot read is said to be unreadable and left alone, on screen even when nothing else was synced. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. It also warns, to the assistant only, about a project `install.sh` that is behind, differs while carrying flight-rules' marker, or cannot be read; a missing one is noted on the full report with the `cp` that restores it. |
+| Open-branch limit | `OPEN_BRANCH_LIMIT` | `FLIGHT_RULES_OPEN_BRANCH_LIMIT` | `session-start.sh`, `feature-start` | When this many branches are open at once — checked out in a worktree, with commits not yet in `INTEGRATION_BRANCH`, a protected one aside — the session's first run each day warns, on screen and to the assistant, naming which have passed `pre-merge-check` and wait to merge and which have not, and where the limit is set; when it cannot count (no integration branch, local or `origin/`; a git failure) it tells the assistant so. `session-start` only warns and never blocks; `/feature-start` asks before opening another (step 5) and opens it only once you say it is okay — with no one to ask, it reports the count and creates nothing. Merged is as git sees it in this clone — the local `INTEGRATION_BRANCH`, else `origin/` — so a squash-merged branch, or one merged upstream and not yet pulled, counts until its worktree goes. Default `5`; `off` stands it down; any other value is taken as 5 (doctor says so). Only in a project with `.ai/flight-rules.conf`. |
 | `/dg` comic | `DG_COMIC` | — | `/dg` (an instruction, not a hook) | `always` (default): every verdict ends with an ASCII comic of the best banter, with the banter score. `never`: no comic and no score. |
 | `/dg` comic in PRs | `DG_COMIC_PR` | — | `/dg`, `pr-create` (instructions, not hooks) | Whether a review that is for a PR puts the comic, banter score included, in it. Strictly opt-in: `never` (default) keeps it out without asking, `ask` asks at the end of the verdict, `always` adds it. Ignored with `DG_COMIC=never`. |
 | `/dg` round-2 wait | `DG_WAIT_MINUTES` | — | `/dg` (an instruction, not a hook) | Round 2 of the debate waits for the pre-review and the dependency scan; a run with no result after this many minutes counts as failed. A positive whole number; default `15`. |
@@ -296,7 +297,14 @@ that the logic has exactly one home.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
   unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
-  (stale worktrees, deletable branches) that the next AI session picks up.
+  (stale worktrees, deletable branches) to `.claude/post-merge-note.md` and, when it has
+  something to do, prints it to whoever merged (at most 40 lines; no flight-rules hook
+  reads the file, #110). Each command is on a line of its own, quoted to be pasted, with
+  what to know about it — just merged, or refused until a push — on the line below. Under each stale worktree it names what still runs from it — processes
+  working there or with its path in their command line, and Docker Compose containers
+  from it, stopped ones included — so what a check started is stopped or removed before
+  the worktree goes. It lists them and stops nothing; a `ps`, `lsof` or `docker` that
+  fails is said so, not read as nothing running (#109).
   Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
   conversations for the project so the next session starts fresh — read the guarded
   block in the script before enabling.
@@ -306,7 +314,11 @@ that the logic has exactly one home.
   the directory the **local** `core.hooksPath` names, else `.ai/hooks/`, and writes
   the path once, relative to the repo root, so every worktree resolves its own copy;
   a path already set is never rewritten (an absolute one written from a worktree
-  outlived the worktree and left every checkout running no hooks).
+  outlived the worktree and left every checkout running no hooks). Setting it moves git
+  off wherever it read hooks before — a global `core.hooksPath`, else `.git/hooks/` — so
+  a first install names each executable hook there that will stop running, with the way
+  to keep it, and carries on: nothing there is moved or changed. Running them in place
+  of displacing them is #111.
   **After a plugin update**, `bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git`
   copies the six hooks and itself into the project first, then installs as usual —
   the update refreshes the agent hooks but cannot touch these, which are the
@@ -316,13 +328,25 @@ that the logic has exactly one home.
   one to use there, `--this-checkout`, which updates the worktree's own copy for its
   branch to commit and merge. If that directory does not exist, git runs no hooks in
   any checkout; the refusal says so and prints the install to run in the main checkout. `--stale-only` replaces only a copy byte-identical to some release in
-  the plugin cache, so a project's own adaptation is left alone and named — mark it
+  the plugin cache no newer than the one installing — a newer release's copy, which a
+  session on a later version wrote, is left alone and named, so an older session's sync
+  does not downgrade it — from 0.27.0 on: a session still on 0.26.x or earlier runs an
+  installer without that check and, left open, writes its copies over newer ones again
+  on its first session start (startup, resume, clear or compact) each day until it is
+  closed. A current session's doctor names them behind, and its sync restores them, at
+  its next daily check (a later day's first session start, or after a version change);
+  one that already ran today says nothing until then;
+  doctor itself names a newer release's copy as a ⚠️, not as behind — and a project's own adaptation is left alone and named — mark it
   with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
   left alone without a word: an `install.sh` that is the project's own script, not
   flight-rules' (it lacks the installer's header phrase), and a missing `install.sh`,
   which doctor names instead; without the flag
-  every differing hook is replaced, except a `pre-commit` that is not flight-rules'
-  at all, which is refused with the rename that keeps it running. A copy that fails
+  every differing hook is replaced — a newer release's copy too, named as a downgrade —
+  except one that is not flight-rules' at all (no
+  marker, and no release's copy: a linter's `pre-commit`, the project's own
+  `commit-msg`), which is refused — nothing written — with the rename that keeps it, or
+  word that the name it would take is already taken;
+  the project's own `install.sh` is left alone. A copy that fails
   is an exit, never a "synced" line. `flight-rules-doctor.sh` prints the command
   whenever a hook is missing or behind, or the project's `install.sh` is behind,
   differs while still carrying flight-rules' marker, or cannot be read (a warning,
@@ -421,7 +445,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project (a headless session spends no
   flag, so it runs until an attended one has that day), and again after a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
-  so they get cleaned up. Doctor's ❌ problems, the command that fixes them, and a hook sync
+  so they get cleaned up. The plugin wires it to UserPromptSubmit too, as `--prompt
+  --plugin`: no event fires on `/reload-plugins`, so the first prompt after a reload that
+  changed this session's plugin version says so, and that a new session loads the rules
+  and runs these checks (#94). It compares the version recorded for the session id at
+  session start, and runs nothing else; a headless session skips it. Hand-wired there is
+  no plugin to reload, so the snippet above does not wire it, and without `--plugin` a
+  copy records nothing. Doctor's ❌ problems, the command that fixes them, and a hook sync
   are printed as `systemMessage`, so they appear on the user's screen — in a project
   that uses flight-rules (`.ai/flight-rules.conf` at the root, or flight-rules' hooks
   installed). A repo with no `core.hooksPath` is shown the install hint
@@ -443,7 +473,9 @@ Guards that fire on the assistant's own events, before git ever runs:
   keeps the text it was given — reported 2026-09-15 by a session that had just read the
   new version's SKILL.md from disk and was still following the previous version's
   principles. Nothing in this repo can re-inject into a live session; **a new session is
-  what picks up a rules change.** So the header names the plugin version, which turns
+  what picks up a rules change.** The plugin's `session-start.sh --prompt --plugin` says
+  so on the first prompt after a reload changes the session's version; hand-wired,
+  nothing does. And the header names the plugin version, which turns
   invisible staleness into something a reader can check against the plugin directory.
   Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
   install shape, because reading the version must never cost the rules.

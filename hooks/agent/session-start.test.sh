@@ -6,6 +6,12 @@
 set -uo pipefail
 H="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK="$H/session-start.sh"
+# The hook reads the session id from stdin (#94). A runner's stdin left open is a case
+# of its own, below; everywhere else the runs see what Claude Code gives — a closed one.
+exec </dev/null
+# The hook's own shq, for the commands it prints: built with printf %q, the expected
+# lines matched only while TMPDIR held nothing to quote (fourth review, G6).
+eval "$(sed -n '/^shq() {/,/^}/p' "$HOOK")"
 PASS=0; FAIL=0
 say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
@@ -309,7 +315,7 @@ say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, in a worktree, hooks in the main ch
 say "$(grep -c 'could not update the git hooks' <<<"$OUT")" "1" "…says it did not sync"
 say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…because the hooks are the main checkout's"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…not because they are outside the repository"
-say "$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | grep -cF "$(printf 'bash %q --from %q --stale-only --this-checkout' "$T/hooks/git/install.sh" "$T/hooks/git")")" "1" "…and gives the command for this worktree's copy, its paths shell-quoted"
+say "$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | grep -cF "bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only --this-checkout")" "1" "…and gives the command for this worktree's copy, its paths shell-quoted"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" && echo stale)" "stale" "…leaving the main checkout's copy as it was"
 rm -rf "$D"
 # …and with every copy there current, nothing to say: the warning came every day
@@ -420,7 +426,7 @@ J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1)
 say "$(ctx <<<"$J" | grep -c 'HOOK_SYNC=auto updated git hooks')" "1" "PROTECTED_BRANCHES=off: the branch policy is off, and the sync writes"
 rm -rf "$D"
 # The default set is pre-commit-check.sh's; a copy that drifts protects a different set.
-say "$(sed -n 's/^  _prot="\${_prot:-\(.*\)}"$/\1/p' "$H/session-start.sh")" \
+say "$(sed -n 's/^PROT="\${PROT:-\(.*\)}"$/\1/p' "$H/session-start.sh")" \
     "$(sed -n "s/^DEFAULT_PROTECTED='\(.*\)'$/\1/p" "$H/pre-commit-check.sh")" "the protected-branch default matches pre-commit-check.sh's"
 say "$(sed -n '/^read_conf() {/,/^}/p' "$H/session-start.sh")" \
     "$(sed -n '/^read_conf() {/,/^}/p' "$H/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"
@@ -428,7 +434,11 @@ say "$(sed -n '/^read_conf() {/,/^}/p' "$H/session-start.sh")" \
 # a branch in another case, the environment over the conf. The sync's own parse, grep
 # and case wrote on each while the guard refused the commit (fix review, F1/D7).
 # <description> % <conf line> % <branch> % <env>
+# Counted: a command in the loop that reads stdin eats the cases after it, and the
+# suite still says "passed" — the hook's stdin read did, 2026-10-24, three of four.
+NCASE=0
 while IFS='%' read -r desc line br envv; do
+  NCASE=$((NCASE+1))
   D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n%s\n' "$line" >> "$D/.ai/flight-rules.conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
   [ "$br" = trunk ] || git -C "$D" checkout -qb "$br"
@@ -446,6 +456,7 @@ a double-quoted pattern with a comment%PROTECTED_BRANCHES="^trunk$"   # the trun
 a branch in another case than the pattern%PROTECTED_BRANCHES=^(main|qa)$%QA%
 the environment over the conf%PROTECTED_BRANCHES=^main$%trunk%FLIGHT_RULES_PROTECTED_BRANCHES=^trunk$
 CASES
+say "$NCASE" "4" "…all four protected-branch cases ran"
 # A pattern bash cannot compile protects nothing to =~; the sync takes the branch as
 # protected and says the pattern is broken, rather than writing (fix review, F5).
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(trunk\n' >> "$D/.ai/flight-rules.conf"
@@ -509,10 +520,25 @@ say "$(grep -c 'skipped the git hooks: a merge is in progress' <<<"$OUT")" "1" "
 say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and how to clear one left behind"
 # The command is pasted, so its paths are quoted for the shell, not wrapped in "…": a
 # path holding `$(…)` or `"` ran or broke when pasted (0.26.0 release review, P2).
-say "$(grep -cxF "  $(printf 'bash %q --from %q --stale-only' "$T/hooks/git/install.sh" "$T/hooks/git")" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
+say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
-rm -rf "$D"
+# A plugin under a path with a multibyte character and a space (a home directory named
+# so): printf %q under macOS bash 3.2 split the ß and left a raw byte, so the pasted
+# command named a path that does not exist (fix review, 2026-10-24). shq quotes it whole.
+U=$(cd "$(mktemp -d)" && pwd -P)/"Stra ße"; mkdir -p "$U" && cp -R "$T/." "$U/" || die "could not lay out the ß plugin"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*   # the day's run was spent above
+# A UTF-8 locale, as the install and doctor cases pin: under C, %q left the ß alone and
+# the case passed against the bug (fourth review, G1).
+U8=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -1); U8=${U8:-en_US.UTF-8}
+OUT=$( { (cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" bash "$U/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
+CMD=$(grep -E '^  bash .*--stale-only$' <<<"$OUT" | head -1)
+say "$(grep -cE '^  bash .*--stale-only$' <<<"$OUT")" "1" "a plugin path with ß and a space: the sync command is printed"
+# jq turns a stray byte into U+FFFD, so the check is for that, not for valid UTF-8, which
+# jq's output always is (fourth review, D6b).
+say "$(grep -c "$(printf '\357\277\275')" <<<"$CMD")" "0" "…with no byte replaced on the way"
+say "$(bash() { printf '%s|' "$@"; }; eval "$CMD")" "$U/hooks/git/install.sh|--from|$U/hooks/git|--stale-only|" "…and, pasted, hands bash the exact paths"
+rm -rf "$D" "$(dirname "$U")"
 # Mid-cherry-pick too, not only merge and rebase (release review, 2026-10-12).
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
@@ -768,6 +794,237 @@ say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "the merged worktree beside 
 say "$(grep -c 'detached' <<<"$OUT")" "0" "a detached worktree is not reported stale"
 rm -rf "$D"
 
+echo "After /reload-plugins, the next prompt says the session's version changed (#94):"
+# No hook event fires on a reload, and SessionStart does not fire again, so a project
+# kept three stale hooks under 0.26.0 and nothing said a new session was needed
+# (AppliHawk, 2026-10-21). SessionStart records the version under the session id on
+# stdin; UserPromptSubmit runs the hook with --prompt, which compares and does nothing
+# else (batch review, 2026-10-24: a prompt that ran the sync downgraded hooks from an
+# older session, and re-ran everything from a subdirectory).
+T=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify
+SF="$D/fakehome/.claude/hooks/.session-version-"
+# SS <session id> [dir] [plugin] [flag, default --plugin; "" for a hand-wired run]:
+# SessionStart; UP: the same as a prompt. rc on the last line.
+SS() { (cd "${2:-$D}" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "${3:-$T}/hooks/agent/session-start.sh" ${4---plugin} 2>&1 <<<"{\"session_id\":\"$1\",\"hook_event_name\":\"SessionStart\"}"); echo "rc=$?"; }
+UP() { (cd "${2:-$D}" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "${3:-$T}/hooks/agent/session-start.sh" --prompt ${4---plugin} 2>&1 <<<"{\"session_id\":\"$1\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hi\"}"); echo "rc=$?"; }
+body() { grep -v '^rc=' <<<"$1" | grep -c .; }
+rc() { tail -1 <<<"$1"; }
+J=$(SS s-a)
+say "$(rc "$J")" "rc=0" "SessionStart with a session id exits 0"
+say "$(cat "${SF}s-a" 2>/dev/null)" "1.0.0" "…and records the version it started on"
+J=$(UP s-a)
+say "$(rc "$J")" "rc=0" "a prompt in that session, same version: exits 0"
+say "$(body "$J")" "0" "…saying nothing"
+say "$(cat "${SF}s-a" 2>/dev/null)" "1.0.0" "…and leaving the record as it was"
+# The update and reload: this session's hooks are now 1.0.1's; a git hook is behind.
+printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"; stale "$D" commit-msg
+cp "$D/.ai/hooks/commit-msg" "$D/before-commit-msg"
+J=$(UP s-a)
+say "$(rc "$J")" "rc=0" "the first prompt after the reload exits 0"
+say "$(grep -v '^rc=' <<<"$J" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit" "…answering as UserPromptSubmit"
+say "$(usr <<<"$J" | grep -c 'flight-rules is now 1.0.1 in this session (it was 1.0.0)')" "1" "…says on screen the plugin changed under the session"
+say "$(usr <<<"$J" | grep -c 'Start a new session to get both')" "1" "…and that a new session loads the rules and runs the checks"
+say "$(ctx <<<"$J" | grep -c 'its rules are not')" "1" "…telling the assistant too"
+say "$(ctx <<<"$J" | grep -c "Already on the user's screen with this prompt")" "1" "…which is told the user saw it"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/before-commit-msg" && echo same)" "same" "…and syncs nothing: the stale hook waits for the new session"
+say "$(usr <<<"$J" | grep -c 'merge.ff\|synced')" "0" "…nor runs doctor or the sync"
+say "$(cat "${SF}s-a" 2>/dev/null)" "1.0.1" "…and records the new version"
+J=$(UP s-a)
+say "$(rc "$J")" "rc=0" "the prompt after that exits 0"
+say "$(body "$J")" "0" "…saying nothing: it was said once"
+# Another session that already ran the new version must not hide the notice from this
+# one (the per-project flag did).
+printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"; SS s-b >/dev/null
+printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"; SS s-c >/dev/null
+J=$(UP s-b)
+say "$(usr <<<"$J" | grep -c 'now 1.0.1 in this session (it was 1.0.0)')" "1" "a reloaded session is told even when another ran the new version first"
+rm -rf "$D" "$T"
+# An older session left open, on the older plugin, after a newer one synced the hooks:
+# its prompts, on any day, change nothing and say nothing (it used to sync back down).
+T0=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T0/.claude-plugin/plugin.json"
+T1=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T1/.claude-plugin/plugin.json"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify
+SF="$D/fakehome/.claude/hooks/.session-version-"
+SS old "$D" "$T0" >/dev/null; SS new "$D" "$T1" >/dev/null
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*   # the next day: no daily flag
+before=$(git -C "$D" status --porcelain; find "$D/.ai/hooks" -type f -exec cksum {} + | sort)
+J=$(UP old "$D" "$T0")
+say "$(rc "$J")" "rc=0" "an older session's prompt the next day exits 0"
+say "$(body "$J")" "0" "…saying nothing: its own version has not changed"
+say "$( [ "$(git -C "$D" status --porcelain; find "$D/.ai/hooks" -type f -exec cksum {} + | sort)" = "$before" ] && echo same)" "same" "…and writing nothing in the project"
+say "$(ls -a "$D"/fakehome/.claude/hooks/ | grep -c '^\.worktree-check-')" "0" "…nor running the day's checks"
+# From a subdirectory or a worktree: the session is the same, and so is the answer.
+mkdir -p "$D/sub"; git -C "$D" worktree add -q "$D/.ai/worktrees/w" -b feat/w 2>/dev/null
+J=$(UP new "$D/sub" "$T1")
+say "$(rc "$J")" "rc=0" "a prompt from a subdirectory exits 0"
+say "$(body "$J")" "0" "…saying nothing, running nothing"
+J=$(UP new "$D/.ai/worktrees/w" "$T1")
+say "$(rc "$J")" "rc=0" "a prompt from a worktree exits 0"
+say "$(body "$J")" "0" "…saying nothing, running nothing"
+say "$(ls -a "$D"/fakehome/.claude/hooks/ | grep -c '^\.worktree-check-')" "0" "…neither one spending a day's flag"
+# A session with no record (it started before versions were recorded): never told.
+J=$(UP never-started "$D" "$T1")
+say "$(rc "$J")" "rc=0" "a session with no record: exits 0"
+say "$(body "$J")" "0" "…saying nothing"
+say "$(ls -a "$D"/fakehome/.claude/hooks/ | grep -c '^\.session-version-never-started')" "0" "…and recording nothing"
+# An id with characters a session id does not have names no file.
+J=$(SS 'a*b c' "$D" "$T1")
+say "$(rc "$J")" "rc=0" "a session id with * and a space: SessionStart exits 0"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c 'session-version-a')" "0" "…and no file is made from it"
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "0" "…the day's run having been spent above"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+# stdin left open with nothing on it: the read gives up, and the run goes on (a test
+# runner's socket held it until killed, 2026-10-24; Claude Code's timeout drops the output).
+t0=$(date +%s)
+J=$( { sleep 20 & echo $! > "$D/sleeper"; } | (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+kill "$(cat "$D/sleeper")" 2>/dev/null; t1=$(date +%s)
+say "$(rc "$J")" "rc=0" "stdin left open: SessionStart exits 0"
+say "$([ $((t1 - t0)) -lt 10 ] && echo bounded)" "bounded" "…within seconds, not when stdin closes (took $((t1 - t0))s)"
+rm -rf "$D" "$T0"
+# Headless: no record at SessionStart, and a prompt is skipped outright.
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --plugin 2>&1 <<<'{"session_id":"h1"}'); echo "rc=$?")
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "headless SessionStart still runs"
+say "$(ls -a "$D/fakehome/.claude/hooks" 2>/dev/null | grep -c 'session-version')" "0" "…recording no session version"
+# Even with a record from another version (a session id seen attended before).
+printf '0.0.1\n' > "$D/fakehome/.claude/hooks/.session-version-h1"
+J=$( (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --prompt --plugin 2>&1 <<<'{"session_id":"h1"}'); echo "rc=$?")
+say "$(rc "$J")" "rc=0" "headless, a prompt: exits 0"
+say "$(body "$J")" "0" "…saying nothing, though the record is another version's"
+say "$(cat "$D/fakehome/.claude/hooks/.session-version-h1")" "0.0.1" "…and leaving the record alone"
+rm -rf "$D" "$T1"
+# Two copies in one session — the plugin and a hand-wired copy that has a plugin.json
+# (a vendored tree, or this repo's own wiring in a release worktree): only the plugin's
+# records, so prompts through both never flip the notice (fix review: six in three).
+T2=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T2/.claude-plugin/plugin.json"
+V=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$V/.claude-plugin/plugin.json"
+D=$(mkrepo); SF="$D/fakehome/.claude/hooks/.session-version-"
+SS two "$D" "$T2" >/dev/null; SS two "$D" "$V" "" >/dev/null
+say "$(cat "${SF}two" 2>/dev/null)" "1.0.0" "two copies: SessionStart records the plugin's version only"
+n=0; for c in "$T2" "$V" "$T2" "$V"; do
+  [ "$c" = "$V" ] && J=$(UP two "$D" "$V" "") || J=$(UP two "$D" "$c")
+  [ "$(rc "$J")" = rc=0 ] || n=$((n+100)); n=$((n + $(usr <<<"$J" | grep -c 'flight-rules is now')))
+done
+say "$n" "0" "…and four prompts through both copies: exit 0, no notice"
+# The environment does not make a copy the plugin: only the flag hooks.json passes.
+(cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED CLAUDE_PLUGIN_ROOT="$V" HOME="$D/fakehome" bash "$V/hooks/agent/session-start.sh" <<<'{"session_id":"envonly"}' >/dev/null 2>&1)
+say "$?" "0" "CLAUDE_PLUGIN_ROOT set, no --plugin: SessionStart exits 0"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c 'session-version-envonly')" "0" "CLAUDE_PLUGIN_ROOT set, no --plugin: nothing recorded"
+rm -rf "$D" "$T2" "$V"
+# Hand-wired, with no plugin.json beside the hook: no version, so no record and no
+# notice — the hook copied where ../../.claude-plugin does not exist.
+L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/x/hooks/agent"; cp "$HOOK" "$L/x/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/x/hooks/"
+[ ! -e "$L/x/.claude-plugin" ] || die "hand-wired copy has a plugin.json"
+D=$(mkrepo); git -C "$D" config --unset merge.ff
+J=$(SS hw "$D" "$L/x")
+say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "hand-wired, SessionStart runs doctor"
+say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c 'session-version')" "0" "…and records no version, having none"
+J=$(UP hw "$D" "$L/x")
+say "$(rc "$J")" "rc=0" "hand-wired, a prompt: exits 0"
+say "$(body "$J")" "0" "…saying nothing"
+rm -rf "$D" "$L"
+
 echo
+echo "OPEN_BRANCH_LIMIT warns when that many branches are open, and never blocks (#108):"
+# More than ten branches sat unmerged in this repo (2026-10-20 to 10-23) and the owner
+# saw the backlog only once they depended on each other. Open: a worktree's branch with
+# commits not in the integration branch. Waiting: one with a passing note on its tip.
+# open <repo> <name>: a worktree on a new branch off trunk, with a commit made there —
+# not branch(), whose `add -A` in the main checkout would commit the conf edits below.
+open() {
+  local w="$1/.ai/worktrees/${2//\//_}"
+  git -C "$1" worktree add -q -b "$2" "$w" trunk 2>/dev/null || die "could not add a worktree for $2"
+  echo "$2" > "$w/open.txt"; git -C "$w" add open.txt
+  git -C "$w" commit -qm "chore: on $2" --no-verify >/dev/null || die "could not commit on $2"
+}
+OB() { (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?"; }
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/a" fix/a || die "could not stamp fix/a"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "at the limit: exits 0"
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…warns on screen, with the count, the limit and where it is set"
+say "$(usr <<<"$J" | grep -c 'A warning, not a block')" "1" "…as a warning"
+say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the stamped one as waiting to merge"
+say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
+say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT is 2')" "1" "…telling the assistant too"
+say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: the open-branch warning")" "1" "…which is told the user saw it"
+# Set from the environment, it says so: raising the conf's value would change nothing.
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=2 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
+say "$(usr <<<"$J" | grep -c '(OPEN_BRANCH_LIMIT is 2, from FLIGHT_RULES_OPEN_BRANCH_LIMIT)')" "1" "…set by FLIGHT_RULES_OPEN_BRANCH_LIMIT, the warning names it, not the conf"
+rm -rf "$D"
+# Below the limit, nothing — paired with the exit status and with the same run's
+# reminder, so a hook that died cannot pass it. A merged branch is not open.
+D=$(mkrepo); branch "$D" fix/m merge; git -C "$D" worktree add -q "$D/.ai/worktrees/m" fix/m
+open "$D" fix/a; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "one open and one merged, limit 2: exits 0"
+say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports (the merged worktree's reminder)"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-branch warning"
+# The default is 5; the environment comes first; off stands it down.
+open "$D" fix/b; open "$D" fix/c; open "$D" fix/d
+sed -i.bak '/OPEN_BRANCH_LIMIT/d' "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "four open, no setting: exits 0"
+say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports (the merged worktree's reminder)"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no warning (default 5)"
+open "$D" fix/e; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 5, in .ai/flight-rules.conf)')" "1" "…five: the warning"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=9 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "…FLIGHT_RULES_OPEN_BRANCH_LIMIT=9: exits 0"
+say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and the environment overrides the default"
+printf 'OPEN_BRANCH_LIMIT=off\n' >> "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "OPEN_BRANCH_LIMIT=off: exits 0"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no warning"
+sed -i.bak 's/OPEN_BRANCH_LIMIT=off/OPEN_BRANCH_LIMIT=lots/' "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | usr | grep -c 'OPEN_BRANCH_LIMIT is 5,')" "1" "…a value that is not a number is taken as 5"
+# Quoted, as doctor accepts it: doctor said ✅ 2 and the hook ran at 5 (batch review).
+sed -i.bak "s/OPEN_BRANCH_LIMIT=lots/OPEN_BRANCH_LIMIT='3'/" "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 3,')" "1" "…a quoted '3' is read as 3, as doctor reads it"
+# A protected branch is not open work: main ahead of trunk after a release is not.
+printf 'PROTECTED_BRANCHES=^(trunk|rel)$\nOPEN_BRANCH_LIMIT=5\n' >> "$D/.ai/flight-rules.conf"; open "$D" rel
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(usr <<<"$J" | grep -c '5 branches are open')" "1" "a protected branch is not counted: five open, not six"
+say "$(usr <<<"$J" | grep -cE ' rel( |$)')" "0" "…and it is not named"
+# A protected pattern that does not compile protects, as the sync takes it; doctor's ❌
+# says so on the same run.
+sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.ai/flight-rules.conf"; printf 'PROTECTED_BRANCHES=^(trunk\n' >> "$D/.ai/flight-rules.conf"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "PROTECTED_BRANCHES that does not compile: exits 0"
+say "$(usr <<<"$J" | grep -c 'PROTECTED_BRANCHES')" "1" "…doctor's ❌ names it"
+say "$(usr <<<"$J" | grep -c 'branches are open')" "0" "…and no branch is counted as open"
+say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted')" "1" "…and the assistant is told the count was not made"
+# Without the conf, the project does not use flight-rules: not told how to run branches.
+# A main for the default INTEGRATION_BRANCH to find, so it is the conf that silences it.
+git -C "$D" branch main trunk || die "could not make main"
+rm "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "no conf: exits 0"
+say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "…the run reports (doctor's warning)"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-branch warning"
+rm -rf "$D"
+# A clone with no local integration branch counts against origin's; with neither, the
+# assistant is told the count was not made — never silence that reads as "under".
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" update-ref refs/remotes/origin/trunk trunk; git -C "$D" checkout -q -b elsewhere
+git -C "$D" branch -D trunk >/dev/null || die "could not drop the local trunk"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "only origin/trunk: exits 0"
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into origin/trunk')" "1" "…counts against origin/trunk"
+git -C "$D" update-ref -d refs/remotes/origin/trunk; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "no trunk, local or origin: exits 0"
+say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT: no trunk here, local or origin/ — open branches not counted')" "1" "…the assistant is told the count was not made"
+say "$(usr <<<"$J" | grep -c 'not counted')" "0" "…off the screen"
+rm -rf "$D"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

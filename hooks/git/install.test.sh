@@ -140,6 +140,74 @@ say "$PRC" "0" "…which, pasted, exits 0"
 say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "…moves the project's pre-commit to pre-commit.local"
 say "$(ls "$S" | wc -l | tr -d ' ')" "0" "…and runs nothing the path spells out"
 rm -rf "$D" "$P" "$S"
+# …and a path with a non-ASCII letter and a quote, under a UTF-8 locale. printf %q in
+# macOS bash 3.2 split the ß and left a raw byte: the line on screen was not UTF-8 and
+# named another path (fix review, 2026-10-24). shq keeps the bytes, in '…'.
+U8=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -1); U8=${U8:-en_US.UTF-8}
+D0=$(mkrepo); P=$(mkplugin); D="$(dirname "$D0")/Straße it's"; mv "$D0" "$D" || die "could not rename the fixture"
+printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
+OUT=$(LC_ALL=$U8 run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+CMD=$(grep -E '^[[:space:]]+mv -n ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$(printf '%s\n' "$CMD" | grep -c .)" "1" "a path with ß and a quote: the rename is a line of its own"
+say "$(printf '%s' "$CMD" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 && echo utf8)" "utf8" "…in valid UTF-8"
+S=$(cd "$(mktemp -d)" && pwd -P)
+(cd "$S" && LC_ALL=$U8 bash -c "$CMD") >/dev/null 2>&1; PRC=$?
+say "$PRC" "0" "…which, pasted, exits 0"
+say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "…and moves the file at that exact path"
+rm -rf "$D" "$P" "$S"
+
+echo "Any hook that is not flight-rules' is refused, not only pre-commit (#97):"
+# Only pre-commit was checked: a project's own commit-msg or post-merge was replaced
+# without a word. Every one is named, with the line that sets it aside, before anything
+# is written — the stale hook beside them included.
+D=$(mkrepo); P=$(mkplugin); make_stale "$D" reference-transaction
+printf '#!/bin/sh\nnpx commitlint --edit "$1"\n' > "$D/.ai/hooks/commit-msg"
+printf '#!/bin/sh\nnpm install\n' > "$D/.ai/hooks/post-merge"
+BEFORE=$(sums "$D/.ai/hooks")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "a project's own commit-msg and post-merge: exit 1"
+say "$(grep -c "is not flight-rules' commit-msg (no 'pre-merge-check' in it)" <<<"$OUT")" "1" "…commit-msg named, with the marker it lacks"
+say "$(grep -c "is not flight-rules' post-merge (no 'post-merge-note' in it)" <<<"$OUT")" "1" "…post-merge named too"
+say "$(grep -c 'Nothing was written' <<<"$OUT")" "1" "…said to have written nothing"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing, the stale reference-transaction included"
+CMDS=$(grep -E '^[[:space:]]+mv -n ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$(printf '%s\n' "$CMDS" | grep -c .)" "2" "…one line each to set it aside"
+(cd "$D" && eval "$CMDS") >/dev/null 2>&1
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "…which run, let the install through"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")$(same "$D/.ai/hooks/reference-transaction" "$P/hooks/git/reference-transaction")" "samesame" "…every hook then the source's"
+say "$(grep -c commitlint "$D/.ai/hooks/commit-msg.orig" 2>/dev/null)" "1" "…the project's commit-msg kept beside it"
+rm -rf "$D" "$P"
+# The project's own install.sh is left alone and said so, as --stale-only leaves it:
+# nothing runs it, so it is not worth refusing every full install over.
+D=$(mkrepo); P=$(mkplugin); make_stale "$D" commit-msg
+printf '#!/bin/sh\n# our setup script\ngit config merge.ff false\n' > "$D/.ai/hooks/install.sh"; OWN=$(cksum < "$D/.ai/hooks/install.sh")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "a project's own install.sh, full install: exit 0"
+say "$(grep -c "install.sh: the project's own, not flight-rules' — left alone" <<<"$OUT")" "1" "…said to be left alone"
+say "$(cksum < "$D/.ai/hooks/install.sh")" "$OWN" "…and left as it was"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…while the stale hook is synced"
+rm -rf "$D" "$P"
+# A release older than its hook's marker is still flight-rules': 0.1.0's pre-merge-commit
+# has no PR_ONLY. A copy identical to a cached release is replaced.
+D=$(mkrepo); P=$(mkplugin)
+OLD="$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/pre-merge-commit"
+printf '#!/usr/bin/env bash\n# pre-merge-commit hook — the merge gate.\nexit 0\n' > "$OLD"; cp "$OLD" "$D/.ai/hooks/pre-merge-commit"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "a cached release's copy with no marker: exit 0"
+say "$(same "$D/.ai/hooks/pre-merge-commit" "$P/hooks/git/pre-merge-commit")" "same" "…replaced by the source's"
+rm -rf "$D" "$P"
+# Unreadable, a hook could not be checked: refused, said so, not called the project's.
+D=$(mkrepo); P=$(mkplugin); make_adapted "$D" post-merge; chmod 000 "$D/.ai/hooks/post-merge"
+if [ -r "$D/.ai/hooks/post-merge" ]; then
+    echo "  ⏭️  an unreadable hook on the full install: skipped — running as root, a mode-000 file is readable"
+else
+    OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+    say "$(head -1 <<<"$OUT")" "1" "an unreadable hook, full install: exit 1"
+    say "$(grep -c 'post-merge could not be read (grep exited 2)' <<<"$OUT")" "1" "…said to be unreadable"
+    say "$(grep -c "is not flight-rules' post-merge" <<<"$OUT")" "0" "…not called the project's own"
+fi
+chmod 644 "$D/.ai/hooks/post-merge"; rm -rf "$D" "$P"
 
 echo "install.sh updates itself when it is the file running:"
 # The project's copy is what the CHANGELOG told people to run. bash reads a running
@@ -503,6 +571,135 @@ say "$(grep -c 'install.sh: adapted here' <<<"$OUT")" "0" "an edited install.sh 
 say "$(grep -c 'install.sh: differs from every' <<<"$OUT")" "1" "…it is named as matching no release"
 rm -rf "$D" "$P"
 
+echo "A rename onto a name already taken is not offered (#97 review, G7):"
+# mv -n onto a .orig that mergetool left behind did nothing and exited 0, and the re-run
+# refused with the same message.
+D=$(mkrepo); P=$(mkplugin)
+printf '#!/bin/sh\nnpx commitlint --edit "$1"\n' > "$D/.ai/hooks/commit-msg"; echo old > "$D/.ai/hooks/commit-msg.orig"
+printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"; echo old > "$D/.ai/hooks/pre-commit.local"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "a project's commit-msg and pre-commit, .orig and .local both taken: exit 1"
+say "$(grep -c 'commit-msg.orig already exists' <<<"$OUT")" "1" "…says commit-msg.orig already exists"
+say "$(grep -c 'pre-commit.local already exists — merge this one into it by hand' <<<"$OUT")" "1" "…says pre-commit.local already exists, merge by hand"
+say "$(grep -cE '^[[:space:]]+mv -n ' <<<"$OUT")" "0" "…and offers no mv that would do nothing"
+rm -rf "$D" "$P"
+
+echo "The marker table is one table, and an unknown slot fails safe (#97 review, G8, D12):"
+DOC="$H/../flight-rules-doctor.sh"; [ -f "$DOC" ] || die "no flight-rules-doctor.sh beside $H"
+for h in $HOOKS install.sh; do
+  a=$(eval "$(sed -n '/^hook_marker() {/,/^}/p' "$H/install.sh")"; hook_marker "$h")
+  b=$(eval "$(sed -n '/^hook_marker() {/,/^}/p' "$DOC")"; hook_marker "$h")
+  say "$a" "$b" "$h: install.sh's marker ('$a') is doctor's"
+done
+# A slot added to HOOKS with no row: the empty pattern matched any file, and a project's
+# own hook there was replaced. Here a copy of install.sh that also syncs post-checkout.
+D=$(mkrepo); P=$(mkplugin)
+sed 's/^HOOKS=.pre-merge-commit /HOOKS='"'"'post-checkout pre-merge-commit /' "$H/install.sh" > "$P/hooks/git/install.sh"
+grep -q "^HOOKS='post-checkout " "$P/hooks/git/install.sh" || die "could not add post-checkout to HOOKS in the copy"
+printf '#!/bin/sh\n# flight-rules post-checkout\n' > "$P/hooks/git/post-checkout"
+printf '#!/bin/sh\ngit lfs post-checkout "$@"\n' > "$D/.ai/hooks/post-checkout"; chmod +x "$D/.ai/hooks/post-checkout"; OWN=$(cksum < "$D/.ai/hooks/post-checkout")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "a project's hook in a slot with no marker row: exit 1"
+say "$(grep -c "is not flight-rules' post-checkout (no marker known for it)" <<<"$OUT")" "1" "…refused, said to have no marker"
+say "$(cksum < "$D/.ai/hooks/post-checkout")" "$OWN" "…and left as it was"
+rm -rf "$D" "$P"
+# A project's own reference-transaction using `merge-base --is-ancestor`: the old marker
+# took it for flight-rules' and replaced it.
+D=$(mkrepo); P=$(mkplugin)
+printf '#!/bin/sh\n# ours: block rewinding release tags\ngit merge-base --is-ancestor "$1" "$2" || exit 1\n' > "$D/.ai/hooks/reference-transaction"; OWN=$(cksum < "$D/.ai/hooks/reference-transaction")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "a project's reference-transaction using is-ancestor: exit 1"
+say "$(grep -c "is not flight-rules' reference-transaction (no 'PR_ONLY' in it)" <<<"$OUT")" "1" "…refused as not flight-rules'"
+say "$(cksum < "$D/.ai/hooks/reference-transaction")" "$OWN" "…and left as it was"
+rm -rf "$D" "$P"
+
+echo "--stale-only never replaces a newer release's copy with an older one (#94 review, G1):"
+# An older session's sync took 0.28.0's hooks for stale and wrote its own 0.27.0 ones:
+# being some release's copy was all it asked. Here the source is 0.0.5, the project
+# holds 0.0.9's commit-msg and install.sh, and 0.0.1's pre-rebase.
+D=$(mkrepo); P=$(mkplugin); printf '{ "name": "flight-rules", "version": "0.0.5" }\n' > "$P/.claude-plugin/plugin.json"
+N="$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.9/hooks/git"; mkdir -p "$N"
+for h in commit-msg install.sh; do { cat "$H/$h"; echo "# flight-rules 0.0.9"; } > "$N/$h"; cp "$N/$h" "$D/.ai/hooks/$h"; done
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only --check-only)
+say "$(head -1 <<<"$OUT")" "0" "--check-only, only newer copies: not behind (exit 0, not 3)"
+say "$(grep -c 'newer than 0.0.5 — left alone' <<<"$OUT")" "2" "…both named as left alone"
+make_stale "$D" pre-rebase
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "0" "exit 0"
+say "$(grep -c 'commit-msg: the flight-rules 0.0.9 copy, newer than 0.0.5 — left alone' <<<"$OUT")" "1" "the newer commit-msg is named as left alone"
+say "$(same "$D/.ai/hooks/commit-msg" "$N/commit-msg")" "same" "…and is still 0.0.9's"
+say "$(grep -c 'install.sh: the flight-rules 0.0.9 copy, newer than 0.0.5 — left alone' <<<"$OUT")" "1" "so is install.sh"
+say "$(same "$D/.ai/hooks/install.sh" "$N/install.sh")" "same" "…still 0.0.9's"
+say "$(same "$D/.ai/hooks/pre-rebase" "$P/hooks/git/pre-rebase")" "same" "the older pre-rebase IS updated on the same run"
+# Without --stale-only the install was asked for by name, and still replaces the newer
+# copy — saying it is a downgrade, where it said "synced" (fix review, 2026-10-24).
+make_stale "$D" post-merge
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "a full install from 0.0.5 over 0.0.9's copies: exit 0"
+say "$(grep -c 'commit-msg: replaced the flight-rules 0.0.9 copy with older 0.0.5 — a downgrade, as asked' <<<"$OUT")" "1" "…names the commit-msg it downgraded"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…which is now 0.0.5's"
+say "$(grep -c 'synced commit-msg' <<<"$OUT")" "0" "…not called synced"
+say "$(grep -c 'synced post-merge (flight-rules 0.0.5)' <<<"$OUT")" "1" "…while the older post-merge is plainly synced"
+rm -rf "$D" "$P"
+
+echo "A fresh install names the hooks git will stop running, and carries on (#111):"
+# Setting core.hooksPath moves git off .git/hooks or a global hooks folder; a project's
+# commit-msg there ran before the install and not after, with nothing said (probe,
+# 2026-10-24). Config isolated: no system file, a fixture global one.
+grun() { local d="$1"; shift; local out rc; out=$(cd "$d" && HOME="$d/fakehome" GIT_CONFIG_GLOBAL="$d/gcfg" GIT_CONFIG_NOSYSTEM=1 bash "$@" 2>&1); rc=$?; printf '%s\n%s' "$rc" "$out"; }
+fresh() { local d; d=$(mkrepo); git -C "$d" config --unset core.hooksPath; printf '[user]\n\tname = t\n\temail = t@t.t\n' > "$d/gcfg"; rm -f "$d"/.git/hooks/*; printf '%s' "$d"; }
+own() { printf '#!/bin/sh\necho own %s\n' "${1##*/}" > "$1"; chmod +x "$1"; }
+D=$(fresh); own "$D/.git/hooks/commit-msg"; own "$D/.git/hooks/pre-push"; own "$D/.git/hooks/pre-commit"; own "$D/.git/hooks/pre-rebase.sample"
+own "$D/.git/hooks/post-merge"; chmod -x "$D/.git/hooks/post-merge"   # git skips it: not executable
+BEFORE=$(sums "$D/.git/hooks")
+OUT=$(grun "$D" .ai/hooks/install.sh)
+W=$(grep '^⚠️ git runs these hooks from' <<<"$OUT")
+say "$(head -1 <<<"$OUT")" "0" ".git/hooks with a commit-msg, pre-push and pre-commit: exit 0"
+say "$(grep -c "from $(cd "$D/.git/hooks" && pwd -P) today" <<<"$W")" "1" "…warned, naming .git/hooks"
+say "$(grep -c ' pre-commit' <<<"$W")$(grep -c ' commit-msg' <<<"$W")$(grep -c ' pre-push' <<<"$W")" "111" "…and each of the three"
+say "$(grep -c 'sample' <<<"$W")$(grep -c 'post-merge' <<<"$W")" "00" "…not the .sample, nor a post-merge git would not run (not executable)"
+say "$(grep -c -- '- pre-push: copy it into' <<<"$OUT")$(grep -c -- '- pre-commit: copy it in as pre-commit.local' <<<"$OUT")$(grep -c -- '- commit-msg: flight-rules. runs no other' <<<"$OUT")" "111" "…with the way to keep each"
+say "$(git -C "$D" config core.hooksPath)" ".ai/hooks" "…and installs anyway"
+say "$(sums "$D/.git/hooks")" "$BEFORE" "…leaving .git/hooks as it was"
+rm -rf "$D"
+D=$(fresh); own "$D/.git/hooks/pre-commit.sample"
+OUT=$(grun "$D" .ai/hooks/install.sh)
+say "$(head -1 <<<"$OUT")" "0" "only *.sample in .git/hooks: exit 0"
+say "$(grep -c 'git hooks installed' <<<"$OUT")" "1" "…installed"
+say "$(grep -c '^⚠️ git runs these hooks' <<<"$OUT")" "0" "…and no warning"
+rm -rf "$D"
+D=$(fresh); G=$(cd "$(mktemp -d)" && pwd -P); own "$G/commit-msg"; printf '[core]\n\thooksPath = %s\n' "$G" >> "$D/gcfg"; own "$D/.git/hooks/pre-push"
+OUT=$(grun "$D" .ai/hooks/install.sh)
+W=$(grep '^⚠️ git runs these hooks from' <<<"$OUT")
+say "$(head -1 <<<"$OUT")" "0" "a global core.hooksPath with a commit-msg: exit 0"
+say "$(grep -c "from $G today" <<<"$W")" "1" "…warned, naming the global folder"
+say "$(grep -c ' commit-msg' <<<"$W")$(grep -c 'pre-push' <<<"$W")" "10" "…its commit-msg, not .git/hooks' pre-push, which git was not reading"
+# A git older than 2.26 refuses --show-scope (129); read as "no global value", the
+# warning named .git/hooks (fix review, D7). A git that refuses the option, else real.
+GS=$(cd "$(mktemp -d)" && pwd -P); REALGIT=$(command -v git)
+printf '#!/bin/sh
+for a in "$@"; do [ "$a" = --show-scope ] && { echo "error: unknown option show-scope" >&2; exit 129; }; done
+exec "%s" "$@"
+' "$REALGIT" > "$GS/git"; chmod +x "$GS/git"
+OUT=$(cd "$D" && git config --unset core.hooksPath; HOME="$D/fakehome" GIT_CONFIG_GLOBAL="$D/gcfg" GIT_CONFIG_NOSYSTEM=1 PATH="$GS:$PATH" bash .ai/hooks/install.sh 2>&1); RC=$?
+W=$(grep '^⚠️ git runs these hooks from' <<<"$OUT")
+say "$RC" "0" "a git without --show-scope, a global core.hooksPath: exit 0"
+say "$(grep -c "from $G today" <<<"$W")" "1" "…the warning still names the global folder"
+say "$(grep -c ' commit-msg' <<<"$W")$(grep -c 'pre-push' <<<"$W")" "10" "…its commit-msg, not .git/hooks' pre-push"
+rm -rf "$D" "$G" "$GS"
+D=$(fresh); git -C "$D" config core.hooksPath .ai/hooks; own "$D/.git/hooks/commit-msg"
+OUT=$(grun "$D" .ai/hooks/install.sh)
+say "$(head -1 <<<"$OUT")" "0" "a local core.hooksPath already set: exit 0"
+say "$(grep -c 'git hooks installed' <<<"$OUT")" "1" "…installed"
+say "$(grep -c '^⚠️ git runs these hooks' <<<"$OUT")" "0" "…and no warning: git was not reading .git/hooks"
+rm -rf "$D"
+D=$(fresh); echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the worktree fixture"
+git -C "$D" worktree add -q -b w "$D/wt" >/dev/null 2>&1 || die "could not add the worktree fixture"; own "$D/.git/hooks/commit-msg"
+OUT=$(grun "$D/wt" .ai/hooks/install.sh)
+say "$(head -1 <<<"$OUT")" "0" "from a linked worktree: exit 0"
+say "$(grep -c "^⚠️ git runs these hooks from $(cd "$D/.git/hooks" && pwd -P) today" <<<"$OUT")" "1" "…warned, naming the shared .git/hooks, not the worktree's .git file"
+rm -rf "$D"
+
 echo "Bad arguments fail loudly:"
 D=$(mkrepo); P=$(mkplugin)
 say "$(rc "$D" .ai/hooks/install.sh --from "$D/nowhere")" "1" "--from a missing directory"
@@ -523,6 +720,24 @@ say "$(head -1 <<<"$OUT")" "0" "exit 0"
 say "$(grep -c 'nothing to sync' <<<"$OUT")" "1" "says there is nothing to sync"
 say "$(git -C "$D" config core.hooksPath)" ".ai/hooks" "core.hooksPath is left exactly as it was"
 rm -rf "$D"
+
+# shq is doctor's too, and the four scripts that print a command to paste must quote it
+# alike: compared verbatim, as newer_than and read_conf are.
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/../flight-rules-doctor.sh")" "shq is doctor's, verbatim"
+# …and post-merge's and session-start's: four copies, each saying "(tested)" — until
+# the four branches met, only these two were compared (fifth review, G3).
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/post-merge")" "…and post-merge's, verbatim"
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/../agent/session-start.sh")" "…and session-start's, verbatim"
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh" | grep -c .)" "7" "…and is there to compare (7 lines)"
+# shq itself, sourced from install.sh: bytes that are not UTF-8 made BSD sed stop and
+# shq print '' (fourth review, D1) — a branch reftable or packed-refs can hold.
+eval "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")"
+_bad=0
+for s in "$(printf 'fix/caf\351')" "it's" "x';touch\${IFS}PWNED;'" 'fix/ü-ß' '=ls' 'plain/x' "$(printf 'a\nb')"; do
+  q=$(LC_ALL=$U8 shq "$s"); back=$(eval "printf '%s' $q")
+  [ "$back" = "$s" ] && [ "$q" != "''" ] || _bad=$((_bad+1))
+done
+say "$_bad" "0" "shq round-trips non-UTF-8 bytes, quotes, ß, = and a newline, never as ''"
 
 echo
 echo "$PASS passed, $FAIL failed"
