@@ -104,7 +104,13 @@ itself: the hooks are the project's own committed files, and Claude Code has no 
 event for a plugin to act on. Every other clone needs them wired once, because git config is
 per clone: its first session's doctor message prints the command (the plugin's
 `install.sh`, which wires the committed hooks without replacing them). (The message needs `jq` or
-`python3`; without either, doctor's findings reach only the assistant.)
+`python3`; without either, doctor's findings reach only the assistant.) If the project already has
+hooks of its own, the install leaves them in place: one in the folder it installs into
+that it cannot recognise as flight-rules' (it carries no flight-rules marker and is no
+release's exact copy) is refused rather than overwritten, and the install says how to
+set it aside; and when git would stop reading hooks from `.git/hooks/` or a global
+hooks folder, the install names the ones that stop running. Running them alongside
+flight-rules' is [#111](https://github.com/mkb3nigma/flight-rules/issues/111).
 
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run
 only when one starts. After `/reload-plugins` instead, your next prompt says the session
