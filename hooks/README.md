@@ -321,8 +321,10 @@ that the logic has exactly one home.
   left alone without a word: an `install.sh` that is the project's own script, not
   flight-rules' (it lacks the installer's header phrase), and a missing `install.sh`,
   which doctor names instead; without the flag
-  every differing hook is replaced, except a `pre-commit` that is not flight-rules'
-  at all, which is refused with the rename that keeps it running. A copy that fails
+  every differing hook is replaced, except one that is not flight-rules' at all (no
+  marker, and no release's copy: a linter's `pre-commit`, the project's own
+  `commit-msg`), which is refused — nothing written — with the rename that keeps it;
+  the project's own `install.sh` is left alone. A copy that fails
   is an exit, never a "synced" line. `flight-rules-doctor.sh` prints the command
   whenever a hook is missing or behind, or the project's `install.sh` is behind,
   differs while still carrying flight-rules' marker, or cannot be read (a warning,

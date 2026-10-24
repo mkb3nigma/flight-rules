@@ -141,6 +141,59 @@ say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "
 say "$(ls "$S" | wc -l | tr -d ' ')" "0" "…and runs nothing the path spells out"
 rm -rf "$D" "$P" "$S"
 
+echo "Any hook that is not flight-rules' is refused, not only pre-commit (#97):"
+# Only pre-commit was checked: a project's own commit-msg or post-merge was replaced
+# without a word. Every one is named, with the line that sets it aside, before anything
+# is written — the stale hook beside them included.
+D=$(mkrepo); P=$(mkplugin); make_stale "$D" reference-transaction
+printf '#!/bin/sh\nnpx commitlint --edit "$1"\n' > "$D/.ai/hooks/commit-msg"
+printf '#!/bin/sh\nnpm install\n' > "$D/.ai/hooks/post-merge"
+BEFORE=$(sums "$D/.ai/hooks")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "a project's own commit-msg and post-merge: exit 1"
+say "$(grep -c "is not flight-rules' commit-msg (no 'pre-merge-check' in it)" <<<"$OUT")" "1" "…commit-msg named, with the marker it lacks"
+say "$(grep -c "is not flight-rules' post-merge (no 'post-merge-note' in it)" <<<"$OUT")" "1" "…post-merge named too"
+say "$(grep -c 'Nothing was written' <<<"$OUT")" "1" "…said to have written nothing"
+say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and writing nothing, the stale reference-transaction included"
+CMDS=$(grep -E '^[[:space:]]+mv -n ' <<<"$OUT" | sed 's/^[[:space:]]*//')
+say "$(printf '%s\n' "$CMDS" | grep -c .)" "2" "…one line each to set it aside"
+(cd "$D" && eval "$CMDS") >/dev/null 2>&1
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "…which run, let the install through"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")$(same "$D/.ai/hooks/reference-transaction" "$P/hooks/git/reference-transaction")" "samesame" "…every hook then the source's"
+say "$(grep -c commitlint "$D/.ai/hooks/commit-msg.orig" 2>/dev/null)" "1" "…the project's commit-msg kept beside it"
+rm -rf "$D" "$P"
+# The project's own install.sh is left alone and said so, as --stale-only leaves it:
+# nothing runs it, so it is not worth refusing every full install over.
+D=$(mkrepo); P=$(mkplugin); make_stale "$D" commit-msg
+printf '#!/bin/sh\n# our setup script\ngit config merge.ff false\n' > "$D/.ai/hooks/install.sh"; OWN=$(cksum < "$D/.ai/hooks/install.sh")
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "a project's own install.sh, full install: exit 0"
+say "$(grep -c "install.sh: the project's own, not flight-rules' — left alone" <<<"$OUT")" "1" "…said to be left alone"
+say "$(cksum < "$D/.ai/hooks/install.sh")" "$OWN" "…and left as it was"
+say "$(same "$D/.ai/hooks/commit-msg" "$P/hooks/git/commit-msg")" "same" "…while the stale hook is synced"
+rm -rf "$D" "$P"
+# A release older than its hook's marker is still flight-rules': 0.1.0's pre-merge-commit
+# has no PR_ONLY. A copy identical to a cached release is replaced.
+D=$(mkrepo); P=$(mkplugin)
+OLD="$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/pre-merge-commit"
+printf '#!/usr/bin/env bash\n# pre-merge-commit hook — the merge gate.\nexit 0\n' > "$OLD"; cp "$OLD" "$D/.ai/hooks/pre-merge-commit"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "0" "a cached release's copy with no marker: exit 0"
+say "$(same "$D/.ai/hooks/pre-merge-commit" "$P/hooks/git/pre-merge-commit")" "same" "…replaced by the source's"
+rm -rf "$D" "$P"
+# Unreadable, a hook could not be checked: refused, said so, not called the project's.
+D=$(mkrepo); P=$(mkplugin); make_adapted "$D" post-merge; chmod 000 "$D/.ai/hooks/post-merge"
+if [ -r "$D/.ai/hooks/post-merge" ]; then
+    echo "  ⏭️  an unreadable hook on the full install: skipped — running as root, a mode-000 file is readable"
+else
+    OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+    say "$(head -1 <<<"$OUT")" "1" "an unreadable hook, full install: exit 1"
+    say "$(grep -c 'post-merge could not be read (grep exited 2)' <<<"$OUT")" "1" "…said to be unreadable"
+    say "$(grep -c "is not flight-rules' post-merge" <<<"$OUT")" "0" "…not called the project's own"
+fi
+chmod 644 "$D/.ai/hooks/post-merge"; rm -rf "$D" "$P"
+
 echo "install.sh updates itself when it is the file running:"
 # The project's copy is what the CHANGELOG told people to run. bash reads a running
 # script incrementally, so overwriting it in place is a hazard; the copy goes via mv.

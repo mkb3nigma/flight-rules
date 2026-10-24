@@ -61,8 +61,8 @@ hook_marker() {
     # like the rest. The phrase is in the header comment of every revision since it was
     # added (7b7f968, 2026-07-19). merge.ff and core.hooksPath would not do: every
     # flight-rules project is told to set both, so its own installer would match (second
-    # review, 2026-10-21). install.sh's --stale-only loop holds the same phrase; keep
-    # them in step. The full install's overwrite of a foreign copy is #97.
+    # review, 2026-10-21). install.sh's hook_marker holds the same table; keep them in
+    # step.
     install.sh)             printf 'committed git hooks into git' ;;
     *)                      printf 'flight-rules' ;;
   esac
@@ -166,9 +166,10 @@ else
     # problem — it guards nothing, an old copy works as it did, and the commands printed
     # here run this flight-rules' own. Not one that differs and lacks the marker: it is
     # the project's own installer, and the hint below would have replaced it (batch
-    # review, 2026-10-21; that overwrite is #97). A check that could not run says so —
-    # an unreadable file, or a grep that errors rather than answering, which read as
-    # "no marker" and left the file unmentioned (second and third reviews, 2026-10-21).
+    # review, 2026-10-21; install.sh leaves it alone since #97). A check that could not
+    # run says so — an unreadable file, or a grep that errors rather than answering,
+    # which read as "no marker" and left the file unmentioned (second and third reviews,
+    # 2026-10-21).
     # Missing is noted on the full report only, with the cp that restores it: nothing
     # needs it to run the hooks, the sync no longer puts it back unattended, and a
     # project that removed it on purpose would get a warning every day (owner,

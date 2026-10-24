@@ -19,9 +19,10 @@
 # --stale-only overwrites a hook only when it is byte-identical to some release in the
 # plugin cache — provably unmodified — and copies in one that is missing. A copy that
 # matches no release may be the project's own adaptation, so it is left alone and
-# named. Without --stale-only every differing hook is replaced, except a pre-commit
-# that is not flight-rules' at all (a linter): that one is refused with the rename
-# that keeps it running.
+# named. Without --stale-only every differing hook is replaced, except one that is not
+# flight-rules' at all (a linter's pre-commit, the project's own commit-msg): that is
+# refused, nothing is written, and the rename that keeps it is printed. A project's
+# own install.sh is left alone.
 
 set -euo pipefail
 
@@ -94,6 +95,20 @@ release_of() {
     # number and must not sort as the largest one.
     local best; best=$(printf '%s' "$found" | grep -E '^[0-9]+(\.[0-9]+)+$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)
     if [ -n "$best" ]; then printf '%s' "$best"; else printf '%s' "$found" | head -1; fi
+}
+
+# What makes a file flight-rules': a phrase every release of it carries. The same table
+# is flight-rules-doctor.sh's hook_marker; keep them in step. A heuristic, not a
+# signature. 0.1.0's pre-merge-commit predates its marker; release_of still knows it.
+hook_marker() {
+    case "$1" in
+        pre-merge-commit|pre-rebase) printf 'PR_ONLY' ;;
+        commit-msg)                  printf 'pre-merge-check' ;;
+        post-merge)                  printf 'post-merge-note' ;;
+        reference-transaction)       printf 'is-ancestor' ;;
+        pre-commit)                  printf 'PRIVATE KEY' ;;
+        install.sh)                  printf 'committed git hooks into git' ;;
+    esac
 }
 
 # MAIN here, not only on the --stale-only path: it is read on every path below, and one
@@ -187,7 +202,7 @@ if [ -n "$FROM" ]; then
     # --check-only, which session-start passes on a protected branch, where the diff
     # could not be committed (#99): the comparison runs, and what is behind is named.
     NOWRITE=0; { [ -n "${MAIN:-}" ] || [ "$CHECK_ONLY" -eq 1 ]; } && NOWRITE=1
-    TO_COPY=""; ACT=updating; [ "$NOWRITE" -eq 1 ] && ACT=stale
+    TO_COPY=""; FOREIGN=""; REFUSED=0; ACT=updating; [ "$NOWRITE" -eq 1 ] && ACT=stale
     for h in $HOOKS install.sh; do
         src="$FROM/$h"; dst="$HOOKS_DIR/$h"
         if [ ! -f "$dst" ]; then
@@ -213,12 +228,10 @@ if [ -n "$FROM" ]; then
                 TO_COPY="$TO_COPY $h"
             # An install.sh without this header phrase is the project's own script, not
             # an edited copy of flight-rules': no stale copy, and not one to tell anyone
-            # to mark `adapted` (second review, C4). The phrase is in every revision of
-            # this file; flight-rules-doctor.sh's hook_marker holds the same one — keep
-            # them in step. A heuristic, not a signature. The full install still
-            # replaces such a file: #97. Exit 1 only — no match — so a grep that fails
-            # (an unreadable file) is not taken for "the project's own" and skipped.
-            elif [ "$h" = install.sh ] && { grep -qF 'committed git hooks into git' "$dst"; [ $? -eq 1 ]; }; then
+            # to mark `adapted` (second review, C4). Exit 1 only — no match — so a grep
+            # that fails (an unreadable file) is not taken for "the project's own" and
+            # skipped.
+            elif [ "$h" = install.sh ] && { grep -qF -e "$(hook_marker install.sh)" "$dst"; [ $? -eq 1 ]; }; then
                 :
             # A comment line of its own, `# flight-rules: adapted`: the phrase also sits in
             # this script's text, so an unanchored match took an edited install.sh as
@@ -235,18 +248,42 @@ if [ -n "$FROM" ]; then
                 echo "   $h: differs from every flight-rules release in the plugin cache — left alone (adapted here? diff it against $src, and add a line '# flight-rules: adapted' if so)"
                 LEFT=$((LEFT+1))
             fi
-        # 'PRIVATE KEY' is what makes a pre-commit flight-rules' — the same marker
-        # flight-rules-doctor.sh's hook_marker holds for it; keep them in step.
-        elif [ "$h" = pre-commit ] && ! grep -q 'PRIVATE KEY' "$dst"; then
-            echo "❌ $dst is not flight-rules' pre-commit (a linter? lint-staged?) and would be lost."
-            echo "   Rename it first (merge by hand if a .local exists) and re-run: the flight-rules one runs it after a clean scan."
-            # A line of its own, %q not '…': it is pasted (0.26.0 fix review).
-            printf '   mv -n %q %q\n' "$dst" "$dst.local"
-            exit 1
+        # A differing file with no marker, and no release's exact copy, is the project's
+        # own. Only pre-commit was checked, so a project's commit-msg or install.sh was
+        # replaced without a word (#97). A hook is refused, all of them named before
+        # anything is written: replacing it drops whatever it ran. The project's own
+        # install.sh is left alone, as --stale-only leaves it: nothing runs it, and
+        # refusing every full install over it would be the price of keeping it. A grep
+        # that errors could not check the file: refused, and said so.
         else
-            TO_COPY="$TO_COPY $h"
+            _m=0; grep -qF -e "$(hook_marker "$h")" "$dst" || _m=$?
+            if [ "$_m" -eq 0 ] || release_of "$dst" >/dev/null; then
+                TO_COPY="$TO_COPY $h"
+            elif [ "$_m" -ne 1 ]; then
+                echo "❌ $dst could not be read (grep exited $_m) — could not check whose it is; not replaced"
+                REFUSED=1
+            elif [ "$h" = install.sh ]; then
+                echo "   install.sh: the project's own, not flight-rules' — left alone"
+                LEFT=$((LEFT+1))
+            else
+                FOREIGN="$FOREIGN $h"
+            fi
         fi
     done
+    for h in $FOREIGN; do
+        dst="$HOOKS_DIR/$h"; REFUSED=1
+        if [ "$h" = pre-commit ]; then
+            echo "❌ $dst is not flight-rules' pre-commit (a linter? lint-staged?) and would be lost."
+            echo "   Rename it first (merge by hand if a .local exists): the flight-rules one runs it after a clean scan."
+            # A line of its own, %q not '…': it is pasted (0.26.0 fix review).
+            printf '   mv -n %q %q\n' "$dst" "$dst.local"
+        else
+            echo "❌ $dst is not flight-rules' $h (no '$(hook_marker "$h")' in it) and would be lost."
+            echo "   flight-rules' $h runs no other, so what this one does must be merged into it by hand to keep it. To set it aside:"
+            printf '   mv -n %q %q\n' "$dst" "$dst.orig"
+        fi
+    done
+    [ "$REFUSED" -eq 0 ] || { echo "   Nothing was written. Re-run once each is dealt with."; exit 1; }
     if [ "$CHECK_ONLY" -eq 1 ]; then
         [ -n "$TO_COPY" ] || exit 0
         exit 3   # behind or missing, nothing written: the caller says why
