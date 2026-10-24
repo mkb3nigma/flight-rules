@@ -128,7 +128,7 @@ say "$(rc "$D")" "1" "pre-commit missing → problem"
 say "$(has "$D" "pre-commit missing")" "0" "…names the hook"
 # A plugin upgrade cannot copy it in, so this line is how an upgraded project learns of
 # it — and it must say how. Following it must actually clear the problem.
-FIX=$(run "$D" | grep -o "cp '[^']*/git/pre-commit' '[^']*/' && chmod +x '[^']*'" | head -1)
+FIX=$(run "$D" | sed -n 's/.*Copy it in from this flight-rules: \(cp .*\/git\/pre-commit .* && chmod +x .*\)$/\1/p' | head -1)
 say "$([ -n "$FIX" ] && echo yes)" "yes" "…and gives the command that copies it in"
 (cd "$D" && eval "$FIX") >/dev/null 2>&1
 say "$(rc "$D")" "0" "…which, run, clears it"
@@ -385,6 +385,30 @@ say "$([ -n "$SYNC" ] && echo yes)" "yes" "…which can be lifted from the outpu
 say "$(rc "$D")" "0" "…and, run as printed, clears it"
 say "$(has "$D" "to update:")" "1" "…after which no sync command is printed"
 rm -rf "$D"
+# The plugin under a path with ß and a quote, under a UTF-8 locale: printf %q in macOS
+# bash 3.2 split the ß and left a raw byte, so the command on screen was not UTF-8 and
+# named a path that does not exist (fix review, 2026-10-24). shq keeps the bytes.
+U8=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -1); U8=${U8:-en_US.UTF-8}
+L="$(cd "$(mktemp -d)" && pwd -P)/Straße it's"; mkdir -p "$L/hooks" && cp -R "$H/git" "$L/hooks/" && cp "$DOCTOR" "$L/hooks/" || die "could not lay out the ß plugin"
+D=$(mkrepo); mkcache "$D" commit-msg
+cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" "$D/.ai/hooks/commit-msg"
+OUT=$(cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" bash "$L/hooks/flight-rules-doctor.sh" 2>&1)
+SYNC=$(sed -n 's/.*to update: \(bash .* --stale-only --this-checkout\)   (.*/\1/p' <<<"$OUT" | head -1)
+say "$(grep -c 'Straße' <<<"$SYNC")" "1" "a plugin path with ß and a quote: the sync command names it"
+say "$([ -n "$SYNC" ] && printf '%s' "$SYNC" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 && echo utf8)" "utf8" "…in valid UTF-8"
+(cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1; SRC_RC=$?
+say "$SRC_RC" "0" "…which, run as printed, exits 0"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$L/hooks/git/commit-msg" && echo same)" "same" "…and syncs from that exact path"
+# A missing hook's cp line was quoted by hand in '…', so the quote in that path broke it
+# (fourth review, D2).
+rm -f "$D/.ai/hooks/post-merge"
+OUT=$(cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" bash "$L/hooks/flight-rules-doctor.sh" 2>&1)
+CP=$(sed -n 's/.*Copy it in from this flight-rules: \(cp .*\)$/\1/p' <<<"$OUT" | head -1)
+say "$(grep -c "post-merge" <<<"$CP")" "1" "…a missing hook's cp line names it"
+bash -n -c "$CP" 2>/dev/null; say "$?" "0" "…and parses, the quote in the path and all"
+(cd "$D" && eval "$CP") >/dev/null 2>&1
+say "$(cmp -s "$D/.ai/hooks/post-merge" "$L/hooks/git/post-merge" && [ -x "$D/.ai/hooks/post-merge" ] && echo copied)" "copied" "…and, run as printed, copies it in executable"
+rm -rf "$D" "$(dirname "$L")"
 
 D=$(mkrepo); echo "# this project's own change" >> "$D/.ai/hooks/post-merge"
 say "$(rc "$D")" "0" "a copy matching no release is a warning, not a problem"
@@ -615,12 +639,37 @@ say "$(has "$D" "to update: bash")" "0" "…with the sync command"
 say "$(rc "$D")" "0" "…as a warning"
 rm -rf "$D"
 D=$(mkrepo)
-say "$(run "$D" | grep -c -e '[⚠❌].*install.sh' -e 'to update:')" "0" "a missing install.sh is no warning and asks for no sync"
+# Two -e, not [⚠❌]: under LC_ALL=C a bracket of multibyte characters is a set of bytes,
+# and ✅ shares one (fourth review, D10).
+say "$(run "$D" | grep -c -e '⚠.*install.sh' -e '❌.*install.sh' -e 'to update:')" "0" "a missing install.sh is no warning and asks for no sync"
 say "$(rc "$D")" "0" "…and doctor passes"
 cp "$H/git/install.sh" "$D/.ai/hooks/"
 say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a current install.sh is not reported"
 say "$(rc "$D")" "0" "…and doctor passes"
 rm -rf "$D"
+
+echo "A later release's copy is not behind (fix review, 2026-10-24):"
+# Run from an older plugin, doctor called a newer release's commit-msg "behind" with a
+# ❌, and its sync hint led to a full install that downgraded it. Here the doctor is
+# 0.0.5's, the project holds 0.0.9's commit-msg and install.sh.
+say "$(sed -n '/^newer_than() {/,/^}/p' "$DOCTOR")" "$(sed -n '/^newer_than() {/,/^}/p' "$H/git/install.sh")" "newer_than is install.sh's, verbatim"
+P=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$P/.claude-plugin" "$P/hooks"; cp -R "$H/git" "$P/hooks/git"; cp "$DOCTOR" "$P/hooks/"
+printf '{ "name": "flight-rules", "version": "0.0.5" }\n' > "$P/.claude-plugin/plugin.json"
+D=$(mkrepo); N="$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.9/hooks/git"; mkdir -p "$N"
+for h in commit-msg install.sh; do { cat "$H/git/$h"; echo "# flight-rules 0.0.9"; } > "$N/$h"; cp "$N/$h" "$D/.ai/hooks/$h"; done
+OUT=$(cd "$D" && HOME="$D/fakehome" bash "$P/hooks/flight-rules-doctor.sh" 2>&1); RC=$?
+say "$RC" "0" "newer copies only: doctor exits 0"
+say "$(grep -c '⚠️  commit-msg is the flight-rules 0.0.9 copy, newer than this flight-rules (0.0.5) — a session on 0.0.9 wrote it; start a new session' <<<"$OUT")" "1" "…names the newer commit-msg as a warning"
+say "$(grep -c '⚠️  install.sh is the flight-rules 0.0.9 copy, newer than this flight-rules (0.0.5)' <<<"$OUT")" "1" "…and the newer install.sh"
+say "$(grep -c -e '❌' -e 'behind' -e 'to update:' -e 're-run without' <<<"$OUT")" "0" "…with no ❌, no 'behind', and no sync hint"
+say "$(grep -c 'pre-commit installed and executable' <<<"$OUT")" "1" "…in a run that checked the hooks"
+# An older copy beside them is still behind, with the hint: the newer case silences only itself.
+mkcache "$D" pre-rebase; cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/pre-rebase" "$D/.ai/hooks/pre-rebase"
+OUT=$(cd "$D" && HOME="$D/fakehome" bash "$P/hooks/flight-rules-doctor.sh" 2>&1); RC=$?
+say "$RC" "1" "an older pre-rebase beside them: a problem"
+say "$(grep -c '❌ pre-rebase is the flight-rules 0.0.1 copy' <<<"$OUT")$(grep -c 'to update:' <<<"$OUT")" "11" "…named behind, with the sync hint"
+say "$(grep -c '❌ commit-msg' <<<"$OUT")" "0" "…while the newer commit-msg stays a warning"
+rm -rf "$D" "$P"
 
 echo "The conf — typos and bad values must not pass silently:"
 D=$(mkrepo); printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
@@ -648,6 +697,14 @@ rm -rf "$D"
 
 # /dg's round-2 wait (owner, 2026-10-18): a value the skill cannot read as minutes would
 # silently become the default, so doctor names it.
+D=$(mkrepo); printf 'OPEN_BRANCH_LIMIT=3\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "OPEN_BRANCH_LIMIT is a known key"
+say "$(has "$D" "OPEN_BRANCH_LIMIT=3")" "0" "…and is reported"
+printf 'OPEN_BRANCH_LIMIT=lots\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "OPEN_BRANCH_LIMIT='lots' is neither a positive whole number nor off")" "0" "…a value that is not a number is warned about"
+printf 'OPEN_BRANCH_LIMIT=off\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "OPEN_BRANCH_LIMIT=off")" "0" "…off is accepted"
+rm -rf "$D"
 D=$(mkrepo); printf 'DG_WAIT_MINUTES=30\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "DG_WAIT_MINUTES is a known key"
 say "$(has "$D" "unknown key")" "1" "…not reported as unknown"

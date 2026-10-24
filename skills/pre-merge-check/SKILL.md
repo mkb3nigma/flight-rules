@@ -142,6 +142,17 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     hit: it turns a failure into "nothing happened". A project linter rule that flags
     each of those shapes satisfies it — check that it does: ESLint `no-empty` misses a
     catch that only returns.
+21. **What the checks started is stopped** — a server, database, container, watcher or
+    background job started for items 1–3, or anywhere else on this branch, is stopped
+    before the stamp; `ps` and the stack's own tools (`docker ps`, …) show what still
+    runs from this worktree. A container the checks created is removed, not only
+    stopped (`docker compose down`, `docker rm`): a stopped one still takes disk space.
+    One left on purpose is reported as `LEFT RUNNING: <what> — <why>; stop with
+    <command>`. ⚠️ on one with no reason: it outlives the branch, and once the worktree
+    is removed it runs from nowhere (AppliHawk, 2026-10-24, #109). `post-merge` prints
+    what is still running from the worktree, and its Compose containers, when it lists
+    it for removal; a container with no Compose label is tied to no directory, and only
+    this item finds it.
 
 ## Report
 
