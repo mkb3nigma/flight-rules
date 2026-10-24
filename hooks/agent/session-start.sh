@@ -80,6 +80,12 @@ if [ -f "$LAST_RUN_FILE" ]; then
 fi
 mkdir -p "$FLAG_DIR"
 
+# Protected as pre-commit-check.sh decides it — read past the flag
+# check, off the per-prompt path: the environment first, then the conf
+# read by the same read_conf, the same default (session-start.test.sh compares them).
+PROT="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+PROT="${PROT:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
+
 # A prompt that finds the newest flag for this project from another version is a
 # session whose plugin was updated under it. Its hooks are now the new version's, but
 # the rules injected at its start are the old one's, and only a new session loads them:
@@ -163,13 +169,10 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
   # Compared only, and said when something is behind, with the command for a branch.
   # Not a worktree made on the developer's behalf (owner, 2026-10-21): they choose
-  # where to run it. Protected is decided as pre-commit-check.sh decides it: the
-  # environment first, then the conf read by the same read_conf, the same default, and
-  # bash's =~ case-insensitively. Its own parse, grep and case missed `'^trunk$'`, `QA`
-  # and the environment, and wrote where the guard refuses (fix review, F1).
-  # session-start.test.sh compares the copies.
-  _prot="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.ai/flight-rules.conf")}"
-  _prot="${_prot:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
+  # where to run it. Protected is decided as pre-commit-check.sh decides it: PROT above,
+  # and bash's =~ case-insensitively. Its own parse, grep and case missed `'^trunk$'`,
+  # `QA` and the environment, and wrote where the guard refuses (fix review, F1).
+  _prot="$PROT"
   _br=$(git branch --show-current 2>/dev/null)
   _check=""; _bad=""
   if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
@@ -291,11 +294,52 @@ if [ -n "$DOCTOR_SCREEN" ]; then
     [ -f "$HINT_FILE" ] && { DOCTOR_SCREEN=""; HINT_FILE=""; }
   fi
 fi
+
+# OPEN_BRANCH_LIMIT: how many branches are open at once, warned at the limit and never
+# refused (#108). More than ten sat unmerged in this repo (2026-10-20 to 10-23), each
+# small alone, and the owner saw the backlog only once they had begun to depend on each
+# other. Open is a worktree's branch with commits not in the integration branch, a
+# protected one aside; waiting is one whose tip has a passing pre-merge-check note.
+# Default 5, warning only (owner, 2026-10-24); `off` stands it down; anything but a
+# positive whole number is 5, which doctor says. Only where the project uses
+# flight-rules: a repo without the conf is not told how to run its branches.
+OPEN_MSG=$(
+  [ -f "$PROJECT_ROOT/.ai/flight-rules.conf" ] || exit 0
+  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(conf_get OPEN_BRANCH_LIMIT)}"
+  [ "$_lim" = off ] && exit 0
+  [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
+  git rev-parse --verify -q "refs/heads/$INTEGRATION_BRANCH" >/dev/null || exit 0
+  _prot="$PROT"
+  _n=0; _wait=""; _work=""
+  while IFS= read -r _b; do
+    [ "$_b" = "$INTEGRATION_BRANCH" ] && continue
+    if [ "$_prot" != off ] && [ "$_prot" != none ]; then
+      shopt -s nocasematch; [[ "$_b" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+      [ "$_m" -eq 0 ] && continue
+    fi
+    _ahead=$(git rev-list --count "refs/heads/$INTEGRATION_BRANCH..refs/heads/$_b" 2>/dev/null)
+    [ "${_ahead:-0}" -gt 0 ] || continue
+    _n=$((_n+1))
+    if git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null | grep -q '^passed:'; then
+      _wait="$_wait $_b"
+    else
+      _work="$_work $_b"
+    fi
+  done < <(git worktree list --porcelain 2>/dev/null | sed -n 's|^branch refs/heads/||p')
+  [ "$_n" -ge "$_lim" ] || exit 0
+  echo "⏳ flight-rules: $_n branches are open and not yet merged into $INTEGRATION_BRANCH (OPEN_BRANCH_LIMIT is $_lim). A warning, not a block — merging some before opening more keeps them from depending on each other."
+  [ -z "$_wait" ] || echo "  Passed pre-merge-check, waiting to merge:$_wait"
+  [ -z "$_work" ] || echo "  Not yet passed:$_work"
+)
+
 FOR_USER="$SYNC_MSG${SYNC_MSG:+${DOCTOR_SCREEN:+
 }}$DOCTOR_SCREEN"
 FOR_USER="$RULES_MSG${RULES_MSG:+${FOR_USER:+
 
 }}$FOR_USER"
+FOR_USER="$FOR_USER${FOR_USER:+${OPEN_MSG:+
+
+}}$OPEN_MSG"
 
 WORKTREES_DIR="$PROJECT_ROOT/$WORKTREE_DIR"
 
@@ -343,6 +387,9 @@ FOR_ASSISTANT="$SYNC_MSG${SYNC_MSG:+${DOCTOR_MSG:+
 FOR_ASSISTANT="$RULES_MSG${RULES_MSG:+${FOR_ASSISTANT:+
 
 }}$FOR_ASSISTANT"
+FOR_ASSISTANT="$FOR_ASSISTANT${FOR_ASSISTANT:+${OPEN_MSG:+
+
+}}$OPEN_MSG"
 [ -n "$FOR_ASSISTANT$REMINDER" ] || exit 0
 PLAIN="$FOR_ASSISTANT${FOR_ASSISTANT:+${REMINDER:+
 
@@ -353,6 +400,7 @@ SHOWN=""
 [ -n "$RULES_MSG" ] && SHOWN="the new version's notice"
 [ -n "$SYNC_MSG" ] && SHOWN="${SHOWN:+$SHOWN and }the hook-sync result"
 [ -n "$DOCTOR_SCREEN" ] && SHOWN="${SHOWN:+$SHOWN and }doctor's ❌ lines"
+[ -n "$OPEN_MSG" ] && SHOWN="${SHOWN:+$SHOWN and }the open-branch warning"
 NOTE=""; WHEN="at session start"; [ "$EVENT" = UserPromptSubmit ] && WHEN="with this prompt"
 [ -n "$SHOWN" ] && NOTE="
 

@@ -420,7 +420,7 @@ J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1)
 say "$(ctx <<<"$J" | grep -c 'HOOK_SYNC=auto updated git hooks')" "1" "PROTECTED_BRANCHES=off: the branch policy is off, and the sync writes"
 rm -rf "$D"
 # The default set is pre-commit-check.sh's; a copy that drifts protects a different set.
-say "$(sed -n 's/^  _prot="\${_prot:-\(.*\)}"$/\1/p' "$H/session-start.sh")" \
+say "$(sed -n 's/^PROT="\${PROT:-\(.*\)}"$/\1/p' "$H/session-start.sh")" \
     "$(sed -n "s/^DEFAULT_PROTECTED='\(.*\)'$/\1/p" "$H/pre-commit-check.sh")" "the protected-branch default matches pre-commit-check.sh's"
 say "$(sed -n '/^read_conf() {/,/^}/p' "$H/session-start.sh")" \
     "$(sed -n '/^read_conf() {/,/^}/p' "$H/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"
@@ -826,5 +826,67 @@ say "$(usr <<<"$J" | grep -c 'flight-rules is now')" "0" "…with no version not
 rm -rf "$D"
 
 echo
+echo "OPEN_BRANCH_LIMIT warns when that many branches are open, and never blocks (#108):"
+# More than ten branches sat unmerged in this repo (2026-10-20 to 10-23) and the owner
+# saw the backlog only once they depended on each other. Open: a worktree's branch with
+# commits not in the integration branch. Waiting: one with a passing note on its tip.
+# open <repo> <name>: a worktree on a new branch off trunk, with a commit made there —
+# not branch(), whose `add -A` in the main checkout would commit the conf edits below.
+open() {
+  local w="$1/.ai/worktrees/${2//\//_}"
+  git -C "$1" worktree add -q -b "$2" "$w" trunk 2>/dev/null || die "could not add a worktree for $2"
+  echo "$2" > "$w/open.txt"; git -C "$w" add open.txt
+  git -C "$w" commit -qm "chore: on $2" --no-verify >/dev/null || die "could not commit on $2"
+}
+OB() { (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?"; }
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/a" fix/a || die "could not stamp fix/a"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "at the limit: exits 0"
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2)')" "1" "…warns on screen, with the count and the limit"
+say "$(usr <<<"$J" | grep -c 'A warning, not a block')" "1" "…as a warning"
+say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the stamped one as waiting to merge"
+say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
+say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT is 2')" "1" "…telling the assistant too"
+say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: the open-branch warning")" "1" "…which is told the user saw it"
+rm -rf "$D"
+# Below the limit, nothing — paired with the exit status and with the same run's
+# reminder, so a hook that died cannot pass it. A merged branch is not open.
+D=$(mkrepo); branch "$D" fix/m merge; git -C "$D" worktree add -q "$D/.ai/worktrees/m" fix/m
+open "$D" fix/a; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "one open and one merged, limit 2: exits 0"
+say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports (the merged worktree's reminder)"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-branch warning"
+# The default is 5; the environment comes first; off stands it down.
+open "$D" fix/b; open "$D" fix/c; open "$D" fix/d
+sed -i.bak '/OPEN_BRANCH_LIMIT/d' "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | ctx | grep -c 'branches are open')" "0" "four open, no setting: no warning (default 5)"
+open "$D" fix/e; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 5)')" "1" "…five: the warning"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=9 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) | ctx | grep -c 'branches are open')" "0" "…FLIGHT_RULES_OPEN_BRANCH_LIMIT=9 overrides it"
+printf 'OPEN_BRANCH_LIMIT=off\n' >> "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "OPEN_BRANCH_LIMIT=off: exits 0"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no warning"
+sed -i.bak 's/OPEN_BRANCH_LIMIT=off/OPEN_BRANCH_LIMIT=lots/' "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | usr | grep -c 'OPEN_BRANCH_LIMIT is 5')" "1" "…a value that is not a number is taken as 5"
+# A protected branch is not open work: main ahead of trunk after a release is not.
+printf 'PROTECTED_BRANCHES=^(trunk|rel)$\nOPEN_BRANCH_LIMIT=5\n' >> "$D/.ai/flight-rules.conf"; open "$D" rel
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(usr <<<"$J" | grep -c '5 branches are open')" "1" "a protected branch is not counted: five open, not six"
+say "$(usr <<<"$J" | grep -cE ' rel( |$)')" "0" "…and it is not named"
+# Without the conf, the project does not use flight-rules: not told how to run branches.
+# A main for the default INTEGRATION_BRANCH to find, so it is the conf that silences it.
+git -C "$D" branch main trunk || die "could not make main"
+rm "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "no conf: exits 0"
+say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "…the run reports (doctor's warning)"
+say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-branch warning"
+rm -rf "$D"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

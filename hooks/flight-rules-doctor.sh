@@ -248,7 +248,7 @@ else bad "neither jq nor python3 on PATH — the agent guard will deny every git
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 CONF=".ai/flight-rules.conf"
-KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
+KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC OPEN_BRANCH_LIMIT DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
 else
@@ -308,6 +308,9 @@ else
           report) ok "$key=report" ;;
           *)      warn "$key='$val' is neither auto nor report — session-start treats it as report and syncs nothing" ;;
         esac ;;
+      OPEN_BRANCH_LIMIT)
+        if [[ "$val" =~ ^0*[1-9][0-9]*$ || "$val" == off ]]; then ok "$key=$val"
+        else warn "$key='$val' is neither a positive whole number nor off — session-start treats it as 5 and warns when that many branches are open"; fi ;;
       DG_COMIC)
         case "$val" in
           always|never) ok "$key=$val" ;;

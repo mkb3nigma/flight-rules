@@ -24,7 +24,10 @@ for having gone unenforced.
 ### 🚫 Forbidden
 1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
 2. Multiple features in one branch — one purpose per branch — skill (`pre-merge-check` 9, ⚠️)
-3. Starting a new feature before merging (or parking) the current one — advisory
+3. Letting open branches pile up: at `OPEN_BRANCH_LIMIT` (default 5) branches open and
+   not yet merged into `{INTEGRATION_BRANCH}`, say how many are open, and which wait to
+   merge, before starting another. A warning, not a stop — the owner decides —
+   reminded (`session-start` warns at the limit)
 4. Merging without tests passing — skill (`pre-merge-check` 1–3 runs them; on note-gated
    branches `commit-msg` requires its stamp, which proves the skill ran, not that it
    passed honestly); on PR-only branches the host's CI and review are the gate

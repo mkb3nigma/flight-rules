@@ -648,6 +648,14 @@ rm -rf "$D"
 
 # /dg's round-2 wait (owner, 2026-10-18): a value the skill cannot read as minutes would
 # silently become the default, so doctor names it.
+D=$(mkrepo); printf 'OPEN_BRANCH_LIMIT=3\n' >> "$D/.ai/flight-rules.conf"
+say "$(rc "$D")" "0" "OPEN_BRANCH_LIMIT is a known key"
+say "$(has "$D" "OPEN_BRANCH_LIMIT=3")" "0" "…and is reported"
+printf 'OPEN_BRANCH_LIMIT=lots\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "OPEN_BRANCH_LIMIT='lots' is neither a positive whole number nor off")" "0" "…a value that is not a number is warned about"
+printf 'OPEN_BRANCH_LIMIT=off\n' > "$D/.ai/flight-rules.conf"
+say "$(has "$D" "OPEN_BRANCH_LIMIT=off")" "0" "…off is accepted"
+rm -rf "$D"
 D=$(mkrepo); printf 'DG_WAIT_MINUTES=30\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "DG_WAIT_MINUTES is a known key"
 say "$(has "$D" "unknown key")" "1" "…not reported as unknown"
