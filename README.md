@@ -106,9 +106,9 @@ per clone: its first session's doctor message prints the command (the plugin's
 `install.sh`, which wires the committed hooks without replacing them). (The message needs `jq` or
 `python3`; without either, doctor's findings reach only the assistant.)
 
-**Updating:** `/plugin` → update, then start a new session. After `/reload-plugins`
-instead, the same checks run on your next prompt, which also says the new rules need a
-new session to load. If a git hook is behind the new release, that session's doctor
+**Updating:** `/plugin` → update, then start a new session — the session-start checks run
+only when one starts. After `/reload-plugins` instead, your next prompt says the session
+is on the new version and that a new session is what loads its rules and runs the checks. If a git hook is behind the new release, that session's doctor
 message prints the sync command with `--stale-only`: it replaces only copies identical
 to an older release, and leaves a hook you changed alone and names it. A project copy of
 `install.sh` that is behind, differs while carrying flight-rules' marker, or cannot be read
