@@ -3,8 +3,8 @@
 #   1. Flags worktrees whose branch is now merged (stale — remove them)
 #      and what still runs from each: processes, Compose containers (#109)
 #   2. Lists merged branches safe to delete
-#   3. Writes a note file, and prints it when it has something to do (no hook reads
-#      the file yet: #110)
+#   3. Writes a note file, and prints it when it has something to do (no flight-rules
+#      hook reads the file — a user's own may: #110)
 #   4. (Optional, off by default) clears the AI assistant's stored conversation
 #      context for this project so the next session starts fresh
 #
@@ -27,10 +27,23 @@ PROTECTED_RE=$(_conf PROTECTED_BRANCHES)
 PROTECTED_RE="${PROTECTED_RE:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
 [ "$PROTECTED_RE" = "off" ] && PROTECTED_RE='^$'
 NOTE_PATH='.claude/post-merge-note.md'  # where the note is written (and printed; no
-                                        # hook reads the file yet: #110)
+                                        # flight-rules hook reads the file: #110)
 CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
                                            # files for this project (keeps memory/).
                                            # Read the block below before enabling.
+
+# shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
+# ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
+# leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
+# Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
+# range like A-Z follows the locale's collation. Kept verbatim in step across
+# post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
+shq() {
+  case "$1" in
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 [[ "$CURRENT_BRANCH" != "$INTEGRATION_BRANCH" ]] && exit 0
@@ -107,8 +120,8 @@ refused_until() {
   git rev-parse -q --verify "$up^{commit}" >/dev/null 2>&1 || return 0
   git merge-base --is-ancestor "refs/heads/$1" "$up" 2>/dev/null && return 0
   case "$up" in
-    refs/remotes/*) printf '  (refused until %s has it — push that first)' "${up#refs/remotes/}" ;;
-    *)              printf '  (refused until %s contains it)' "${up#refs/heads/}" ;;
+    refs/remotes/*) printf 'refused until %s has it — push that first' "${up#refs/remotes/}" ;;
+    *)              printf 'refused until %s contains it' "${up#refs/heads/}" ;;
   esac
 }
 
@@ -138,7 +151,7 @@ done < <(git worktree list --porcelain 2>/dev/null)
 #
 # Read once per merge, here in the hook's own shell — a cache filled inside $(…) is
 # thrown away with the subshell, and was (0.27.0 review) — and only when a worktree is
-# listed. A tool that fails is said so under each worktree, never read as "nothing
+# listed. A tool that fails is said once, above the worktrees, never read as "nothing
 # running": an empty list is what a clean worktree looks like too.
 #   processes: `ps`; on Linux with no working ps, /proc/<pid>/cmdline.
 #   working directories: /proc/<pid>/cwd, else `lsof -b` (macOS; -b so a dead network
@@ -257,6 +270,18 @@ if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
   fi
 fi
 
+# note_branch <branch> [just]: the command on a line of its own, what to know about it on
+# the next. On the same line, "← just merged" was pasted along with the command, and
+# `git branch -d fix/x  ← just merged` deleted merged branches named `just` and
+# `merged` too (fix review, 2026-10-24). Not a trailing `#`: interactive zsh has
+# comments off and hands `#` to git.
+note_branch() {
+  local why; why=$(refused_until "$1")
+  printf '  git branch -d %s\n' "$(shq "$1")"
+  if [[ -n "${2-}" ]]; then printf '    ↑ just merged%s\n' "${why:+; $why}"
+  elif [[ -n "$why" ]]; then printf '    ↑ %s\n' "$why"; fi
+}
+
 # --- Write note file ---
 mkdir -p "$(dirname "$NOTE_FILE")"
 {
@@ -280,10 +305,10 @@ mkdir -p "$(dirname "$NOTE_FILE")"
         echo "  Still running from it, or left by it — stop or remove what a check started there before removing the worktree (\`docker compose down\` from its directory, \`docker rm <id>\`); ask before stopping anything you did not start:"
         echo "$_run"
       fi
-      # %q, not '…': the line is printed to be pasted, and a path — or a branch name
-      # below, which git allows to hold ' ; $ { } — closed '…' and ran what followed:
-      # `x';touch${IFS}PWNED;'` is a valid branch (fix review, 2026-10-24, Q2).
-      printf '  git worktree remove %q\n' "$rel"
+      # Quoted by shq: the line is printed to be pasted, and a path — or a branch name
+      # below, which git allows to hold ' ; $ { } — closed a bare '…' and ran what
+      # followed: `x';touch${IFS}PWNED;'` is a valid branch (fix review, 2026-10-24, Q2).
+      printf '  git worktree remove %s\n' "$(shq "$rel")"
     done
   else
     echo "### Worktrees: none stale ✓"
@@ -296,12 +321,12 @@ mkdir -p "$(dirname "$NOTE_FILE")"
     # Merged straight from origin/<x> with no local <x>, there is nothing to delete.
     if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]] \
        && git show-ref --verify -q "refs/heads/$JUST_MERGED"; then
-      printf '  git branch -d %q  ← just merged%s\n' "$JUST_MERGED" "$(refused_until "$JUST_MERGED")"
+      note_branch "$JUST_MERGED" just
     fi
     if [[ -n "$PREVIOUSLY_MERGED" ]]; then
       echo "  (previously merged, not yet deleted:)"
       while IFS= read -r branch; do
-        [[ -n "$branch" ]] && printf '  git branch -d %q%s\n' "$branch" "$(refused_until "$branch")"
+        [[ -n "$branch" ]] && note_branch "$branch"
       done <<< "$PREVIOUSLY_MERGED"
     fi
   else
@@ -309,8 +334,8 @@ mkdir -p "$(dirname "$NOTE_FILE")"
   fi
 } > "$NOTE_FILE"
 
-# Printed as well as written: no hook reads the file (#110), so the merger — the owner
-# or an assistant — is who sees it. Only when there is something to do: a `git pull`
+# Printed as well as written: no flight-rules hook reads the file (#110; a user's own
+# hook may), so the merger — the owner or an assistant — is who sees it. Only when there is something to do: a `git pull`
 # runs this hook too, and a clean one stays one line. At most 40 lines; the file has all.
 echo ""
 if [[ ${#STALE_WORKTREES[@]} -gt 0 || -n "$ALL_MERGED" ]]; then

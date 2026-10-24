@@ -297,8 +297,9 @@ that the logic has exactly one home.
   unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
   (stale worktrees, deletable branches) to `.claude/post-merge-note.md` and, when it has
-  something to do, prints it to whoever merged (at most 40 lines; nothing reads the file
-  yet, #110). Under each stale worktree it names what still runs from it — processes
+  something to do, prints it to whoever merged (at most 40 lines; no flight-rules hook
+  reads the file, #110). Each command is on a line of its own, quoted to be pasted, with
+  what to know about it — just merged, or refused until a push — on the line below. Under each stale worktree it names what still runs from it — processes
   working there or with its path in their command line, and Docker Compose containers
   from it, stopped ones included — so what a check started is stopped or removed before
   the worktree goes. It lists them and stops nothing; a `ps`, `lsof` or `docker` that

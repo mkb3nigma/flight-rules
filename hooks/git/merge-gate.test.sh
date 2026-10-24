@@ -393,6 +393,10 @@ else
 fi
 rm -rf "$AM"
 
+# after <file> <line>: the line that follows <line> exactly, where post-merge puts what
+# to know about a command (it was on the command's own line, and got pasted with it).
+after() { awk -v c="$2" 'f {print; exit} $0 == c {f=1}' "$1"; }
+
 echo "post-merge: the emitted commands quote what they interpolate:"
 # `&`, `$`, `|` and parentheses are legal in a refname, and the note is advertised as a
 # command you can paste. `git branch -d fix/a&b` backgrounds a DIFFERENT branch's deletion.
@@ -411,7 +415,7 @@ cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$QR/.a
 chmod +x "$QR"/.ai/hooks/*; git -C "$QR" config core.hooksPath "$QR/.ai/hooks"
 git -C "$QR" merge --no-verify --no-edit 'fix/a&b' >/dev/null 2>&1
 QNOTE="$QR/.claude/post-merge-note.md"
-if grep -qF 'git branch -d fix/a\&b' "$QNOTE" 2>/dev/null; then
+if grep -qxF "  git branch -d 'fix/a&b'" "$QNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a name with shell metacharacters is quoted\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/a&b is emitted unquoted: %s\n' "$(grep -m1 'branch -d' "$QNOTE")"
@@ -430,26 +434,47 @@ mkdir -p "$HR/.ai/hooks"
 printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.ai/worktrees\n' > "$HR/.ai/flight-rules.conf"
 echo base > "$HR/f.txt"; git -C "$HR" add -A; git -C "$HR" commit -qm "chore: base"
 git -C "$HR" branch "$EVIL" || die "could not make the hostile branch"
+# Merged branches named `just` and `merged`, protected so the note does not offer them:
+# a pasted "git branch -d fix/q  ← just merged" deleted both (fix review, 2026-10-24).
+printf 'PROTECTED_BRANCHES=^(trunk|just|merged)$\n' >> "$HR/.ai/flight-rules.conf"
+git -C "$HR" branch just && git -C "$HR" branch merged || die "could not make just and merged"
+# Non-ASCII: macOS bash 3.2's printf %q split ß and left a raw byte (fix review, D1).
+UWT="$HR/.ai/worktrees/straße"
+git -C "$HR" worktree add -q -b 'fix/ü-ß' "$UWT" trunk 2>/dev/null || die "could not add the non-ASCII worktree"
 QWT="$HR/.ai/worktrees/it's"
 git -C "$HR" worktree add -q -b fix/q "$QWT" trunk 2>/dev/null || die "could not add a worktree whose path holds a quote"
 echo q > "$QWT/q.txt"; git -C "$QWT" add q.txt; git -C "$QWT" commit -qm "chore: q" --no-verify >/dev/null
 cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$HR/.ai/hooks/"
 chmod +x "$HR"/.ai/hooks/*; git -C "$HR" config core.hooksPath .ai/hooks
-OUT=$(cd "$HR" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
+OUT=$(cd "$HR" && LC_ALL=en_US.UTF-8 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
 say "$RC" "0" "a merge with a hostile branch name and a quoted worktree path lands"
-CMDS=$(printf '%s\n' "$OUT" | sed -n -E 's/^  (git (branch -d|worktree remove) .*)$/\1/p' | sed -E 's/  ← just merged.*$//; s/  \(refused until.*$//')
-say "$(grep -c . <<<"$CMDS")" "3" "…printing three commands: the worktree, the merged branch, the hostile one"
-_bad=0; _got=""
+# Every command line exactly as printed — nothing stripped before it is judged.
+CMDS=$(printf '%s\n' "$OUT" | sed -n -E 's/^  (git (branch -d|worktree remove) .*)$/\1/p')
+say "$(grep -c . <<<"$CMDS")" "5" "…printing five commands: two worktrees, the merged branch, the hostile one, the ß one"
+_bad=0; _got=""; _argc=""
 while IFS= read -r c; do
   bash -n -c "$c" 2>/dev/null || _bad=$((_bad+1))
-  # git a function that prints its last argument; nothing else may run.
+  # git a function that prints its last argument and its argument count.
   _got="$_got$( (cd "$SB" && bash -c 'git() { for a; do :; done; printf "%s\n" "$a"; }; eval "$1"' _ "$c") 2>/dev/null)
 "
+  _argc="$_argc$( (cd "$SB" && bash -c 'git() { printf "%s\n" "$#"; }; eval "$1"' _ "$c") 2>/dev/null) "
 done <<<"$CMDS"
 say "$_bad" "0" "…each parses as one command"
 say "$([ -e "$SB/PWNED" ] || [ -e "$HR/PWNED" ] && echo ran || echo clean)" "clean" "…and pasting them runs nothing but git"
+say "$_argc" "3 3 3 3 3 " "…each hands git exactly three arguments, no annotation among them"
 say "$(grep -cxF "$EVIL" <<<"$_got")" "1" "…git is handed the hostile branch name exactly"
 say "$(grep -cxF ".ai/worktrees/it's" <<<"$_got")" "1" "…and the worktree path exactly"
+say "$(grep -cxF 'fix/ü-ß' <<<"$_got")" "1" "…and the ß branch exactly"
+say "$(grep -cxF '.ai/worktrees/straße' <<<"$_got")" "1" "…and the ß worktree path exactly"
+HNOTE="$HR/.claude/post-merge-note.md"
+iconv -f UTF-8 -t UTF-8 "$HNOTE" >/dev/null 2>&1; say "$?" "0" "…the note file is valid UTF-8"
+printf '%s\n' "$OUT" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; say "$?" "0" "…and so is what was printed"
+say "$(grep -cF 'straße' "$HNOTE")" "2" "…which names the ß worktree as it is (its line and its command)"
+say "$(after "$HNOTE" "  git branch -d fix/q")" "    ↑ just merged" "…and says 'just merged' on the line below the command"
+# Run every printed line for real, in order, as someone pasting the note would.
+while IFS= read -r c; do (cd "$HR" && eval "$c") >/dev/null 2>&1; done <<<"$CMDS"
+say "$(git -C "$HR" branch --list just merged | wc -l | tr -d ' ')" "2" "…and pasting all of them leaves the branches named just and merged"
+say "$(git -C "$HR" branch --list fix/q | wc -l | tr -d ' ')" "0" "…while deleting what it offered (the paste ran)"
 rm -rf "$HB"
 
 echo "The note gate covers protected branches this project actually has:"
@@ -614,8 +639,7 @@ say "$?" "0" "merging origin/feature/x into dev lands"
 say "$?" "0" "…with the remote-tracking subject (the fixture is the real shape)"
 grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…and the note names feature/x, not unknown"
-grep -q "git branch -d feature/x  ← just merged" "$D/.claude/post-merge-note.md" 2>/dev/null
-say "$?" "0" "…and offers the local branch for deletion as just merged"
+say "$(after "$D/.claude/post-merge-note.md" "  git branch -d feature/x")" "    ↑ just merged" "…and offers the local branch for deletion as just merged"
 grep -q "refused until" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "1" "…with no push warning: feature/x has no upstream, so -d works now"
 rm -rf "$D" "$O"
@@ -651,10 +675,10 @@ FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null
 say "$?" "0" "merging feature/x (tracking origin/dev) into dev lands"
 git -C "$D" branch -d feature/x >/dev/null 2>&1
 say "$?" "1" "…and git branch -d refuses it before dev is pushed (the case is real)"
-grep -qF "git branch -d feature/x  ← just merged  (refused until origin/dev has it — push that first)" "$D/.claude/post-merge-note.md" 2>/dev/null
-say "$?" "0" "…and the note says origin/dev must have it first"
-grep -q "git branch -d plain$" "$D/.claude/post-merge-note.md" 2>/dev/null
-say "$?" "0" "…but not for a branch its upstream already has"
+say "$(after "$D/.claude/post-merge-note.md" "  git branch -d feature/x")" "    ↑ just merged; refused until origin/dev has it — push that first" "…and the note says origin/dev must have it first, below the command"
+grep -qxF "  git branch -d plain" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…and offers plain"
+say "$(after "$D/.claude/post-merge-note.md" "  git branch -d plain" | grep -c '↑')" "0" "…but says nothing below it: its upstream already has it"
 git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev in the fixture"
 git -C "$D" branch -d feature/x >/dev/null 2>&1
 say "$?" "0" "…and after the push, -d deletes it"
@@ -679,12 +703,11 @@ FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null
 git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev"
 (cd "$D" && .ai/hooks/post-merge 0) >/dev/null 2>&1 || die "post-merge failed when run directly"
 NOTE="$D/.claude/post-merge-note.md"
-grep -qE "^  git branch -d feature/x  ← just merged$" "$NOTE" 2>/dev/null
-say "$?" "0" "an upstream gone from the remote: no annotation"
-grep -qE "^  git branch -d tagged$" "$NOTE" 2>/dev/null
-say "$?" "0" "a tag named origin/dev beside the branch: no annotation"
-grep -qE "^  git branch -d local-up  \(refused until main contains it\)$" "$NOTE" 2>/dev/null
-say "$?" "0" "a local upstream that lacks it: 'contains', not 'push'"
+say "$(after "$NOTE" "  git branch -d feature/x")" "    ↑ just merged" "an upstream gone from the remote: no annotation"
+grep -qxF "  git branch -d tagged" "$NOTE" 2>/dev/null
+say "$?" "0" "a tag named origin/dev beside the branch: offered…"
+say "$(after "$NOTE" "  git branch -d tagged" | grep -c '↑')" "0" "…with no annotation"
+say "$(after "$NOTE" "  git branch -d local-up")" "    ↑ refused until main contains it" "a local upstream that lacks it: 'contains', not 'push'"
 for b in feature/x tagged; do git -C "$D" branch -d "$b" >/dev/null 2>&1 || echo "$b"; done > "$D/undeleted"
 say "$(cat "$D/undeleted")" "" "…and -d really deletes the unannotated ones"
 rm -rf "$D" "$O"
@@ -696,8 +719,7 @@ git -C "$D" remote add upstream "$O"
 git -C "$D" push -q upstream main dev 2>/dev/null || die "could not push the fixture to upstream"
 git -C "$D" branch -q --set-upstream-to=upstream/dev feature/x || die "could not make feature/x track upstream/dev"
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
-grep -qF "(refused until upstream/dev has it" "$D/.claude/post-merge-note.md" 2>/dev/null
-say "$?" "0" "the note names upstream/dev"
+say "$(after "$D/.claude/post-merge-note.md" "  git branch -d feature/x")" "    ↑ just merged; refused until upstream/dev has it — push that first" "the note names upstream/dev"
 rm -rf "$D" "$O"
 
 
