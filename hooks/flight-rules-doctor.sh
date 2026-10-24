@@ -55,14 +55,14 @@ hook_marker() {
     commit-msg)             printf 'pre-merge-check' ;;
     pre-rebase)             printf 'PR_ONLY' ;;
     post-merge)             printf 'post-merge-note' ;;
-    reference-transaction)  printf 'is-ancestor' ;;
+    reference-transaction)  printf 'PR_ONLY' ;;   # not is-ancestor, a common idiom (#97 review)
     pre-commit)             printf 'PRIVATE KEY' ;;
     # Not a hook: tells flight-rules' install.sh from a project's own — a heuristic,
     # like the rest. The phrase is in the header comment of every revision since it was
     # added (7b7f968, 2026-07-19). merge.ff and core.hooksPath would not do: every
     # flight-rules project is told to set both, so its own installer would match (second
     # review, 2026-10-21). install.sh's hook_marker holds the same table; keep them in
-    # step.
+    # step (install.test.sh compares them).
     install.sh)             printf 'committed git hooks into git' ;;
     *)                      printf 'flight-rules' ;;
   esac
