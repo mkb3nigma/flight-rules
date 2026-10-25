@@ -82,15 +82,22 @@ fi
 # A path as `pwd -P` spells it, resolved through its nearest existing ancestor: a
 # directory not made yet resolved to nothing, so the worktree refusal below missed a
 # missing hooks directory in the main checkout and mkdir -p made it there (group A fix
-# review round 3, 2026-10-22, V2). Past the deepest existing directory the rest is taken
-# as written: a `..` or a dangling link there is not followed. Only a hand-set
-# core.hooksPath reaches that, and a dangling link fails mkdir -p loudly on BSD and GNU
-# alike (round 3 review, W3/W4: no refusal added for it).
+# review round 3, 2026-10-22, V2). Past the deepest existing directory nothing exists,
+# so there is no link to follow, and its `.` and `..` are resolved by name: taken as
+# written, wt/missing/../../../x passed for inside the worktree while it named a
+# directory in the main checkout (0.27.0 release review). A dangling link fails
+# mkdir -p loudly on BSD and GNU alike (round 3 review, W3/W4: no refusal added for it).
 resolved() {
-    local d="$1" t=""
+    local d="$1" t="" p c
     [ "$d" = / ] || d="${d%/}"
     while [ ! -d "$d" ]; do t="/${d##*/}$t"; d=$(dirname "$d"); done
-    printf '%s%s' "$(cd "$d" && pwd -P)" "$t"
+    p=$(cd "$d" && pwd -P)
+    local IFS=/; set -f
+    for c in $t; do
+        case "$c" in ''|.) ;; ..) p=$(dirname "$p") ;; *) p="${p%/}/$c" ;; esac
+    done
+    set +f
+    printf '%s' "$p"
 }
 inside() { case "$(resolved "$1")" in "$(cd "$2" && pwd -P)"/*) return 0 ;; esac; return 1; }
 inside_repo() { inside "$1" "$REPO_ROOT"; }

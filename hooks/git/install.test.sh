@@ -361,6 +361,15 @@ say "$(grep -c "is in the main checkout, .*, and does not exist — git runs no 
 say "$(grep -E '^[[:space:]]+cd ' <<<"$OUT" | sed 's/^[[:space:]]*//')" \
     "$(printf 'cd %q && bash %q --from %q' "$D" "$P/hooks/git/install.sh" "$P/hooks/git")" "…printing the install to run in the main checkout"
 say "$(grep -c -- '--this-checkout' <<<"$OUT")" "0" "…and not --this-checkout, which would stop at the same missing directory"
+# …and when the path reaches it through a directory that does not exist: the part past
+# the deepest existing directory was taken as written, so wt/missing/../../../hooks-dd
+# passed for inside the worktree while it named the main checkout's .ai (0.27.0 release
+# review).
+git -C "$D" config core.hooksPath "$D/.ai/worktrees/wt/missing/../../../hooks-dd"
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "plain --from, a path into the main checkout through a missing directory's ..: refused"
+say "$([ -e "$D/.ai/hooks-dd" ] && echo made || echo absent)" "absent" "…not making it there"
+say "$([ -e "$D/.ai/worktrees/wt/missing" ] && echo made || echo absent)" "absent" "…nor the missing directory in the worktree"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"
 # A link in the worktree to the main checkout's copy passed the redirect's -d, and the
 # write went through it into the main checkout (group A fix review round 2, F0).
