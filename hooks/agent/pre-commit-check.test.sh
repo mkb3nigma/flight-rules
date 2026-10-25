@@ -1038,8 +1038,13 @@ MR=$(make_repo main)
 git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 || die "could not add a dev worktree to $MR"
 CDPATH=.:/usr mgc deny "CDPATH=.:/usr exported: a commit in a worktree on dev is still refused" \
     "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
-CDPATH=.:/usr mgc deny "…and a commit on main in the project's own subdirectory" \
-    "$MR" "$MR" "cd $MR/.ai && git commit -m x"
+# …and with the project dir a subdirectory of its repo, committing on main from the top:
+# the target's `.git` is the relative answer CDPATH bent. The case before this one, with
+# target_root == the project dir, short-circuited before the compare and could not fail
+# (fourth fix review).
+mkdir -p "$MR/sub"
+CDPATH=.:/usr mgc deny "…and a commit on main, the project dir a subdirectory of the checkout" \
+    "$MR" "$MR/sub" "git commit -m x"
 rm -rf "$MR"
 
 echo "…and a harmless command is not made dangerous by its neighbour:"
