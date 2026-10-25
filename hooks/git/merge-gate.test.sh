@@ -1056,6 +1056,7 @@ say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for 
 # (second fix review). origin has no MAIN; the pattern's case is the likelier fault.
 say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
 say "$(grep -c 'As of the last fetch, origin has no ref spelled MAIN\.' <<<"$OUT")" "1" "…and, as a fact of the last fetch, that origin has no ref spelled MAIN"
+say "$(grep -c "Which is the PR-only branch is the project owner's call" <<<"$OUT")" "1" "…so which ref is the branch is the owner's call"
 say "$(judged "$OUT")" "0" "…calling no ref a stray, a variant or in the wrong case, nor saying to delete one"
 say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
