@@ -93,10 +93,15 @@ ask, it opens none. `off` turns it off. Below.
   the refused merge was still in progress; it prints the command that concludes it.
 - **`HOOK_SYNC=auto` wrote into a checkout on a protected branch** (#99), leaving a diff
   nobody could commit; there it now only compares and prints the command for a branch.
-- **The guard's branch policy could switch off** when the project directory was reached
-  through a symlink whose parent is another repository, or when the shell exported a
-  `CDPATH` holding `.`: it took the project for a different repository and allowed a
-  commit on a protected branch. It now finds the project as git does.
+- **The guard's branch policy could switch off** when the project directory was a symlink
+  to a subdirectory of its repository with the link itself inside another repository,
+  or when the shell exported a `CDPATH` that `cd .git` could resolve through (one
+  holding `.`, or naming a directory with its own `.git`, such as a dotfiles home): it
+  took the project for a different repository and allowed a commit on a protected
+  branch. It now finds the project as git does.
+- **`install.sh` read `--from` and the hooks path by name**, so a `..` after a link named
+  a different directory from the one git uses, and an exported `CDPATH` could misread
+  them too; it now walks them as the kernel does.
 - **The guard looked for `MERGE_HEAD` in its own working directory**, not the `-C`
   target (#98): a false block from a worktree, and a waiver that leaked across repos.
 - **`HOOK_SYNC=auto` warned daily in every worktree whose hooks live in the main
