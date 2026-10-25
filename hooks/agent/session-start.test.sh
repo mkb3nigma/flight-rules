@@ -1026,5 +1026,23 @@ say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT: no trunk here, local or origin/
 say "$(usr <<<"$J" | grep -c 'not counted')" "0" "…off the screen"
 rm -rf "$D"
 
+echo "/feature-start step 5 counts what session-start counts (0.27.0 release review):"
+# The skill's snippet, run as written. With the pattern unset it used a bare `main`, or
+# grepped an empty pattern that left out every branch; with `off` it grepped for "off".
+FS_SKILL="$H/../../skills/feature-start/SKILL.md"
+SNIP=$(awk '/^5\. \*\*Count the open branches/{s=1} s && /^   ```bash$/{b=1; next} b && /^   ```$/{exit} b{sub(/^   /, ""); print}' "$FS_SKILL")
+[ -n "$SNIP" ] || die "no bash block in step 5 of $FS_SKILL"
+fs_count() {   # fs_count <repo> <{PROTECTED_BRANCHES} as substituted>: the branches the snippet lists, sorted, space-separated
+  local s="${SNIP//'{INTEGRATION_BRANCH}'/trunk}"; s="${s//'{PROTECTED_BRANCHES}'/$2}"
+  (cd "$1" && unset FLIGHT_RULES_PROTECTED_BRANCHES && bash -c "$s" 2>&1) | sort | tr '\n' ' '
+}
+D=$(mkrepo); open "$D" fix/domain-model; open "$D" staging; open "$D" fix/turn-off-x
+sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.ai/flight-rules.conf"; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+say "$(fs_count "$D" '')" "fix/domain-model fix/turn-off-x " "unset: the hooks' anchored default leaves out staging, and only staging"
+J=$(OB)
+say "$(usr <<<"$J" | grep -c '2 branches are open')" "1" "…the two session-start counts"
+say "$(fs_count "$D" off)" "fix/domain-model fix/turn-off-x staging " "off: nothing is left out, a name holding \"off\" included"
+rm -rf "$D"
+
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
