@@ -276,8 +276,13 @@ that the logic has exactly one home.
   conflict resolution scanned, not the commits coming in: the staged diff against
   git's `AUTO_MERGE` (git ≥ 2.42; the file, or in a reftable repository the pseudo-ref —
   never a branch or tag of that name) is what was typed while resolving. Without
-  `AUTO_MERGE` everything staged is scanned, incoming commits included (#101: skipping
-  the whole commit let a key typed into a resolution through). The accepted cost: an
+  `AUTO_MERGE`, `git merge-tree --write-tree` (git ≥ 2.38) works the same merge out;
+  failing both, or for an octopus merge, everything staged is scanned, incoming commits
+  included (#101: skipping the whole commit let a key typed into a resolution through).
+  The agent guard scans a concluding commit the same way — scanning everything, it
+  refused the commit that finishes a refused merge, which git's hook let through
+  (0.27.0 release review) — and both refusals say not to unstage a file mid-merge:
+  the merge would keep `HEAD`'s copy and drop the incoming change, with nothing said. The accepted cost: an
   incoming commit is scanned only if this hook ran when it was made, so one from before
   it, or made with `--no-verify`, lands with the merge. "Being concluded" means git's
   `MERGE_HEAD` file exists and names a commit `HEAD` does not already contain (a branch
@@ -288,7 +293,9 @@ that the logic has exactly one home.
   ordinary commit and is scanned. A clean `cherry-pick`/`revert` does not run
   `pre-commit`; one that stopped on a conflict and is finished with `--continue` does.
   Override for a checked false positive: `--no-verify`, the owner's call — the refusal
-  does not print it, because an agent reads it too. **Already have a `pre-commit`** (a linter,
+  does not print it, because an agent reads it too. Concluding a merge, it skips
+  `commit-msg` as well, so the merge lands with no note check and no
+  `Merge-authorisation` trailer. **Already have a `pre-commit`** (a linter,
   lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
   scan and its exit status decides the commit. **Upgrading from 0.22.x:** a plugin
   update cannot copy git hooks, so this one arrives only when you sync them in —

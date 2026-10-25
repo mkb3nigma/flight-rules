@@ -175,8 +175,10 @@ git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 
 echo "Back-merge exemption cannot be forged (post-merge review):"
 # mkrepo_with_origin: a bare origin holding main, so refs/remotes/origin/main exists.
+# The bare origin lives in the fixture's own .git, so the rm -rf "$D" each case ends
+# with removes it too: a separate mktemp -d leaked one per case (second fix review).
 mkrepo_with_origin() {
-  local d o; d=$(mkrepo); o=$(mktemp -d)
+  local d o; d=$(mkrepo); o="$d/.git/test-origin.git"
   git init -q --bare "$o" || die "git init failed (git init -q --bare "$o")"; git -C "$d" remote add origin "$o"
   git -C "$d" push -q origin main dev 2>/dev/null
   printf '%s' "$d"
@@ -1014,9 +1016,138 @@ git -C "$D" checkout -q dev
 OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
 say "$RC" "1" "PR_ONLY_BRANCHES=^MAIN\$: merging main into dev is not taken for a back-merge"
 say "$(grep -c 'Not taken for a back-merge: main matches' <<<"$OUT")" "1" "…and the refusal says the case is why"
-CMD=$(route "$OUT" PR_ONLY_BRANCHES); P='^main$'; CMD=${CMD//"<pattern>"/$P}
-OUT=$(cd "$D" && eval "$CMD" 2>&1)
-say "$?" "0" "…and the route it prints, with the pattern in main's case, lands it"
+say "$(grep -c 'FLIGHT_RULES_PR_ONLY_BRANCHES=' <<<"$OUT")" "0" "…and prints no command that overrides the pattern"
+say "$(grep -c 'writes the pattern in its case in .ai/flight-rules.conf' <<<"$OUT")" "1" "…but says where it is fixed"
+rm -rf "$D"
+# listed <out> <ref>: 1 when the refusal lists <ref> on a line of its own. judged <out>:
+# lines that call a ref a stray, a variant or in the wrong case, or say to delete one —
+# the inferences that misled in three rounds (fix reviews). The refusal states facts.
+listed() { grep -cE "^║ +$2 +║\$" <<<"$1"; }
+judged() { grep -ciE 'stray|variant|wrong case|remove|delete' <<<"$1"; }
+# The route the refusal prints works: origin moved on since the last fetch, so the
+# tracking ref lags; fetch --prune, then commit --no-edit, lands the back-merge.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q main; echo r > "$D/r"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" update-ref refs/remotes/origin/main main~1 || die "could not wind origin/main back in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "origin/main behind origin: a back-merge of main is refused"
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+OUT=$(cd "$D" && git fetch -q --prune origin && git commit --no-edit 2>&1); RC=$?
+say "$RC" "0" "…and the printed route, fetch --prune then commit --no-edit, lands it"
+say "$(grep -c 'Back-merge of PR-only branch main' <<<"$OUT")" "1" "…as a back-merge"
+rm -rf "$D"
+# The override that box used to print, given by hand: a local MAIN at an unstamped
+# commit, while origin has main. origin/MAIN does not exist, so the origin check was
+# skipped and the merge passed as a back-merge (0.27.0 release review). Packed, so a
+# case-insensitive filesystem cannot resolve origin/MAIN to the loose origin/main file.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/m dev; echo mm > "$D/mm"; git -C "$D" add -A; git -C "$D" commit -qm "feature: mm" >/dev/null
+git -C "$D" branch -D main >/dev/null 2>&1 || die "could not delete main in $D"
+git -C "$D" pack-refs --all
+git -C "$D" branch MAIN feature/m || die "could not create MAIN in $D"
+git -C "$D" rev-parse -q --verify refs/remotes/origin/MAIN >/dev/null && die "origin/MAIN resolves in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git merge --no-ff MAIN -m merge 2>&1); RC=$?
+say "$RC" "1" "^MAIN\$ given by hand: a local MAIN off origin/main is refused"
+say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
+# The refusal must not take origin/main for a stray here: it advised deleting it
+# (second fix review). origin has no MAIN; the pattern's case is the likelier fault.
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+say "$(grep -c 'As of the last fetch, origin has no ref spelled MAIN\.' <<<"$OUT")" "1" "…and, as a fact of the last fetch, that origin has no ref spelled MAIN"
+say "$(grep -c "Which is the PR-only branch is the project owner's call" <<<"$OUT")" "1" "…so which ref is the branch is the owner's call"
+say "$(judged "$OUT")" "0" "…calling no ref a stray, a variant or in the wrong case, nor saying to delete one"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+# …nor when origin holds MAIN as well, pushed at that commit: every case variant origin
+# has must hold it, not any one (security review of this fix). Two refs a case apart
+# need reftable on a case-insensitive filesystem, so the fixture checks it got them.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/m2 dev; echo m2 > "$D/m2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: m2" >/dev/null
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/MAIN feature/m2
+git -C "$D" branch -D main >/dev/null 2>&1; git -C "$D" branch MAIN feature/m2 2>/dev/null
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/main)" = "$(git -C "$D" rev-parse feature/m2)" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/heads/MAIN)" != "$(git -C "$D" rev-parse feature/m2)" ] \
+   || git -C "$D" rev-parse -q --verify refs/heads/main >/dev/null; then
+  echo "  ⏭️  origin/main beside origin/MAIN: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git merge --no-ff MAIN -m merge 2>&1); RC=$?
+  say "$RC" "1" "^MAIN\$ given by hand, origin/MAIN pushed at the commit: refused while origin/main lacks it"
+  say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
+  # The text sided with the pushed MAIN and cast the real main as the one that "goes"
+  # (third fix review): it lists origin/main and judges neither.
+  say "$(listed "$OUT" origin/main)$(listed "$OUT" origin/MAIN)" "10" "…listing origin/main, which lacks it, not origin/MAIN"
+  say "$(judged "$OUT")" "0" "…and judging neither"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
+# The reverse: origin/main holds a real back-merge, a stray origin/Main at an older
+# commit does not. Refused, as it must be, but with the variant named: the generic box
+# read as a broken gate (fix review).
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+OLD=$(git -C "$D" rev-parse main)
+git -C "$D" checkout -q main; echo m3 > "$D/m3"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" fetch -q origin
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/Main "$OLD"
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/Main)" != "$OLD" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/main)" = "$OLD" ]; then
+  echo "  ⏭️  a stale origin/Main beside origin/main: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+  say "$RC" "1" "a stale origin/Main beside origin/main: a back-merge of main is refused"
+  say "$(listed "$OUT" origin/Main)" "1" "…listing origin/Main as lacking it"
+  say "$(listed "$OUT" origin/main)" "0" "…and not origin/main, which holds it"
+  say "$(grep -c "Which is the PR-only branch is the project owner's call" <<<"$OUT")" "1" "…with two refs matching, saying which is real is the owner's call"
+  say "$(judged "$OUT")" "0" "…judging neither"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
+# Both off: local main forced off origin/main, and a stale origin/Main as well. Main
+# sorts first, and the refusal blamed it, so deleting it only brought the real refusal
+# (second fix review). origin/main itself is named.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+OLD=$(git -C "$D" rev-parse main)
+git -C "$D" checkout -q -b feature/f3 dev; echo f3 > "$D/f3"; git -C "$D" add -A; git -C "$D" commit -qm "feature: f3" >/dev/null
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/Main "$OLD"
+git -C "$D" branch -f main feature/f3 || die "could not point main at feature/f3 in $D"
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/Main)" != "$OLD" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/heads/main)" != "$(git -C "$D" rev-parse feature/f3)" ]; then
+  echo "  ⏭️  a forced main beside a stale origin/Main: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+  say "$RC" "1" "a forced local main and a stale origin/Main: refused"
+  say "$(listed "$OUT" origin/main)$(listed "$OUT" origin/Main)" "11" "…listing both origin/main and origin/Main, not only the first"
+  say "$(judged "$OUT")" "0" "…judging neither"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
+# A local main forced off origin/main says so, under the default exact-case pattern.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/f2 dev; echo f2 > "$D/f2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: f2" >/dev/null
+git -C "$D" branch -f main feature/f2 || die "could not point main at feature/f2 in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "a local main forced off origin/main is refused"
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+# One ref, spelled as the branch: there is no "which" to decide (fourth fix review).
+say "$(grep -c "owner's call" <<<"$OUT")" "0" "…and no question of which ref is the branch, with only one"
+say "$(grep -cE '^║ +git fetch --prune origin +║$' <<<"$OUT")$(grep -cE '^║ +git commit --no-edit +║$' <<<"$OUT")" "11" "…with the one route: fetch --prune, then commit --no-edit"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+# …while a real back-merge of main, with origin's main holding it, still lands.
+D=$(mkrepo_with_origin)
+git -C "$D" checkout -q main; echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" fetch -q origin; git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "0" "…and a back-merge of main that origin holds still lands"
 say "$(grep -c 'Back-merge of PR-only branch main' <<<"$OUT")" "1" "…as a back-merge"
 rm -rf "$D"
 # The case is named only where it is the whole reason: a local main forced onto an

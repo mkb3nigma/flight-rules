@@ -258,6 +258,13 @@ say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and the 
 say "$(grep -c 'post-merge differs from this' <<<"$OUT")" "1" "…and doctor names it on the same run"
 say "$(grep -c 'commit-msg is the flight-rules' <<<"$OUT")" "0" "doctor no longer reports the synced hook stale"
 rm -rf "$D"
+# Quoted, as doctor accepts it: doctor said ✅ auto and the hook only reported (0.27.0
+# release review).
+T2=$(mkplugin); D2=$(mkrepo); stale "$D2" commit-msg
+printf "HOOK_SYNC='auto'\nPROTECTED_BRANCHES=^main\$\n" >> "$D2/.ai/flight-rules.conf"
+J=$( (cd "$D2" && HOME="$D2/fakehome" bash "$T2/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c 'HOOK_SYNC=auto updated git hooks')" "1" "HOOK_SYNC='auto', quoted, syncs as doctor reads it"
+rm -rf "$D2" "$T2"
 # A headless session syncs (the clone is protected at once) but its notice reaches no
 # screen, and the next attended session found the hooks current and said nothing of the
 # uncommitted diff (final release /dg, 2026-10-17). It now says so, on screen.
@@ -878,8 +885,10 @@ say "$(usr <<<"$J" | grep -c 'merge.ff')" "0" "…the day's run having been spen
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 # stdin left open with nothing on it: the read gives up, and the run goes on (a test
 # runner's socket held it until killed, 2026-10-24; Claude Code's timeout drops the output).
+# With --plugin, the only run that reads stdin: without it this passed with the read
+# untimed (0.27.0 release review).
 t0=$(date +%s)
-J=$( { sleep 20 & echo $! > "$D/sleeper"; } | (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+J=$( { sleep 20 & echo $! > "$D/sleeper"; } | (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --plugin 2>&1); echo "rc=$?")
 kill "$(cat "$D/sleeper")" 2>/dev/null; t1=$(date +%s)
 say "$(rc "$J")" "rc=0" "stdin left open: SessionStart exits 0"
 say "$([ $((t1 - t0)) -lt 10 ] && echo bounded)" "bounded" "…within seconds, not when stdin closes (took $((t1 - t0))s)"
@@ -946,7 +955,7 @@ git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z bra
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "at the limit: exits 0"
 say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…warns on screen, with the count, the limit and where it is set"
-say "$(usr <<<"$J" | grep -c 'A warning, not a block')" "1" "…as a warning"
+say "$(usr <<<"$J" | grep -c '/feature-start asks before it opens another')" "1" "…saying /feature-start asks before opening more"
 say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the stamped one as waiting to merge"
 say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
 say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT is 2')" "1" "…telling the assistant too"
@@ -987,6 +996,10 @@ say "$(OB | usr | grep -c 'OPEN_BRANCH_LIMIT is 5,')" "1" "…a value that is no
 # Quoted, as doctor accepts it: doctor said ✅ 2 and the hook ran at 5 (batch review).
 sed -i.bak "s/OPEN_BRANCH_LIMIT=lots/OPEN_BRANCH_LIMIT='3'/" "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 3,')" "1" "…a quoted '3' is read as 3, as doctor reads it"
+# …and so is a quoted INTEGRATION_BRANCH: kept with its quotes, it named no branch, and
+# the count was "not made" while doctor showed ✅ (0.27.0 release review).
+printf "INTEGRATION_BRANCH='trunk'\n" >> "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 3,')" "1" "…a quoted INTEGRATION_BRANCH is read as doctor reads it"
 # A protected branch is not open work: main ahead of trunk after a release is not.
 printf 'PROTECTED_BRANCHES=^(trunk|rel)$\nOPEN_BRANCH_LIMIT=5\n' >> "$D/.ai/flight-rules.conf"; open "$D" rel
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
@@ -1024,6 +1037,24 @@ J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "no trunk, local or origin: exits 0"
 say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT: no trunk here, local or origin/ — open branches not counted')" "1" "…the assistant is told the count was not made"
 say "$(usr <<<"$J" | grep -c 'not counted')" "0" "…off the screen"
+rm -rf "$D"
+
+echo "/feature-start step 5 counts what session-start counts (0.27.0 release review):"
+# The skill's snippet, run as written. With the pattern unset it used a bare `main`, or
+# grepped an empty pattern that left out every branch; with `off` it grepped for "off".
+FS_SKILL="$H/../../skills/feature-start/SKILL.md"
+SNIP=$(awk '/^5\. \*\*Count the open branches/{s=1} s && /^   ```bash$/{b=1; next} b && /^   ```$/{exit} b{sub(/^   /, ""); print}' "$FS_SKILL")
+[ -n "$SNIP" ] || die "no bash block in step 5 of $FS_SKILL"
+fs_count() {   # fs_count <repo> <{PROTECTED_BRANCHES} as substituted>: the branches the snippet lists, sorted, space-separated
+  local s="${SNIP//'{INTEGRATION_BRANCH}'/trunk}"; s="${s//'{PROTECTED_BRANCHES}'/$2}"
+  (cd "$1" && unset FLIGHT_RULES_PROTECTED_BRANCHES && bash -c "$s" 2>&1) | sort | tr '\n' ' '
+}
+D=$(mkrepo); open "$D" fix/domain-model; open "$D" staging; open "$D" fix/turn-off-x
+sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.ai/flight-rules.conf"; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+say "$(fs_count "$D" '')" "fix/domain-model fix/turn-off-x " "unset: the hooks' anchored default leaves out staging, and only staging"
+J=$(OB)
+say "$(usr <<<"$J" | grep -c '2 branches are open')" "1" "…the two session-start counts"
+say "$(fs_count "$D" off)" "fix/domain-model fix/turn-off-x staging " "off: nothing is left out, a name holding \"off\" included"
 rm -rf "$D"
 
 echo "$PASS passed, $FAIL failed"
