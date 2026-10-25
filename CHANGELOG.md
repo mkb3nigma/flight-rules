@@ -100,7 +100,8 @@ ask, it opens none. `off` turns it off. Below.
 - **Doctor did not report a stale `.ai/hooks/install.sh`** (#90).
 - **Session start read a quoted conf value with its quotes** — `INTEGRATION_BRANCH='dev'`,
   `WORKTREE_DIR`, `HOOK_SYNC='auto'` — while doctor showed ✅; it reads them as the guard
-  does. `post-merge` and doctor's own branch helpers still keep the quotes (#113).
+  does. `post-merge` and doctor's own branch helpers still keep a single-quoted value's
+  quotes (#113).
 
 ### Changed
 
