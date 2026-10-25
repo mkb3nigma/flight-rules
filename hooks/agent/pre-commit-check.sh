@@ -641,7 +641,7 @@ elif [[ "$IS_PROTECTED" == "1" ]]; then
     REMEDY="Leave it alone. If the branch really is finished with, the person who owns
 the project decides that — not the session that happened to merge something."
   else
-    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand:
+    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check:
   git worktree add $WORKTREE_DIR/<name> -b feature/<name>
   cd $WORKTREE_DIR/<name>
 
