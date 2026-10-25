@@ -167,6 +167,9 @@ while read -r _old new ref; do
             # fails there; its --continue is what finishes it (#103 review).
             echo "A cherry-pick, revert or am it stopped is still in progress: give the"
             echo "pattern to its --continue (git cherry-pick --continue, …) instead."
+            # A refused merge too: a second `git merge` fails with "You have not
+            # concluded your merge" (0.27.0 release review, as #100 found in commit-msg).
+            echo "So is a merge it stopped: give the pattern to git commit --no-edit."
         } >&2
         exit 1
     fi

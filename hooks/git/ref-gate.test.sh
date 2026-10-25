@@ -275,6 +275,21 @@ say "$(grep -c 'git cherry-pick --continue' <<<"$OUT")" "1" "…naming its --con
 FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' GIT_EDITOR=true git -C "$D" cherry-pick --continue >/dev/null 2>&1
 say "$?" "0" "…which, with the pattern meant, lands it"
 say "$(git -C "$D" rev-parse feature/x^)" "$AHEAD" "…on feature/x"
+# A refused merge stays in progress too, and "the same command" again fails with "You
+# have not concluded your merge"; git commit --no-edit concludes it (0.27.0 release review).
+AHEAD=$(git -C "$D" rev-parse feature/x)
+git -C "$D" checkout -q -b mrg feature/x; echo m > "$D/m.txt"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: m" >/dev/null 2>&1 || die "could not commit on mrg"
+git -C "$D" checkout -q feature/x
+OUT=$(git -C "$D" merge --no-ff mrg -m "merge mrg" 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse feature/x)" "$AHEAD" "…a merge into it is refused"
+[ -f "$(git -C "$D" rev-parse --absolute-git-dir)/MERGE_HEAD" ] || die "the refused merge left no MERGE_HEAD: the case below tests nothing"
+say "$(grep -c 'So is a merge it stopped: give the pattern to git commit --no-edit' <<<"$OUT")" "1" "…naming the commit that concludes it"
+FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' git -C "$D" merge --no-ff mrg -m "merge mrg" >/dev/null 2>&1
+say "$?" "128" "…as the same command again fails"
+FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' git -C "$D" commit --no-edit >/dev/null 2>&1
+say "$?" "0" "…while git commit --no-edit, with the pattern meant, lands it"
+say "$(git -C "$D" rev-parse feature/x^1)" "$AHEAD" "…as a merge on feature/x"
 conf_case "no conf at all falls back to ^main\$"   "none"                      blocked
 
 # The working-tree conf must NOT lift the gate: editing it is the bypass the agent
