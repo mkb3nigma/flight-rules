@@ -98,6 +98,10 @@ PLUGIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/
 # `read -t`, not `cat`: Claude Code closes stdin after the JSON, but a caller that
 # leaves it open (a test runner's socket did, 2026-10-24) would hold the hook until
 # its timeout, and a timed-out run's whole output is dropped — the day's doctor with it.
+# What a timed-out read keeps differs: bash 4+ leaves the partial line in _l, bash 3.2
+# drops it, so there JSON with no final newline on a stdin held open gives no session
+# id and no notice. Claude Code closes stdin, so that is a test runner's case, not a
+# session's.
 SESSION_FILE=""; _in=""
 _as_plugin=""; _prompt=""
 for _a in "$@"; do

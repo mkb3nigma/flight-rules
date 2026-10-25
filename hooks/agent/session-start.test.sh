@@ -878,8 +878,10 @@ say "$(usr <<<"$J" | grep -c 'merge.ff')" "0" "…the day's run having been spen
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 # stdin left open with nothing on it: the read gives up, and the run goes on (a test
 # runner's socket held it until killed, 2026-10-24; Claude Code's timeout drops the output).
+# With --plugin, the only run that reads stdin: without it this passed with the read
+# untimed (0.27.0 release review).
 t0=$(date +%s)
-J=$( { sleep 20 & echo $! > "$D/sleeper"; } | (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+J=$( { sleep 20 & echo $! > "$D/sleeper"; } | (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T1/hooks/agent/session-start.sh" --plugin 2>&1); echo "rc=$?")
 kill "$(cat "$D/sleeper")" 2>/dev/null; t1=$(date +%s)
 say "$(rc "$J")" "rc=0" "stdin left open: SessionStart exits 0"
 say "$([ $((t1 - t0)) -lt 10 ] && echo bounded)" "bounded" "…within seconds, not when stdin closes (took $((t1 - t0))s)"
