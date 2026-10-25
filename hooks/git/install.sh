@@ -79,6 +79,9 @@ if [ -n "$HOOKS_PATH" ]; then
     PATH_IS_SET=1
     case "$HOOKS_PATH" in /*) HOOKS_DIR="$HOOKS_PATH" ;; *) HOOKS_DIR="$REPO_ROOT/$HOOKS_PATH" ;; esac
 fi
+# Every cd here that judges a path is `cd -P`: plain cd reads `lnk/..` by name, not
+# through the link as the kernel does, so wt/lnk/../x passed for inside the worktree
+# while the write went into the main checkout (second fix review).
 # A path as `pwd -P` spells it, resolved through its nearest existing ancestor: a
 # directory not made yet resolved to nothing, so the worktree refusal below missed a
 # missing hooks directory in the main checkout and mkdir -p made it there (group A fix
@@ -93,23 +96,23 @@ resolved() {
     local d="$1" t="" p c
     [ "$d" = / ] || d="${d%/}"
     while [ ! -d "$d" ]; do t="/${d##*/}$t"; d=$(dirname "$d"); done
-    p=$(cd "$d" && pwd -P)
+    p=$(cd -P "$d" && pwd -P)
     local IFS=/; set -f
     for c in $t; do
         case "$c" in ''|.) ;; ..) p=$(dirname "$p") ;; *) p="${p%/}/$c" ;; esac
-        [ -d "$p" ] && p=$(cd "$p" && pwd -P)
+        [ -d "$p" ] && p=$(cd -P "$p" && pwd -P)
     done
     set +f
     printf '%s' "$p"
 }
-inside() { case "$(resolved "$1")" in "$(cd "$2" && pwd -P)"/*) return 0 ;; esac; return 1; }
+inside() { case "$(resolved "$1")" in "$(cd -P "$2" && pwd -P)"/*) return 0 ;; esac; return 1; }
 inside_repo() { inside "$1" "$REPO_ROOT"; }
 # The main worktree's path, from a linked worktree; nothing in the main one itself, or
 # when the main one is bare. It is the first entry `git worktree list` prints.
 main_checkout() {
     local m; m=$(git worktree list --porcelain 2>/dev/null \
         | awk 'NR==1 && /^worktree /{w=substr($0,10)} /^$/{exit} $0=="bare"{b=1} END{if (w!="" && !b) print w}')
-    [ -n "$m" ] && [ "$(cd "$m" 2>/dev/null && pwd -P)" != "$(cd "$REPO_ROOT" && pwd -P)" ] && printf '%s' "$m"
+    [ -n "$m" ] && [ "$(cd -P "$m" 2>/dev/null && pwd -P)" != "$(cd -P "$REPO_ROOT" && pwd -P)" ] && printf '%s' "$m"
 }
 
 # Which flight-rules release shipped this exact file? Searches the plugin cache and
@@ -166,7 +169,7 @@ hook_marker() {
 SYNCED=0; LEFT=0; MAIN=""; ACTIVE="Active hooks"
 if [ -n "$FROM" ]; then
     [ -d "$FROM" ] || { echo "❌ --from $FROM is not a directory"; exit 1; }
-    FROM=$(cd "$FROM" && pwd -P)
+    FROM=$(cd -P "$FROM" && pwd -P)
     for h in $HOOKS install.sh; do
         [ -f "$FROM/$h" ] || { echo "❌ $FROM/$h is missing — not a complete flight-rules hooks/git/"; exit 1; }
     done
@@ -202,7 +205,7 @@ if [ -n "$FROM" ]; then
             # to run there, a worktree session was sent back to the branch nothing can be
             # committed on (#99, 2026-10-21). Git runs the main checkout's copy meanwhile.
             if [ "$THIS_CHECKOUT" -eq 1 ]; then
-                _rel=$(cd "$HOOKS_DIR" && pwd -P); _rel=${_rel#"$(cd "$MAIN" && pwd -P)"/}
+                _rel=$(cd -P "$HOOKS_DIR" && pwd -P); _rel=${_rel#"$(cd -P "$MAIN" && pwd -P)"/}
                 [ -d "$REPO_ROOT/$_rel" ] || { echo "❌ $_rel is not in this checkout — nothing here to update (is it committed in the main checkout?)"; exit 1; }
                 # Resolved, not only present: a link there to the main checkout's copy
                 # took the write back into it (group A fix review round 2, F0).
@@ -211,7 +214,7 @@ if [ -n "$FROM" ]; then
                 # The command to paste on a line of its own, shq-quoted (round 4, W2), and
                 # only when $_rel itself is the link: a linked parent is not its to remove.
                 inside_repo "$REPO_ROOT/$_rel" || {
-                    echo "❌ $_rel in this checkout leads to $(cd "$REPO_ROOT/$_rel" && pwd -P), outside it — not touched."
+                    echo "❌ $_rel in this checkout leads to $(cd -P "$REPO_ROOT/$_rel" && pwd -P), outside it — not touched."
                     if [ -L "$REPO_ROOT/$_rel" ]; then
                         echo "   Replace the link with the committed directory, then re-run:"
                         printf '   rm %s && git checkout -- %s\n' "$(shq "$REPO_ROOT/$_rel")" "$(shq "$_rel")"
@@ -242,7 +245,7 @@ if [ -n "$FROM" ]; then
         exit 1
     fi
     mkdir -p "$HOOKS_DIR"
-    if [ "$FROM" = "$(cd "$HOOKS_DIR" && pwd -P)" ]; then
+    if [ "$FROM" = "$(cd -P "$HOOKS_DIR" && pwd -P)" ]; then
         echo "✅ $HOOKS_DIR is the source itself — nothing to sync"
         exit 0
     fi
@@ -431,10 +434,10 @@ if [ "$PATH_IS_SET" -eq 0 ]; then
     if [ -n "$_old" ]; then
         case "$_old" in /*) ;; *) _old="$REPO_ROOT/$_old" ;; esac
     else
-        _old=$(cd "$(git rev-parse --git-common-dir)" && pwd -P) && _old="$_old/hooks" || _old=""
+        _old=$(cd -P "$(git rev-parse --git-common-dir)" && pwd -P) && _old="$_old/hooks" || _old=""
     fi
     _pc=""; _ours=""; _theirs=""
-    if [ -d "$_old" ] && [ "$(cd "$_old" && pwd -P)" != "$(cd "$HOOKS_DIR" && pwd -P)" ]; then
+    if [ -d "$_old" ] && [ "$(cd -P "$_old" && pwd -P)" != "$(cd -P "$HOOKS_DIR" && pwd -P)" ]; then
         for f in "$_old"/*; do
             [ -f "$f" ] && [ -x "$f" ] || continue
             case "${f##*/}" in *.sample) continue ;; esac

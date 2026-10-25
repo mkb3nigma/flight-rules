@@ -1006,6 +1006,15 @@ printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$(git -C "$MR/.ai/worktrees/d" r
 mgc allow "from the main checkout, finishing a merge in a worktree on dev is waived" \
     "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit --no-edit"
 NM=$(make_repo main)
+# git -C walks a path as the kernel does: lnk/.. is the parent of where lnk leads, not
+# the cwd. The guard already judged this as git does; pinned when install.sh's plain
+# cd was found to read lnk/.. by name (second fix review).
+LP=$(make_repo main); LQ=$(make_repo feature/q); mkdir -p "$LP/sub"
+ln -s "$LP/sub" "$LQ/lnk" || die "could not link $LQ/lnk to $LP/sub"
+[ "$(git -C "$LQ/lnk/.." branch --show-current)" = main ] || die "git -C lnk/.. did not reach $LP"
+mgc deny  "git -C through a link and ..: judged where git goes, the project's main" \
+    "$LQ" "$LP" "git -C lnk/.. commit -m x"
+rm -rf "$LP" "$LQ"
 mgc deny  "a merge in the cwd's repo does not waive a commit to another repo's main" \
     "$MR" "$NM" "git -C $NM commit -m x"
 rm -rf "$MR" "$NM"

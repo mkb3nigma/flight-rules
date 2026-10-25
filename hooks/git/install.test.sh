@@ -368,6 +368,7 @@ say "$(grep -c -- '--this-checkout' <<<"$OUT")" "0" "…and not --this-checkout,
 git -C "$D" config core.hooksPath "$D/.ai/worktrees/wt/missing/../../../hooks-dd"
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 say "$(head -1 <<<"$OUT")" "1" "plain --from, a path into the main checkout through a missing directory's ..: refused"
+say "$(grep -c 'is in the main checkout' <<<"$OUT")" "1" "…by the main-checkout refusal, not another exit 1"
 say "$([ -e "$D/.ai/hooks-dd" ] && echo made || echo absent)" "absent" "…not making it there"
 say "$([ -e "$D/.ai/worktrees/wt/missing" ] && echo made || echo absent)" "absent" "…nor the missing directory in the worktree"
 # …nor when the .. climbs back into a directory that exists and is a link into the
@@ -377,7 +378,31 @@ ln -s "$D/.ai" "$D/.ai/worktrees/wt/lnk" || die "could not link the worktree to 
 git -C "$D" config core.hooksPath "$D/.ai/worktrees/wt/missing/../lnk/hooks-ln"
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 say "$(head -1 <<<"$OUT")" "1" "plain --from, a path through a missing directory's .. and a link into the main checkout: refused"
+say "$(grep -c 'is in the main checkout' <<<"$OUT")" "1" "…by the main-checkout refusal, not another exit 1"
 say "$([ -e "$D/.ai/hooks-ln" ] && echo made || echo absent)" "absent" "…not making it there"
+rm "$D/.ai/worktrees/wt/lnk"
+# …nor through a link and a .. in the part that exists: plain cd read lnk/.. by name,
+# so wt/lnk/../hooks-x, lnk a link to the main checkout's worktrees directory, passed
+# for inside the worktree, and the install wrote into the main checkout's .ai (second
+# fix review). Every cd that judges a path is cd -P now, as the kernel walks it.
+ln -s "$D/.ai/worktrees" "$D/.ai/worktrees/wt/lnk" || die "could not link the worktree to the main checkout's worktrees"
+git -C "$D" config core.hooksPath "$D/.ai/worktrees/wt/lnk/../hooks-x"
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "plain --from, a link and a .. in the existing part of the path: refused"
+say "$(grep -c 'is in the main checkout' <<<"$OUT")" "1" "…by the main-checkout refusal"
+say "$([ -e "$D/.ai/hooks-x" ] && echo made || echo absent)" "absent" "…not making it there"
+rm "$D/.ai/worktrees/wt/lnk"
+# …and the sync HOOK_SYNC=auto runs: wt/lnk/../.ai/hooks, lnk a link to the main
+# checkout's .ai, named this worktree's own hooks by name and the main checkout's to the
+# kernel, and --stale-only overwrote the main checkout's live commit-msg.
+ln -s "$D/.ai" "$D/.ai/worktrees/wt/lnk" || die "could not link the worktree to the main checkout's .ai"
+[ -d "$D/.ai/worktrees/wt/.ai/hooks" ] || die "the worktree has no .ai/hooks of its own: the case below tests nothing"
+git -C "$D" config core.hooksPath "$D/.ai/worktrees/wt/lnk/../.ai/hooks"
+make_stale "$D" commit-msg 2>/dev/null; MAINB=$(sums "$D/.ai/hooks")
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
+say "$(head -1 <<<"$OUT")" "1" "--stale-only, the same through the existing part: refused"
+say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…by the main-checkout refusal"
+say "$(sums "$D/.ai/hooks")" "$MAINB" "…leaving the main checkout's hooks as they were"
 rm "$D/.ai/worktrees/wt/lnk"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"
 # A link in the worktree to the main checkout's copy passed the redirect's -d, and the

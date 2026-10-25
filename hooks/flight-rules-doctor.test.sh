@@ -579,6 +579,18 @@ CMD=$(run "$W" | grep -o 'to restore it, on a branch: .*' | sed 's/^to restore i
 say "$([ -n "$CMD" ] && echo printed)" "printed" "from a worktree whose hooks directory links to the main checkout's: the cp is printed"
 say "${CMD##* }" "$(printf '%q' "$(cd "$D" && pwd -P)/.ai/hooks/install.sh")" "…naming the main checkout's path, where it writes"
 rm "$W/.ai/hooks"; rm -rf "$D"
+# …nor through a link and a .. in core.hooksPath: plain cd read wt/lnk/.. by name, as the
+# worktree, so the printed cp kept the link path, which the kernel walks into the main
+# checkout (second fix review: every cd that judges a path is cd -P).
+D=$(mkrepo); git -C "$D" add -A && git -C "$D" commit -qm base --no-verify
+git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt 2>/dev/null || die "could not add a worktree in $D"
+W="$D/.ai/worktrees/wt"; mkdir -p "$W/fakehome"; ln -s "$D/.ai" "$W/lnk" || die "could not link $W/lnk"
+[ -d "$W/.ai/hooks" ] || die "the worktree has no .ai/hooks: the case below tests nothing"
+git -C "$D" config core.hooksPath "$W/lnk/../.ai/hooks"
+CMD=$(run "$W" | grep -o 'to restore it, on a branch: .*' | sed 's/^to restore it, on a branch: //')
+say "$([ -n "$CMD" ] && echo printed)" "printed" "core.hooksPath through a link and ..: the cp is printed"
+say "${CMD##* }" "$(printf '%q' "$(cd "$W" && pwd -P)/.ai/hooks/install.sh")" "…naming this worktree's copy, not the link path into the main checkout"
+rm "$W/lnk"; rm -rf "$D"
 # An unreadable hook could not be checked: said so, not "may be a stub", and grep's
 # error is not on screen (fix review, F15). Git cannot run it, so it is a problem.
 D=$(mkrepo); chmod 111 "$D/.ai/hooks/post-merge"
