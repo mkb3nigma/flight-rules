@@ -215,12 +215,13 @@ MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 # The origin side is looked up ignoring case: a local MAIN, with origin holding main,
 # found no origin/MAIN and skipped that check, so a pattern given as ^MAIN$ passed an
 # unstamped commit as a reviewed back-merge (0.27.0 release review).
-# CASE_ONLY names a ref that matched only ignoring case, for the refusal to say;
-# OFF_ORIGIN, the origin ref a PR-only branch's commit is not on, OFF_SHORT that branch,
-# and OFF_KIND which way it is off: refused with no reason, a stray origin/Main read as
-# a broken gate (fix review). The refusal never advises deleting a ref it may have
-# misjudged: under ^MAIN$ the "stray" was origin/main (second fix review).
-CASE_ONLY=""; OFF_ORIGIN=""; OFF_SHORT=""; OFF_KIND=""
+# CASE_ONLY names a ref that matched only ignoring case, for the refusal to say.
+# OFF_REFS lists, space-separated (a refname has no spaces or glob characters), every
+# origin ref that matches a PR-only branch at this commit, ignoring case, and lacks it; OFF_SHORT names those branches, NO_EXACT the ones origin
+# has under no ref spelled as they are. The refusal states those facts and judges
+# nothing: three rounds of text that guessed which ref was real, stray or in the wrong
+# case each misled in a new shape, once advising deletion of origin/main (fix reviews).
+CASE_ONLY=""; OFF_REFS=""; OFF_SHORT=""; NO_EXACT=""
 while read -r ref sha; do
     case "$ref" in
         refs/heads/*)          short="${ref#refs/heads/}" ;;
@@ -237,10 +238,8 @@ while read -r ref sha; do
         case_only=1
     fi
     # Every case variant origin has must hold the commit, not any one of them: anyone can
-    # push a MAIN beside main (security review of this fix). origin/<short> itself is
-    # judged first, so a local copy moved off it is named as that, not as a stray
-    # variant that also lags (second fix review).
-    exact=""; exact_off=""; var_off=""
+    # push a MAIN beside main (security review of this fix).
+    exact=""; lacking=""
     while read -r oref osha; do
         o=${oref#refs/remotes/origin/}
         shopt -s nocasematch; m=""
@@ -249,14 +248,17 @@ while read -r ref sha; do
         [ -n "$m" ] || continue
         [ "$o" = "$short" ] && exact=1
         git merge-base --is-ancestor "$MERGE_SHA" "$osha" 2>/dev/null && continue
-        if [ "$o" = "$short" ]; then exact_off=1; else [ -n "$var_off" ] || var_off=origin/$o; fi
+        lacking="$lacking origin/$o"
     done < <(git for-each-ref --format='%(refname) %(objectname)' refs/remotes/origin)
-    if [ -n "$exact_off" ] || [ -n "$var_off" ]; then
+    if [ -n "$lacking" ]; then
+        # A case-only ref is not the PR-only branch, so its origin refs are not this
+        # refusal's to list: the generic note-gate box answers it (#103 review).
         if [ -z "$case_only" ]; then
-            OFF_SHORT=$short
-            if [ -n "$exact_off" ]; then OFF_KIND=exact; OFF_ORIGIN=origin/$short
-            elif [ -n "$exact" ]; then OFF_KIND=stray; OFF_ORIGIN=$var_off
-            else OFF_KIND=case; OFF_ORIGIN=$var_off; fi
+            for _r in $lacking; do
+                case " $OFF_REFS " in *" $_r "*) ;; *) OFF_REFS="${OFF_REFS:+$OFF_REFS }$_r" ;; esac
+            done
+            case " $OFF_SHORT " in *" $short "*) ;; *) OFF_SHORT="${OFF_SHORT:+$OFF_SHORT }$short" ;; esac
+            [ -n "$exact" ] || case " $NO_EXACT " in *" $short "*) ;; *) NO_EXACT="${NO_EXACT:+$NO_EXACT }$short" ;; esac
         fi
         continue
     fi
@@ -380,30 +382,26 @@ if [ -n "$CASE_ONLY" ]; then
     box_row "writes the pattern in its case in .ai/flight-rules.conf."
     box_row ""
 fi
-case "$OFF_KIND" in
-    exact)
-        box_row "Not taken for a back-merge: $OFF_SHORT is PR-only, but"
-        box_row "$OFF_ORIGIN does not hold this commit. A local copy"
-        box_row "moved off origin is not reviewed work. If $OFF_ORIGIN"
-        box_row "is only out of date:  git fetch origin  then retry."
-        box_row "" ;;
-    stray)
-        box_row "Not taken for a back-merge: origin/$OFF_SHORT holds this"
-        box_row "commit, but $OFF_ORIGIN, a case variant, does not."
-        box_row "Every variant must: a MAIN pushed beside main would"
-        box_row "otherwise vouch for it. If origin no longer has it,"
-        box_row "  git fetch --prune origin"
-        box_row "drops it here. If origin still has it, whether it goes"
-        box_row "is the project owner's call."
-        box_row "" ;;
-    case)
-        box_row "Not taken for a back-merge: origin has no $OFF_SHORT,"
-        box_row "only $OFF_ORIGIN, which does not hold this commit. If"
-        box_row "$OFF_ORIGIN is the PR-only branch, PR_ONLY_BRANCHES"
-        box_row "($PR_ONLY_RE) is in the wrong case: the project owner"
-        box_row "writes it in that case in .ai/flight-rules.conf."
-        box_row "" ;;
-esac
+if [ -n "$OFF_SHORT" ]; then
+    # Facts only, and no ref name inside a command: anyone who can push picks one.
+    box_row "Not taken for a back-merge: $OFF_SHORT matches"
+    box_row "PR_ONLY_BRANCHES, but this commit is not on:"
+    _n=0
+    for _r in $OFF_REFS; do
+        _n=$((_n+1)); [ "$_n" -le 5 ] && box_row "  $_r"
+    done
+    [ "$_n" -gt 5 ] && box_row "  … and $((_n-5)) more"
+    box_row "Every origin ref that matches it ignoring case must"
+    box_row "hold the commit. Which is the PR-only branch is the"
+    box_row "project owner's call."
+    for _b in $NO_EXACT; do
+        box_row "origin has no ref spelled $_b."
+    done
+    box_row "If origin has moved on since the last fetch:"
+    box_row "  git fetch --prune origin"
+    box_row "  git commit --no-edit"
+    box_row ""
+fi
 box_row "Run /pre-merge-check in the feature worktree first. When"
 box_row "every check passes it stamps a note on the commit, and"
 box_row "this hook lets the merge through."

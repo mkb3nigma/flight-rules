@@ -1019,6 +1019,25 @@ say "$(grep -c 'Not taken for a back-merge: main matches' <<<"$OUT")" "1" "…an
 say "$(grep -c 'FLIGHT_RULES_PR_ONLY_BRANCHES=' <<<"$OUT")" "0" "…and prints no command that overrides the pattern"
 say "$(grep -c 'writes the pattern in its case in .ai/flight-rules.conf' <<<"$OUT")" "1" "…but says where it is fixed"
 rm -rf "$D"
+# listed <out> <ref>: 1 when the refusal lists <ref> on a line of its own. judged <out>:
+# lines that call a ref a stray, a variant or in the wrong case, or say to delete one —
+# the inferences that misled in three rounds (fix reviews). The refusal states facts.
+listed() { grep -cE "^║ +$2 +║\$" <<<"$1"; }
+judged() { grep -ciE 'stray|variant|wrong case|remove|delete' <<<"$1"; }
+# The route the refusal prints works: origin moved on since the last fetch, so the
+# tracking ref lags; fetch --prune, then commit --no-edit, lands the back-merge.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q main; echo r > "$D/r"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" update-ref refs/remotes/origin/main main~1 || die "could not wind origin/main back in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "origin/main behind origin: a back-merge of main is refused"
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+OUT=$(cd "$D" && git fetch -q --prune origin && git commit --no-edit 2>&1); RC=$?
+say "$RC" "0" "…and the printed route, fetch --prune then commit --no-edit, lands it"
+say "$(grep -c 'Back-merge of PR-only branch main' <<<"$OUT")" "1" "…as a back-merge"
+rm -rf "$D"
 # The override that box used to print, given by hand: a local MAIN at an unstamped
 # commit, while origin has main. origin/MAIN does not exist, so the origin check was
 # skipped and the merge passed as a back-merge (0.27.0 release review). Packed, so a
@@ -1035,8 +1054,9 @@ say "$RC" "1" "^MAIN\$ given by hand: a local MAIN off origin/main is refused"
 say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
 # The refusal must not take origin/main for a stray here: it advised deleting it
 # (second fix review). origin has no MAIN; the pattern's case is the likelier fault.
-say "$(grep -c 'origin has no MAIN,' <<<"$OUT")" "1" "…saying origin has no MAIN, only origin/main"
-say "$(grep -ci 'remove\|delete\|prune' <<<"$OUT")" "0" "…and advising no deletion of origin/main"
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+say "$(grep -c 'origin has no ref spelled MAIN\.' <<<"$OUT")" "1" "…and, as a fact, that origin has no ref spelled MAIN"
+say "$(judged "$OUT")" "0" "…calling no ref a stray, a variant or in the wrong case, nor saying to delete one"
 say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 # …nor when origin holds MAIN as well, pushed at that commit: every case variant origin
@@ -1056,6 +1076,10 @@ else
   OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git merge --no-ff MAIN -m merge 2>&1); RC=$?
   say "$RC" "1" "^MAIN\$ given by hand, origin/MAIN pushed at the commit: refused while origin/main lacks it"
   say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
+  # The text sided with the pushed MAIN and cast the real main as the one that "goes"
+  # (third fix review): it lists origin/main and judges neither.
+  say "$(listed "$OUT" origin/main)$(listed "$OUT" origin/MAIN)" "10" "…listing origin/main, which lacks it, not origin/MAIN"
+  say "$(judged "$OUT")" "0" "…and judging neither"
   git -C "$D" merge --abort 2>/dev/null
 fi
 rm -rf "$D"
@@ -1076,9 +1100,9 @@ else
   git -C "$D" checkout -q dev
   OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
   say "$RC" "1" "a stale origin/Main beside origin/main: a back-merge of main is refused"
-  say "$(grep -c 'origin/Main, a case variant, does not' <<<"$OUT")" "1" "…naming the variant that lacks the commit"
-  say "$(grep -c 'git fetch --prune origin' <<<"$OUT")" "1" "…with the prune that drops it if origin has"
-  say "$(grep -c 'removes it on origin' <<<"$OUT")" "0" "…and no instruction to delete it there"
+  say "$(listed "$OUT" origin/Main)" "1" "…listing origin/Main as lacking it"
+  say "$(listed "$OUT" origin/main)" "0" "…and not origin/main, which holds it"
+  say "$(judged "$OUT")" "0" "…judging neither"
   git -C "$D" merge --abort 2>/dev/null
 fi
 rm -rf "$D"
@@ -1098,8 +1122,8 @@ else
   git -C "$D" checkout -q dev
   OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
   say "$RC" "1" "a forced local main and a stale origin/Main: refused"
-  say "$(grep -c 'origin/main does not hold this commit' <<<"$OUT")" "1" "…naming origin/main, not the stray"
-  say "$(grep -c 'origin/Main' <<<"$OUT")" "0" "…and not sending the owner after origin/Main"
+  say "$(listed "$OUT" origin/main)$(listed "$OUT" origin/Main)" "11" "…listing both origin/main and origin/Main, not only the first"
+  say "$(judged "$OUT")" "0" "…judging neither"
   git -C "$D" merge --abort 2>/dev/null
 fi
 rm -rf "$D"
@@ -1110,8 +1134,8 @@ git -C "$D" branch -f main feature/f2 || die "could not point main at feature/f2
 git -C "$D" checkout -q dev
 OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
 say "$RC" "1" "a local main forced off origin/main is refused"
-say "$(grep -c 'origin/main does not hold this commit' <<<"$OUT")" "1" "…saying origin/main does not hold it"
-say "$(grep -c 'git fetch origin  then retry' <<<"$OUT")" "1" "…and the fetch, in case it is only out of date"
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+say "$(grep -cE '^║ +git fetch --prune origin +║$' <<<"$OUT")$(grep -cE '^║ +git commit --no-edit +║$' <<<"$OUT")" "11" "…with the one route: fetch --prune, then commit --no-edit"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 # …while a real back-merge of main, with origin's main holding it, still lands.
 D=$(mkrepo_with_origin)
