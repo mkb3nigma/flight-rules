@@ -78,15 +78,16 @@ ask, it opens none. `off` turns it off. Below.
 - **A protected-branch pattern that does not compile protected nothing** (#103): the
   guard and the gating git hooks now treat it as protecting every branch, say so, and
   print a way out that works from where the refusal leaves you (`post-merge`'s cleanup
-  list still reads it as protecting none, #113). A pattern that gates matches
+  list offers nothing for deletion and does not say why, #113). A pattern that gates matches
   case-insensitively, as the guard's does; one that exempts — a back-merge of a PR-only
   branch — takes the pattern's exact case, and every case variant of the branch on
-  origin must hold the commit.
+  origin must hold the commit; a refusal names the one that does not.
 - **The secret scan skipped a merge's concluding commit** (#101), the hand-written
   conflict resolution included; it now scans what the resolution adds — the agent guard
   as git's hook does, where it had scanned every incoming commit and refused the commit
   that finishes a refused merge — worked out with `git merge-tree` where git wrote no
-  `AUTO_MERGE`. Mid-merge, neither refusal says to unstage a file: the merge would keep
+  `AUTO_MERGE`; with git older than 2.38, or for an octopus merge, everything staged is
+  still scanned. Mid-merge, neither refusal says to unstage a file: the merge would keep
   `HEAD`'s copy and drop the incoming change.
 - **The merge-authorisation box printed a `git merge` that always failed** (#100) while
   the refused merge was still in progress; it prints the command that concludes it.
@@ -99,7 +100,7 @@ ask, it opens none. `off` turns it off. Below.
 - **Doctor did not report a stale `.ai/hooks/install.sh`** (#90).
 - **Session start read a quoted conf value with its quotes** — `INTEGRATION_BRANCH='dev'`,
   `WORKTREE_DIR`, `HOOK_SYNC='auto'` — while doctor showed ✅; it reads them as the guard
-  and doctor do.
+  does. `post-merge` and doctor's own branch helpers still keep the quotes (#113).
 
 ### Changed
 
@@ -111,7 +112,8 @@ ask, it opens none. `off` turns it off. Below.
   accepted rather than parsed further (#91).
 - **Principles**: a refused command may go to the person, told it was refused, by what
   and why — an ask that carries its reasons, and never a hand-written `pre-merge-check`
-  note; the UTC line moved to the checklists.
+  note; a command you need the person to run is a decision you ask for, with what waits
+  on it and how many such asks are open; the UTC line moved to the checklists.
 - **READMEs**: flight-rules assumes a competent developer and does not babysit.
 
 ## 0.26.0 — 2026-10-20
