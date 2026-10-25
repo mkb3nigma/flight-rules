@@ -740,8 +740,9 @@ for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|m
   OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
         <<<"$(jq -n --arg c "$(cut -d'|' -f1 <<<"$c")" '{tool_input:{command:$c}}')" 2>/dev/null)
   if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q '/feature-start' <<<"$OUT" && grep -q 'open-branch limit\|OPEN_BRANCH_LIMIT' <<<"$OUT" \
-     && grep -q 'raw worktree add skips\|by hand, which skips' <<<"$OUT"; then
-    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it\n' "$(cut -d'|' -f3 <<<"$c")"
+     && grep -q 'raw worktree add skips\|by hand, which skips' <<<"$OUT" \
+     && grep -q 'worktree add .* origin/<integration-branch>' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on origin/<integration-branch>\n' "$(cut -d'|' -f3 <<<"$c")"
   else
     FAIL=$((FAIL+1)); printf '  ❌ %s: the block does not point at /feature-start and its branch count\n' "$(cut -d'|' -f3 <<<"$c")"
   fi

@@ -642,7 +642,8 @@ elif [[ "$IS_PROTECTED" == "1" ]]; then
 the project decides that — not the session that happened to merge something."
   else
     REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check:
-  git worktree add $WORKTREE_DIR/<name> -b feature/<name>
+  git fetch origin
+  git worktree add $WORKTREE_DIR/<name> -b feature/<name> origin/<integration-branch>
   cd $WORKTREE_DIR/<name>
 
 Use absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified."
