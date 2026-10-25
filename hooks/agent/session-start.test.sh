@@ -254,6 +254,10 @@ say "$(usr <<<"$J" | grep -c 'synced commit-msg')" "1" "…on the user's screen 
 say "$(grep -c 'synced commit-msg (flight-rules 9.9.9)' <<<"$OUT")" "1" "…names the hook and the release"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "the stale commit-msg is now the plugin's"
 say "$(grep -c '# own' "$D/.ai/hooks/post-merge")" "1" "the adapted post-merge is untouched"
+say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and the sync's own notice is not repeated as uncommitted changes"
+say "$(grep -c 'post-merge differs from this' <<<"$OUT")" "1" "…and doctor names it on the same run"
+say "$(grep -c 'commit-msg is the flight-rules' <<<"$OUT")" "0" "doctor no longer reports the synced hook stale"
+rm -rf "$D"
 # Quoted, as doctor accepts it: doctor said ✅ auto and the hook only reported (0.27.0
 # release review).
 T2=$(mkplugin); D2=$(mkrepo); stale "$D2" commit-msg
@@ -261,10 +265,6 @@ printf "HOOK_SYNC='auto'\nPROTECTED_BRANCHES=^main\$\n" >> "$D2/.ai/flight-rules
 J=$( (cd "$D2" && HOME="$D2/fakehome" bash "$T2/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(ctx <<<"$J" | grep -c 'HOOK_SYNC=auto updated git hooks')" "1" "HOOK_SYNC='auto', quoted, syncs as doctor reads it"
 rm -rf "$D2" "$T2"
-say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and the sync's own notice is not repeated as uncommitted changes"
-say "$(grep -c 'post-merge differs from this' <<<"$OUT")" "1" "…and doctor names it on the same run"
-say "$(grep -c 'commit-msg is the flight-rules' <<<"$OUT")" "0" "doctor no longer reports the synced hook stale"
-rm -rf "$D"
 # A headless session syncs (the clone is protected at once) but its notice reaches no
 # screen, and the next attended session found the hooks current and said nothing of the
 # uncommitted diff (final release /dg, 2026-10-17). It now says so, on screen.
