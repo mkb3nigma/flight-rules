@@ -733,6 +733,19 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ the block is wrong for a deletion\n'
 fi
 rm -rf "$D"
+# The worktree the blocks suggest goes through /feature-start first: a raw worktree add
+# skips its open-branch count, the only gate on it (0.27.0 release review).
+for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|main|a commit on main'; do
+  D=$(make_repo "$(cut -d'|' -f2 <<<"$c")")
+  OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$(cut -d'|' -f1 <<<"$c")" '{tool_input:{command:$c}}')" 2>/dev/null)
+  if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q '/feature-start' <<<"$OUT" && grep -q 'open-branch limit\|OPEN_BRANCH_LIMIT' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count\n' "$(cut -d'|' -f3 <<<"$c")"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s: the block does not point at /feature-start and its branch count\n' "$(cut -d'|' -f3 <<<"$c")"
+  fi
+  rm -rf "$D"
+done
 
 echo "Target parsing is per simple command, not per command STRING:"
 # Both directions were live and both are reproduced here (2026-09-10).

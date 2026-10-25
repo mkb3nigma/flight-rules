@@ -946,7 +946,7 @@ git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z bra
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "at the limit: exits 0"
 say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…warns on screen, with the count, the limit and where it is set"
-say "$(usr <<<"$J" | grep -c 'A warning, not a block')" "1" "…as a warning"
+say "$(usr <<<"$J" | grep -c '/feature-start asks before it opens another')" "1" "…saying /feature-start asks before opening more"
 say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the stamped one as waiting to merge"
 say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
 say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT is 2')" "1" "…telling the assistant too"

@@ -614,12 +614,12 @@ elif [[ "$ACTION" == "branch-create" ]]; then
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
 
-Instead, from the repo root with absolute paths:
+Instead, run /feature-start <prefix>/<name>: it checks how many branches are already open (OPEN_BRANCH_LIMIT) and asks at the limit, which a raw worktree add skips. By hand, from the repo root with absolute paths:
   git fetch origin
   git worktree add $WORKTREE_DIR/<name> -b <prefix>/<name> origin/<integration-branch>
   cd $WORKTREE_DIR/<name>
 
-Prefixes: feature/ fix/ refactor/ test/ docs/ chore/ hotfix/. The /feature-start skill does all of this.
+Prefixes: feature/ fix/ refactor/ test/ docs/ chore/ hotfix/.
 
 If this project does not use the worktree workflow, the owner can set PROTECTED_BRANCHES=off in .ai/flight-rules.conf. That is the owner's call — do not add it yourself to get past this block; ask."
   exit 0
@@ -641,7 +641,7 @@ elif [[ "$IS_PROTECTED" == "1" ]]; then
     REMEDY="Leave it alone. If the branch really is finished with, the person who owns
 the project decides that — not the session that happened to merge something."
   else
-    REMEDY="Create a feature worktree instead:
+    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand:
   git worktree add $WORKTREE_DIR/<name> -b feature/<name>
   cd $WORKTREE_DIR/<name>
 

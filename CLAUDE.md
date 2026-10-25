@@ -20,8 +20,10 @@ injects the principles; the rest you read once.
 | `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
 | `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/git/secret-scan.test.sh`, `hooks/git/install.test.sh`, `hooks/flight-rules-doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
-Every change: `git fetch origin`, `git worktree add .ai/worktrees/<slug> -b <prefix>/<slug> origin/dev`,
-commit there; the owner pushes it. Then, **as the owner**, merge it into `dev` locally — stamp the
+Every change: `/feature-start <prefix>/<slug>` — `git fetch origin`, the open-branch
+count (`OPEN_BRANCH_LIMIT`, asked at the limit), then `git worktree add .ai/worktrees/<slug>
+-b <prefix>/<slug> origin/dev`; a raw `worktree add` skips the count — and commit there;
+the owner pushes it. Then, **as the owner**, merge it into `dev` locally — stamp the
 `pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
 from the `dev` checkout, then push `dev`. No PR: `dev` is note-gated, not PR-only, and the
 local merge is what exercises the note gate, the authorisation trailer and the back-merge
