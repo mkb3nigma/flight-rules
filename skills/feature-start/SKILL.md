@@ -17,7 +17,7 @@ restating one is invisible to enforcement, so the conf wins.
 
 Create a new branch as a git worktree per `rules/git-worktree-workflow.md`.
 Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`
-(defaults: `main` / `main` / `.ai/worktrees/`).
+(defaults: the hooks' anchored list, `^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)` / `main` / `.ai/worktrees/`).
 
 ## Rules (non-negotiable)
 - NEVER `git checkout -b` / `git switch -c` — always `git worktree add`
@@ -70,10 +70,13 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    with commits not yet in `{INTEGRATION_BRANCH}` — the local one when it exists, else
    `origin/{INTEGRATION_BRANCH}` — leaving out `{INTEGRATION_BRANCH}` itself and any
    branch the protected pattern matches: `FLIGHT_RULES_PROTECTED_BRANCHES` if set, else
-   `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it (drop that
-   `grep` when it is `off`):
+   `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it — unset, the
+   hooks' anchored default, never a bare `main`, which matched `fix/domain-model` and
+   left `staging` counted (0.27.0 release review):
    ```bash
    p=${FLIGHT_RULES_PROTECTED_BRANCHES-}; [ -n "$p" ] || p='{PROTECTED_BRANCHES}'
+   [ -n "$p" ] || p='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
+   case $p in off|none) p='^$' ;; esac   # protects nothing: only the integration branch is left out
    base=refs/heads/{INTEGRATION_BRANCH}
    git rev-parse -q --verify "$base" >/dev/null || base=refs/remotes/origin/{INTEGRATION_BRANCH}
    git rev-parse -q --verify "$base" >/dev/null || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"

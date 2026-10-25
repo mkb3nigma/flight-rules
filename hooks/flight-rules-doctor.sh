@@ -13,6 +13,10 @@
 # Run from anywhere inside the repo. Reads the same conf the hooks read.
 
 set -uo pipefail
+# An exported CDPATH holding `.` makes cd print where it went, so a $(cd … && pwd -P)
+# came back as two lines and named no directory: the guard's project comparison never
+# matched and its branch policy was off (third fix review). Nothing here wants it.
+unset CDPATH
 QUIET=0; [[ "${1:-}" == "--problems-only" ]] && QUIET=1
 FAIL=0; WARN=0
 ok()   { [[ $QUIET -eq 1 ]] || printf '  ✅ %s\n' "$1"; }
@@ -212,13 +216,13 @@ else
       # and the cp failed (group A fix review, F9) — and resolves inside it: a link back
       # to the other checkout's copy took the cp there (group A fix review round 2, F0).
       _dst="$HOOKS_DIR/install.sh"
-      _own=$(cd "$HOOKS_DIR" && git rev-parse --show-toplevel 2>/dev/null)
-      _hd=$(cd "$HOOKS_DIR" && pwd -P)
-      _cd1=$(cd "$HOOKS_DIR" && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
-      _cd2=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
-      _wd=$(cd "$ROOT/${_hd#"$_own"/}" 2>/dev/null && pwd -P)
+      _own=$(cd -P "$HOOKS_DIR" && git rev-parse --show-toplevel 2>/dev/null)
+      _hd=$(cd -P "$HOOKS_DIR" && pwd -P)
+      _cd1=$(cd -P "$HOOKS_DIR" && cd -P "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+      _cd2=$(cd -P "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+      _wd=$(cd -P "$ROOT/${_hd#"$_own"/}" 2>/dev/null && pwd -P)
       if [[ -n "$_own" && "$_own" != "$ROOT" && -n "$_cd1" && "$_cd1" == "$_cd2" && "$_hd" == "$_own"/* \
-            && -n "$_wd" && "$_wd" == "$(cd "$ROOT" && pwd -P)"/* ]]; then
+            && -n "$_wd" && "$_wd" == "$(cd -P "$ROOT" && pwd -P)"/* ]]; then
         _dst="$ROOT/${_hd#"$_own"/}/install.sh"
       fi
       ok "$(printf 'install.sh is not in %s — nothing needs it to run the hooks; to restore it, on a branch: cp %s %s' "$HOOKS_PATH" "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$_dst")")"

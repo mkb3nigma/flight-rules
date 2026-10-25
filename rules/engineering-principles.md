@@ -18,9 +18,10 @@
 - A blocked command is information, not an obstacle: read the reason, do what it says,
   re-run. Never slip past a guard by editing it or its config, adding `--no-verify`, or
   reshaping the command to dodge it. A person may still run it, told that it was
-  refused, by what and why: that is a decision you are asking for (§7). If the block is
-  wrong, or refuses a step the project's own workflow requires, stop and say so; that is
-  a finding, and the owner decides
+  refused, by what and why: that is a decision you are asking for (§7). Never one that
+  writes a `pre-merge-check` note by hand: the note says the check ran, and only
+  running it may write one. If the block is wrong, or refuses a step the project's own
+  workflow requires, stop and say so; that is a finding, and the owner decides
 - An action nothing can undo — force-pushing or rewriting shared history, deleting an
   unmerged branch, discarding uncommitted or stashed work you did not make, dropping
   data — needs a person's yes first; a request that names the action is that yes. With

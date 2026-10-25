@@ -28,12 +28,16 @@
 # ever; one whose hooks are someone else's, or no repo, is shown nothing. The
 # assistant gets all of it daily.
 
+# An exported CDPATH holding `.` makes cd print where it went, so a $(cd … && pwd -P)
+# came back as two lines and named no directory: the guard's project comparison never
+# matched and its branch policy was off (third fix review). Nothing here wants it.
+unset CDPATH
 PROJECT_ROOT=$(pwd)
 
 # Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
 # read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
-# for the one key whose reading must match the guard's (session-start.test.sh compares).
+# so a key reads here as the guard and doctor read it (session-start.test.sh compares).
 read_conf() {
   local key="$1" file="$2"
   [ -r "$file" ] || return 1
@@ -41,10 +45,10 @@ read_conf() {
     | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
-conf_get() {
-  sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]]+)\"?.*$/\\1/p" \
-    "$PROJECT_ROOT/.ai/flight-rules.conf" 2>/dev/null | tail -1
-}
+# conf_get <key>: read_conf on this project's conf. It had its own sed, which kept
+# single quotes: INTEGRATION_BRANCH='dev' counted open branches against a branch named
+# 'dev', quotes and all, while doctor showed ✅ (0.27.0 release review).
+conf_get() { read_conf "$1" "$PROJECT_ROOT/.ai/flight-rules.conf"; }
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
 # leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
@@ -98,6 +102,10 @@ PLUGIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/
 # `read -t`, not `cat`: Claude Code closes stdin after the JSON, but a caller that
 # leaves it open (a test runner's socket did, 2026-10-24) would hold the hook until
 # its timeout, and a timed-out run's whole output is dropped — the day's doctor with it.
+# What a timed-out read keeps differs: bash 4+ leaves the partial line in _l, bash 3.2
+# drops it, so there JSON with no final newline on a stdin held open gives no session
+# id and no notice. Claude Code closes stdin, so that is a test runner's case, not a
+# session's.
 SESSION_FILE=""; _in=""
 _as_plugin=""; _prompt=""
 for _a in "$@"; do
@@ -342,7 +350,7 @@ if [ -n "$DOCTOR_SCREEN" ]; then
   else
     # Keyed on the repository, not the worktree: per-session worktrees each got the
     # "once-ever" hint (fix review, 2026-10-13).
-    _common=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+    _common=$(cd -P "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
     HINT_FILE="$FLAG_DIR/.flight-rules-hinted-$(printf '%s' "${_common:-$TOP}" | tr '/' '-')"
     [ -f "$HINT_FILE" ] && { DOCTOR_SCREEN=""; HINT_FILE=""; }
   fi
@@ -397,7 +405,7 @@ OPEN_MSG=$(
   done < <(printf '%s\n' "$_list" | sed -n 's|^branch refs/heads/||p')
   [ -z "$_fail" ] || echo "?OPEN_BRANCH_LIMIT: could not compare with ${_base#refs/*/}:$_fail — not counted"
   [ "$_n" -ge "$_lim" ] || exit 0
-  echo "⏳ flight-rules: $_n branches are open and not yet merged into ${_base#refs/*/} (OPEN_BRANCH_LIMIT is $_lim, $_src). A warning, not a block — merging some before opening more keeps them from depending on each other."
+  echo "⏳ flight-rules: $_n branches are open and not yet merged into ${_base#refs/*/} (OPEN_BRANCH_LIMIT is $_lim, $_src). /feature-start asks before it opens another; merging some first keeps them from depending on each other."
   [ -z "$_wait" ] || echo "  Passed pre-merge-check, waiting to merge:$_wait"
   [ -z "$_work" ] || echo "  Not yet passed:$_work"
 )
