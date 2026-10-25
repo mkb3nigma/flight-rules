@@ -175,8 +175,10 @@ git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 
 echo "Back-merge exemption cannot be forged (post-merge review):"
 # mkrepo_with_origin: a bare origin holding main, so refs/remotes/origin/main exists.
+# The bare origin lives in the fixture's own .git, so the rm -rf "$D" each case ends
+# with removes it too: a separate mktemp -d leaked one per case (second fix review).
 mkrepo_with_origin() {
-  local d o; d=$(mkrepo); o=$(mktemp -d)
+  local d o; d=$(mkrepo); o="$d/.git/test-origin.git"
   git init -q --bare "$o" || die "git init failed (git init -q --bare "$o")"; git -C "$d" remote add origin "$o"
   git -C "$d" push -q origin main dev 2>/dev/null
   printf '%s' "$d"
@@ -1031,6 +1033,10 @@ git -C "$D" checkout -q dev
 OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git merge --no-ff MAIN -m merge 2>&1); RC=$?
 say "$RC" "1" "^MAIN\$ given by hand: a local MAIN off origin/main is refused"
 say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
+# The refusal must not take origin/main for a stray here: it advised deleting it
+# (second fix review). origin has no MAIN; the pattern's case is the likelier fault.
+say "$(grep -c 'origin has no MAIN,' <<<"$OUT")" "1" "…saying origin has no MAIN, only origin/main"
+say "$(grep -ci 'remove\|delete\|prune' <<<"$OUT")" "0" "…and advising no deletion of origin/main"
 say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 # …nor when origin holds MAIN as well, pushed at that commit: every case variant origin
@@ -1070,7 +1076,30 @@ else
   git -C "$D" checkout -q dev
   OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
   say "$RC" "1" "a stale origin/Main beside origin/main: a back-merge of main is refused"
-  say "$(grep -c 'origin also has origin/Main,' <<<"$OUT")" "1" "…naming the variant that lacks the commit"
+  say "$(grep -c 'origin/Main, a case variant, does not' <<<"$OUT")" "1" "…naming the variant that lacks the commit"
+  say "$(grep -c 'git fetch --prune origin' <<<"$OUT")" "1" "…with the prune that drops it if origin has"
+  say "$(grep -c 'removes it on origin' <<<"$OUT")" "0" "…and no instruction to delete it there"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
+# Both off: local main forced off origin/main, and a stale origin/Main as well. Main
+# sorts first, and the refusal blamed it, so deleting it only brought the real refusal
+# (second fix review). origin/main itself is named.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+OLD=$(git -C "$D" rev-parse main)
+git -C "$D" checkout -q -b feature/f3 dev; echo f3 > "$D/f3"; git -C "$D" add -A; git -C "$D" commit -qm "feature: f3" >/dev/null
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/Main "$OLD"
+git -C "$D" branch -f main feature/f3 || die "could not point main at feature/f3 in $D"
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/Main)" != "$OLD" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/heads/main)" != "$(git -C "$D" rev-parse feature/f3)" ]; then
+  echo "  ⏭️  a forced main beside a stale origin/Main: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+  say "$RC" "1" "a forced local main and a stale origin/Main: refused"
+  say "$(grep -c 'origin/main does not hold this commit' <<<"$OUT")" "1" "…naming origin/main, not the stray"
+  say "$(grep -c 'origin/Main' <<<"$OUT")" "0" "…and not sending the owner after origin/Main"
   git -C "$D" merge --abort 2>/dev/null
 fi
 rm -rf "$D"
@@ -1082,6 +1111,7 @@ git -C "$D" checkout -q dev
 OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
 say "$RC" "1" "a local main forced off origin/main is refused"
 say "$(grep -c 'origin/main does not hold this commit' <<<"$OUT")" "1" "…saying origin/main does not hold it"
+say "$(grep -c 'git fetch origin  then retry' <<<"$OUT")" "1" "…and the fetch, in case it is only out of date"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 # …while a real back-merge of main, with origin's main holding it, still lands.
 D=$(mkrepo_with_origin)
