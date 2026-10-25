@@ -10,8 +10,10 @@ this one does; every verdict below was run against both, not reasoned about.
 
 **Git hooks changed** — `commit-msg`, `pre-commit`, `pre-merge-commit`, `pre-rebase`,
 `reference-transaction`, `post-merge` and `install.sh` — so sync them. With
-`HOOK_SYNC=auto` a session's first run does it and leaves the diff to commit; with the
-default `report`, doctor names each stale copy and prints the command. From this release
+`HOOK_SYNC=auto` a session's first run does it and leaves the diff to commit — except on
+a protected branch, or from a worktree whose hooks are the main checkout's, where it
+prints the command to run instead (#99); with the default `report`, doctor names each
+stale copy and prints the command. From this release
 on, the automatic sync never replaces a copy that is a newer release's than the one
 syncing. A session still on 0.26.x has an installer without that check: left open, it
 can write its older copies back over newer ones on its first session start each day,
@@ -25,7 +27,9 @@ get no such notice and need no change. A session already open when 0.27.0 arrive
 told: the version it started on was never recorded.
 
 **A full install no longer overwrites a project's own hooks** (#97). Before, only
-`pre-commit` was protected. And when the install points git at flight-rules' hooks
+`pre-commit` was protected. It tells them apart by a phrase each flight-rules hook
+carries — a heuristic: a project's own `pre-commit` that mentions `PRIVATE KEY` is still
+taken for flight-rules' and replaced (#113). And when the install points git at flight-rules' hooks
 folder, it names any hooks git will stop running from `.git/hooks/` or a global hooks
 folder; running them alongside flight-rules' is #111.
 
@@ -33,7 +37,9 @@ folder; running them alongside flight-rules' is #111.
 only written to `.claude/post-merge-note.md`; names that need quoting are in `'…'` (plain
 ones are bare); and an annotation such as `↑ just merged` sits on its own line.
 
-One new optional key in `.ai/flight-rules.conf`, `OPEN_BRANCH_LIMIT` (default 5), below.
+One new key in `.ai/flight-rules.conf`, `OPEN_BRANCH_LIMIT`, **on by default at 5**: with
+five branches open, `/feature-start` asks before opening a sixth, and run with no one to
+ask, it opens none. `off` turns it off. Below.
 
 ### Added
 
@@ -41,7 +47,8 @@ One new optional key in `.ai/flight-rules.conf`, `OPEN_BRANCH_LIMIT` (default 5)
   into the integration branch, session start warns — on screen and to the assistant,
   naming which have passed `pre-merge-check` and wait to merge — and never blocks.
   `/feature-start` counts before opening another and, at the limit, opens it only once
-  you say it is okay, naming where the limit is set. `off` stands both down. A count
+  you say it is okay, naming where the limit is set; the guard's suggested commands and
+  this repo's CLAUDE.md point at it, since a raw `git worktree add` skips the count. `off` stands both down. A count
   that cannot be made (no integration branch, a git failure, a protected pattern that
   does not compile) is said to the assistant, never read as "under the limit".
 - **What testing started is stopped** (#109). The post-merge list names processes still
@@ -51,7 +58,8 @@ One new optional key in `.ai/flight-rules.conf`, `OPEN_BRANCH_LIMIT` (default 5)
   item 21 asks that what a branch's checks started is stopped before the stamp.
 - **`/dg` Review Domains** (#96): the classes a reviewer is asked to look for —
   authorisation, untrusted input, fail-open defaults, races, magic values, swallowed
-  errors, time, unbounded work, compatibility, tests — reach every reviewer's brief.
+  errors, time, unbounded work, compatibility, tests — reach every reviewer's brief on
+  code.
 - **`pre-merge-check`**: item 4 gates new type errors against the destination's set;
   item 20 flags swallowed errors.
 
@@ -68,11 +76,18 @@ One new optional key in `.ai/flight-rules.conf`, `OPEN_BRANCH_LIMIT` (default 5)
   paste, and tested), which also fixes `printf %q` on macOS bash 3.2 splitting
   non-ASCII names. A process row forged by a newline in a command line is dropped.
 - **A protected-branch pattern that does not compile protected nothing** (#103): the
-  guard and the git hooks now treat it as protecting every branch, say so, and print a
-  way out that works from where the refusal leaves you. Patterns match
-  case-insensitively everywhere.
+  guard and the gating git hooks now treat it as protecting every branch, say so, and
+  print a way out that works from where the refusal leaves you (`post-merge`'s cleanup
+  list still reads it as protecting none, #113). A pattern that gates matches
+  case-insensitively, as the guard's does; one that exempts — a back-merge of a PR-only
+  branch — takes the pattern's exact case, and every case variant of the branch on
+  origin must hold the commit.
 - **The secret scan skipped a merge's concluding commit** (#101), the hand-written
-  conflict resolution included; it now scans what the resolution adds.
+  conflict resolution included; it now scans what the resolution adds — the agent guard
+  as git's hook does, where it had scanned every incoming commit and refused the commit
+  that finishes a refused merge — worked out with `git merge-tree` where git wrote no
+  `AUTO_MERGE`. Mid-merge, neither refusal says to unstage a file: the merge would keep
+  `HEAD`'s copy and drop the incoming change.
 - **The merge-authorisation box printed a `git merge` that always failed** (#100) while
   the refused merge was still in progress; it prints the command that concludes it.
 - **`HOOK_SYNC=auto` wrote into a checkout on a protected branch** (#99), leaving a diff
@@ -82,17 +97,22 @@ One new optional key in `.ai/flight-rules.conf`, `OPEN_BRANCH_LIMIT` (default 5)
 - **`HOOK_SYNC=auto` warned daily in every worktree whose hooks live in the main
   checkout** (#93), even with nothing stale; it compares first and is silent when current.
 - **Doctor did not report a stale `.ai/hooks/install.sh`** (#90).
+- **Session start read a quoted conf value with its quotes** — `INTEGRATION_BRANCH='dev'`,
+  `WORKTREE_DIR`, `HOOK_SYNC='auto'` — while doctor showed ✅; it reads them as the guard
+  and doctor do.
 
 ### Changed
 
 - **`/dg` output order**: header, comic, rounds, verdict, then the decisions waiting — a
-  numbered list, not a table — so they are where a terminal leaves the reader.
+  numbered list, not a table — so they are where a terminal leaves the reader. The skill
+  names it as its one departure from the principles' "lead with what needs deciding".
 - **`/dg`**: an extension's own pre-reviewer timeout is an inner limit under
   `DG_WAIT_MINUTES` (#95). The release-review check's three known Markdown limits are
   accepted rather than parsed further (#91).
 - **Principles**: a refused command may go to the person, told it was refused, by what
-  and why — an ask that carries its reasons; the UTC line moved to the checklists;
-  flight-rules assumes a competent developer and does not babysit.
+  and why — an ask that carries its reasons, and never a hand-written `pre-merge-check`
+  note; the UTC line moved to the checklists.
+- **READMEs**: flight-rules assumes a competent developer and does not babysit.
 
 ## 0.26.0 — 2026-10-20
 
