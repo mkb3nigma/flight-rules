@@ -1055,7 +1055,7 @@ say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for 
 # The refusal must not take origin/main for a stray here: it advised deleting it
 # (second fix review). origin has no MAIN; the pattern's case is the likelier fault.
 say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
-say "$(grep -c 'origin has no ref spelled MAIN\.' <<<"$OUT")" "1" "…and, as a fact, that origin has no ref spelled MAIN"
+say "$(grep -c 'As of the last fetch, origin has no ref spelled MAIN\.' <<<"$OUT")" "1" "…and, as a fact of the last fetch, that origin has no ref spelled MAIN"
 say "$(judged "$OUT")" "0" "…calling no ref a stray, a variant or in the wrong case, nor saying to delete one"
 say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
@@ -1102,6 +1102,7 @@ else
   say "$RC" "1" "a stale origin/Main beside origin/main: a back-merge of main is refused"
   say "$(listed "$OUT" origin/Main)" "1" "…listing origin/Main as lacking it"
   say "$(listed "$OUT" origin/main)" "0" "…and not origin/main, which holds it"
+  say "$(grep -c "Which is the PR-only branch is the project owner's call" <<<"$OUT")" "1" "…with two refs matching, saying which is real is the owner's call"
   say "$(judged "$OUT")" "0" "…judging neither"
   git -C "$D" merge --abort 2>/dev/null
 fi
@@ -1135,6 +1136,8 @@ git -C "$D" checkout -q dev
 OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
 say "$RC" "1" "a local main forced off origin/main is refused"
 say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+# One ref, spelled as the branch: there is no "which" to decide (fourth fix review).
+say "$(grep -c "owner's call" <<<"$OUT")" "0" "…and no question of which ref is the branch, with only one"
 say "$(grep -cE '^║ +git fetch --prune origin +║$' <<<"$OUT")$(grep -cE '^║ +git commit --no-edit +║$' <<<"$OUT")" "11" "…with the one route: fetch --prune, then commit --no-edit"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 # …while a real back-merge of main, with origin's main holding it, still lands.

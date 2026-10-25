@@ -221,7 +221,9 @@ MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 # has under no ref spelled as they are. The refusal states those facts and judges
 # nothing: three rounds of text that guessed which ref was real, stray or in the wrong
 # case each misled in a new shape, once advising deletion of origin/main (fix reviews).
-CASE_ONLY=""; OFF_REFS=""; OFF_SHORT=""; NO_EXACT=""
+# MULTI is set when origin has more than one ref matching such a branch ignoring case,
+# the one shape where "which is the PR-only branch" is a question at all.
+CASE_ONLY=""; OFF_REFS=""; OFF_SHORT=""; NO_EXACT=""; MULTI=""
 while read -r ref sha; do
     case "$ref" in
         refs/heads/*)          short="${ref#refs/heads/}" ;;
@@ -239,13 +241,14 @@ while read -r ref sha; do
     fi
     # Every case variant origin has must hold the commit, not any one of them: anyone can
     # push a MAIN beside main (security review of this fix).
-    exact=""; lacking=""
+    exact=""; lacking=""; nmatch=0
     while read -r oref osha; do
         o=${oref#refs/remotes/origin/}
         shopt -s nocasematch; m=""
         [[ "$o" == "$short" ]] && m=1
         shopt -u nocasematch
         [ -n "$m" ] || continue
+        nmatch=$((nmatch+1))
         [ "$o" = "$short" ] && exact=1
         git merge-base --is-ancestor "$MERGE_SHA" "$osha" 2>/dev/null && continue
         lacking="$lacking origin/$o"
@@ -258,6 +261,7 @@ while read -r ref sha; do
                 case " $OFF_REFS " in *" $_r "*) ;; *) OFF_REFS="${OFF_REFS:+$OFF_REFS }$_r" ;; esac
             done
             case " $OFF_SHORT " in *" $short "*) ;; *) OFF_SHORT="${OFF_SHORT:+$OFF_SHORT }$short" ;; esac
+            [ "$nmatch" -gt 1 ] && MULTI=1
             [ -n "$exact" ] || case " $NO_EXACT " in *" $short "*) ;; *) NO_EXACT="${NO_EXACT:+$NO_EXACT }$short" ;; esac
         fi
         continue
@@ -392,11 +396,14 @@ if [ -n "$OFF_SHORT" ]; then
     done
     [ "$_n" -gt 5 ] && box_row "  … and $((_n-5)) more"
     box_row "Every origin ref that matches it ignoring case must"
-    box_row "hold the commit. Which is the PR-only branch is the"
-    box_row "project owner's call."
+    box_row "hold the commit."
+    # What the hook knows is what was last fetched: it makes no network call.
     for _b in $NO_EXACT; do
-        box_row "origin has no ref spelled $_b."
+        box_row "As of the last fetch, origin has no ref spelled $_b."
     done
+    if [ -n "$MULTI" ] || [ -n "$NO_EXACT" ]; then
+        box_row "Which is the PR-only branch is the project owner's call."
+    fi
     box_row "If origin has moved on since the last fetch:"
     box_row "  git fetch --prune origin"
     box_row "  git commit --no-edit"
