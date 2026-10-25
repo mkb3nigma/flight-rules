@@ -1033,6 +1033,26 @@ say "$RC" "1" "^MAIN\$ given by hand: a local MAIN off origin/main is refused"
 say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
 say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+# …nor when origin holds MAIN as well, pushed at that commit: every case variant origin
+# has must hold it, not any one (security review of this fix). Two refs a case apart
+# need reftable on a case-insensitive filesystem, so the fixture checks it got them.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/m2 dev; echo m2 > "$D/m2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: m2" >/dev/null
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/MAIN feature/m2
+git -C "$D" branch -D main >/dev/null 2>&1; git -C "$D" branch MAIN feature/m2 2>/dev/null
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/main)" = "$(git -C "$D" rev-parse feature/m2)" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/heads/MAIN)" != "$(git -C "$D" rev-parse feature/m2)" ] \
+   || git -C "$D" rev-parse -q --verify refs/heads/main >/dev/null; then
+  echo "  ⏭️  origin/main beside origin/MAIN: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git merge --no-ff MAIN -m merge 2>&1); RC=$?
+  say "$RC" "1" "^MAIN\$ given by hand, origin/MAIN pushed at the commit: refused while origin/main lacks it"
+  say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
 # …while a real back-merge of main, with origin's main holding it, still lands.
 D=$(mkrepo_with_origin)
 git -C "$D" checkout -q main; echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null

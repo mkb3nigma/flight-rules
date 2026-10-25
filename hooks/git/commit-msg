@@ -232,16 +232,17 @@ while read -r ref sha; do
         re_rc "$short" "$PR_ONLY_RE" || continue
         case_only=1
     fi
-    on_origin=""; seen=""
+    # Every case variant origin has must hold the commit, not any one of them: anyone can
+    # push a MAIN beside main (security review of this fix).
+    off_origin=""
     while read -r oref osha; do
         shopt -s nocasematch; m=""
         [[ "${oref#refs/remotes/origin/}" == "$short" ]] && m=1
         shopt -u nocasematch
         [ -n "$m" ] || continue
-        seen=1
-        git merge-base --is-ancestor "$MERGE_SHA" "$osha" 2>/dev/null && { on_origin=1; break; }
+        git merge-base --is-ancestor "$MERGE_SHA" "$osha" 2>/dev/null || { off_origin=1; break; }
     done < <(git for-each-ref --format='%(refname) %(objectname)' refs/remotes/origin)
-    [ -z "$seen" ] || [ -n "$on_origin" ] || continue
+    [ -z "$off_origin" ] || continue
     # Named only once the rest has passed: a forced local main is refused by origin's
     # check, and blaming the case would mislead (#103 review). The refusal prints no
     # command for it: the one it printed, pasted with ^MAIN$, made a local MAIN a
