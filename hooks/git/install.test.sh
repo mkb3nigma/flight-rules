@@ -705,6 +705,14 @@ say "$(grep -c -- '- pre-push: copy it into' <<<"$OUT")$(grep -c -- '- pre-commi
 say "$(git -C "$D" config core.hooksPath)" ".ai/hooks" "…and installs anyway"
 say "$(sums "$D/.git/hooks")" "$BEFORE" "…leaving .git/hooks as it was"
 rm -rf "$D"
+# An exported CDPATH holding `.` made `cd .git` print where it went: the old hooks
+# directory read as two lines, matched nothing, and the warning was lost (third fix
+# review).
+D=$(fresh); own "$D/.git/hooks/commit-msg"
+OUT=$(CDPATH=.:/usr grun "$D" .ai/hooks/install.sh)
+say "$(head -1 <<<"$OUT")" "0" "CDPATH=.:/usr exported, a commit-msg in .git/hooks: exit 0"
+say "$(grep -c '^⚠️ git runs these hooks from' <<<"$OUT")" "1" "…still warned"
+rm -rf "$D"
 D=$(fresh); own "$D/.git/hooks/pre-commit.sample"
 OUT=$(grun "$D" .ai/hooks/install.sh)
 say "$(head -1 <<<"$OUT")" "0" "only *.sample in .git/hooks: exit 0"

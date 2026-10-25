@@ -13,6 +13,10 @@
 # Run from anywhere inside the repo. Reads the same conf the hooks read.
 
 set -uo pipefail
+# An exported CDPATH holding `.` makes cd print where it went, so a $(cd … && pwd -P)
+# came back as two lines and named no directory: the guard's project comparison never
+# matched and its branch policy was off (third fix review). Nothing here wants it.
+unset CDPATH
 QUIET=0; [[ "${1:-}" == "--problems-only" ]] && QUIET=1
 FAIL=0; WARN=0
 ok()   { [[ $QUIET -eq 1 ]] || printf '  ✅ %s\n' "$1"; }

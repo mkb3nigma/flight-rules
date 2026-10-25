@@ -1020,6 +1020,28 @@ mgc deny  "a merge in the cwd's repo does not waive a commit to another repo's m
     "$MR" "$NM" "git -C $NM commit -m x"
 rm -rf "$MR" "$NM"
 
+echo "…and the project is found as git finds it, whatever the shell's cd settings (third fix review):"
+# The project dir is the harness's spelling. Through a symlink to a subdirectory, git
+# answers `../.git` from where the link leads, and plain cd applied it to the link's own
+# parent: here another repo, so the guard took the project for that one and allowed a
+# commit on main.
+LB=$(make_repo main); LA=$(make_repo feature/a); mkdir -p "$LB/sub"
+ln -s "$LB/sub" "$LA/proj" || die "could not link $LA/proj to $LB/sub"
+[ "$(git -C "$LA/proj" rev-parse --git-common-dir)" = "../.git" ] || die "git did not answer ../.git from the linked subdirectory: the case below tests nothing"
+mgc deny  "project dir a symlinked subdirectory whose link sits in another repo: a commit on main is refused" \
+    "$LA/proj" "$LA/proj" "git commit -m x"
+rm -rf "$LA" "$LB"
+# An exported CDPATH holding `.` made `cd .git` print where it went, so the comparison
+# never matched and the branch policy was off — for a worktree on dev committed to from
+# the main checkout, among others.
+MR=$(make_repo main)
+git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 || die "could not add a dev worktree to $MR"
+CDPATH=.:/usr mgc deny "CDPATH=.:/usr exported: a commit in a worktree on dev is still refused" \
+    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
+CDPATH=.:/usr mgc deny "…and a commit on main in the project's own subdirectory" \
+    "$MR" "$MR" "cd $MR/.ai && git commit -m x"
+rm -rf "$MR"
+
 echo "…and a harmless command is not made dangerous by its neighbour:"
 # The mirror of the section below, and the direction that had no coverage. The target
 # parsers have run per SEGMENT since 2026-09-10, for the reason written above them; the

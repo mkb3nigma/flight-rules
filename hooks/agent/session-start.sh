@@ -28,6 +28,10 @@
 # ever; one whose hooks are someone else's, or no repo, is shown nothing. The
 # assistant gets all of it daily.
 
+# An exported CDPATH holding `.` makes cd print where it went, so a $(cd … && pwd -P)
+# came back as two lines and named no directory: the guard's project comparison never
+# matched and its branch policy was off (third fix review). Nothing here wants it.
+unset CDPATH
 PROJECT_ROOT=$(pwd)
 
 # Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
@@ -346,7 +350,7 @@ if [ -n "$DOCTOR_SCREEN" ]; then
   else
     # Keyed on the repository, not the worktree: per-session worktrees each got the
     # "once-ever" hint (fix review, 2026-10-13).
-    _common=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+    _common=$(cd -P "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
     HINT_FILE="$FLAG_DIR/.flight-rules-hinted-$(printf '%s' "${_common:-$TOP}" | tr '/' '-')"
     [ -f "$HINT_FILE" ] && { DOCTOR_SCREEN=""; HINT_FILE=""; }
   fi

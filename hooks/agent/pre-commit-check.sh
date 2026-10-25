@@ -48,6 +48,10 @@ read_conf() {
 # `^release(/|$)` covers both a bare `release` branch and a `release/1.0` train.
 # hotfix/* is deliberately absent: you commit to a hotfix branch, so it is a working
 # branch, not one to defend.
+# An exported CDPATH holding `.` makes cd print where it went, so a $(cd … && pwd -P)
+# came back as two lines and named no directory: the guard's project comparison never
+# matched and its branch policy was off (third fix review). Nothing here wants it.
+unset CDPATH
 DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
 DEFAULT_WORKTREE_DIR='.ai/worktrees'
 
@@ -251,14 +255,16 @@ push_targets() {
 # Every worktree of a repo reports the same `--git-common-dir` (the main
 # checkout's .git), which is what makes a worktree recognisable as this project
 # rather than a foreign one. The path can come back relative to the directory
-# asked about, so it is resolved from there; `pwd -P` settles /tmp vs macOS's
-# /private/tmp. Empty output means "not a git repo", and the caller treats an
+# asked about, so it is resolved from there — by cd -P, as git walked it: the project
+# dir is the harness's spelling, and through a symlink plain cd applied git's `../.git`
+# to the link's parent, another repo, so the guard allowed a commit on main (third fix
+# review). `pwd -P` settles /tmp vs macOS's /private/tmp. Empty output means "not a git repo", and the caller treats an
 # unanswerable comparison as "not this project".
 common_repo_dir() {
   local dir="$1" d
-  d=$(cd "$dir" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)
+  d=$(cd -P "$dir" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)
   [ -z "$d" ] && return 0
-  (cd "$dir" 2>/dev/null && cd "$d" 2>/dev/null && pwd -P)
+  (cd -P "$dir" 2>/dev/null && cd -P "$d" 2>/dev/null && pwd -P)
 }
 
 # Workflow rule 6: branches are created as worktrees, never with `checkout -b` /
