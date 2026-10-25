@@ -1056,6 +1056,40 @@ J=$(OB)
 say "$(usr <<<"$J" | grep -c '2 branches are open')" "1" "…the two session-start counts"
 say "$(fs_count "$D" off)" "fix/domain-model fix/turn-off-x staging " "off: nothing is left out, a name holding \"off\" included"
 rm -rf "$D"
+# Merged by PR: in origin's integration branch, not yet in the local one, which
+# /feature-start fetches past and never moves. Counted against local trunk alone, every
+# such branch stayed open, and five of them stopped /feature-start (full release review, A2).
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=1\n' >> "$D/.ai/flight-rules.conf"
+PR=$(git -C "$D" commit-tree -p trunk -p fix/a -m "Merge pull request #1" 'fix/a^{tree}') || die "could not make the PR merge"
+git -C "$D" update-ref refs/remotes/origin/trunk "$PR" || die "could not set origin/trunk"
+J=$(OB)
+say "$(usr <<<"$J" | grep -c '1 branches are open and not yet merged into trunk or origin/trunk')" "1" "merged on origin only: counted against trunk and origin/trunk"
+say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and only the unmerged branch is open"
+say "$(fs_count "$D" '^trunk$')" "fix/b " "…as /feature-start step 5 counts it"
+rm -rf "$D"
+
+echo "/feature-start step 4: main's PR merge commits are not a divergence (0.27.0 release review):"
+# A PR merged into main leaves a merge commit there and nowhere else, so origin/dev..origin/main
+# is never empty in a project that promotes by PR, and step 4 stopped every branch as
+# "diverged". The skill's check, run as written: content main lacks in trunk, or nothing.
+S4=$(awk '/^     ```bash$/{b=1; s=""; next} b && /^     ```$/{b=0; if (s ~ /NOTHING TO RECONCILE/) {printf "%s", s; exit} next} b{sub(/^     /, ""); s=s $0 "\n"}' "$FS_SKILL")
+[ -n "$S4" ] || die "no reconcile check in step 4 of $FS_SKILL"
+fs_reconcile() { (cd "$1" && bash -c "${S4//'{INTEGRATION_BRANCH}'/trunk}" 2>/dev/null); }
+if git merge-tree --write-tree HEAD HEAD >/dev/null 2>&1; then
+  D=$(mkrepo); open "$D" hot/x
+  git -C "$D" update-ref refs/remotes/origin/trunk trunk || die "could not set origin/trunk"
+  OLD=$(git -C "$D" commit-tree -p trunk -m "main before the release" 'trunk^{tree}') || die "could not make main"
+  M=$(git -C "$D" commit-tree -p "$OLD" -p trunk -m "Merge pull request #2" 'trunk^{tree}') || die "could not make the release merge"
+  git -C "$D" update-ref refs/remotes/origin/main "$M" || die "could not set origin/main"
+  say "$(git -C "$D" log --oneline origin/trunk..origin/main | wc -l | tr -d ' ')" "2" "main holds two commits trunk lacks, a merge among them"
+  say "$(fs_reconcile "$D")" "NOTHING TO RECONCILE" "…which brings no content: nothing to reconcile"
+  HF=$(git -C "$D" commit-tree -p "$M" -m "hotfix" 'hot/x^{tree}') || die "could not make the hotfix"
+  git -C "$D" update-ref refs/remotes/origin/main "$HF" || die "could not move origin/main"
+  say "$(fs_reconcile "$D"; echo "rc=$?")" "rc=1" "a hotfix on main: no line, so the reverse range is checked"
+  rm -rf "$D"
+else
+  echo "  (skipped: git merge-tree --write-tree needs git 2.38)"
+fi
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

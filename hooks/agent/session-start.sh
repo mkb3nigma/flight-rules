@@ -365,9 +365,10 @@ fi
 # positive whole number is 5, which doctor says. Only where the project uses
 # flight-rules: a repo without the conf is not told how to run its branches. The key
 # is read as doctor reads it (read_conf strips the quotes doctor strips): `'2'` was
-# ✅ to doctor and 5 here (batch review, G6). Merged as git sees it in this clone: the
-# local integration branch, else origin's — a clone with only origin/dev was silently
-# never counted (P1). A count that cannot be made is said, to the assistant only, as
+# ✅ to doctor and 5 here (batch review, G6). Merged means in the local integration
+# branch or in origin's: a clone with only origin/dev was silently never counted (P1),
+# and against local dev alone every branch merged by PR stayed open, because
+# /feature-start fetches origin and never moves local dev (full release review, A2). A count that cannot be made is said, to the assistant only, as
 # "?" lines split off below: a missed reminder, but never one that reads as "under
 # the limit".
 OPEN_MSG=$(
@@ -377,9 +378,12 @@ OPEN_MSG=$(
   _src="in .ai/flight-rules.conf"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
   [ "$_lim" = off ] && exit 0
   [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
-  _base="refs/heads/$INTEGRATION_BRANCH"
-  git rev-parse --verify -q "$_base" >/dev/null || _base="refs/remotes/origin/$INTEGRATION_BRANCH"
-  git rev-parse --verify -q "$_base" >/dev/null \
+  _base=""; _into=""
+  for _r in "refs/heads/$INTEGRATION_BRANCH" "refs/remotes/origin/$INTEGRATION_BRANCH"; do
+    git rev-parse --verify -q "$_r" >/dev/null || continue
+    _base="$_base $_r"; _into="${_into:+$_into or }${_r#refs/*/}"
+  done
+  [ -n "$_base" ] \
     || { echo "?OPEN_BRANCH_LIMIT: no $INTEGRATION_BRANCH here, local or origin/ — open branches not counted"; exit 0; }
   _list=$(git worktree list --porcelain 2>/dev/null) \
     || { echo "?OPEN_BRANCH_LIMIT: git worktree list failed — open branches not counted"; exit 0; }
@@ -394,7 +398,8 @@ OPEN_MSG=$(
       [ "$_m" -eq 2 ] && { echo "?OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted"; exit 0; }
       [ "$_m" -eq 1 ] || continue
     fi
-    _ahead=$(git rev-list --count "$_base..refs/heads/$_b" 2>/dev/null) || { _fail="$_fail $_b"; continue; }
+    # $_base unquoted: one or two refs that exist, so no spaces or glob characters.
+    _ahead=$(git rev-list --count "refs/heads/$_b" --not $_base 2>/dev/null) || { _fail="$_fail $_b"; continue; }
     [ "$_ahead" -gt 0 ] || continue
     _n=$((_n+1))
     if git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null | grep -q '^passed:'; then
@@ -403,9 +408,9 @@ OPEN_MSG=$(
       _work="$_work $_b"
     fi
   done < <(printf '%s\n' "$_list" | sed -n 's|^branch refs/heads/||p')
-  [ -z "$_fail" ] || echo "?OPEN_BRANCH_LIMIT: could not compare with ${_base#refs/*/}:$_fail — not counted"
+  [ -z "$_fail" ] || echo "?OPEN_BRANCH_LIMIT: could not compare with $_into:$_fail — not counted"
   [ "$_n" -ge "$_lim" ] || exit 0
-  echo "⏳ flight-rules: $_n branches are open and not yet merged into ${_base#refs/*/} (OPEN_BRANCH_LIMIT is $_lim, $_src). /feature-start asks before it opens another; merging some first keeps them from depending on each other."
+  echo "⏳ flight-rules: $_n branches are open and not yet merged into $_into (OPEN_BRANCH_LIMIT is $_lim, $_src). /feature-start asks before it opens another; merging some first keeps them from depending on each other."
   [ -z "$_wait" ] || echo "  Passed pre-merge-check, waiting to merge:$_wait"
   [ -z "$_work" ] || echo "  Not yet passed:$_work"
 )

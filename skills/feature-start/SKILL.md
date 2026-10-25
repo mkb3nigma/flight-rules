@@ -44,7 +44,18 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      ```bash
      git log --oneline origin/{INTEGRATION_BRANCH}..origin/main
      ```
-     If non-empty, check the reverse range too:
+     If non-empty, first check whether `main` brings anything the integration branch
+     lacks. A PR merged into `main` leaves a merge commit there and nowhere else, so in
+     a project that promotes by PR this range is never empty, and the reverse range
+     below read every such repo as diverged (0.27.0 release review):
+     ```bash
+     t=$(git merge-tree --write-tree origin/{INTEGRATION_BRANCH} origin/main) \
+       && [ "$t" = "$(git rev-parse 'origin/{INTEGRATION_BRANCH}^{tree}')" ] \
+       && echo "NOTHING TO RECONCILE"
+     ```
+     `NOTHING TO RECONCILE` → merging `main` in would change no file: say so in one
+     line and go on to step 5. Anything else — a conflict, or git older than 2.38, which
+     has no `--write-tree` — check the reverse range too:
      ```bash
      git log --oneline origin/main..origin/{INTEGRATION_BRANCH}
      ```
@@ -67,8 +78,10 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    `FLIGHT_RULES_OPEN_BRANCH_LIMIT` if set, else `OPEN_BRANCH_LIMIT` in
    `.ai/flight-rules.conf` (unset or not a positive whole number: 5; `off`: skip this
    step) — as `session-start` reads it. Open means a branch checked out in a worktree
-   with commits not yet in `{INTEGRATION_BRANCH}` — the local one when it exists, else
-   `origin/{INTEGRATION_BRANCH}` — leaving out `{INTEGRATION_BRANCH}` itself and any
+   with commits in neither the local `{INTEGRATION_BRANCH}` nor
+   `origin/{INTEGRATION_BRANCH}` — step 4 fetches origin and never moves the local one,
+   so against it alone every branch merged by PR stayed open (0.27.0 release review) —
+   leaving out `{INTEGRATION_BRANCH}` itself and any
    branch the protected pattern matches: `FLIGHT_RULES_PROTECTED_BRANCHES` if set, else
    `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it — unset, the
    hooks' anchored default, never a bare `main`, which matched `fix/domain-model` and
@@ -77,15 +90,17 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    p=${FLIGHT_RULES_PROTECTED_BRANCHES-}; [ -n "$p" ] || p='{PROTECTED_BRANCHES}'
    [ -n "$p" ] || p='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
    case $p in off|none) p='^$' ;; esac   # protects nothing: only the integration branch is left out
-   base=refs/heads/{INTEGRATION_BRANCH}
-   git rev-parse -q --verify "$base" >/dev/null || base=refs/remotes/origin/{INTEGRATION_BRANCH}
-   git rev-parse -q --verify "$base" >/dev/null || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"
+   base=
+   for r in refs/heads/{INTEGRATION_BRANCH} refs/remotes/origin/{INTEGRATION_BRANCH}; do
+     git rev-parse -q --verify "$r" >/dev/null && base="$base $r"
+   done
+   [ -n "$base" ] || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"
    printf '' | grep -E -e "$p" >/dev/null 2>&1 || [ $? -eq 1 ] || echo "COULD NOT COUNT: the protected pattern does not compile"
    l=$(git worktree list --porcelain) || echo "COULD NOT COUNT: git worktree list failed"
    printf '%s\n' "$l" | sed -n 's|^branch refs/heads/||p' \
      | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \
      | while IFS= read -r b; do
-         n=$(git rev-list --count "$base..refs/heads/$b") || { echo "COULD NOT COUNT: $b"; continue; }
+         n=$(git rev-list --count "refs/heads/$b" --not $base) || { echo "COULD NOT COUNT: $b"; continue; }
          [ "$n" -gt 0 ] && echo "$b"
        done
    ```
