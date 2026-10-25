@@ -81,7 +81,7 @@ ask, it opens none. `off` turns it off. Below.
   list offers nothing for deletion and does not say why, #113). A pattern that gates matches
   case-insensitively, as the guard's does; one that exempts — a back-merge of a PR-only
   branch — takes the pattern's exact case, and every case variant of the branch on
-  origin must hold the commit; a refusal names the one that does not.
+  origin must hold the commit; a refusal lists those that do not, judging none of them.
 - **The secret scan skipped a merge's concluding commit** (#101), the hand-written
   conflict resolution included; it now scans what the resolution adds — the agent guard
   as git's hook does, where it had scanned every incoming commit and refused the commit
@@ -93,6 +93,10 @@ ask, it opens none. `off` turns it off. Below.
   the refused merge was still in progress; it prints the command that concludes it.
 - **`HOOK_SYNC=auto` wrote into a checkout on a protected branch** (#99), leaving a diff
   nobody could commit; there it now only compares and prints the command for a branch.
+- **The guard's branch policy could switch off** when the project directory was reached
+  through a symlink whose parent is another repository, or when the shell exported a
+  `CDPATH` holding `.`: it took the project for a different repository and allowed a
+  commit on a protected branch. It now finds the project as git does.
 - **The guard looked for `MERGE_HEAD` in its own working directory**, not the `-C`
   target (#98): a false block from a worktree, and a waiver that leaked across repos.
 - **`HOOK_SYNC=auto` warned daily in every worktree whose hooks live in the main
