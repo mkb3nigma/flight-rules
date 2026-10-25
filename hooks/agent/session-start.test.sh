@@ -254,6 +254,13 @@ say "$(usr <<<"$J" | grep -c 'synced commit-msg')" "1" "…on the user's screen 
 say "$(grep -c 'synced commit-msg (flight-rules 9.9.9)' <<<"$OUT")" "1" "…names the hook and the release"
 say "$(cmp -s "$D/.ai/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "the stale commit-msg is now the plugin's"
 say "$(grep -c '# own' "$D/.ai/hooks/post-merge")" "1" "the adapted post-merge is untouched"
+# Quoted, as doctor accepts it: doctor said ✅ auto and the hook only reported (0.27.0
+# release review).
+T2=$(mkplugin); D2=$(mkrepo); stale "$D2" commit-msg
+printf "HOOK_SYNC='auto'\nPROTECTED_BRANCHES=^main\$\n" >> "$D2/.ai/flight-rules.conf"
+J=$( (cd "$D2" && HOME="$D2/fakehome" bash "$T2/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c 'HOOK_SYNC=auto updated git hooks')" "1" "HOOK_SYNC='auto', quoted, syncs as doctor reads it"
+rm -rf "$D2" "$T2"
 say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and the sync's own notice is not repeated as uncommitted changes"
 say "$(grep -c 'post-merge differs from this' <<<"$OUT")" "1" "…and doctor names it on the same run"
 say "$(grep -c 'commit-msg is the flight-rules' <<<"$OUT")" "0" "doctor no longer reports the synced hook stale"
@@ -989,6 +996,10 @@ say "$(OB | usr | grep -c 'OPEN_BRANCH_LIMIT is 5,')" "1" "…a value that is no
 # Quoted, as doctor accepts it: doctor said ✅ 2 and the hook ran at 5 (batch review).
 sed -i.bak "s/OPEN_BRANCH_LIMIT=lots/OPEN_BRANCH_LIMIT='3'/" "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 3,')" "1" "…a quoted '3' is read as 3, as doctor reads it"
+# …and so is a quoted INTEGRATION_BRANCH: kept with its quotes, it named no branch, and
+# the count was "not made" while doctor showed ✅ (0.27.0 release review).
+printf "INTEGRATION_BRANCH='trunk'\n" >> "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 3,')" "1" "…a quoted INTEGRATION_BRANCH is read as doctor reads it"
 # A protected branch is not open work: main ahead of trunk after a release is not.
 printf 'PROTECTED_BRANCHES=^(trunk|rel)$\nOPEN_BRANCH_LIMIT=5\n' >> "$D/.ai/flight-rules.conf"; open "$D" rel
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*

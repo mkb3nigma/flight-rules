@@ -33,7 +33,7 @@ PROJECT_ROOT=$(pwd)
 # Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
 # read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
-# for the one key whose reading must match the guard's (session-start.test.sh compares).
+# so a key reads here as the guard and doctor read it (session-start.test.sh compares).
 read_conf() {
   local key="$1" file="$2"
   [ -r "$file" ] || return 1
@@ -41,10 +41,10 @@ read_conf() {
     | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
-conf_get() {
-  sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]]+)\"?.*$/\\1/p" \
-    "$PROJECT_ROOT/.ai/flight-rules.conf" 2>/dev/null | tail -1
-}
+# conf_get <key>: read_conf on this project's conf. It had its own sed, which kept
+# single quotes: INTEGRATION_BRANCH='dev' counted open branches against a branch named
+# 'dev', quotes and all, while doctor showed ✅ (0.27.0 release review).
+conf_get() { read_conf "$1" "$PROJECT_ROOT/.ai/flight-rules.conf"; }
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
 # leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
