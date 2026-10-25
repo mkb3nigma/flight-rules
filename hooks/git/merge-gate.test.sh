@@ -1014,9 +1014,32 @@ git -C "$D" checkout -q dev
 OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
 say "$RC" "1" "PR_ONLY_BRANCHES=^MAIN\$: merging main into dev is not taken for a back-merge"
 say "$(grep -c 'Not taken for a back-merge: main matches' <<<"$OUT")" "1" "…and the refusal says the case is why"
-CMD=$(route "$OUT" PR_ONLY_BRANCHES); P='^main$'; CMD=${CMD//"<pattern>"/$P}
-OUT=$(cd "$D" && eval "$CMD" 2>&1)
-say "$?" "0" "…and the route it prints, with the pattern in main's case, lands it"
+say "$(grep -c 'FLIGHT_RULES_PR_ONLY_BRANCHES=' <<<"$OUT")" "0" "…and prints no command that overrides the pattern"
+say "$(grep -c 'writes the pattern in its case in .ai/flight-rules.conf' <<<"$OUT")" "1" "…but says where it is fixed"
+rm -rf "$D"
+# The override that box used to print, given by hand: a local MAIN at an unstamped
+# commit, while origin has main. origin/MAIN does not exist, so the origin check was
+# skipped and the merge passed as a back-merge (0.27.0 release review). Packed, so a
+# case-insensitive filesystem cannot resolve origin/MAIN to the loose origin/main file.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/m dev; echo mm > "$D/mm"; git -C "$D" add -A; git -C "$D" commit -qm "feature: mm" >/dev/null
+git -C "$D" branch -D main >/dev/null 2>&1 || die "could not delete main in $D"
+git -C "$D" pack-refs --all
+git -C "$D" branch MAIN feature/m || die "could not create MAIN in $D"
+git -C "$D" rev-parse -q --verify refs/remotes/origin/MAIN >/dev/null && die "origin/MAIN resolves in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git merge --no-ff MAIN -m merge 2>&1); RC=$?
+say "$RC" "1" "^MAIN\$ given by hand: a local MAIN off origin/main is refused"
+say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+# …while a real back-merge of main, with origin's main holding it, still lands.
+D=$(mkrepo_with_origin)
+git -C "$D" checkout -q main; echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" fetch -q origin; git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "0" "…and a back-merge of main that origin holds still lands"
 say "$(grep -c 'Back-merge of PR-only branch main' <<<"$OUT")" "1" "…as a back-merge"
 rm -rf "$D"
 # The case is named only where it is the whole reason: a local main forced onto an
