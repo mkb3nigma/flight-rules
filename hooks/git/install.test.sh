@@ -370,6 +370,15 @@ OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 say "$(head -1 <<<"$OUT")" "1" "plain --from, a path into the main checkout through a missing directory's ..: refused"
 say "$([ -e "$D/.ai/hooks-dd" ] && echo made || echo absent)" "absent" "…not making it there"
 say "$([ -e "$D/.ai/worktrees/wt/missing" ] && echo made || echo absent)" "absent" "…nor the missing directory in the worktree"
+# …nor when the .. climbs back into a directory that exists and is a link into the
+# main checkout: resolved by name alone, wt/missing/../lnk/x passed for inside the
+# worktree, and the install wrote seven hooks into the main checkout (fix review).
+ln -s "$D/.ai" "$D/.ai/worktrees/wt/lnk" || die "could not link the worktree to the main checkout's .ai"
+git -C "$D" config core.hooksPath "$D/.ai/worktrees/wt/missing/../lnk/hooks-ln"
+OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")" "1" "plain --from, a path through a missing directory's .. and a link into the main checkout: refused"
+say "$([ -e "$D/.ai/hooks-ln" ] && echo made || echo absent)" "absent" "…not making it there"
+rm "$D/.ai/worktrees/wt/lnk"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"
 # A link in the worktree to the main checkout's copy passed the redirect's -d, and the
 # write went through it into the main checkout (group A fix review round 2, F0).

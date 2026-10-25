@@ -82,11 +82,13 @@ fi
 # A path as `pwd -P` spells it, resolved through its nearest existing ancestor: a
 # directory not made yet resolved to nothing, so the worktree refusal below missed a
 # missing hooks directory in the main checkout and mkdir -p made it there (group A fix
-# review round 3, 2026-10-22, V2). Past the deepest existing directory nothing exists,
-# so there is no link to follow, and its `.` and `..` are resolved by name: taken as
-# written, wt/missing/../../../x passed for inside the worktree while it named a
-# directory in the main checkout (0.27.0 release review). A dangling link fails
-# mkdir -p loudly on BSD and GNU alike (round 3 review, W3/W4: no refusal added for it).
+# review round 3, 2026-10-22, V2). Past it, the rest is walked a component at a time:
+# `.` and `..` by name, and wherever the walk is back in a directory that exists, that
+# directory as `pwd -P` spells it. Taken as written, wt/missing/../../../x passed for
+# inside the worktree while it named a directory in the main checkout (0.27.0 release
+# review), and resolved by name alone, wt/missing/../lnk/x did too, lnk a link into the
+# main checkout (fix review). A dangling link fails mkdir -p loudly on BSD and GNU
+# alike (round 3 review, W3/W4: no refusal added for it).
 resolved() {
     local d="$1" t="" p c
     [ "$d" = / ] || d="${d%/}"
@@ -95,6 +97,7 @@ resolved() {
     local IFS=/; set -f
     for c in $t; do
         case "$c" in ''|.) ;; ..) p=$(dirname "$p") ;; *) p="${p%/}/$c" ;; esac
+        [ -d "$p" ] && p=$(cd "$p" && pwd -P)
     done
     set +f
     printf '%s' "$p"
