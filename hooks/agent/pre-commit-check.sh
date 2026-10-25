@@ -677,6 +677,41 @@ read_failed() {
   In ${_top:-$(pwd)}: $what exited $rc${err:+ — $err}"
 }
 
+# merge_tree <git command…> — when the repo is concluding a merge that brings in a
+# commit HEAD lacks, sets SCAN_MERGING=1, and MERGED_TREE to the tree git's own merge
+# made, for scan_repo to diff against: what is staged beyond it is the resolution, as the git
+# pre-commit hook scans it (#101). MERGED_TREE is empty when no tree can be had, and the
+# scan reads everything against HEAD. Against HEAD always, the guard refused the commit
+# #100's box prints to conclude a merge whose incoming key had been reviewed, while
+# git's hook let it through (0.27.0 release review). The checks are the git hook's: the
+# MERGE_HEAD and AUTO_MERGE files, not names a branch or tag could take, and a merge
+# that brings nothing in is an ordinary commit. Where git wrote no AUTO_MERGE (before
+# 2.42), `merge-tree --write-tree` (2.38) works the same merge out; an octopus is read
+# in full.
+merge_tree() {
+  local gd m merged="" n=0 auto=""
+  MERGED_TREE=""
+  gd=$("$@" rev-parse --absolute-git-dir 2>/dev/null) || return 0
+  [[ -f "$gd/MERGE_HEAD" ]] || return 0
+  while read -r m; do
+    [[ -n "$m" ]] || continue
+    n=$((n+1))
+    # Exit 1 is "not an ancestor"; any other failure is no proof of a merge.
+    "$@" merge-base --is-ancestor "$m" HEAD 2>/dev/null; [[ $? -eq 1 && -z "$merged" ]] && merged=$m
+  done < "$gd/MERGE_HEAD"
+  [[ -n "$merged" ]] || return 0
+  SCAN_MERGING=1
+  if [[ -f "$gd/AUTO_MERGE" ]]; then
+    read -r auto < "$gd/AUTO_MERGE"
+  elif [[ "$("$@" rev-parse --symbolic-full-name AUTO_MERGE 2>/dev/null)" == AUTO_MERGE ]]; then
+    auto=$("$@" rev-parse --verify -q AUTO_MERGE 2>/dev/null)
+  fi
+  # Not an elif: --symbolic-full-name prints the name back even when git has no such ref.
+  [[ -z "$auto" && $n -eq 1 ]] && auto=$("$@" merge-tree --write-tree HEAD "$merged" 2>/dev/null | head -n 1)
+  [[ -n "$auto" && "$("$@" cat-file -t "$auto" 2>/dev/null)" == tree ]] && MERGED_TREE=$auto
+  return 0
+}
+
 # scan_repo — the checks, over the staged diff of the repo SCAN_GIT names. Appends to
 # FINDINGS; run once per repo a commit in this command is aimed at. Every git read is
 # checked, and one that fails goes to read_failed: a read loop's status arrives as a last
@@ -694,6 +729,8 @@ scan_repo() {
   # diff.dstPrefix or diff.noprefix moved a test fixture out from under the test-file
   # exemption (/dg, 2026-10-12).
   local DIFF_RAW=(-c diff.relative=false diff --cached --no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/)
+  merge_tree "${SCAN_GIT[@]}"
+  [[ -n "$MERGED_TREE" ]] && DIFF_RAW+=("$MERGED_TREE")
   # Every staged file is read as text, except a real binary over BINARY_SCAN_MAX bytes.
   # Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s, and a hook killed by its
   # timeout lets the commit through unscanned; the git pre-commit hook, which has no
@@ -857,7 +894,7 @@ scan_repo() {
 # own cwd, which is the repo being committed to in every realistic version of this.
 # Deliberately NOT applied to the branch policy: falling back there would judge the wrong
 # repo and deny legitimate work in the other direction.
-SCANNED="|"; N_SCANNED=0; ALL_FINDINGS=""; LABELLED_FINDINGS=""; SCAN_FELL_BACK=0; READ_FAILS=""
+SCANNED="|"; N_SCANNED=0; ALL_FINDINGS=""; LABELLED_FINDINGS=""; SCAN_FELL_BACK=0; READ_FAILS=""; SCAN_MERGING=0; MERGED_TREE=""
 _n_targets=${#SCAN_DIRS[@]}
 # Bounded, and closed when the bound is hit: a scan that runs past the hook's timeout is
 # killed, and a killed hook lets the command through unchecked. Of the 949 commands in
@@ -914,10 +951,19 @@ SCAN_NOTE=""
 [[ "$SCAN_FELL_BACK" == "1" ]] && SCAN_NOTE="⚠️  The target repo in this command could not be resolved, so the scan below is of the CURRENT directory ($(pwd)), which may not be the repo you are committing to.
 
 "
+# Concluding a merge, "unstage" is the wrong advice: an unstaged file is committed as
+# HEAD had it, so the merge records the other side as merged without its change, and a
+# later merge never brings it back (0.27.0 release review).
+WHAT_NOW="Remove these before committing. If this is a false positive, unstage and re-check."
+[[ $SCAN_MERGING -eq 1 ]] && WHAT_NOW="Remove these before committing. This commit concludes a merge, so do not unstage
+a file to get past this: the merge commit would keep HEAD's copy of it and drop the
+incoming change, with nothing said. Edit the secret out of the file and stage it
+again, or undo the whole merge with git merge --abort (which also drops what you
+staged). A false positive is the repo owner's call: stop and ask them."
   deny "${SCAN_NOTE}🔐 BLOCKED: Possible secret detected in staged files:
 $(echo -e "$ALL_FINDINGS")
 
-Remove these before committing. If this is a false positive, unstage and re-check."
+${WHAT_NOW}"
   exit 0
 fi
 

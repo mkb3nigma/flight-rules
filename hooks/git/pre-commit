@@ -48,8 +48,11 @@ run_local() { [ -x "$LOCAL_HOOK" ] && exec "$LOCAL_HOOK" "$@"; exit 0; }
 # resolution — new content in neither parent, never scanned — and this hook only runs
 # on a merge that stopped, which is where a resolution is (AppliHawk, 2026-10-21, #101).
 # git ≥ 2.42 writes AUTO_MERGE, the tree as git merged it, conflict markers included:
-# the staged diff against it is the resolution. Without it, the whole staged diff
-# against HEAD is scanned, incoming commits and all — slower, never unscanned.
+# the staged diff against it is the resolution. Without it, `merge-tree --write-tree`
+# (git ≥ 2.38) works the same merge out: a refused route that ends in a commit scanned
+# every incoming commit there, and a reviewed fixture blocked it (0.27.0 release
+# review). Failing both, or for an octopus, the whole staged diff against HEAD is
+# scanned, incoming commits and all — slower, never unscanned.
 # The marker is git's MERGE_HEAD FILE, and AUTO_MERGE's too — `rev-parse --verify`
 # also resolves a branch or tag of that name, and one switched the scan off for every
 # commit with nothing said (AppliHawk review, 2026-10-17). It must bring in a commit
@@ -65,8 +68,9 @@ merges_something() {
     done < "$MERGE_MARKER"
     return 1
 }
-BASE=()
+BASE=(); MERGING=""
 if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
+    MERGING=1
     AUTO_FILE=$(git rev-parse --git-path AUTO_MERGE 2>/dev/null); AUTO=""
     if [ -n "$AUTO_FILE" ] && [ -f "$AUTO_FILE" ]; then
         read -r AUTO < "$AUTO_FILE"
@@ -77,11 +81,20 @@ if [ -n "$MERGE_MARKER" ] && [ -f "$MERGE_MARKER" ] && merges_something; then
     elif [ "$(git rev-parse --symbolic-full-name AUTO_MERGE 2>/dev/null)" = AUTO_MERGE ]; then
         AUTO=$(git rev-parse --verify -q AUTO_MERGE 2>/dev/null)
     fi
+    # Not an elif: --symbolic-full-name prints the name back even when git has no such
+    # ref, so the branch above is taken with no AUTO_MERGE at all. merge-tree's exit 1 is
+    # a conflict, with the tree still on the first line; any other failure prints no
+    # tree, and the check below finds none.
+    if [ -z "$AUTO" ] && [ "$(grep -c . "$MERGE_MARKER")" = 1 ]; then
+        AUTO=$(git merge-tree --write-tree HEAD "$MERGED" 2>/dev/null | head -n 1)
+        [ -n "$AUTO" ] && _from=merge-tree
+    fi
     if [ -n "$AUTO" ] && [ "$(git cat-file -t "$AUTO" 2>/dev/null)" = tree ]; then
         BASE=("$AUTO")
         _how="scanning the conflict resolution (what is staged beyond git's own merge)"
+        [ "${_from:-}" = merge-tree ] && _how="scanning the conflict resolution (what is staged beyond the merge git merge-tree works out: no AUTO_MERGE from git)"
     else
-        _how="no AUTO_MERGE from git (older than 2.42, a strategy other than ort, or a git that writes it only on a conflict), so everything staged is scanned, the incoming commits included"
+        _how="no AUTO_MERGE from git (older than 2.42, a strategy other than ort, or a git that writes it only on a conflict), and none worked out (git older than 2.38, or an octopus merge), so everything staged is scanned, the incoming commits included"
     fi
     # Said every time, naming the commit coming in: a MERGE_HEAD left behind is then
     # seen rather than trusted, and prescribing a command was wrong for one of the two
@@ -182,10 +195,17 @@ fi
 
 [ -z "$FINDINGS" ] && run_local "$@"
 
+# Concluding a merge, unstaging a file commits HEAD's copy of it: the merge records the
+# other side as merged and drops its change, with nothing said (0.27.0 release review).
+UNSTAGE="Unstage or remove it, then commit again."
+[ -n "$MERGING" ] && UNSTAGE="This commit concludes a merge: do not unstage a file here — the merge would keep
+HEAD's copy and drop the incoming change, with nothing said. Edit the secret out and
+stage the file again, or undo the merge with git merge --abort (which also drops
+what you staged)."
 cat >&2 <<EOF
 🔐 flight-rules: commit refused — the staged changes look like they contain a secret:$FINDINGS
 
-Unstage or remove it, then commit again. If it is a false positive (a test fixture,
+$UNSTAGE If it is a false positive (a test fixture,
 say), build the value at run time instead of writing it literally. Committing it as
 is is the repo owner's decision, not an agent's: stop and ask them.
 EOF

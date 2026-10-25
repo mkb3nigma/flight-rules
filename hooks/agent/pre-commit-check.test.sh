@@ -547,6 +547,33 @@ scan_case "renaming a .env to a template"    deny  "$TRACK_ENV && git mv .env .e
 scan_case "…but a key written into it"       deny  "$TRACK_ENV && printf '%s\n' \"\$AKIA\" >> .env && git add .env"
 scan_case "a .env renamed in"                deny  "printf 'X=1\n' > .env.example && git add .env.example && git commit -qm e && git mv .env.example .env"
 
+echo "Concluding a merge, the scan reads the resolution, as the git pre-commit hook does (#101):"
+# Against HEAD, the guard scanned every incoming commit, so it refused the commit #100's
+# box prints to conclude a merge whose incoming key had been reviewed, while git's hook
+# let it through (0.27.0 release review). MERGE_FROM: a conflicted merge of `other`,
+# which carries a key, stopped and staged with the resolution of f.txt given after it.
+MERGE_FROM='git checkout -qb other && printf "%s\n" "$AKIA" > k.txt && echo other > f.txt && git add . && git commit -qm other && git checkout -q feature/x && echo mine > f.txt && git commit -qam mine && { git merge other >/dev/null 2>&1; [ -f .git/MERGE_HEAD ]; } &&'
+scan_case "a key on the incoming side is not the resolution's"   allow "$MERGE_FROM echo resolved > f.txt && git add f.txt"
+scan_case "…a key written into the resolution is refused"         deny  "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt"
+scan_case "…with no AUTO_MERGE, merge-tree works the merge out"   allow "$MERGE_FROM echo resolved > f.txt && git add f.txt && rm -f .git/AUTO_MERGE"
+scan_case "…and the resolution's key is still refused there"      deny  "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt && rm -f .git/AUTO_MERGE"
+scan_case "…an octopus with no AUTO_MERGE is read in full"        deny  "$MERGE_FROM echo resolved > f.txt && git add f.txt && rm -f .git/AUTO_MERGE && git rev-parse HEAD^ >> .git/MERGE_HEAD"
+scan_case "…a tag named AUTO_MERGE is not git's merge"            deny  "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt && rm -f .git/AUTO_MERGE && git tag AUTO_MERGE \"\$(git write-tree)\""
+scan_case "a leftover MERGE_HEAD naming HEAD is an ordinary commit" deny "git rev-parse HEAD > .git/MERGE_HEAD && $STAGE_KEY"
+# Unstaging a file mid-merge commits HEAD's copy and drops the incoming change, so the
+# refusal must not say to; outside a merge it still does.
+MD=$(make_repo feature/x)
+(cd "$MD" && eval "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt") >/dev/null 2>&1 || die "could not build the merge in $MD"
+OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit --no-edit"}}' 2>/dev/null)
+say_n() { if [[ "$1" == "$2" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$3"; else FAIL=$((FAIL+1)); printf '  ❌ %s (got %s, want %s)\n' "$3" "$1" "$2"; fi; }
+say_n "$(grep -c 'do not unstage' <<<"$OUT")" 1 "mid-merge, the refusal says not to unstage"
+say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 0 "…and drops the advice to"
+rm -rf "$MD"; MD=$(make_repo feature/x)
+(cd "$MD" && eval "$STAGE_KEY") >/dev/null 2>&1 || die "could not stage a key in $MD"
+OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "outside a merge, it still says to unstage"
+rm -rf "$MD"
+
 echo "More ways to rewrite or discard a protected branch (post-merge review):"
 check "checkout <rev> -- <path>"          deny  main 'git checkout HEAD -- f.txt'
 check "checkout <branch> -- <path>"       deny  main 'git checkout other -- f.txt'

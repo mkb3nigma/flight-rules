@@ -200,24 +200,45 @@ else
   say "$(landed "$R" "$h")" no "a key written into the conflict resolution is refused"
   say "$(grep -c 'commit refused' <<<"$OUT")" 1 "…and the hook said why"
 fi
+# No AUTO_MERGE (git before 2.42): `merge-tree --write-tree` works the same merge out,
+# so the scan is still the resolution's. Scanning everything there refused the route
+# #100's box prints, for a reviewed incoming key (0.27.0 release review).
 R=$(make_repo armed); cmerge "$R" resolved
 rm -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE"
 h=$(git -C "$R" rev-parse HEAD)
 OUT=$(git -C "$R" commit -qm merge 2>&1)
-say "$(landed "$R" "$h")" no "no AUTO_MERGE: everything staged is scanned, so the incoming key is refused"
+say "$(landed "$R" "$h")" yes "no AUTO_MERGE: merge-tree works the merge out, so the incoming key concludes"
+say "$(grep -c 'beyond the merge git merge-tree works out' <<<"$OUT")" 1 "…saying where the merge it scanned against came from"
+R=$(make_repo armed); cmerge "$R" "resolved, token=$GHP"
+rm -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE"
+h=$(git -C "$R" rev-parse HEAD)
+OUT=$(git -C "$R" commit -qm merge 2>&1)
+say "$(landed "$R" "$h")" no "no AUTO_MERGE: a key written into the resolution is still refused"
+# Unstaging a file to get past a refusal, mid-merge, commits HEAD's copy and drops the
+# incoming change: the refusal says not to (0.27.0 release review).
+say "$(grep -c 'do not unstage a file here' <<<"$OUT")" 1 "…and, concluding a merge, says not to unstage"
+# Neither: an octopus (two incoming commits) is not worked out, so everything staged is
+# scanned, and the hook says why.
+R=$(make_repo armed); cmerge "$R" resolved
+G=$(git -C "$R" rev-parse --absolute-git-dir); rm -f "$G/AUTO_MERGE"
+git -C "$R" rev-parse HEAD^ >> "$G/MERGE_HEAD" || die "could not add a second incoming commit"
+h=$(git -C "$R" rev-parse HEAD)
+OUT=$(git -C "$R" commit -qm merge 2>&1)
+say "$(landed "$R" "$h")" no "an octopus with no AUTO_MERGE: everything staged is scanned, so the incoming key is refused"
 say "$(grep -c 'no AUTO_MERGE from git' <<<"$OUT")" 1 "…saying why it scanned it all"
 # Every cause it may have: git's docs say AUTO_MERGE is written on a conflict, git 2.56
 # writes it for a clean merge that stopped too (group A fix review, F6).
 say "$(grep -c 'older than 2.42, a strategy other than ort, or a git that writes it only on a conflict' <<<"$OUT")" 1 "…naming each cause"
+say "$(grep -c 'none worked out (git older than 2.38, or an octopus merge)' <<<"$OUT")" 1 "…and why it could not work one out"
 # A tag (or branch) named AUTO_MERGE is not git's merge: with no AUTO_MERGE file, one
-# naming the staged tree narrowed the scan to nothing, so the incoming key landed.
-R=$(make_repo armed); cmerge "$R" resolved
+# naming the staged tree narrowed the scan to nothing, so a key in the resolution landed.
+R=$(make_repo armed); cmerge "$R" "resolved, token=$GHP"
 rm -f "$(git -C "$R" rev-parse --absolute-git-dir)/AUTO_MERGE"
 git -C "$R" tag AUTO_MERGE "$(git -C "$R" write-tree)"
 h=$(git -C "$R" rev-parse HEAD)
 OUT=$(git -C "$R" commit -qm merge 2>&1)
-say "$(landed "$R" "$h")" no "a tag named AUTO_MERGE is not git's merge: everything staged is scanned, the incoming key refused"
-say "$(grep -c 'no AUTO_MERGE from git' <<<"$OUT")" 1 "…saying it scanned it all"
+say "$(landed "$R" "$h")" no "a tag named AUTO_MERGE is not git's merge: a key in the resolution is refused"
+say "$(grep -c 'commit refused' <<<"$OUT")" 1 "…and the hook said why"
 # A reftable repository has no AUTO_MERGE file; git still has the pseudo-ref, so the
 # scan is the resolution's there too (fix review, F8). Needs git >= 2.45.
 if ! git init -q --ref-format=reftable "$TMPROOT/rt-probe" >/dev/null 2>&1; then
