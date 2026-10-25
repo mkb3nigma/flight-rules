@@ -215,8 +215,10 @@ MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 # The origin side is looked up ignoring case: a local MAIN, with origin holding main,
 # found no origin/MAIN and skipped that check, so a pattern given as ^MAIN$ passed an
 # unstamped commit as a reviewed back-merge (0.27.0 release review).
-# CASE_ONLY names a ref that matched only ignoring case, for the refusal to say.
-CASE_ONLY=""
+# CASE_ONLY names a ref that matched only ignoring case, for the refusal to say;
+# OFF_ORIGIN, the origin ref a PR-only branch's commit is not on, and OFF_SHORT that
+# branch: refused with no reason, a stray origin/Main read as a broken gate (fix review).
+CASE_ONLY=""; OFF_ORIGIN=""; OFF_SHORT=""
 while read -r ref sha; do
     case "$ref" in
         refs/heads/*)          short="${ref#refs/heads/}" ;;
@@ -240,9 +242,12 @@ while read -r ref sha; do
         [[ "${oref#refs/remotes/origin/}" == "$short" ]] && m=1
         shopt -u nocasematch
         [ -n "$m" ] || continue
-        git merge-base --is-ancestor "$MERGE_SHA" "$osha" 2>/dev/null || { off_origin=1; break; }
+        git merge-base --is-ancestor "$MERGE_SHA" "$osha" 2>/dev/null || { off_origin=${oref#refs/remotes/}; break; }
     done < <(git for-each-ref --format='%(refname) %(objectname)' refs/remotes/origin)
-    [ -z "$off_origin" ] || continue
+    if [ -n "$off_origin" ]; then
+        [ -n "$case_only" ] || { OFF_ORIGIN=$off_origin; OFF_SHORT=$short; }
+        continue
+    fi
     # Named only once the rest has passed: a forced local main is refused by origin's
     # check, and blaming the case would mislead (#103 review). The refusal prints no
     # command for it: the one it printed, pasted with ^MAIN$, made a local MAIN a
@@ -361,6 +366,20 @@ if [ -n "$CASE_ONLY" ]; then
     box_row "and that exemption takes the pattern's exact case. If"
     box_row "$CASE_ONLY is the PR-only branch, the project owner"
     box_row "writes the pattern in its case in .ai/flight-rules.conf."
+    box_row ""
+fi
+if [ -n "$OFF_ORIGIN" ] && [ "$OFF_ORIGIN" = "origin/$OFF_SHORT" ]; then
+    box_row "Not taken for a back-merge: $OFF_SHORT is PR-only, but"
+    box_row "$OFF_ORIGIN does not hold this commit. A local copy"
+    box_row "moved off origin is not reviewed work."
+    box_row ""
+elif [ -n "$OFF_ORIGIN" ]; then
+    box_row "Not taken for a back-merge: origin also has $OFF_ORIGIN,"
+    box_row "a case variant of $OFF_SHORT, and it does not hold this"
+    box_row "commit. Every variant must: a MAIN pushed beside main"
+    box_row "would otherwise vouch for it. If $OFF_ORIGIN is a stray,"
+    box_row "the project owner removes it on origin, then"
+    box_row "  git fetch --prune origin"
     box_row ""
 fi
 box_row "Run /pre-merge-check in the feature worktree first. When"

@@ -1053,6 +1053,36 @@ else
   git -C "$D" merge --abort 2>/dev/null
 fi
 rm -rf "$D"
+# The reverse: origin/main holds a real back-merge, a stray origin/Main at an older
+# commit does not. Refused, as it must be, but with the variant named: the generic box
+# read as a broken gate (fix review).
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+OLD=$(git -C "$D" rev-parse main)
+git -C "$D" checkout -q main; echo m3 > "$D/m3"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" fetch -q origin
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/Main "$OLD"
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/Main)" != "$OLD" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/main)" = "$OLD" ]; then
+  echo "  ⏭️  a stale origin/Main beside origin/main: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+  say "$RC" "1" "a stale origin/Main beside origin/main: a back-merge of main is refused"
+  say "$(grep -c 'origin also has origin/Main,' <<<"$OUT")" "1" "…naming the variant that lacks the commit"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
+# A local main forced off origin/main says so, under the default exact-case pattern.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/f2 dev; echo f2 > "$D/f2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: f2" >/dev/null
+git -C "$D" branch -f main feature/f2 || die "could not point main at feature/f2 in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "a local main forced off origin/main is refused"
+say "$(grep -c 'origin/main does not hold this commit' <<<"$OUT")" "1" "…saying origin/main does not hold it"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 # …while a real back-merge of main, with origin's main holding it, still lands.
 D=$(mkrepo_with_origin)
 git -C "$D" checkout -q main; echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
