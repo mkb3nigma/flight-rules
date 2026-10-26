@@ -90,9 +90,10 @@ ask, it opens none. `off` turns it off. Below.
   still scanned. Mid-merge, neither refusal says to unstage a file: the merge would keep
   `HEAD`'s copy and drop the incoming change.
 - **The merge-authorisation box printed a `git merge` that always failed** (#100) while
-  the refused merge was still in progress; it prints the command that concludes it, and
-  so does the note gate's bypass line. The PR-only merge and rebase boxes print no
-  bypass: the ref gate refuses the one they named.
+  the refused merge was still in progress; it prints the command that concludes it. The
+  note gate's, PR-only merge and rebase refusals print no bypass any more: theirs failed
+  mid-merge, or met the ref gate wherever origin has the branch, and one that worked
+  would hand an assistant the skip the gate exists to stop.
 - **`HOOK_SYNC=auto` wrote into a checkout on a protected branch** (#99), leaving a diff
   nobody could commit; there it now only compares and prints the command for a branch —
   mid-merge, -rebase or -bisect too, when the command is for afterwards.
