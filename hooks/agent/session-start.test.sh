@@ -106,6 +106,14 @@ OUT=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "a merged branch's worktree is reported"
 say "$(grep -c 'Branch: fix/open' <<<"$OUT")"   "0" "an unmerged branch's worktree is not"
 rm -rf "$D"
+# FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it: read from the conf alone, the
+# reminder looked in .ai/worktrees while the guard sent worktrees elsewhere (full
+# release review, S6).
+D=$(mkrepo); branch "$D" fix/merged merge
+git -C "$D" worktree add -q "$D/elsewhere/merged" fix/merged
+OUT=$( (cd "$D" && FLIGHT_RULES_WORKTREE_DIR=elsewhere HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) | ctx)
+say "$(grep -c 'Branch: fix/merged  →  elsewhere/merged' <<<"$OUT")" "1" "FLIGHT_RULES_WORKTREE_DIR: the merged worktree there is reported"
+rm -rf "$D"
 
 echo "A longer branch name is not the merged one (regression 2026-09-12):"
 # The hook looks for the WORKTREE's branch inside the merged list, and the match was
@@ -437,6 +445,8 @@ say "$(sed -n 's/^PROT="\${PROT:-\(.*\)}"$/\1/p' "$H/session-start.sh")" \
     "$(sed -n "s/^DEFAULT_PROTECTED='\(.*\)'$/\1/p" "$H/pre-commit-check.sh")" "the protected-branch default matches pre-commit-check.sh's"
 say "$(sed -n '/^read_conf() {/,/^}/p' "$H/session-start.sh")" \
     "$(sed -n '/^read_conf() {/,/^}/p' "$H/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"
+say "$(sed -n '/^read_conf() {/,/^}/p' "$H/../git/post-merge")" \
+    "$(sed -n '/^read_conf() {/,/^}/p' "$H/pre-commit-check.sh")" "…and post-merge's, verbatim (full release review, S1)"
 # Protected as the guard decides it, crossed through both hooks: a single-quoted value,
 # a branch in another case, the environment over the conf. The sync's own parse, grep
 # and case wrote on each while the guard refused the commit (fix review, F1/D7).
@@ -530,6 +540,14 @@ say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and
 say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
+# On a protected branch, the command for afterwards is the worktree form: the plain one,
+# run as printed once the merge was done, wrote on the protected branch — the #99 state
+# (full release review, S5).
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$(export FLIGHT_RULES_PROTECTED_BRANCHES='^(main|trunk)$'; PRUN)
+say "$(grep -c 'a merge is in progress, on "trunk", a protected branch' <<<"$OUT")" "1" "mid-merge on a protected branch: says so"
+say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only --this-checkout" <<<"$OUT")" "1" "…with the command for a worktree on a branch"
+say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only" <<<"$OUT")" "0" "…and not the plain one"
 # A plugin under a path with a multibyte character and a space (a home directory named
 # so): printf %q under macOS bash 3.2 split the ß and left a raw byte, so the pasted
 # command named a path that does not exist (fix review, 2026-10-24). shq quotes it whole.
@@ -960,6 +978,11 @@ say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the sta
 say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
 say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT is 2')" "1" "…telling the assistant too"
 say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: the open-branch warning")" "1" "…which is told the user saw it"
+# From a subdirectory, the same conf: read from $(pwd), there was none, and the warning
+# went with nothing said (full release review, S2).
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*; mkdir -p "$D/sub"
+J=$( (cd "$D/sub" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…the same warning from a subdirectory of the project"
 # Set from the environment, it says so: raising the conf's value would change nothing.
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=2 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")

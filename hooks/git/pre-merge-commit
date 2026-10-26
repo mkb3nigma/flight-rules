@@ -35,7 +35,10 @@
 #    to the default (not the working tree) when HEAD has no conf keeps that closed.
 #    See the longer note in the commit-msg hook alongside this one.
 #
-# Bypass (breaks the rules — emergencies only):  git merge --no-verify
+# No bypass is printed. `git merge --no-verify` skips this hook, but where origin has
+# the branch the ref gate (reference-transaction) still refuses the move it makes, and
+# --no-verify does not reach that hook; mid-merge it fails outright (full release
+# review, S4).
 
 set -euo pipefail
 
@@ -135,13 +138,20 @@ if [ "$_rc" -eq 0 ]; then
     box_row "$CURRENT_BRANCH is updated only through a reviewed pull"
     box_row "request, never a local git merge. Do this instead:"
     box_row ""
-    box_row "  1. gh pr create --base $CURRENT_BRANCH"
+    # A feature goes to the integration branch; only a promotion of it comes here. One
+    # line for both sent feature PRs around the integration branch (full release review, S3).
+    _int=$(read_conf_at_head INTEGRATION_BRANCH "$CONF_PATH"); _int="${_int:-main}"
+    if [ "$_int" != "$CURRENT_BRANCH" ]; then
+        box_row "  1. gh pr create --base $_int   (a feature)"
+        box_row "     gh pr create --base $CURRENT_BRANCH   (promoting $_int)"
+    else
+        box_row "  1. gh pr create --base $CURRENT_BRANCH"
+    fi
     box_row "  2. let CI run, review, then Merge on the host"
     box_row "  3. git checkout $CURRENT_BRANCH"
     box_row "     git pull --ff-only origin $CURRENT_BRANCH"
     box_row ""
     box_row "Undo this half-finished merge:   git merge --abort"
-    box_row "Emergency bypass (discouraged):  git merge --no-verify"
     box_row ""
     box_bot
     echo ""

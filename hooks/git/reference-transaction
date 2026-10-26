@@ -187,8 +187,13 @@ while read -r _old new ref; do
         box_row "revert, rebase, branch -f, update-ref, reset --hard —"
         box_row "the ref landing off-upstream is the violation."
         box_row ""
+        # From origin's integration branch into the project's worktree directory, as the
+        # guard and /feature-start say it: with no start point the branch was cut from
+        # HEAD, the PR-only branch itself (full release review, S3).
+        _wt="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf_from HEAD WORKTREE_DIR)}"; _wt="${_wt:-.ai/worktrees}"
+        _int=$(read_conf_from HEAD INTEGRATION_BRANCH); _int="${_int:-main}"
         box_row "Do this instead:"
-        box_row "  git worktree add .ai/worktrees/<name> -b <prefix>/<name>"
+        box_row "  git worktree add ${_wt%/}/<name> -b <prefix>/<name> origin/$_int"
         box_row "  # commit there, push, open a PR"
         box_row ""
         box_row "To sync this branch:"

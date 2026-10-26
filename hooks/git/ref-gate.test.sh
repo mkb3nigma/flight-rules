@@ -328,6 +328,19 @@ for phase in committed aborted; do
     fi
 done
 
+echo "The refusal's route starts where the guard and /feature-start start (full release review, S3):"
+# With no start point the suggested worktree branch was cut from HEAD, the PR-only
+# branch itself, into a fixed .ai/worktrees whatever WORKTREE_DIR said.
+d=$(make_repo "$(printf 'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\nWORKTREE_DIR=wt')" armed)
+OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && ! escaped "$d" && echo refused)" "refused" "a commit on main is refused, and main stays on origin/main"
+say "$(grep -c 'git worktree add wt/<name> -b <prefix>/<name> origin/dev' <<<"$OUT")" "1" "…routing to a branch off origin/dev in WORKTREE_DIR"
+OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR=elsewhere/ git commit -q --allow-empty -m "chore: direct" 2>&1)
+say "$(grep -c 'git worktree add elsewhere/<name> -b <prefix>/<name> origin/dev' <<<"$OUT")" "1" "…and FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it"
+d=$(make_repo default armed)
+OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
+say "$(grep -c 'git worktree add .ai/worktrees/<name> -b <prefix>/<name> origin/main' <<<"$OUT")" "1" "…with neither set: .ai/worktrees, off origin/main"
+
 echo ""
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -32,7 +32,10 @@
 # came back as two lines and named no directory: the guard's project comparison never
 # matched and its branch policy was off (third fix review). Nothing here wants it.
 unset CDPATH
-PROJECT_ROOT=$(pwd)
+# The checkout's top, as the guard and doctor find the conf: from a session started in
+# a subdirectory, $(pwd) found none, and HOOK_SYNC, the open-branch count and the
+# branch parameters went quietly to their defaults (full release review, S2).
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=$(pwd)
 
 # Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
@@ -64,7 +67,9 @@ shq() {
   esac
 }
 INTEGRATION_BRANCH="$(conf_get INTEGRATION_BRANCH)"; INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # {INTEGRATION_BRANCH}
-WORKTREE_DIR="$(conf_get WORKTREE_DIR)";             WORKTREE_DIR="${WORKTREE_DIR:-.ai/worktrees}"     # {WORKTREE_DIR}
+# The environment first, as the guard reads it: the conf alone, the stale-worktree
+# reminder looked where the guard did not send them (full release review, S6).
+WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(conf_get WORKTREE_DIR)}"; WORKTREE_DIR="${WORKTREE_DIR:-.ai/worktrees}"     # {WORKTREE_DIR}
 
 # Once a day PER PROJECT. The flag used to carry only the date, so the first
 # project opened each day took the reminder for all of them; and nothing pruned
@@ -217,14 +222,6 @@ in_progress() {
 SYNC_MSG=$(
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
    && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ]; then
-  OP=$(in_progress)
-  if [ -n "$OP" ]; then
-    echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress. Once it is finished:"
-    printf '  bash %s --from %s --stale-only\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
-    echo "Not doing one? A leftover never finishes: \`git status\` names it and the command that clears it."
-    echo ""
-    exit 0
-  fi
   # On a protected branch nothing is written: the diff could not be committed there,
   # and `git restore` to clear it is refused as discarding work, so it sat in the
   # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
@@ -242,6 +239,22 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     # 2: a pattern bash cannot compile. Taken as protected, and said — writing is the
     # failure that costs work (fix review, F5).
     [ "$_m" -eq 2 ] && { _check=--check-only; _bad=1; }
+  fi
+  # Decided before this exit: mid-merge on a protected branch, the plain command for
+  # afterwards wrote there once the merge was done, the #99 state (full release
+  # review, S5).
+  OP=$(in_progress)
+  if [ -n "$OP" ]; then
+    if [ -n "$_check" ]; then
+      echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress, on \"$_br\", a protected branch. Once it is finished, run this in a worktree on a branch, then commit and merge it:"
+      printf '  bash %s --from %s --stale-only --this-checkout\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
+    else
+      echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress. Once it is finished:"
+      printf '  bash %s --from %s --stale-only\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
+    fi
+    echo "Not doing one? A leftover never finishes: \`git status\` names it and the command that clears it."
+    echo ""
+    exit 0
   fi
   SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only $_check 2>&1); SYNC_RC=$?
   # Behind is stale or missing; the rest — adapted, differing, unreadable — the command

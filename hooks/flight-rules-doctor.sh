@@ -134,7 +134,9 @@ else
         # release (pre-commit, 0.23.0) arrives as this line; say where to copy it from.
         # A flight-rules-doctor.sh copied in by hand has no git/ beside it to copy from.
         if [[ -f "$GIT_HOOKS_SRC/$h" ]]; then
-          bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from this flight-rules: cp $(shq "$GIT_HOOKS_SRC/$h") $(shq "$HOOKS_PATH/") && chmod +x $(shq "$HOOKS_PATH/$h")"
+          # Where to run it, as the update line below says: copied in on a protected
+          # branch, it could not be committed there (full release review, S5; #99).
+          bad "$h missing from $HOOKS_PATH — the gate is half built. On a branch (in a worktree when this checkout is on a protected branch), then commit it. Copy it in from this flight-rules: cp $(shq "$GIT_HOOKS_SRC/$h") $(shq "$HOOKS_PATH/") && chmod +x $(shq "$HOOKS_PATH/$h")"
           NEEDS_SYNC=1
         else
           bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from flight-rules' hooks/git/ and chmod +x it"
