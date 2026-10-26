@@ -37,9 +37,11 @@
 # Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
 # install.sh once per clone.
 #
-# Bypass (breaks the rules — emergencies only): once this hook has refused, the merge is
-# still in progress, so it is `git commit --no-verify --no-edit`; a second `git merge`
-# fails there (fix review, 2026-10-26, as #100 found).
+# No bypass is printed. The note gate is what keeps unreviewed work out of the branch,
+# and a refusal that hands the reader a working skip — an assistant included, which no
+# guard stops from running it — undoes it; the one it used to print, `git merge
+# --no-verify`, failed mid-merge anyway (owner, 2026-10-26). Someone who means to
+# bypass a hook knows --no-verify (hooks/README.md, "What these hooks are").
 
 set -euo pipefail
 
@@ -418,7 +420,6 @@ box_row ""
 box_row "Undo this half-finished merge:   git merge --abort"
 box_row "  — it also drops what you staged. A merge you never"
 box_row "  started is a leftover: check git status first."
-box_row "Bypass (emergencies only):       git commit --no-verify --no-edit"
 box_row ""
 box_bot
 echo ""

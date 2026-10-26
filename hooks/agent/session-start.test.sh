@@ -1106,10 +1106,16 @@ SNIP=$(awk '/^5\. \*\*Count the open branches/{s=1} s && /^   ```bash$/{b=1; nex
 # bash alone, a ref list split only by bash passed here and counted nothing in zsh (fix
 # review, 2026-10-26). in_shells <cmd>: its output in bash, and in zsh where there is one;
 # when the two differ, both, so an assertion on it fails.
+# zsh -f: no ~/.zshenv, which could set SH_WORD_SPLIT and hide the very regression,
+# or print and fail the comparison. No zsh here is said, once: silent, the suite read as
+# having checked both (fix review, 2026-10-26). CI's macOS run always has zsh.
+# Decided here, not in the function: it runs in $(…) subshells, where a flag set to
+# say it once would be lost.
+HAVE_ZSH=1; command -v zsh >/dev/null 2>&1 || { HAVE_ZSH=""; echo "  (no zsh here: the skill's snippets run in bash only)"; }
 in_shells() {
   local b z; b=$(bash -c "$1" 2>&1)
-  command -v zsh >/dev/null 2>&1 || { printf '%s' "$b"; return; }
-  z=$(zsh -c "$1" 2>&1)
+  [ -n "$HAVE_ZSH" ] || { printf '%s' "$b"; return; }
+  z=$(zsh -f -c "$1" 2>&1)
   if [ "$b" = "$z" ]; then printf '%s' "$b"; else printf 'bash: %s | zsh: %s' "$b" "$z"; fi
 }
 fs_count() {   # fs_count <repo> <{PROTECTED_BRANCHES} as substituted>: the branches the snippet lists, sorted, space-separated

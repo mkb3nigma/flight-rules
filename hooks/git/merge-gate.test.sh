@@ -589,13 +589,10 @@ if grep -q 'PRE-MERGE CHECK REQUIRED' <<<"$OUT"; then
 else
   FAIL=$((FAIL+1)); printf '  ❌ "qa" took an unstamped merge\n'
 fi
-# The printed bypass is the one that works where the refusal leaves you, mid-merge: it
-# was `git merge --no-verify`, which fails there with "You have not concluded your
-# merge" (fix review, 2026-10-26). Run as printed, it concludes the merge.
-BYP=$(sed -n 's/^║ Bypass (emergencies only): *\(git [^║]*[^ ║]\) *║$/\1/p' <<<"$OUT")
-say "$BYP" "git commit --no-verify --no-edit" "…its bypass line names the command that finishes a refused merge"
-(cd "$NG" && $BYP) >/dev/null 2>&1
-say "$(git -C "$NG" rev-parse -q --verify 'HEAD^2' >/dev/null && echo merged)" "merged" "…which, run as printed, concludes it"
+# No way around the gate is printed: the one it printed failed mid-merge, and a working
+# one hands an assistant the skip the gate exists to stop (owner, 2026-10-26). The box
+# itself was asserted above, on this same output.
+say "$(grep -c 'no-verify' <<<"$OUT")" "0" "…and offers no --no-verify bypass"
 git -C "$NG" merge --abort 2>/dev/null
 # ...and a branch that is neither protected nor PR-only is still ungated.
 git -C "$NG" checkout -qb scratch 2>/dev/null
