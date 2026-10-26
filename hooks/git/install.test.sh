@@ -779,6 +779,8 @@ say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' 
 # the four branches met, only these two were compared (fifth review, G3).
 say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/post-merge")" "…and post-merge's, verbatim"
 say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/../agent/session-start.sh")" "…and session-start's, verbatim"
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/../agent/pre-commit-check.sh")" "…and the agent guard's, verbatim (fix review, 2026-10-26)"
+say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh")" "$(sed -n '/^shq() {/,/^}/p' "$H/reference-transaction")" "…and the ref gate's, verbatim"
 say "$(sed -n '/^shq() {/,/^}/p' "$H/install.sh" | grep -c .)" "7" "…and is there to compare (7 lines)"
 # shq itself, sourced from install.sh: bytes that are not UTF-8 made BSD sed stop and
 # shq print '' (fourth review, D1) — a branch reftable or packed-refs can hold.

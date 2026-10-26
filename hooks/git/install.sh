@@ -45,7 +45,8 @@ unset CDPATH
 # Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
 # Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
 # range like A-Z follows the locale's collation. Kept verbatim in step across
-# post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
+# post-merge, install.sh, flight-rules-doctor.sh, session-start.sh, the agent guard
+# and the ref gate (tested).
 shq() {
   local q="'\\''"
   case "$1" in

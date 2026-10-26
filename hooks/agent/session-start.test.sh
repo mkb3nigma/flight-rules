@@ -106,6 +106,14 @@ OUT=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "a merged branch's worktree is reported"
 say "$(grep -c 'Branch: fix/open' <<<"$OUT")"   "0" "an unmerged branch's worktree is not"
 rm -rf "$D"
+# FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it: read from the conf alone, the
+# reminder looked in .ai/worktrees while the guard sent worktrees elsewhere (full
+# release review, S6).
+D=$(mkrepo); branch "$D" fix/merged merge
+git -C "$D" worktree add -q "$D/elsewhere/merged" fix/merged
+OUT=$( (cd "$D" && FLIGHT_RULES_WORKTREE_DIR=elsewhere HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) | ctx)
+say "$(grep -c 'Branch: fix/merged  →  elsewhere/merged' <<<"$OUT")" "1" "FLIGHT_RULES_WORKTREE_DIR: the merged worktree there is reported"
+rm -rf "$D"
 
 echo "A longer branch name is not the merged one (regression 2026-09-12):"
 # The hook looks for the WORKTREE's branch inside the merged list, and the match was
@@ -437,6 +445,8 @@ say "$(sed -n 's/^PROT="\${PROT:-\(.*\)}"$/\1/p' "$H/session-start.sh")" \
     "$(sed -n "s/^DEFAULT_PROTECTED='\(.*\)'$/\1/p" "$H/pre-commit-check.sh")" "the protected-branch default matches pre-commit-check.sh's"
 say "$(sed -n '/^read_conf() {/,/^}/p' "$H/session-start.sh")" \
     "$(sed -n '/^read_conf() {/,/^}/p' "$H/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"
+say "$(sed -n '/^read_conf() {/,/^}/p' "$H/../git/post-merge")" \
+    "$(sed -n '/^read_conf() {/,/^}/p' "$H/pre-commit-check.sh")" "…and post-merge's, verbatim (full release review, S1)"
 # Protected as the guard decides it, crossed through both hooks: a single-quoted value,
 # a branch in another case, the environment over the conf. The sync's own parse, grep
 # and case wrote on each while the guard refused the commit (fix review, F1/D7).
@@ -530,6 +540,48 @@ say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and
 say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
+# On a protected branch, the command for afterwards is the worktree form: the plain one,
+# run as printed once the merge was done, wrote on the protected branch — the #99 state
+# (full release review, S5).
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$(export FLIGHT_RULES_PROTECTED_BRANCHES='^(main|trunk)$'; PRUN)
+say "$(grep -c 'a merge is in progress, on "trunk", a protected branch' <<<"$OUT")" "1" "mid-merge on a protected branch: says so"
+say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only --this-checkout" <<<"$OUT")" "1" "…with the command for a worktree on a branch"
+say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only" <<<"$OUT")" "0" "…and not the plain one"
+# Mid-bisect HEAD is detached, so the current branch reads as none and the plain command
+# came back on a protected branch: the branch is read from git's own state (fix review,
+# 2026-10-26, G2). Its own repo; the mid-merge one above is used below.
+MD=$D; D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(main|trunk)$\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
+for i in 1 2 3; do git -C "$D" commit -q --allow-empty -m "chore: $i" --no-verify; done
+git -C "$D" bisect start trunk trunk~3 >/dev/null 2>&1 || die "could not start a bisect"
+[ -z "$(git -C "$D" branch --show-current)" ] || die "the bisect left HEAD on a branch"
+OUT=$(PRUN)
+say "$(grep -c 'a bisect is in progress, on "trunk", a protected branch' <<<"$OUT")" "1" "mid-bisect on a protected branch, HEAD detached: says so"
+say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only --this-checkout" <<<"$OUT")" "1" "…with the command for a worktree on a branch"
+# A pattern that does not compile is said as such, not as "a protected branch" (G2).
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$(export FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'; PRUN)
+say "$(grep -c 'taken as protected because PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' <<<"$OUT")" "1" "…a pattern that does not compile: says that is why"
+# Started from a detached HEAD, there is no branch to read: the worktree form, right
+# from anywhere.
+git -C "$D" bisect reset >/dev/null 2>&1 || die "could not end the bisect"; git -C "$D" checkout -q --detach trunk
+git -C "$D" bisect start HEAD HEAD~3 >/dev/null 2>&1 || die "could not start a detached bisect"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$(PRUN)
+say "$(grep -c 'a bisect is in progress, on a detached HEAD whose branch could not be read' <<<"$OUT")" "1" "…from a detached HEAD: says the branch could not be read"
+say "$(grep -c -- '--stale-only --this-checkout$' <<<"$OUT")" "1" "…and gives the worktree form"
+# A rebase of the protected branch, stopped on a conflict: HEAD detached the same way.
+git -C "$D" bisect reset >/dev/null 2>&1 || die "could not end the bisect"; git -C "$D" checkout -q trunk
+git -C "$D" checkout -qb feature/r trunk~1; echo r > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: r" --no-verify
+git -C "$D" checkout -q trunk; echo t > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: t" --no-verify
+git -C "$D" rebase --no-verify feature/r >/dev/null 2>&1
+[ -d "$(git -C "$D" rev-parse --absolute-git-dir)/rebase-merge" ] || die "the rebase did not stop on a conflict"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$(PRUN)
+say "$(grep -c 'a rebase is in progress, on "trunk", a protected branch' <<<"$OUT")" "1" "mid-rebase of a protected branch: says so, with the worktree form"
+git -C "$D" rebase --abort >/dev/null 2>&1
+rm -rf "$D"; D=$MD
 # A plugin under a path with a multibyte character and a space (a home directory named
 # so): printf %q under macOS bash 3.2 split the ß and left a raw byte, so the pasted
 # command named a path that does not exist (fix review, 2026-10-24). shq quotes it whole.
@@ -960,6 +1012,11 @@ say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the sta
 say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
 say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT is 2')" "1" "…telling the assistant too"
 say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: the open-branch warning")" "1" "…which is told the user saw it"
+# From a subdirectory, the same conf: read from $(pwd), there was none, and the warning
+# went with nothing said (full release review, S2).
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*; mkdir -p "$D/sub"
+J=$( (cd "$D/sub" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…the same warning from a subdirectory of the project"
 # Set from the environment, it says so: raising the conf's value would change nothing.
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=2 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
@@ -1045,9 +1102,25 @@ echo "/feature-start step 5 counts what session-start counts (0.27.0 release rev
 FS_SKILL="$H/../../skills/feature-start/SKILL.md"
 SNIP=$(awk '/^5\. \*\*Count the open branches/{s=1} s && /^   ```bash$/{b=1; next} b && /^   ```$/{exit} b{sub(/^   /, ""); print}' "$FS_SKILL")
 [ -n "$SNIP" ] || die "no bash block in step 5 of $FS_SKILL"
+# The skill's snippets run in whichever shell the assistant has, zsh on macOS. Run under
+# bash alone, a ref list split only by bash passed here and counted nothing in zsh (fix
+# review, 2026-10-26). in_shells <cmd>: its output in bash, and in zsh where there is one;
+# when the two differ, both, so an assertion on it fails.
+# zsh -f: no ~/.zshenv, which could set SH_WORD_SPLIT and hide the very regression,
+# or print and fail the comparison. No zsh here is said, once: silent, the suite read as
+# having checked both (fix review, 2026-10-26). CI's macOS run always has zsh.
+# Decided here, not in the function: it runs in $(…) subshells, where a flag set to
+# say it once would be lost.
+HAVE_ZSH=1; command -v zsh >/dev/null 2>&1 || { HAVE_ZSH=""; echo "  (no zsh here: the skill's snippets run in bash only)"; }
+in_shells() {
+  local b z; b=$(bash -c "$1" 2>&1)
+  [ -n "$HAVE_ZSH" ] || { printf '%s' "$b"; return; }
+  z=$(zsh -f -c "$1" 2>&1)
+  if [ "$b" = "$z" ]; then printf '%s' "$b"; else printf 'bash: %s | zsh: %s' "$b" "$z"; fi
+}
 fs_count() {   # fs_count <repo> <{PROTECTED_BRANCHES} as substituted>: the branches the snippet lists, sorted, space-separated
   local s="${SNIP//'{INTEGRATION_BRANCH}'/trunk}"; s="${s//'{PROTECTED_BRANCHES}'/$2}"
-  (cd "$1" && unset FLIGHT_RULES_PROTECTED_BRANCHES && bash -c "$s" 2>&1) | sort | tr '\n' ' '
+  (cd "$1" && unset FLIGHT_RULES_PROTECTED_BRANCHES && in_shells "$s") | sort | tr '\n' ' '
 }
 D=$(mkrepo); open "$D" fix/domain-model; open "$D" staging; open "$D" fix/turn-off-x
 sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.ai/flight-rules.conf"; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
@@ -1056,6 +1129,42 @@ J=$(OB)
 say "$(usr <<<"$J" | grep -c '2 branches are open')" "1" "…the two session-start counts"
 say "$(fs_count "$D" off)" "fix/domain-model fix/turn-off-x staging " "off: nothing is left out, a name holding \"off\" included"
 rm -rf "$D"
+# Merged by PR: in origin's integration branch, not yet in the local one, which
+# /feature-start fetches past and never moves. Counted against local trunk alone, every
+# such branch stayed open, and five of them stopped /feature-start (full release review, A2).
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=1\n' >> "$D/.ai/flight-rules.conf"
+PR=$(git -C "$D" commit-tree -p trunk -p fix/a -m "Merge pull request #1" 'fix/a^{tree}') || die "could not make the PR merge"
+git -C "$D" update-ref refs/remotes/origin/trunk "$PR" || die "could not set origin/trunk"
+J=$(OB)
+say "$(usr <<<"$J" | grep -c '1 branches are open and not yet merged into trunk or origin/trunk')" "1" "merged on origin only: counted against trunk and origin/trunk"
+say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and only the unmerged branch is open"
+say "$(fs_count "$D" '^trunk$')" "fix/b " "…as /feature-start step 5 counts it"
+rm -rf "$D"
+
+echo "/feature-start step 4: main's PR merge commits are not a divergence (0.27.0 release review):"
+# A PR merged into main leaves a merge commit there and nowhere else, so origin/dev..origin/main
+# is never empty in a project that promotes by PR, and step 4 stopped every branch as
+# "diverged". The skill's check, run as written: content main lacks in trunk, or nothing.
+S4=$(awk '/^     ```bash$/{b=1; s=""; next} b && /^     ```$/{b=0; if (s ~ /NOTHING TO RECONCILE/) {printf "%s", s; exit} next} b{sub(/^     /, ""); s=s $0 "\n"}' "$FS_SKILL")
+[ -n "$S4" ] || die "no reconcile check in step 4 of $FS_SKILL"
+fs_reconcile() { (cd "$1" && in_shells "${S4//'{INTEGRATION_BRANCH}'/trunk}"); }
+if git merge-tree --write-tree HEAD HEAD >/dev/null 2>&1; then
+  D=$(mkrepo); open "$D" hot/x
+  git -C "$D" update-ref refs/remotes/origin/trunk trunk || die "could not set origin/trunk"
+  OLD=$(git -C "$D" commit-tree -p trunk -m "main before the release" 'trunk^{tree}') || die "could not make main"
+  M=$(git -C "$D" commit-tree -p "$OLD" -p trunk -m "Merge pull request #2" 'trunk^{tree}') || die "could not make the release merge"
+  git -C "$D" update-ref refs/remotes/origin/main "$M" || die "could not set origin/main"
+  say "$(git -C "$D" log --oneline origin/trunk..origin/main | wc -l | tr -d ' ')" "2" "main holds two commits trunk lacks, a merge among them"
+  say "$(fs_reconcile "$D")" "NOTHING TO RECONCILE" "…which brings no content: nothing to reconcile"
+  HF=$(git -C "$D" commit-tree -p "$M" -m "hotfix" 'hot/x^{tree}') || die "could not make the hotfix"
+  git -C "$D" update-ref refs/remotes/origin/main "$HF" || die "could not move origin/main"
+  # Nothing printed, in either shell, errors included: in_shells keeps stderr, so a check
+  # that died is not silent here, and the run above printed its line.
+  say "$(fs_reconcile "$D")" "" "a hotfix on main: no line, so the reverse range is checked"
+  rm -rf "$D"
+else
+  echo "  (skipped: git merge-tree --write-tree needs git 2.38)"
+fi
 
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
