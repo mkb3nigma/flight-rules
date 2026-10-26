@@ -290,6 +290,31 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ the note no longer offers merged feature branches\n'
 fi
 rm -rf "$PM"
+# Read as the guard and doctor read the conf: its own sed kept single quotes, so a
+# quoted pattern, ✅ to doctor, matched nothing and offered `git branch -d main`; a
+# quoted integration branch wrote no note at all. The environment comes first, as for
+# every other reader (full release review, S1).
+# <description> % <conf lines, \n-separated> % <FLIGHT_RULES_PROTECTED_BRANCHES>
+while IFS='%' read -r desc conf envv; do
+  PM=$(mktemp -d)
+  git init -q -b main "$PM" || die "git init failed in $PM"
+  git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t; git -C "$PM" config merge.ff false
+  mkdir -p "$PM/.ai"; printf "$conf\n" > "$PM/.ai/flight-rules.conf"
+  echo base > "$PM/f.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: base"
+  git -C "$PM" branch dev; git -C "$PM" checkout -qb feature/real
+  echo f > "$PM/g.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: feature"
+  git -C "$PM" checkout -q dev
+  mkdir -p "$PM/.ai/hooks"; cp "$H/post-merge" "$PM/.ai/hooks/"; chmod +x "$PM/.ai/hooks/post-merge"; git -C "$PM" config core.hooksPath "$PM/.ai/hooks"
+  ( [ -z "$envv" ] || export FLIGHT_RULES_PROTECTED_BRANCHES="$envv"; git -C "$PM" merge --no-edit feature/real >/dev/null 2>&1 ) || die "merge failed ($desc)"
+  NOTE="$PM/.claude/post-merge-note.md"
+  say "$(grep -cE 'git branch -d feature/real( |$)' "$NOTE" 2>/dev/null)" "1" "$desc: the note offers the merged branch"
+  say "$(grep -cE "git branch -d '?main'?( |$)" "$NOTE" 2>/dev/null)" "0" "…and not main"
+  rm -rf "$PM"
+done <<'CASES'
+single-quoted values%PROTECTED_BRANCHES='^(main|dev)$'\nINTEGRATION_BRANCH='dev'%
+double-quoted, with a comment%PROTECTED_BRANCHES="^(main|dev)$"  # the two\nINTEGRATION_BRANCH=dev%
+from the environment%PROTECTED_BRANCHES=^nothing$\nINTEGRATION_BRANCH=dev%^(main|dev)$
+CASES
 
 echo "post-merge: the cleanup note is a command you can paste:"
 # Regression 2026-09-12: `git branch --merged` decorates its output — `*` for the
@@ -564,6 +589,10 @@ if grep -q 'PRE-MERGE CHECK REQUIRED' <<<"$OUT"; then
 else
   FAIL=$((FAIL+1)); printf '  ❌ "qa" took an unstamped merge\n'
 fi
+# No way around the gate is printed: the one it printed failed mid-merge, and a working
+# one hands an assistant the skip the gate exists to stop (owner, 2026-10-26). The box
+# itself was asserted above, on this same output.
+say "$(grep -c 'no-verify' <<<"$OUT")" "0" "…and offers no --no-verify bypass"
 git -C "$NG" merge --abort 2>/dev/null
 # ...and a branch that is neither protected nor PR-only is still ungated.
 git -C "$NG" checkout -qb scratch 2>/dev/null
@@ -987,11 +1016,25 @@ git -C "$D" checkout -q main
 OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
 say "$RC" "1" "PR_ONLY_BRANCHES=^MAIN\$: a local merge into main is refused"
 say "$(grep -c 'main IS PR-ONLY — LOCAL MERGE BLOCKED' <<<"$OUT")" "1" "…by the PR-only box"
+# Its routes: no bypass, which the ref gate refuses and which fails mid-merge (S4); with
+# no INTEGRATION_BRANCH set, main is it, so one PR line (S3).
+say "$(grep -c 'no-verify' <<<"$OUT")" "0" "…offering no --no-verify bypass"
+say "$(grep -cE 'gh pr create --base main *║' <<<"$OUT")" "1" "…and one PR line, into main, the integration branch by default"
+git -C "$D" merge --abort 2>/dev/null
+# With dev integrating, a feature's PR goes to dev, and only a promotion to main: one
+# line for both sent feature PRs around dev (full release review, S3).
+printf 'PR_ONLY_BRANCHES=^MAIN$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify >/dev/null || die "could not commit the conf"
+OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
+say "$RC" "1" "INTEGRATION_BRANCH=dev: the local merge into main is still refused"
+say "$(grep -c 'gh pr create --base dev   (a feature)' <<<"$OUT")" "1" "…a feature's PR goes to dev"
+say "$(grep -c 'gh pr create --base main   (promoting dev)' <<<"$OUT")" "1" "…and only a promotion to main"
 git -C "$D" merge --abort 2>/dev/null
 echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" --no-verify >/dev/null || die "could not commit on main"
 OUT=$(cd "$D" && git rebase feature/u 2>&1); RC=$?
 say "$RC" "1" "…and a rebase of main"
 say "$(grep -c 'main IS PR-ONLY — REBASE BLOCKED' <<<"$OUT")" "1" "…by the PR-only box"
+say "$(grep -c 'no-verify' <<<"$OUT")" "0" "…offering no --no-verify bypass, which the ref gate refuses (fix review, 2026-10-26)"
 git -C "$D" rebase --abort 2>/dev/null
 git -C "$D" merge --squash --ff feature/u >/dev/null 2>&1
 OUT=$(cd "$D" && git commit -m "squash" 2>&1); RC=$?

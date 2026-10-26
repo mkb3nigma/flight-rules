@@ -619,6 +619,14 @@ if grep -q 'git worktree add .ai/worktrees/<name> -b' <<<"$OUT"; then
 else
   FAIL=$((FAIL+1)); printf '  ❌ block message lacks the worktree command\n'
 fi
+# A worktree directory with a space is quoted, so the route pastes as one path: printed
+# bare, it split into two arguments (fix review, 2026-10-26).
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR="my wt" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
+if grep -qF "git worktree add 'my wt'/<name> -b" <<<"$OUT" && grep -qF "cd 'my wt'/<name>" <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ …a worktree directory with a space is quoted to paste\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ …a worktree directory with a space is printed unquoted\n'
+fi
 rm -rf "$D"
 # Another repo's branches are not ours to police (same scoping as the branch policy).
 D=$(make_repo main); O=$(make_repo main)

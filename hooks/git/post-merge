@@ -12,20 +12,31 @@
 
 # Parameters from .ai/flight-rules.conf when it has them (the working tree is fine
 # here — this hook reports, it gates nothing), else the values below.
-_conf() {
-  sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]]+)\"?.*$/\1/p" \
-    "$(git rev-parse --show-toplevel)/.ai/flight-rules.conf" 2>/dev/null | tail -1
+# read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
+# so a key reads here as the guard and doctor read it (session-start.test.sh compares).
+# Its own sed kept single quotes: PROTECTED_BRANCHES='^(main|dev)$', ✅ to doctor,
+# matched no branch and put `git branch -d main` under "safe to delete" (full release
+# review, S1).
+read_conf() {
+  local key="$1" file="$2"
+  [ -r "$file" ] || return 1
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
 }
+_conf() { read_conf "$1" "$(git rev-parse --show-toplevel)/.ai/flight-rules.conf"; }
 INTEGRATION_BRANCH=$(_conf INTEGRATION_BRANCH)
 INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # project parameter: {INTEGRATION_BRANCH}
 # {PROTECTED_BRANCHES}: which branches must never be offered for deletion. This used
 # to be the literal list `main|staging`, which meant a project calling its branches
 # anything else — trunk, qa, release-2 — had them listed as "safe to delete" in the
 # note offered as commands to run, with no layer objecting. The names a
-# project uses are its own; the conf is where they are declared.
-PROTECTED_RE=$(_conf PROTECTED_BRANCHES)
+# project uses are its own; the conf is where they are declared. The environment first
+# and `none` as `off`, as the guard and session-start read it: the guard refused a
+# deletion this note offered.
+PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(_conf PROTECTED_BRANCHES)}"
 PROTECTED_RE="${PROTECTED_RE:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
-[ "$PROTECTED_RE" = "off" ] && PROTECTED_RE='^$'
+case "$PROTECTED_RE" in off|none) PROTECTED_RE='^$' ;; esac
 NOTE_PATH='.claude/post-merge-note.md'  # where the note is written (and printed; no
                                         # flight-rules hook reads the file: #110)
 CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
@@ -38,7 +49,8 @@ CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code convers
 # Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
 # Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
 # range like A-Z follows the locale's collation. Kept verbatim in step across
-# post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
+# post-merge, install.sh, flight-rules-doctor.sh, session-start.sh, the agent guard
+# and the ref gate (tested).
 shq() {
   local q="'\\''"
   case "$1" in

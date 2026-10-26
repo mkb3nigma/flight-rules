@@ -130,6 +130,7 @@ say "$(has "$D" "pre-commit missing")" "0" "…names the hook"
 # it — and it must say how. Following it must actually clear the problem.
 FIX=$(run "$D" | sed -n 's/.*Copy it in from this flight-rules: \(cp .*\/git\/pre-commit .* && chmod +x .*\)$/\1/p' | head -1)
 say "$([ -n "$FIX" ] && echo yes)" "yes" "…and gives the command that copies it in"
+say "$(has "$D" "On a branch (in a worktree when this checkout is on a protected branch), then commit it.")" "0" "…saying where to run it: on a protected branch it could not be committed (S5)"
 (cd "$D" && eval "$FIX") >/dev/null 2>&1
 say "$(rc "$D")" "0" "…which, run, clears it"
 rm -rf "$D"

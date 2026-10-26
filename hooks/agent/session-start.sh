@@ -32,7 +32,10 @@
 # came back as two lines and named no directory: the guard's project comparison never
 # matched and its branch policy was off (third fix review). Nothing here wants it.
 unset CDPATH
-PROJECT_ROOT=$(pwd)
+# The checkout's top, as the guard and doctor find the conf: from a session started in
+# a subdirectory, $(pwd) found none, and HOOK_SYNC, the open-branch count and the
+# branch parameters went quietly to their defaults (full release review, S2).
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=$(pwd)
 
 # Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
@@ -55,7 +58,8 @@ conf_get() { read_conf "$1" "$PROJECT_ROOT/.ai/flight-rules.conf"; }
 # Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
 # Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
 # range like A-Z follows the locale's collation. Kept verbatim in step across
-# post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
+# post-merge, install.sh, flight-rules-doctor.sh, session-start.sh, the agent guard
+# and the ref gate (tested).
 shq() {
   local q="'\\''"
   case "$1" in
@@ -64,7 +68,9 @@ shq() {
   esac
 }
 INTEGRATION_BRANCH="$(conf_get INTEGRATION_BRANCH)"; INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # {INTEGRATION_BRANCH}
-WORKTREE_DIR="$(conf_get WORKTREE_DIR)";             WORKTREE_DIR="${WORKTREE_DIR:-.ai/worktrees}"     # {WORKTREE_DIR}
+# The environment first, as the guard reads it: the conf alone, the stale-worktree
+# reminder looked where the guard did not send them (full release review, S6).
+WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(conf_get WORKTREE_DIR)}"; WORKTREE_DIR="${WORKTREE_DIR:-.ai/worktrees}"     # {WORKTREE_DIR}
 
 # Once a day PER PROJECT. The flag used to carry only the date, so the first
 # project opened each day took the reminder for all of them; and nothing pruned
@@ -217,14 +223,6 @@ in_progress() {
 SYNC_MSG=$(
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
    && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ]; then
-  OP=$(in_progress)
-  if [ -n "$OP" ]; then
-    echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress. Once it is finished:"
-    printf '  bash %s --from %s --stale-only\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
-    echo "Not doing one? A leftover never finishes: \`git status\` names it and the command that clears it."
-    echo ""
-    exit 0
-  fi
   # On a protected branch nothing is written: the diff could not be committed there,
   # and `git restore` to clear it is refused as discarding work, so it sat in the
   # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
@@ -234,7 +232,22 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   # and bash's =~ case-insensitively. Its own parse, grep and case missed `'^trunk$'`,
   # `QA` and the environment, and wrote where the guard refuses (fix review, F1).
   _prot="$PROT"
+  OP=$(in_progress)
   _br=$(git branch --show-current 2>/dev/null)
+  # Mid-rebase or -bisect HEAD is detached and the line above is empty; the branch it
+  # will land on is in git's own state, so the mid-op line below still knows whether it
+  # is protected (fix review, 2026-10-26, G2).
+  if [ -z "$_br" ] && [ -n "$OP" ]; then
+    for _f in rebase-merge/head-name rebase-apply/head-name; do
+      _p=$(git rev-parse --git-path "$_f" 2>/dev/null) && [ -f "$_p" ] || continue
+      _br=$(sed -n '1s|^refs/heads/||p' "$_p"); break
+    done
+    _p=$(git rev-parse --git-path BISECT_START 2>/dev/null)
+    if [ -z "$_br" ] && [ -f "$_p" ]; then
+      _br=$(head -1 "$_p")
+      git rev-parse -q --verify "refs/heads/$_br" >/dev/null 2>&1 || _br=""   # a commit, not a branch
+    fi
+  fi
   _check=""; _bad=""
   if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
     shopt -s nocasematch; [[ "$_br" =~ $_prot ]]; _m=$?; shopt -u nocasematch
@@ -242,6 +255,30 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
     # 2: a pattern bash cannot compile. Taken as protected, and said — writing is the
     # failure that costs work (fix review, F5).
     [ "$_m" -eq 2 ] && { _check=--check-only; _bad=1; }
+  fi
+  # Decided before this exit: mid-merge on a protected branch, the plain command for
+  # afterwards wrote there once the merge was done, the #99 state (full release
+  # review, S5). A branch that could not be read gets the worktree form too: it is
+  # right from anywhere, and the plain one is right only off a protected branch.
+  if [ -n "$OP" ]; then
+    _where=""
+    if [ -n "$_bad" ]; then
+      _where=", on \"$_br\", taken as protected because PROTECTED_BRANCHES ($_prot) is not a pattern bash can read"
+    elif [ -n "$_check" ]; then
+      _where=", on \"$_br\", a protected branch"
+    elif [ -z "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
+      _where=", on a detached HEAD whose branch could not be read"
+    fi
+    if [ -n "$_where" ]; then
+      echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress$_where. Once it is finished, run this in a worktree on a branch, then commit and merge it:"
+      printf '  bash %s --from %s --stale-only --this-checkout\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
+    else
+      echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress. Once it is finished:"
+      printf '  bash %s --from %s --stale-only\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
+    fi
+    echo "Not doing one? A leftover never finishes: \`git status\` names it and the command that clears it."
+    echo ""
+    exit 0
   fi
   SYNC_OUT=$(bash "$GIT_HOOKS_SRC/install.sh" --from "$GIT_HOOKS_SRC" --stale-only $_check 2>&1); SYNC_RC=$?
   # Behind is stale or missing; the rest — adapted, differing, unreadable — the command
@@ -365,9 +402,10 @@ fi
 # positive whole number is 5, which doctor says. Only where the project uses
 # flight-rules: a repo without the conf is not told how to run its branches. The key
 # is read as doctor reads it (read_conf strips the quotes doctor strips): `'2'` was
-# ✅ to doctor and 5 here (batch review, G6). Merged as git sees it in this clone: the
-# local integration branch, else origin's — a clone with only origin/dev was silently
-# never counted (P1). A count that cannot be made is said, to the assistant only, as
+# ✅ to doctor and 5 here (batch review, G6). Merged means in the local integration
+# branch or in origin's: a clone with only origin/dev was silently never counted (P1),
+# and against local dev alone every branch merged by PR stayed open, because
+# /feature-start fetches origin and never moves local dev (full release review, A2). A count that cannot be made is said, to the assistant only, as
 # "?" lines split off below: a missed reminder, but never one that reads as "under
 # the limit".
 OPEN_MSG=$(
@@ -377,9 +415,12 @@ OPEN_MSG=$(
   _src="in .ai/flight-rules.conf"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
   [ "$_lim" = off ] && exit 0
   [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
-  _base="refs/heads/$INTEGRATION_BRANCH"
-  git rev-parse --verify -q "$_base" >/dev/null || _base="refs/remotes/origin/$INTEGRATION_BRANCH"
-  git rev-parse --verify -q "$_base" >/dev/null \
+  _base=""; _into=""
+  for _r in "refs/heads/$INTEGRATION_BRANCH" "refs/remotes/origin/$INTEGRATION_BRANCH"; do
+    git rev-parse --verify -q "$_r" >/dev/null || continue
+    _base="$_base $_r"; _into="${_into:+$_into or }${_r#refs/*/}"
+  done
+  [ -n "$_base" ] \
     || { echo "?OPEN_BRANCH_LIMIT: no $INTEGRATION_BRANCH here, local or origin/ — open branches not counted"; exit 0; }
   _list=$(git worktree list --porcelain 2>/dev/null) \
     || { echo "?OPEN_BRANCH_LIMIT: git worktree list failed — open branches not counted"; exit 0; }
@@ -394,7 +435,8 @@ OPEN_MSG=$(
       [ "$_m" -eq 2 ] && { echo "?OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted"; exit 0; }
       [ "$_m" -eq 1 ] || continue
     fi
-    _ahead=$(git rev-list --count "$_base..refs/heads/$_b" 2>/dev/null) || { _fail="$_fail $_b"; continue; }
+    # $_base unquoted: one or two refs that exist, so no spaces or glob characters.
+    _ahead=$(git rev-list --count "refs/heads/$_b" --not $_base 2>/dev/null) || { _fail="$_fail $_b"; continue; }
     [ "$_ahead" -gt 0 ] || continue
     _n=$((_n+1))
     if git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null | grep -q '^passed:'; then
@@ -403,9 +445,9 @@ OPEN_MSG=$(
       _work="$_work $_b"
     fi
   done < <(printf '%s\n' "$_list" | sed -n 's|^branch refs/heads/||p')
-  [ -z "$_fail" ] || echo "?OPEN_BRANCH_LIMIT: could not compare with ${_base#refs/*/}:$_fail — not counted"
+  [ -z "$_fail" ] || echo "?OPEN_BRANCH_LIMIT: could not compare with $_into:$_fail — not counted"
   [ "$_n" -ge "$_lim" ] || exit 0
-  echo "⏳ flight-rules: $_n branches are open and not yet merged into ${_base#refs/*/} (OPEN_BRANCH_LIMIT is $_lim, $_src). /feature-start asks before it opens another; merging some first keeps them from depending on each other."
+  echo "⏳ flight-rules: $_n branches are open and not yet merged into $_into (OPEN_BRANCH_LIMIT is $_lim, $_src). /feature-start asks before it opens another; merging some first keeps them from depending on each other."
   [ -z "$_wait" ] || echo "  Passed pre-merge-check, waiting to merge:$_wait"
   [ -z "$_work" ] || echo "  Not yet passed:$_work"
 )
