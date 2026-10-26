@@ -589,6 +589,13 @@ if grep -q 'PRE-MERGE CHECK REQUIRED' <<<"$OUT"; then
 else
   FAIL=$((FAIL+1)); printf '  ❌ "qa" took an unstamped merge\n'
 fi
+# The printed bypass is the one that works where the refusal leaves you, mid-merge: it
+# was `git merge --no-verify`, which fails there with "You have not concluded your
+# merge" (fix review, 2026-10-26). Run as printed, it concludes the merge.
+BYP=$(sed -n 's/^║ Bypass (emergencies only): *\(git [^║]*[^ ║]\) *║$/\1/p' <<<"$OUT")
+say "$BYP" "git commit --no-verify --no-edit" "…its bypass line names the command that finishes a refused merge"
+(cd "$NG" && $BYP) >/dev/null 2>&1
+say "$(git -C "$NG" rev-parse -q --verify 'HEAD^2' >/dev/null && echo merged)" "merged" "…which, run as printed, concludes it"
 git -C "$NG" merge --abort 2>/dev/null
 # ...and a branch that is neither protected nor PR-only is still ungated.
 git -C "$NG" checkout -qb scratch 2>/dev/null
@@ -1030,6 +1037,7 @@ echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" --n
 OUT=$(cd "$D" && git rebase feature/u 2>&1); RC=$?
 say "$RC" "1" "…and a rebase of main"
 say "$(grep -c 'main IS PR-ONLY — REBASE BLOCKED' <<<"$OUT")" "1" "…by the PR-only box"
+say "$(grep -c 'no-verify' <<<"$OUT")" "0" "…offering no --no-verify bypass, which the ref gate refuses (fix review, 2026-10-26)"
 git -C "$D" rebase --abort 2>/dev/null
 git -C "$D" merge --squash --ff feature/u >/dev/null 2>&1
 OUT=$(cd "$D" && git commit -m "squash" 2>&1); RC=$?

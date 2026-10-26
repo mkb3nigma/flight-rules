@@ -548,6 +548,40 @@ OUT=$(export FLIGHT_RULES_PROTECTED_BRANCHES='^(main|trunk)$'; PRUN)
 say "$(grep -c 'a merge is in progress, on "trunk", a protected branch' <<<"$OUT")" "1" "mid-merge on a protected branch: says so"
 say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only --this-checkout" <<<"$OUT")" "1" "…with the command for a worktree on a branch"
 say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only" <<<"$OUT")" "0" "…and not the plain one"
+# Mid-bisect HEAD is detached, so the current branch reads as none and the plain command
+# came back on a protected branch: the branch is read from git's own state (fix review,
+# 2026-10-26, G2). Its own repo; the mid-merge one above is used below.
+MD=$D; D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(main|trunk)$\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
+for i in 1 2 3; do git -C "$D" commit -q --allow-empty -m "chore: $i" --no-verify; done
+git -C "$D" bisect start trunk trunk~3 >/dev/null 2>&1 || die "could not start a bisect"
+[ -z "$(git -C "$D" branch --show-current)" ] || die "the bisect left HEAD on a branch"
+OUT=$(PRUN)
+say "$(grep -c 'a bisect is in progress, on "trunk", a protected branch' <<<"$OUT")" "1" "mid-bisect on a protected branch, HEAD detached: says so"
+say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only --this-checkout" <<<"$OUT")" "1" "…with the command for a worktree on a branch"
+# A pattern that does not compile is said as such, not as "a protected branch" (G2).
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$(export FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'; PRUN)
+say "$(grep -c 'taken as protected because PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' <<<"$OUT")" "1" "…a pattern that does not compile: says that is why"
+# Started from a detached HEAD, there is no branch to read: the worktree form, right
+# from anywhere.
+git -C "$D" bisect reset >/dev/null 2>&1 || die "could not end the bisect"; git -C "$D" checkout -q --detach trunk
+git -C "$D" bisect start HEAD HEAD~3 >/dev/null 2>&1 || die "could not start a detached bisect"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$(PRUN)
+say "$(grep -c 'a bisect is in progress, on a detached HEAD whose branch could not be read' <<<"$OUT")" "1" "…from a detached HEAD: says the branch could not be read"
+say "$(grep -c -- '--stale-only --this-checkout$' <<<"$OUT")" "1" "…and gives the worktree form"
+# A rebase of the protected branch, stopped on a conflict: HEAD detached the same way.
+git -C "$D" bisect reset >/dev/null 2>&1 || die "could not end the bisect"; git -C "$D" checkout -q trunk
+git -C "$D" checkout -qb feature/r trunk~1; echo r > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: r" --no-verify
+git -C "$D" checkout -q trunk; echo t > "$D/f.txt"; git -C "$D" add f.txt; git -C "$D" commit -qm "chore: t" --no-verify
+git -C "$D" rebase --no-verify feature/r >/dev/null 2>&1
+[ -d "$(git -C "$D" rev-parse --absolute-git-dir)/rebase-merge" ] || die "the rebase did not stop on a conflict"
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$(PRUN)
+say "$(grep -c 'a rebase is in progress, on "trunk", a protected branch' <<<"$OUT")" "1" "mid-rebase of a protected branch: says so, with the worktree form"
+git -C "$D" rebase --abort >/dev/null 2>&1
+rm -rf "$D"; D=$MD
 # A plugin under a path with a multibyte character and a space (a home directory named
 # so): printf %q under macOS bash 3.2 split the ß and left a raw byte, so the pasted
 # command named a path that does not exist (fix review, 2026-10-24). shq quotes it whole.
@@ -1068,9 +1102,19 @@ echo "/feature-start step 5 counts what session-start counts (0.27.0 release rev
 FS_SKILL="$H/../../skills/feature-start/SKILL.md"
 SNIP=$(awk '/^5\. \*\*Count the open branches/{s=1} s && /^   ```bash$/{b=1; next} b && /^   ```$/{exit} b{sub(/^   /, ""); print}' "$FS_SKILL")
 [ -n "$SNIP" ] || die "no bash block in step 5 of $FS_SKILL"
+# The skill's snippets run in whichever shell the assistant has, zsh on macOS. Run under
+# bash alone, a ref list split only by bash passed here and counted nothing in zsh (fix
+# review, 2026-10-26). in_shells <cmd>: its output in bash, and in zsh where there is one;
+# when the two differ, both, so an assertion on it fails.
+in_shells() {
+  local b z; b=$(bash -c "$1" 2>&1)
+  command -v zsh >/dev/null 2>&1 || { printf '%s' "$b"; return; }
+  z=$(zsh -c "$1" 2>&1)
+  if [ "$b" = "$z" ]; then printf '%s' "$b"; else printf 'bash: %s | zsh: %s' "$b" "$z"; fi
+}
 fs_count() {   # fs_count <repo> <{PROTECTED_BRANCHES} as substituted>: the branches the snippet lists, sorted, space-separated
   local s="${SNIP//'{INTEGRATION_BRANCH}'/trunk}"; s="${s//'{PROTECTED_BRANCHES}'/$2}"
-  (cd "$1" && unset FLIGHT_RULES_PROTECTED_BRANCHES && bash -c "$s" 2>&1) | sort | tr '\n' ' '
+  (cd "$1" && unset FLIGHT_RULES_PROTECTED_BRANCHES && in_shells "$s") | sort | tr '\n' ' '
 }
 D=$(mkrepo); open "$D" fix/domain-model; open "$D" staging; open "$D" fix/turn-off-x
 sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.ai/flight-rules.conf"; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
@@ -1097,7 +1141,7 @@ echo "/feature-start step 4: main's PR merge commits are not a divergence (0.27.
 # "diverged". The skill's check, run as written: content main lacks in trunk, or nothing.
 S4=$(awk '/^     ```bash$/{b=1; s=""; next} b && /^     ```$/{b=0; if (s ~ /NOTHING TO RECONCILE/) {printf "%s", s; exit} next} b{sub(/^     /, ""); s=s $0 "\n"}' "$FS_SKILL")
 [ -n "$S4" ] || die "no reconcile check in step 4 of $FS_SKILL"
-fs_reconcile() { (cd "$1" && bash -c "${S4//'{INTEGRATION_BRANCH}'/trunk}" 2>/dev/null); }
+fs_reconcile() { (cd "$1" && in_shells "${S4//'{INTEGRATION_BRANCH}'/trunk}"); }
 if git merge-tree --write-tree HEAD HEAD >/dev/null 2>&1; then
   D=$(mkrepo); open "$D" hot/x
   git -C "$D" update-ref refs/remotes/origin/trunk trunk || die "could not set origin/trunk"
@@ -1108,7 +1152,9 @@ if git merge-tree --write-tree HEAD HEAD >/dev/null 2>&1; then
   say "$(fs_reconcile "$D")" "NOTHING TO RECONCILE" "…which brings no content: nothing to reconcile"
   HF=$(git -C "$D" commit-tree -p "$M" -m "hotfix" 'hot/x^{tree}') || die "could not make the hotfix"
   git -C "$D" update-ref refs/remotes/origin/main "$HF" || die "could not move origin/main"
-  say "$(fs_reconcile "$D"; echo "rc=$?")" "rc=1" "a hotfix on main: no line, so the reverse range is checked"
+  # Nothing printed, in either shell, errors included: in_shells keeps stderr, so a check
+  # that died is not silent here, and the run above printed its line.
+  say "$(fs_reconcile "$D")" "" "a hotfix on main: no line, so the reverse range is checked"
   rm -rf "$D"
 else
   echo "  (skipped: git merge-tree --write-tree needs git 2.38)"

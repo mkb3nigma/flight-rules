@@ -85,22 +85,25 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    branch the protected pattern matches: `FLIGHT_RULES_PROTECTED_BRANCHES` if set, else
    `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it — unset, the
    hooks' anchored default, never a bare `main`, which matched `fix/domain-model` and
-   left `staging` counted (0.27.0 release review):
+   left `staging` counted (0.27.0 release review). It runs in whichever shell the
+   assistant has — zsh on macOS — so nothing in it relies on word splitting: a ref list
+   in one variable reached git as one argument there, and every branch read as
+   `COULD NOT COUNT` (fix review, 2026-10-26):
    ```bash
    p=${FLIGHT_RULES_PROTECTED_BRANCHES-}; [ -n "$p" ] || p='{PROTECTED_BRANCHES}'
    [ -n "$p" ] || p='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
    case $p in off|none) p='^$' ;; esac   # protects nothing: only the integration branch is left out
-   base=
-   for r in refs/heads/{INTEGRATION_BRANCH} refs/remotes/origin/{INTEGRATION_BRANCH}; do
-     git rev-parse -q --verify "$r" >/dev/null && base="$base $r"
-   done
-   [ -n "$base" ] || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"
+   git rev-parse -q --verify refs/heads/{INTEGRATION_BRANCH} >/dev/null \
+     || git rev-parse -q --verify refs/remotes/origin/{INTEGRATION_BRANCH} >/dev/null \
+     || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"
    printf '' | grep -E -e "$p" >/dev/null 2>&1 || [ $? -eq 1 ] || echo "COULD NOT COUNT: the protected pattern does not compile"
    l=$(git worktree list --porcelain) || echo "COULD NOT COUNT: git worktree list failed"
    printf '%s\n' "$l" | sed -n 's|^branch refs/heads/||p' \
      | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \
      | while IFS= read -r b; do
-         n=$(git rev-list --count "refs/heads/$b" --not $base) || { echo "COULD NOT COUNT: $b"; continue; }
+         n=$(git rev-list --count "refs/heads/$b" --ignore-missing \
+               --not refs/heads/{INTEGRATION_BRANCH} refs/remotes/origin/{INTEGRATION_BRANCH}) \
+           || { echo "COULD NOT COUNT: $b"; continue; }
          [ "$n" -gt 0 ] && echo "$b"
        done
    ```

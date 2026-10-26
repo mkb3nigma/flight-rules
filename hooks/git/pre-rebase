@@ -17,7 +17,10 @@
 # Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
 # install.sh once per clone.
 #
-# Bypass (breaks the rules — emergencies only):  git rebase --no-verify
+# No bypass is printed. `git rebase --no-verify` skips this hook, but where origin has
+# the branch the ref gate (reference-transaction) still refuses the rewrite, and
+# --no-verify does not reach that hook (fix review, 2026-10-26, as S4 found in
+# pre-merge-commit).
 
 set -euo pipefail
 
@@ -107,8 +110,6 @@ box_row "Rebasing rewrites $BRANCH in place. It moves only through"
 box_row "a reviewed pull request; rebase the feature branch instead:"
 box_row ""
 box_row "  git checkout <feature> && git rebase $BRANCH"
-box_row ""
-box_row "Emergency bypass (discouraged):  git rebase --no-verify"
 box_row ""
 box_bot
 echo ""

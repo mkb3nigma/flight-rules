@@ -58,7 +58,8 @@ conf_get() { read_conf "$1" "$PROJECT_ROOT/.ai/flight-rules.conf"; }
 # Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
 # Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
 # range like A-Z follows the locale's collation. Kept verbatim in step across
-# post-merge, install.sh, flight-rules-doctor.sh and session-start.sh (tested).
+# post-merge, install.sh, flight-rules-doctor.sh, session-start.sh, the agent guard
+# and the ref gate (tested).
 shq() {
   local q="'\\''"
   case "$1" in
@@ -231,7 +232,22 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   # and bash's =~ case-insensitively. Its own parse, grep and case missed `'^trunk$'`,
   # `QA` and the environment, and wrote where the guard refuses (fix review, F1).
   _prot="$PROT"
+  OP=$(in_progress)
   _br=$(git branch --show-current 2>/dev/null)
+  # Mid-rebase or -bisect HEAD is detached and the line above is empty; the branch it
+  # will land on is in git's own state, so the mid-op line below still knows whether it
+  # is protected (fix review, 2026-10-26, G2).
+  if [ -z "$_br" ] && [ -n "$OP" ]; then
+    for _f in rebase-merge/head-name rebase-apply/head-name; do
+      _p=$(git rev-parse --git-path "$_f" 2>/dev/null) && [ -f "$_p" ] || continue
+      _br=$(sed -n '1s|^refs/heads/||p' "$_p"); break
+    done
+    _p=$(git rev-parse --git-path BISECT_START 2>/dev/null)
+    if [ -z "$_br" ] && [ -f "$_p" ]; then
+      _br=$(head -1 "$_p")
+      git rev-parse -q --verify "refs/heads/$_br" >/dev/null 2>&1 || _br=""   # a commit, not a branch
+    fi
+  fi
   _check=""; _bad=""
   if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
     shopt -s nocasematch; [[ "$_br" =~ $_prot ]]; _m=$?; shopt -u nocasematch
@@ -242,11 +258,19 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   fi
   # Decided before this exit: mid-merge on a protected branch, the plain command for
   # afterwards wrote there once the merge was done, the #99 state (full release
-  # review, S5).
-  OP=$(in_progress)
+  # review, S5). A branch that could not be read gets the worktree form too: it is
+  # right from anywhere, and the plain one is right only off a protected branch.
   if [ -n "$OP" ]; then
-    if [ -n "$_check" ]; then
-      echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress, on \"$_br\", a protected branch. Once it is finished, run this in a worktree on a branch, then commit and merge it:"
+    _where=""
+    if [ -n "$_bad" ]; then
+      _where=", on \"$_br\", taken as protected because PROTECTED_BRANCHES ($_prot) is not a pattern bash can read"
+    elif [ -n "$_check" ]; then
+      _where=", on \"$_br\", a protected branch"
+    elif [ -z "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
+      _where=", on a detached HEAD whose branch could not be read"
+    fi
+    if [ -n "$_where" ]; then
+      echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress$_where. Once it is finished, run this in a worktree on a branch, then commit and merge it:"
       printf '  bash %s --from %s --stale-only --this-checkout\n' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"   # shq: it is pasted
     else
       echo "⏸️ flight-rules HOOK_SYNC=auto skipped the git hooks: a $OP is in progress. Once it is finished:"

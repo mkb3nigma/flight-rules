@@ -59,6 +59,17 @@ read_conf_from() {   # <committish> <key>
         | tail -1
 }
 
+# shq <s>: <s> quoted for a shell to paste — install.sh's, verbatim, and the reasons
+# are there (install.test.sh compares). A worktree directory holding a space printed
+# a route that split when pasted (fix review, 2026-10-26).
+shq() {
+  local q="'\\''"
+  case "$1" in
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "${1//\'/$q}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 BOX_W=68
 _rule() { local c="$1" n=$BOX_W out=''; while [ $n -gt 0 ]; do out="$out$c"; n=$((n-1)); done; printf '%s' "$out"; }
 box_top() { printf '╔%s╗\n' "$(_rule ═)"; }
@@ -193,7 +204,9 @@ while read -r _old new ref; do
         _wt="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf_from HEAD WORKTREE_DIR)}"; _wt="${_wt:-.ai/worktrees}"
         _int=$(read_conf_from HEAD INTEGRATION_BRANCH); _int="${_int:-main}"
         box_row "Do this instead:"
-        box_row "  git worktree add ${_wt%/}/<name> -b <prefix>/<name> origin/$_int"
+        # Two rows: on one, the default route was 70 columns in a 66-column box.
+        box_row "  git worktree add $(shq "${_wt%/}")/<name> \\"
+        box_row "      -b <prefix>/<name> origin/$_int"
         box_row "  # commit there, push, open a PR"
         box_row ""
         box_row "To sync this branch:"

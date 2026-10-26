@@ -33,6 +33,16 @@ read_conf() {
     | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
+# shq <s>: <s> quoted for a shell to paste — install.sh's, verbatim, and the reasons
+# are there (install.test.sh compares). A worktree directory holding a space printed
+# a route that split when pasted (fix review, 2026-10-26).
+shq() {
+  local q="'\\''"
+  case "$1" in
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "${1//\'/$q}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 #
 # The default covers the branch names teams protect in practice, across the common
 # conventions (git-flow's develop, release trains, QA/UAT gates), because the guard
@@ -622,8 +632,8 @@ A branch created in place puts feature work in this checkout — the drift the w
 
 Instead, run /feature-start <prefix>/<name>: it checks how many branches are already open (OPEN_BRANCH_LIMIT) and asks at the limit, which a raw worktree add skips. By hand, from the repo root with absolute paths:
   git fetch origin
-  git worktree add $WORKTREE_DIR/<name> -b <prefix>/<name> origin/<integration-branch>
-  cd $WORKTREE_DIR/<name>
+  git worktree add $(shq "$WORKTREE_DIR")/<name> -b <prefix>/<name> origin/<integration-branch>
+  cd $(shq "$WORKTREE_DIR")/<name>
 
 Prefixes: feature/ fix/ refactor/ test/ docs/ chore/ hotfix/.
 
@@ -649,8 +659,8 @@ the project decides that — not the session that happened to merge something."
   else
     REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check:
   git fetch origin
-  git worktree add $WORKTREE_DIR/<name> -b feature/<name> origin/<integration-branch>
-  cd $WORKTREE_DIR/<name>
+  git worktree add $(shq "$WORKTREE_DIR")/<name> -b feature/<name> origin/<integration-branch>
+  cd $(shq "$WORKTREE_DIR")/<name>
 
 Use absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified."
   fi
