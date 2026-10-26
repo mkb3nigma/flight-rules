@@ -44,7 +44,7 @@ ask, it opens none. `off` turns it off. Below.
 ### Added
 
 - **Open-branch limit** (#108). At `OPEN_BRANCH_LIMIT` branches open and not yet merged
-  into the integration branch, session start warns — on screen and to the assistant,
+  into the integration branch, local or `origin/`, session start warns — on screen and to the assistant,
   naming which have passed `pre-merge-check` and wait to merge — and never blocks.
   `/feature-start` counts before opening another and, at the limit, opens it only once
   you say it is okay, naming where the limit is set; the guard's suggested commands and
@@ -90,9 +90,13 @@ ask, it opens none. `off` turns it off. Below.
   still scanned. Mid-merge, neither refusal says to unstage a file: the merge would keep
   `HEAD`'s copy and drop the incoming change.
 - **The merge-authorisation box printed a `git merge` that always failed** (#100) while
-  the refused merge was still in progress; it prints the command that concludes it.
+  the refused merge was still in progress; it prints the command that concludes it. The
+  note gate's, PR-only merge and rebase refusals print no bypass any more: theirs failed
+  mid-merge, or met the ref gate wherever origin has the branch, and one that worked
+  would hand an assistant the skip the gate exists to stop.
 - **`HOOK_SYNC=auto` wrote into a checkout on a protected branch** (#99), leaving a diff
-  nobody could commit; there it now only compares and prints the command for a branch.
+  nobody could commit; there it now only compares and prints the command for a branch —
+  mid-merge, -rebase or -bisect too, when the command is for afterwards.
 - **The guard's branch policy could switch off** when the project directory was a symlink
   to a subdirectory of its repository with the link itself inside another repository,
   or when the shell exported a `CDPATH` that `cd .git` could resolve through (one
@@ -107,10 +111,21 @@ ask, it opens none. `off` turns it off. Below.
 - **`HOOK_SYNC=auto` warned daily in every worktree whose hooks live in the main
   checkout** (#93), even with nothing stale; it compares first and is silent when current.
 - **Doctor did not report a stale `.ai/hooks/install.sh`** (#90).
-- **Session start read a quoted conf value with its quotes** — `INTEGRATION_BRANCH='dev'`,
-  `WORKTREE_DIR`, `HOOK_SYNC='auto'` — while doctor showed ✅; it reads them as the guard
-  does. `post-merge` and doctor's own branch helpers still keep a single-quoted value's
-  quotes (#113).
+- **Session start and `post-merge` read a quoted conf value with its quotes** —
+  `INTEGRATION_BRANCH='dev'`, `WORKTREE_DIR`, `HOOK_SYNC='auto'` — while doctor showed ✅;
+  a quoted `PROTECTED_BRANCHES` had `post-merge` offer `git branch -d main` as safe to
+  delete. Both read them as the guard does, `post-merge` with
+  `FLIGHT_RULES_PROTECTED_BRANCHES` first. Doctor's own branch helpers still keep a
+  single-quoted value's quotes (#113).
+- **Session start in a subdirectory found no conf**, so `HOOK_SYNC`, the open-branch
+  count and the branch parameters went to their defaults unsaid; it reads the
+  checkout's top, and `FLIGHT_RULES_WORKTREE_DIR` first, as the guard does.
+- **`/feature-start` stopped every branch as "diverged"** in a project that promotes by
+  PR: `main`'s merge commits are not a divergence when merging `main` in changes no file.
+- **The ref gate's way out branched off the PR-only branch**, into `.ai/worktrees`
+  whatever `WORKTREE_DIR` said; it now starts from `origin/<integration branch>`, in
+  `WORKTREE_DIR`, quoted to paste, as the guard's does. `pre-merge-commit`'s PR route
+  names the integration branch for a feature.
 
 ### Changed
 
