@@ -33,6 +33,9 @@ and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `m
 
 An assistant pushes no branch, and runs no `/pr-create` (which pushes), unless the
 owner says so in that session — the owner reviews and pushes (standing instruction).
+The assistant may run the local merge into `dev` without asking, once a real
+`/pre-merge-check` on the branch tip has passed and stamped it (owner's standing OK,
+2026-10-26); `main` still moves only through the reviewed promotion PR.
 A branch that has fallen behind `dev` or conflicts with it gets `dev` merged **into**
 it, is tested and stamped there, then merges back. The conflict is never resolved in
 the merge into `dev`, where the note would vouch for a tip that never held the
