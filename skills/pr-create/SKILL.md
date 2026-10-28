@@ -154,9 +154,9 @@ branch from a local copy and opening a fresh PR against the correct base.
    one review with every piece in view at once.
 
    The body also states what the release adds, by class, from `git diff --numstat
-   origin/main...<sha>` — added and net lines that reach a session (rules, skill
-   bodies), hook and guard code, tests, CI, and everything else, the classes the
-   project's own rules name and the five summing to the total. The count is evidence,
+   origin/main...<sha>` — added and net lines by the classes the project's own rules
+   name (its `CLAUDE.md` or an `EXTENSIONS.md`): what reaches a session, hook and guard
+   code, tests, CI, and everything else, the five summing to the total. The count is evidence,
    not a gate: whether it is proportionate to what the release closes is the owner's
    call, made with the CHANGELOG entry beside the number. flight-rules 0.27.0 added
    4,554 lines, 4,071 of them hook and test code, and no gate recorded the number.

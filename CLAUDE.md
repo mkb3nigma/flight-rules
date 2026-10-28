@@ -98,8 +98,8 @@ checked harder than code. Each added or widened item must pass all four, in the 
 
 1. **Names the warrant** — the reason to believe the failure in point 2 is real rather
    than plausible. One of:
-   **(a) an event** — a commit, PR, sha, date, or a probe that showed the hole — one a
-   slip could also reach (`MISSION.md` question 1). It does
+   **(a) an event** — a commit, PR, sha, date, or a probe that showed the hole (for a
+   refusal or a check, one a slip could also reach: `MISSION.md` question 1). It does
    not have to be public: a private-repo sha and date is a citation (`ATTRIBUTIONS.md`
    already carries one).
    **(b) an upstream** this playbook adapts from, with an `UPSTREAMS.md` row pinned at

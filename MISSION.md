@@ -31,16 +31,18 @@ assistant that reads Markdown. That is the whole job.
    to the ref reviewed.
 
 3. **Generic, and tool-agnostic.** Everything that ships would belong in any project
-   that adopts it, with any assistant. A project's own flavour lives in that project's
-   `.ai/` (README → Layout); this repo's own `CLAUDE.md` and conf are its extension.
-   Logic in a shipped script that a tool's config merely wires is the playbook's; a
-   capability that exists for one tool only is one-tool, and question 2 weighs it.
+   that adopts it, with any assistant — a thin adapter for one tool included. A
+   project's own flavour lives in that project's `.ai/` (README → Layout); this repo's
+   own `CLAUDE.md` and conf are its extension. Logic in a shipped script that a tool's
+   config merely wires is the playbook's; a capability that exists for one tool only is
+   one-tool, and question 2 weighs it.
 
 4. **Lightweight.** `engineering-principles.md` is injected into every session of every
    adopting project; the rest of `rules/` is read on the pointer; a skill loads its
    description always and its body when invoked; hooks cost context only when they
-   speak, and maintenance always. A line with no warrant, or one another line covers,
-   goes (`CLAUDE.md` → *How a rule gets in*, point 3); nothing else cuts a line.
+   speak, and maintenance always. A `rules/` line with no warrant, or one another line
+   covers, goes (`CLAUDE.md` → *How a rule gets in*, point 3); a refusal goes when what
+   it costs outweighs what it catches (question 1). Nothing else cuts a line.
 
 5. **Stop and say.** Where it cannot go on, it stops, names what it saw and why that is
    refused, and prints the legitimate route where one exists that is not the skip
@@ -50,13 +52,15 @@ assistant that reads Markdown. That is the whole job.
 
 ## The five questions
 
-A change that adds or widens a rule, a refusal, a check, a skill step or a line that
-reaches a session answers all five. A change that adds or widens none of those is one of
-a closed set — a test, a fix or refactor that widens nothing, a doc that reaches no
-session, an attribution, a CHANGELOG entry, a release, CI that changes no gate, a
-removal or tightening (it follows `CLAUDE.md`'s deletion path and answers question 1
-with what the refusal cost) — and names which; that is its answer to questions 1, 2, 4
-and 5. Question 3 every change answers, with its lines added by class. The answers go
+A change that adds or widens a rule, a refusal, a check or its wiring, a skill step or a
+line that reaches a session answers all five; making a check stricter widens it. A
+change that adds or widens none of those is one of a closed set — a test, a fix or
+refactor that widens nothing, a doc that reaches no session and moves no documented
+boundary, an attribution or upstream pin that changes no claim, this repo's own conf, a
+CHANGELOG entry, a release's version bump, CI that changes no gate, a removal or
+loosening (it names what it drops and where that is covered, as `CLAUDE.md`'s deletion
+path asks, and answers question 1 with what the refusal cost) — and names which; that
+is its answer to questions 1, 2, 4 and 5. Question 3 every change answers, with its lines added by class. The answers go
 where the change is reviewed: the PR body, or, for a branch merged locally, the commit
 message of the change itself.
 
@@ -67,8 +71,8 @@ message of the change itself.
    developer — a crafted command, a forged byte — is recorded as an issue with its
    disposition and no fix scheduled, and is **not a warrant** for a rule, a refusal or a
    check; a probe counts when the path it shows is one a slip could also take. For a
-   `rules/` line, the warrant `CLAUDE.md` → *How a rule gets in* names is the answer;
-   the accident test is asked of a refusal or a check. A removal answers with what the
+   `rules/` line or a skill step, the warrant `CLAUDE.md` → *How a rule gets in* names
+   is the answer; the accident test is asked of a refusal or a check. A removal answers with what the
    refusal cost — false positives, turns, the route-around it taught.
 2. **Would every adopting project want it, with any assistant?** Asked of what ships.
    If the honest answer names one project, it belongs in that project's extension; one
@@ -100,11 +104,8 @@ message of the change itself.
   a refusal on legitimate work, question 4 applies.
 - A ref movement is the git hooks' to refuse; the agent guard is an early, specific
   message, not the enforcement (`hooks/README.md` → the layering lesson).
-- A finding that asks for a new refusal is weighed by question 1; one that asks for a
-  loosening, by what the refusal costs. Declining either needs its reason, as applying
-  it does.
-- Where the questions are asked: `pre-merge-check` item 18 asks questions 1 and 5 of a
-  rules-file diff; `/dg` asks all five of every change in this repo
+- Where the questions are asked: `pre-merge-check` item 18 asks a rules-file diff for
+  its warrant and its enforcement (questions 1 and 5); `/dg` asks all five of every change in this repo
   (`.ai/skills/dg/EXTENSIONS.md`) and of the whole release diff at `pr-create` 2b,
   subsystem by subsystem; questions 2, 3 and 4 are checked by no hook — advisory, and
   said so.
