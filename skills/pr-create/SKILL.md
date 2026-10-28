@@ -152,6 +152,13 @@ branch from a local copy and opening a fresh PR against the correct base.
    The same reasoning as 2a, for review instead of tests (the warrant is in the
    constraint above): each branch was checked as a piece, and the release diff is the
    one review with every piece in view at once.
+
+   The body also states what the release adds, by class, from `git diff --numstat
+   origin/main...<sha>`: lines added to files that reach a session (`rules/`,
+   `skills/*/SKILL.md`), to `hooks/`, to tests, and to CI. That count is the evidence
+   `MISSION.md` question 3 asks for; whether it is proportionate to what the release
+   closes is the owner's call, made with the count in view. 0.27.0 added 4,554 lines,
+   4,071 of them hook and test code, and no gate recorded the number.
 3. Summarize `git log <base>..HEAD` (one user-facing bullet per commit) and
    `git diff <base>...HEAD --stat` (files-changed summary), then create the PR:
 

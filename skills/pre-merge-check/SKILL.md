@@ -116,7 +116,7 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     that carries an anchor (issue, PR, sha, date) is ⚠️ unless the PR names the reason
     that went — age is not a reason.
 18. **Rules earn their place** — for every item the diff adds to or widens in a rules
-    file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
+    file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`, `MISSION.md`): the PR names the
     warrant, what goes wrong without it, and how it is enforced. The warrant is an
     event (commit/PR/sha/date/probe — a private-repo sha and date counts), an
     `UPSTREAMS.md`-pinned source the item was adapted from, or the failure description
