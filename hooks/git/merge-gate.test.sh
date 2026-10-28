@@ -175,8 +175,10 @@ git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 
 echo "Back-merge exemption cannot be forged (post-merge review):"
 # mkrepo_with_origin: a bare origin holding main, so refs/remotes/origin/main exists.
+# The bare origin lives in the fixture's own .git, so the rm -rf "$D" each case ends
+# with removes it too: a separate mktemp -d leaked one per case (second fix review).
 mkrepo_with_origin() {
-  local d o; d=$(mkrepo); o=$(mktemp -d)
+  local d o; d=$(mkrepo); o="$d/.git/test-origin.git"
   git init -q --bare "$o" || die "git init failed (git init -q --bare "$o")"; git -C "$d" remote add origin "$o"
   git -C "$d" push -q origin main dev 2>/dev/null
   printf '%s' "$d"
@@ -276,18 +278,43 @@ for b in qa release-2 feature/real; do
 done
 NOTE="$PM/.claude/post-merge-note.md"
 for prot in qa release-2 trunk; do
-  if grep -q "git branch -d '$prot'" "$NOTE" 2>/dev/null; then
+  if grep -qE "git branch -d '?$prot'?( |$)" "$NOTE" 2>/dev/null; then
     FAIL=$((FAIL+1)); printf '  ❌ offered protected branch "%s" for deletion\n' "$prot"
   else
     PASS=$((PASS+1)); printf '  ✅ protected branch "%s" is not offered for deletion\n' "$prot"
   fi
 done
-if grep -q "git branch -d 'feature/real'" "$NOTE" 2>/dev/null; then
+if grep -qE "git branch -d feature/real( |$)" "$NOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a real feature branch is still offered\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ the note no longer offers merged feature branches\n'
 fi
 rm -rf "$PM"
+# Read as the guard and doctor read the conf: its own sed kept single quotes, so a
+# quoted pattern, ✅ to doctor, matched nothing and offered `git branch -d main`; a
+# quoted integration branch wrote no note at all. The environment comes first, as for
+# every other reader (full release review, S1).
+# <description> % <conf lines, \n-separated> % <FLIGHT_RULES_PROTECTED_BRANCHES>
+while IFS='%' read -r desc conf envv; do
+  PM=$(mktemp -d)
+  git init -q -b main "$PM" || die "git init failed in $PM"
+  git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t; git -C "$PM" config merge.ff false
+  mkdir -p "$PM/.ai"; printf "$conf\n" > "$PM/.ai/flight-rules.conf"
+  echo base > "$PM/f.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: base"
+  git -C "$PM" branch dev; git -C "$PM" checkout -qb feature/real
+  echo f > "$PM/g.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: feature"
+  git -C "$PM" checkout -q dev
+  mkdir -p "$PM/.ai/hooks"; cp "$H/post-merge" "$PM/.ai/hooks/"; chmod +x "$PM/.ai/hooks/post-merge"; git -C "$PM" config core.hooksPath "$PM/.ai/hooks"
+  ( [ -z "$envv" ] || export FLIGHT_RULES_PROTECTED_BRANCHES="$envv"; git -C "$PM" merge --no-edit feature/real >/dev/null 2>&1 ) || die "merge failed ($desc)"
+  NOTE="$PM/.claude/post-merge-note.md"
+  say "$(grep -cE 'git branch -d feature/real( |$)' "$NOTE" 2>/dev/null)" "1" "$desc: the note offers the merged branch"
+  say "$(grep -cE "git branch -d '?main'?( |$)" "$NOTE" 2>/dev/null)" "0" "…and not main"
+  rm -rf "$PM"
+done <<'CASES'
+single-quoted values%PROTECTED_BRANCHES='^(main|dev)$'\nINTEGRATION_BRANCH='dev'%
+double-quoted, with a comment%PROTECTED_BRANCHES="^(main|dev)$"  # the two\nINTEGRATION_BRANCH=dev%
+from the environment%PROTECTED_BRANCHES=^nothing$\nINTEGRATION_BRANCH=dev%^(main|dev)$
+CASES
 
 echo "post-merge: the cleanup note is a command you can paste:"
 # Regression 2026-09-12: `git branch --merged` decorates its output — `*` for the
@@ -333,7 +360,7 @@ if grep -qE "^  git branch -d '?[*+]" "$WNOTE" 2>/dev/null; then
 else
   PASS=$((PASS+1)); printf '  ✅ no `*`/`+` marker reaches a git branch -d line\n'
 fi
-if grep -q "git branch -d 'fix/c'" "$WNOTE" 2>/dev/null; then
+if grep -qE "git branch -d fix/c( |$)" "$WNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a worktree-held merged branch is offered by its bare name\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/c is not offered under its bare name\n'
@@ -343,7 +370,7 @@ if grep -q 'wt-det' "$WNOTE" 2>/dev/null; then
 else
   PASS=$((PASS+1)); printf '  ✅ a detached-HEAD worktree is not reported stale\n'
 fi
-if grep -q "git branch -d 'fix/ab'" "$WNOTE" 2>/dev/null; then
+if grep -qE "git branch -d fix/ab( |$)" "$WNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ fix/ab survives the just-merged filter alongside fix/a\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/ab was dropped as a substring of the just-merged fix/a\n'
@@ -386,12 +413,16 @@ if grep -qE "git branch -d '?(heads/)?trunk" "$ANOTE" 2>/dev/null; then
 else
   PASS=$((PASS+1)); printf '  ✅ the integration branch is not offered even when a tag shadows it\n'
 fi
-if grep -q "git branch -d 'fix/old'" "$ANOTE" 2>/dev/null; then
+if grep -qE "git branch -d fix/old( |$)" "$ANOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ the real merged branch is still offered\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/old was not offered — the merged set was computed against the tag\n'
 fi
 rm -rf "$AM"
+
+# after <file> <line>: the line that follows <line> exactly, where post-merge puts what
+# to know about a command (it was on the command's own line, and got pasted with it).
+after() { awk -v c="$2" 'f {print; exit} $0 == c {f=1}' "$1"; }
 
 echo "post-merge: the emitted commands quote what they interpolate:"
 # `&`, `$`, `|` and parentheses are legal in a refname, and the note is advertised as a
@@ -411,12 +442,126 @@ cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$QR/.a
 chmod +x "$QR"/.ai/hooks/*; git -C "$QR" config core.hooksPath "$QR/.ai/hooks"
 git -C "$QR" merge --no-verify --no-edit 'fix/a&b' >/dev/null 2>&1
 QNOTE="$QR/.claude/post-merge-note.md"
-if grep -q "git branch -d 'fix/a&b'" "$QNOTE" 2>/dev/null; then
+# The header too: pasted into an interactive zsh, which has comments off, `name` in
+# backticks ran (security review, 2026-10-24).
+say "$(grep -cxF "## Post-merge to trunk: 'fix/a&b'" "$QNOTE")" "1" "the header names the merged branch quoted"
+# Pasted as a person would: the whole note into interactive shells, where zsh runs a
+# `#`-led line. A `;>` payload acts in bash and zsh alike (${IFS} does not split in
+# zsh), and this one is the merged branch, so it sits in the header (fifth review).
+git -C "$QR" checkout -qb 'm;>PWNED8' 2>/dev/null; echo m > "$QR/m.txt"; git -C "$QR" add -A; git -C "$QR" commit -qm "chore: m"
+git -C "$QR" checkout -q trunk; git -C "$QR" merge --no-verify --no-edit 'm;>PWNED8' >/dev/null 2>&1
+say "$(grep -cxF "## Post-merge to trunk: 'm;>PWNED8'" "$QNOTE")" "1" "…a hostile merged branch, quoted in the header"
+QSB="$QB/sandbox"; mkdir -p "$QSB"
+{ echo 'git() { :; }; docker() { :; }'; cat "$QNOTE"; echo ': > ran-bash'; } | (cd "$QSB" && bash --norc --noprofile -i) >/dev/null 2>&1
+command -v zsh >/dev/null 2>&1 && { echo 'git() { :; }; docker() { :; }'; cat "$QNOTE"; echo ': > ran-zsh'; } | (cd "$QSB" && zsh -fi) >/dev/null 2>&1
+say "$(ls "$QSB" | grep -c '^ran-')" "$(command -v zsh >/dev/null 2>&1 && echo 2 || echo 1)" "…the pastes ran to the end (each shell's last line wrote its file)"
+say "$(ls "$QSB" "$QR" | grep -c PWNED8)" "0" "…and the whole note, pasted into interactive bash and zsh, runs it nowhere"
+if grep -qxF "  git branch -d 'fix/a&b'" "$QNOTE" 2>/dev/null; then
   PASS=$((PASS+1)); printf '  ✅ a name with shell metacharacters is quoted\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ fix/a&b is emitted unquoted: %s\n' "$(grep -m1 'branch -d' "$QNOTE")"
 fi
 rm -rf "$QB"
+# '…' is not quoting when the name holds a quote: git allows ' ; $ { } in a branch,
+# so `x';touch${IFS}PWNED;'` closed it and the pasted line ran touch (fix review,
+# 2026-10-24, Q2). A worktree path may hold one too. Each printed command must parse,
+# run nothing but git, and hand git the name exactly.
+HB=$(cd "$(mktemp -d)" && pwd -P); HR="$HB/repo"; SB="$HB/sandbox"; mkdir -p "$SB"
+EVIL="x';touch\${IFS}PWNED;'"
+git check-ref-format --branch "$EVIL" >/dev/null 2>&1 || die "git no longer allows the hostile branch name"
+git init -q -b trunk "$HR" || die "git init failed in $HR"
+git -C "$HR" config user.email t@t.t; git -C "$HR" config user.name t; git -C "$HR" config merge.ff false
+mkdir -p "$HR/.ai/hooks"
+printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.ai/worktrees\n' > "$HR/.ai/flight-rules.conf"
+echo base > "$HR/f.txt"; git -C "$HR" add -A; git -C "$HR" commit -qm "chore: base"
+git -C "$HR" branch "$EVIL" || die "could not make the hostile branch"
+# Merged branches named `just` and `merged`, protected so the note does not offer them:
+# a pasted "git branch -d fix/q  ← just merged" deleted both (fix review, 2026-10-24).
+printf 'PROTECTED_BRANCHES=^(trunk|just|merged)$\n' >> "$HR/.ai/flight-rules.conf"
+git -C "$HR" branch just && git -C "$HR" branch merged || die "could not make just and merged"
+# Non-ASCII: macOS bash 3.2's printf %q split ß and left a raw byte (fix review, D1).
+UWT="$HR/.ai/worktrees/straße"
+git -C "$HR" worktree add -q -b 'fix/ü-ß' "$UWT" trunk 2>/dev/null || die "could not add the non-ASCII worktree"
+QWT="$HR/.ai/worktrees/it's"
+git -C "$HR" worktree add -q -b fix/q "$QWT" trunk 2>/dev/null || die "could not add a worktree whose path holds a quote"
+echo q > "$QWT/q.txt"; git -C "$QWT" add q.txt; git -C "$QWT" commit -qm "chore: q" --no-verify >/dev/null
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$HR/.ai/hooks/"
+chmod +x "$HR"/.ai/hooks/*; git -C "$HR" config core.hooksPath .ai/hooks
+# The rest of the note carries names too, not only its commands: the upstream of a
+# merged branch that does not have it yet, a process run from a worktree, a Compose
+# container — each holding `;`, and a whole note gets pasted (security review,
+# 2026-10-24). fix/up's upstream is an unrelated commit, so `-d` names it.
+EUP="u;touch\${IFS}PWNED2"
+git -C "$HR" branch fix/up || die "could not make fix/up"
+git -C "$HR" remote add origin "$HB/no-such-remote" || die "could not add origin"
+_orphan=$(git -C "$HR" commit-tree "$(git -C "$HR" mktree </dev/null)" -m orphan) || die "could not make an unrelated commit"
+git -C "$HR" update-ref "refs/remotes/origin/$EUP" "$_orphan" || die "could not make the hostile upstream"
+git -C "$HR" config branch.fix/up.remote origin; git -C "$HR" config branch.fix/up.merge "refs/heads/$EUP"
+(cd / && exec -a "srv;touch\${IFS}PWNED3 $UWT/x" sleep 300) & HS=$!
+# A command line holding a byte that is not UTF-8, run from the worktree, and one after
+# it: macOS awk under a UTF-8 locale died on the first in a bracket regex, and the second
+# fell out (fifth review). From the worktree, not naming it: after such a byte macOS ps
+# escapes the rest of the line (ß prints as \303M-^_), so a path in it cannot match.
+(cd "$UWT" && exec -a "$(printf 'bad\351x') --title" sleep 300) & HS2=$!
+(cd / && exec -a "after-it $UWT/z" sleep 300) & HS3=$!
+trap 'kill $HS $HS2 $HS3 2>/dev/null' EXIT
+mkdir -p "$HB/shim"; { printf '#!/bin/sh\n'
+  printf 'printf "c9\\t%s\\tweb;touch\\${IFS}PWNED4\\tUp 1 hour\\n"\n' "$UWT"; } > "$HB/shim/docker"; chmod +x "$HB/shim/docker"
+# A command line holding a newline reaches the parser as two rows, the second one's
+# "pid" and "time" fields the name's (where /proc is read raw, or a ps that does not
+# escape it): such a row is no process, and is dropped, not printed (security review).
+{ printf '#!/bin/sh\n%s "$@"\n' "$(command -v ps)"
+  # Each forged row fails one check only — the pid, or the time — so each check is tested.
+  printf 'printf "%%s\\n" "  4242 00:01 srv %s" ";touch\\${IFS}PWNED6 00:01 %s" "4243 ;touch\\${IFS}PWNED7 %s"\n' "$UWT/a" "$UWT/b" "$UWT/c"; } > "$HB/shim/ps"; chmod +x "$HB/shim/ps"
+OUT=$(cd "$HR" && PATH="$HB/shim:$PATH" LC_ALL=en_US.UTF-8 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
+kill $HS $HS2 $HS3 2>/dev/null
+say "$RC" "0" "a merge with a hostile branch name and a quoted worktree path lands"
+# Every command line exactly as printed — nothing stripped before it is judged.
+CMDS=$(printf '%s\n' "$OUT" | sed -n -E 's/^  (git (branch -d|worktree remove) .*)$/\1/p')
+say "$(grep -c . <<<"$CMDS")" "6" "…printing six commands: two worktrees, the merged branch, fix/up, the hostile one, the ß one"
+_bad=0; _got=""; _argc=""
+while IFS= read -r c; do
+  bash -n -c "$c" 2>/dev/null || _bad=$((_bad+1))
+  # git a function that prints its last argument and its argument count.
+  _got="$_got$( (cd "$SB" && bash -c 'git() { for a; do :; done; printf "%s\n" "$a"; }; eval "$1"' _ "$c") 2>/dev/null)
+"
+  _argc="$_argc$( (cd "$SB" && bash -c 'git() { printf "%s\n" "$#"; }; eval "$1"' _ "$c") 2>/dev/null) "
+done <<<"$CMDS"
+say "$_bad" "0" "…each parses as one command"
+say "$([ -e "$SB/PWNED" ] || [ -e "$HR/PWNED" ] && echo ran || echo clean)" "clean" "…and pasting them runs nothing but git"
+say "$_argc" "3 3 3 3 3 3 " "…each hands git exactly three arguments, no annotation among them"
+say "$(grep -cxF "$EVIL" <<<"$_got")" "1" "…git is handed the hostile branch name exactly"
+say "$(grep -cxF ".ai/worktrees/it's" <<<"$_got")" "1" "…and the worktree path exactly"
+say "$(grep -cxF 'fix/ü-ß' <<<"$_got")" "1" "…and the ß branch exactly"
+say "$(grep -cxF '.ai/worktrees/straße' <<<"$_got")" "1" "…and the ß worktree path exactly"
+HNOTE="$HR/.claude/post-merge-note.md"
+iconv -f UTF-8 -t UTF-8 "$HNOTE" >/dev/null 2>&1; say "$?" "0" "…the note file is valid UTF-8"
+printf '%s\n' "$OUT" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; say "$?" "0" "…and so is what was printed"
+say "$(grep -cE "^  (Branch: 'fix/ü-ß'  →  |git worktree remove )'\.ai/worktrees/straße'$" "$HNOTE")" "2" "…which names the ß worktree as it is (its line and its command)"
+say "$(after "$HNOTE" "  git branch -d fix/q")" "    ↑ just merged" "…and says 'just merged' on the line below the command"
+say "$(after "$HNOTE" "  git branch -d fix/up")" "    ↑ refused until 'origin/$EUP' has it — push that first" "…and names an upstream it is refused until, quoted"
+say "$(grep -cF ": 'srv;touch\${IFS}PWNED3 $UWT" <<<"$OUT")" "1" "…names the process run from the worktree, its command line quoted"
+say "$(grep -cF "container c9 ('web;touch\${IFS}PWNED4')" <<<"$OUT")" "1" "…and the container, its name quoted"
+# Every line of the note, printed and written, pasted into bash and into zsh — with git
+# and docker stubbed, since pasting the commands is meant to run them.
+_n=0
+while IFS= read -r l; do
+  _n=$((_n+1))
+  (cd "$SB" && bash -c 'git() { :; }; docker() { :; }; eval "$1"' _ "$l") >/dev/null 2>&1
+  command -v zsh >/dev/null 2>&1 && (cd "$SB" && zsh -fc 'git() { :; }; docker() { :; }; eval "$1"' _ "$l") >/dev/null 2>&1
+done < <(printf '%s\n' "$OUT"; cat "$HNOTE")
+say "$(grep -c '^    pid 4242, up 00:01: ' <<<"$OUT")" "1" "…a well-formed row from ps is listed"
+say "$(grep -c "^    pid $HS2, " <<<"$OUT")" "1" "…a process whose command line holds a byte that is not UTF-8 is listed"
+say "$(grep -c "^    pid $HS3, .*after-it" <<<"$OUT")" "1" "…and so is the one after it"
+say "$(grep -c 'PWNED6' <<<"$OUT")" "0" "…a row whose pid is not digits is not: it is the rest of a name"
+say "$(grep -c 'PWNED7' <<<"$OUT")" "0" "…nor one whose time is not ps etime"
+say "$([ "$_n" -gt 20 ] && echo many)" "many" "…every line of the note pasted ($_n lines)"
+say "$(ls "$SB" "$HR" "$UWT" 2>/dev/null | grep -c PWNED)" "0" "…runs no name's payload, in bash or zsh"
+# Run every printed line for real, in order, as someone pasting the note would.
+while IFS= read -r c; do (cd "$HR" && eval "$c") >/dev/null 2>&1; done <<<"$CMDS"
+say "$(git -C "$HR" branch --list just merged | wc -l | tr -d ' ')" "2" "…and pasting all of them leaves the branches named just and merged"
+say "$(git -C "$HR" branch --list fix/q | wc -l | tr -d ' ')" "0" "…while deleting what it offered (the paste ran)"
+rm -rf "$HB"
 
 echo "The note gate covers protected branches this project actually has:"
 # With no NOTE_GATED_BRANCHES the gated set is "protected but not PR-only", so a
@@ -444,6 +589,10 @@ if grep -q 'PRE-MERGE CHECK REQUIRED' <<<"$OUT"; then
 else
   FAIL=$((FAIL+1)); printf '  ❌ "qa" took an unstamped merge\n'
 fi
+# No way around the gate is printed: the one it printed failed mid-merge, and a working
+# one hands an assistant the skip the gate exists to stop (owner, 2026-10-26). The box
+# itself was asserted above, on this same output.
+say "$(grep -c 'no-verify' <<<"$OUT")" "0" "…and offers no --no-verify bypass"
 git -C "$NG" merge --abort 2>/dev/null
 # ...and a branch that is neither protected nor PR-only is still ungated.
 git -C "$NG" checkout -qb scratch 2>/dev/null
@@ -486,6 +635,22 @@ grep -q 'FLIGHT_RULES_MERGE_AUTHORISED=1' <<<"$OUT"
 say "$?" "0" "…and the block names the way to proceed"
 [ "$(git -C "$D" rev-parse dev)" = "$BEFORE" ]
 say "$?" "0" "…and dev did not move"
+# The command the box prints is run as printed, in the state the refusal left: it
+# printed `git merge <branch>`, which fails while the refused merge is still in
+# progress — every time the box fired (#100).
+# With the secret scan installed as a project has it: git commit runs pre-commit on a
+# merge being concluded, which a hook-less fixture never exercised (fix review, F10).
+cp "$H/pre-commit" "$D/.ai/hooks/" && chmod +x "$D/.ai/hooks/pre-commit" || die "could not copy pre-commit into $D"
+CMD=$(grep -o 'FLIGHT_RULES_MERGE_AUTHORISED=1 git [^║]*' <<<"$OUT" | sed 's/[[:space:]]*$//')
+say "$CMD" "FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit" "…and prints the command that concludes it"
+CONC=$(cd "$D" && eval "$CMD" 2>&1); RC=$?
+say "$RC" "0" "…which, run as printed, exits 0"
+# Its output is read: thrown away, the case also passed with no pre-commit run at all
+# (group A fix review, F8).
+say "$(grep -c '^pre-commit: concluding a merge of' <<<"$CONC")" "1" "…with the secret scan run on the merge it concludes"
+say "$(git -C "$D" rev-parse dev^2 2>/dev/null)" "$(git -C "$D" rev-parse feature/x)" "…landing the merge"
+git -C "$D" log -1 --pretty=%B | grep -q '^Merge-authorisation: explicit'
+say "$?" "0" "…with the authorisation recorded"
 git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 
 D=$(mkauth)
@@ -562,10 +727,9 @@ FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/d
 say "$?" "0" "merging origin/feature/x into dev lands"
 [ "$(git -C "$D" log -1 --pretty=%s)" = "Merge remote-tracking branch 'origin/feature/x' into dev" ]
 say "$?" "0" "…with the remote-tracking subject (the fixture is the real shape)"
-grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qx '## Post-merge to dev: feature/x' "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…and the note names feature/x, not unknown"
-grep -q "git branch -d 'feature/x'  ← just merged" "$D/.claude/post-merge-note.md" 2>/dev/null
-say "$?" "0" "…and offers the local branch for deletion as just merged"
+say "$(after "$D/.claude/post-merge-note.md" "  git branch -d feature/x")" "    ↑ just merged" "…and offers the local branch for deletion as just merged"
 grep -q "refused until" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "1" "…with no push warning: feature/x has no upstream, so -d works now"
 rm -rf "$D" "$O"
@@ -578,11 +742,11 @@ git -C "$D" push -q origin main dev feature/x 2>/dev/null || die "could not push
 git -C "$D" branch -qD feature/x || die "could not delete the local feature/x"
 git -C "$D" branch -q fix/old dev || die "could not make fix/old"   # so the list is not empty
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit origin/feature/x >/dev/null 2>&1
-grep -q '^## Post-merge to dev: `feature/x`' "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qx '## Post-merge to dev: feature/x' "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "with no local feature/x, the note still names it"
-grep -q "git branch -d 'feature/x'" "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qE "git branch -d feature/x( |$)" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "1" "…but does not offer a branch that is not there for deletion"
-grep -q "git branch -d 'fix/old'" "$D/.claude/post-merge-note.md" 2>/dev/null
+grep -qE "git branch -d fix/old( |$)" "$D/.claude/post-merge-note.md" 2>/dev/null
 say "$?" "0" "…while a merged one that is there is still offered"
 rm -rf "$D" "$O"
 
@@ -601,10 +765,10 @@ FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null
 say "$?" "0" "merging feature/x (tracking origin/dev) into dev lands"
 git -C "$D" branch -d feature/x >/dev/null 2>&1
 say "$?" "1" "…and git branch -d refuses it before dev is pushed (the case is real)"
-grep -qF "git branch -d 'feature/x'  ← just merged  (refused until origin/dev has it — push that first)" "$D/.claude/post-merge-note.md" 2>/dev/null
-say "$?" "0" "…and the note says origin/dev must have it first"
-grep -q "git branch -d 'plain'$" "$D/.claude/post-merge-note.md" 2>/dev/null
-say "$?" "0" "…but not for a branch its upstream already has"
+say "$(after "$D/.claude/post-merge-note.md" "  git branch -d feature/x")" "    ↑ just merged; refused until origin/dev has it — push that first" "…and the note says origin/dev must have it first, below the command"
+grep -qxF "  git branch -d plain" "$D/.claude/post-merge-note.md" 2>/dev/null
+say "$?" "0" "…and offers plain"
+say "$(after "$D/.claude/post-merge-note.md" "  git branch -d plain" | grep -c '↑')" "0" "…but says nothing below it: its upstream already has it"
 git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev in the fixture"
 git -C "$D" branch -d feature/x >/dev/null 2>&1
 say "$?" "0" "…and after the push, -d deletes it"
@@ -629,12 +793,11 @@ FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null
 git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev"
 (cd "$D" && .ai/hooks/post-merge 0) >/dev/null 2>&1 || die "post-merge failed when run directly"
 NOTE="$D/.claude/post-merge-note.md"
-grep -qE "^  git branch -d 'feature/x'  ← just merged$" "$NOTE" 2>/dev/null
-say "$?" "0" "an upstream gone from the remote: no annotation"
-grep -qE "^  git branch -d 'tagged'$" "$NOTE" 2>/dev/null
-say "$?" "0" "a tag named origin/dev beside the branch: no annotation"
-grep -qE "^  git branch -d 'local-up'  \(refused until main contains it\)$" "$NOTE" 2>/dev/null
-say "$?" "0" "a local upstream that lacks it: 'contains', not 'push'"
+say "$(after "$NOTE" "  git branch -d feature/x")" "    ↑ just merged" "an upstream gone from the remote: no annotation"
+grep -qxF "  git branch -d tagged" "$NOTE" 2>/dev/null
+say "$?" "0" "a tag named origin/dev beside the branch: offered…"
+say "$(after "$NOTE" "  git branch -d tagged" | grep -c '↑')" "0" "…with no annotation"
+say "$(after "$NOTE" "  git branch -d local-up")" "    ↑ refused until main contains it" "a local upstream that lacks it: 'contains', not 'push'"
 for b in feature/x tagged; do git -C "$D" branch -d "$b" >/dev/null 2>&1 || echo "$b"; done > "$D/undeleted"
 say "$(cat "$D/undeleted")" "" "…and -d really deletes the unannotated ones"
 rm -rf "$D" "$O"
@@ -646,8 +809,7 @@ git -C "$D" remote add upstream "$O"
 git -C "$D" push -q upstream main dev 2>/dev/null || die "could not push the fixture to upstream"
 git -C "$D" branch -q --set-upstream-to=upstream/dev feature/x || die "could not make feature/x track upstream/dev"
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
-grep -qF "(refused until upstream/dev has it" "$D/.claude/post-merge-note.md" 2>/dev/null
-say "$?" "0" "the note names upstream/dev"
+say "$(after "$D/.claude/post-merge-note.md" "  git branch -d feature/x")" "    ↑ just merged; refused until upstream/dev has it — push that first" "the note names upstream/dev"
 rm -rf "$D" "$O"
 
 
@@ -675,6 +837,593 @@ say "$?" "1" "install.sh does not list the agent/ directory as an active hook"
 grep -q 'README' <<<"$OUT"
 say "$?" "1" "install.sh still skips dotted files"
 rm -rf "$D"
+
+echo "A pattern that does not compile matches every branch, not none (#103):"
+# conf_on <repo> <branch> <conf line>: commit the conf on <branch>, where the hooks
+# read it from (HEAD of the branch merged into).
+conf_on() {
+  git -C "$1" checkout -q "$2" || die "no $2 in $1"
+  mkdir -p "$1/.ai"; printf '%s\n' "$3" > "$1/.ai/flight-rules.conf"
+  git -C "$1" add -A >/dev/null; git -C "$1" commit -qm "chore: conf" --no-verify >/dev/null || die "could not commit the conf"
+}
+# route <output> <key>: the two-line route a refusal prints, its frame stripped.
+route() { grep -A1 -F "FLIGHT_RULES_$2='<pattern>' \\" <<<"$1" | head -2 | sed -e 's/^║ *//' -e 's/ *║$//'; }
+feature() {   # <repo> <name> <base>: a one-commit branch off <base>, stamped
+  git -C "$1" checkout -q -b "$2" "$3" || die "could not branch $2"
+  echo "$2" > "$1/$(echo "$2" | tr / _)"; git -C "$1" add -A; git -C "$1" commit -qm "feature: $2" >/dev/null || die "could not commit on $2"
+  git -C "$1" notes --ref=pre-merge-check add -f -m "passed: 2026-10-22T00:00:00Z branch:$2" HEAD
+}
+
+# pre-merge-commit: a broken PR_ONLY_BRANCHES let every local merge through.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^(main'; feature "$D" feature/x dev
+git -C "$D" checkout -q dev; BEFORE=$(git -C "$D" rev-parse dev)
+OUT=$(cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/x -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a stamped, authorised merge into dev is refused"
+say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — LOCAL MERGE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+say "$(grep -cF '  ^(main' <<<"$OUT")" "1" "…naming the pattern"
+say "$(git -C "$D" rev-parse dev)" "$BEFORE" "…and dev does not move"
+say "$(route "$OUT" PR_ONLY_BRANCHES | tail -1)" "git commit --no-edit" "…printing the command that finishes the merge it left"
+# The route is for a branch the pattern does not mean: following it on main lands a
+# local merge there (#103 review).
+say "$(grep -cF 'if dev is not a branch it means' <<<"$OUT")" "1" "…for a branch the pattern does not mean"
+# Run from where the refusal leaves you, the merge still in progress: `git merge` again
+# fails there ("You have not concluded your merge"), as #100's did, and an abort before
+# it is what hid that (#103 review).
+(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit) >/dev/null 2>&1
+say "$?" "0" "…and that command, with the pattern meant, lands the merge"
+say "$(git -C "$D" rev-parse -q --verify dev^2)" "$(git -C "$D" rev-parse feature/x)" "…as a merge of feature/x"
+rm -rf "$D"
+
+# pre-rebase: a rebase of any branch is refused.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^(main'; feature "$D" feature/r dev
+# main moves on, so the rebase has something to do: an up-to-date one never runs the hook.
+git -C "$D" checkout -q main; echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: m" >/dev/null
+git -C "$D" checkout -q feature/r
+OUT=$(cd "$D" && git rebase main 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a rebase is refused"
+say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — REBASE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+git -C "$D" rebase --abort 2>/dev/null
+rm -rf "$D"
+
+# commit-msg's squash guard: a squash merge finished by a commit, on any branch.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^(main'; feature "$D" feature/s dev
+git -C "$D" checkout -q dev
+# --ff: with merge.ff=false git refuses --squash outright, and nothing is staged.
+git -C "$D" merge --squash --ff feature/s >/dev/null 2>&1
+OUT=$(cd "$D" && git commit -m "squash" 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a squash merge's commit is refused"
+say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — SQUASH MERGE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+rm -rf "$D"
+
+# commit-msg's note gate: a broken NOTE_GATED_BRANCHES, or PROTECTED_BRANCHES with none
+# set, gated nothing. Unstamped feature branches, so the gate has something to refuse.
+for KEY in NOTE_GATED_BRANCHES PROTECTED_BRANCHES; do
+  D=$(mkrepo); conf_on "$D" dev "$KEY=^(dev"
+  git -C "$D" checkout -q -b feature/n dev; echo n > "$D/n"; git -C "$D" add -A; git -C "$D" commit -qm "feature: n" >/dev/null
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && git merge --no-ff feature/n -m merge 2>&1); RC=$?
+  say "$RC" "1" "$KEY that does not compile: an unstamped merge into dev is refused"
+  say "$(grep -cF "Gated because $KEY (^(dev)" <<<"$OUT")" "1" "…saying the pattern is why"
+  git -C "$D" merge --abort 2>/dev/null
+  git -C "$D" notes --ref=pre-merge-check add -f -m "passed: 2026-10-22T00:00:00Z branch:feature/n" feature/n
+  (cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/n -m merge) >/dev/null 2>&1
+  say "$?" "0" "…while a stamped, authorised one lands as usual"
+  # Every branch is gated, so a sync merge of dev into a feature branch is refused too,
+  # and the refusal printed no route that worked (#103 review). Run as printed, from
+  # the merge it leaves in progress.
+  git -C "$D" checkout -q -b feature/sync dev
+  git -C "$D" checkout -q dev; echo more > "$D/more"; git -C "$D" add -A
+  git -C "$D" commit -qm "chore: more" --no-verify >/dev/null || die "could not commit on dev"
+  git -C "$D" checkout -q feature/sync
+  OUT=$(cd "$D" && git merge --no-ff dev -m sync 2>&1); RC=$?
+  say "$RC" "1" "…and a sync merge of dev into a feature branch is refused"
+  P='^dev$'
+  CMD=$(route "$OUT" "$KEY")
+  CMD=${CMD//"<pattern>"/$P}
+  (cd "$D" && eval "$CMD") >/dev/null 2>&1
+  say "$?" "0" "…and the route it prints, run as printed, lands it"
+  say "$(git -C "$D" rev-parse -q --verify feature/sync^2)" "$(git -C "$D" rev-parse dev)" "…as a merge of dev"
+  rm -rf "$D"
+done
+
+# The exemptions take a real match only. A conflicted merge skips pre-merge-commit, so
+# commit-msg alone judges it: with a broken PR_ONLY_BRANCHES in the environment, the
+# incoming branch is not taken for a reviewed back-merge, nor dev for PR-only.
+D=$(mkrepo); git -C "$D" checkout -q -b feature/c dev
+echo theirs > "$D/f"; git -C "$D" add -A; git -C "$D" commit -qm "feature: c" >/dev/null
+git -C "$D" checkout -q dev; echo ours > "$D/f"; git -C "$D" add -A; git -C "$D" commit -qm "chore: ours" >/dev/null
+git -C "$D" merge feature/c >/dev/null 2>&1; echo resolved > "$D/f"; git -C "$D" add f
+OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^(main' git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "a broken PR_ONLY_BRANCHES grants no back-merge exemption: the unstamped merge is refused"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
+rm -rf "$D"
+
+# `off` names no branch. Read as a pattern it matched any branch with "off" in its
+# name, which pre-merge-commit and pre-rebase then took for PR-only (#103 review).
+D=$(mkrepo); conf_on "$D" main 'PR_ONLY_BRANCHES=off'
+git -C "$D" checkout -q -b feature/offline main; feature "$D" feature/o feature/offline
+git -C "$D" checkout -q feature/offline
+(cd "$D" && git merge --no-ff feature/o -m merge) >/dev/null 2>&1
+say "$?" "0" "PR_ONLY_BRANCHES=off: a merge into feature/offline is not gated"
+(cd "$D" && git rebase main) >/dev/null 2>&1
+say "$?" "0" "…nor a rebase of it"
+rm -rf "$D"
+# …and no merge is a back-merge: `off` read as a pattern matched feature/offline, so an
+# unstamped merge of it into dev passed as a reviewed back-merge (#103 review).
+D=$(mkrepo); conf_on "$D" dev "$(printf 'PR_ONLY_BRANCHES=off\nNOTE_GATED_BRANCHES=^dev$')"
+git -C "$D" checkout -q -b feature/offline dev; echo o > "$D/o"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: offline" >/dev/null || die "could not commit on feature/offline"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff feature/offline -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES=off: an unstamped merge of feature/offline into dev is refused"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate, not taken for a back-merge"
+rm -rf "$D"
+
+echo "End to end, with an origin and every hook: landing the fix to a broken pattern (#103 review):"
+# Each gate was tested alone, so nothing ran the printed way out from the state a
+# refusal leaves, or met the ref gate on a branch ahead of its upstream.
+E=$(cd "$(mktemp -d)" && pwd -P); D="$E/w"
+git init -q --bare -b main "$E/up.git" || die "git init --bare failed in $E"
+git clone -q "$E/up.git" "$D" 2>/dev/null || die "git clone failed in $E"
+git -C "$D" config user.email t@t.t; git -C "$D" config user.name t; git -C "$D" config merge.ff false
+mkdir -p "$D/.ai"; printf 'PR_ONLY_BRANCHES=^(main\n' > "$D/.ai/flight-rules.conf"
+echo base > "$D/f"; git -C "$D" add -A; git -C "$D" commit -qm base >/dev/null || die "the base commit failed in $D"
+git -C "$D" branch dev || die "could not create dev in $D"
+git -C "$D" push -q origin main dev 2>/dev/null || die "could not push main and dev to $E/up.git"
+mkdir -p "$E/hooks"
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$H/reference-transaction" "$E/hooks/" \
+  || die "could not copy the hooks under test from $H"
+chmod +x "$E"/hooks/*; git -C "$D" config core.hooksPath "$E/hooks"
+git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b fix/conf dev
+printf 'PR_ONLY_BRANCHES=^main$\n' > "$D/.ai/flight-rules.conf"
+git -C "$D" commit -qam "fix: conf" >/dev/null || die "could not commit the conf fix"
+git -C "$D" notes --ref=pre-merge-check add -f -m "passed: 2026-10-23T00:00:00Z branch:fix/conf" HEAD
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff fix/conf -m "Merge fix/conf" 2>&1); RC=$?
+say "$RC" "1" "e2e: the owner's merge of the fix into dev is refused by the broken pattern"
+# The printed command, run as printed: only <pattern> filled in, plus the variable the
+# refused command carried, as the box says to keep.
+CMD=$(route "$OUT" PR_ONLY_BRANCHES)
+P='^main$'; CMD=${CMD//"<pattern>"/$P}
+say "$(tail -1 <<<"$CMD")" "git commit --no-edit" "…printing the command that finishes it"
+(cd "$D" && eval "FLIGHT_RULES_MERGE_AUTHORISED=1 $CMD") >/dev/null 2>&1
+say "$?" "0" "…which lands it"
+say "$(git -C "$D" rev-parse -q --verify dev^2)" "$(git -C "$D" rev-parse fix/conf)" "…as a merge of fix/conf"
+# dev is now ahead of origin/dev, whose conf the ref gate still reads, and is broken.
+# A refused merge's undo writes dev to the value it has: no move, so not refused.
+git -C "$D" checkout -q -b feature/late dev; echo late > "$D/late"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: late" >/dev/null || die "could not commit on feature/late"
+git -C "$D" checkout -q dev; BEFORE=$(git -C "$D" rev-parse dev)
+(cd "$D" && git merge --no-ff feature/late -m merge) >/dev/null 2>&1
+say "$?" "1" "…an unstamped merge into dev, ahead of origin/dev, is refused by the note gate"
+(cd "$D" && git merge --abort) >/dev/null 2>&1
+say "$?" "0" "…and git merge --abort, its undo, is not refused as a move"
+say "$(git -C "$D" rev-parse dev)" "$BEFORE" "…and leaves dev where it was"
+(cd "$D" && git commit -q --allow-empty -m "chore: direct") >/dev/null 2>&1; RC=$?
+say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse dev)" "$BEFORE" "…while a commit that does move dev off origin/dev still is, until dev is pushed"
+git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev to $E/up.git"
+git -C "$D" fetch -q origin
+(cd "$D" && git commit -q --allow-empty -m "chore: direct") >/dev/null 2>&1
+say "$?" "0" "…and once it is, the fixed conf is what the ref gate reads"
+rm -rf "$E"
+
+echo "Branch patterns match case-insensitively, as the agent guard matches them (#103 review):"
+# The git hooks matched case-sensitively, so ^MAIN$ named no branch to them while the
+# agent guard and the README took it for main.
+D=$(mkrepo); conf_on "$D" main 'PR_ONLY_BRANCHES=^MAIN$'; feature "$D" feature/u main
+git -C "$D" checkout -q main
+OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES=^MAIN\$: a local merge into main is refused"
+say "$(grep -c 'main IS PR-ONLY — LOCAL MERGE BLOCKED' <<<"$OUT")" "1" "…by the PR-only box"
+# Its routes: no bypass, which the ref gate refuses and which fails mid-merge (S4); with
+# no INTEGRATION_BRANCH set, main is it, so one PR line (S3).
+say "$(grep -c 'no-verify' <<<"$OUT")" "0" "…offering no --no-verify bypass"
+say "$(grep -cE 'gh pr create --base main *║' <<<"$OUT")" "1" "…and one PR line, into main, the integration branch by default"
+git -C "$D" merge --abort 2>/dev/null
+# With dev integrating, a feature's PR goes to dev, and only a promotion to main: one
+# line for both sent feature PRs around dev (full release review, S3).
+printf 'PR_ONLY_BRANCHES=^MAIN$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify >/dev/null || die "could not commit the conf"
+OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
+say "$RC" "1" "INTEGRATION_BRANCH=dev: the local merge into main is still refused"
+say "$(grep -c 'gh pr create --base dev   (a feature)' <<<"$OUT")" "1" "…a feature's PR goes to dev"
+say "$(grep -c 'gh pr create --base main   (promoting dev)' <<<"$OUT")" "1" "…and only a promotion to main"
+git -C "$D" merge --abort 2>/dev/null
+echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" --no-verify >/dev/null || die "could not commit on main"
+OUT=$(cd "$D" && git rebase feature/u 2>&1); RC=$?
+say "$RC" "1" "…and a rebase of main"
+say "$(grep -c 'main IS PR-ONLY — REBASE BLOCKED' <<<"$OUT")" "1" "…by the PR-only box"
+say "$(grep -c 'no-verify' <<<"$OUT")" "0" "…offering no --no-verify bypass, which the ref gate refuses (fix review, 2026-10-26)"
+git -C "$D" rebase --abort 2>/dev/null
+git -C "$D" merge --squash --ff feature/u >/dev/null 2>&1
+OUT=$(cd "$D" && git commit -m "squash" 2>&1); RC=$?
+say "$RC" "1" "…and a squash merge's commit"
+say "$(grep -c 'main IS PR-ONLY — SQUASH MERGE BLOCKED' <<<"$OUT")" "1" "…by the PR-only box"
+rm -rf "$D"
+D=$(mkrepo); conf_on "$D" dev 'PROTECTED_BRANCHES=^(MAIN|DEV)$'
+git -C "$D" checkout -q -b feature/n dev; echo n > "$D/n"; git -C "$D" add -A; git -C "$D" commit -qm "feature: n" >/dev/null
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff feature/n -m merge 2>&1); RC=$?
+say "$RC" "1" "PROTECTED_BRANCHES=^(MAIN|DEV)\$: an unstamped merge into dev is refused"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
+rm -rf "$D"
+
+echo "…but an exemption takes the pattern's exact case (#103 review):"
+# Read case-insensitively, ^main$ took a branch anyone can make for main, and an
+# unstamped merge of it into dev passed as a reviewed back-merge. A pattern in the
+# wrong case now gates the merge it meant to exempt, and the refusal says why.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^MAIN$'
+git -C "$D" checkout -q main; echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES=^MAIN\$: merging main into dev is not taken for a back-merge"
+say "$(grep -c 'Not taken for a back-merge: main matches' <<<"$OUT")" "1" "…and the refusal says the case is why"
+say "$(grep -c 'FLIGHT_RULES_PR_ONLY_BRANCHES=' <<<"$OUT")" "0" "…and prints no command that overrides the pattern"
+say "$(grep -c 'writes the pattern in its case in .ai/flight-rules.conf' <<<"$OUT")" "1" "…but says where it is fixed"
+rm -rf "$D"
+# listed <out> <ref>: 1 when the refusal lists <ref> on a line of its own. judged <out>:
+# lines that call a ref a stray, a variant or in the wrong case, or say to delete one —
+# the inferences that misled in three rounds (fix reviews). The refusal states facts.
+listed() { grep -cE "^║ +$2 +║\$" <<<"$1"; }
+judged() { grep -ciE 'stray|variant|wrong case|remove|delete' <<<"$1"; }
+# The route the refusal prints works: origin moved on since the last fetch, so the
+# tracking ref lags; fetch --prune, then commit --no-edit, lands the back-merge.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q main; echo r > "$D/r"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" update-ref refs/remotes/origin/main main~1 || die "could not wind origin/main back in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "origin/main behind origin: a back-merge of main is refused"
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+OUT=$(cd "$D" && git fetch -q --prune origin && git commit --no-edit 2>&1); RC=$?
+say "$RC" "0" "…and the printed route, fetch --prune then commit --no-edit, lands it"
+say "$(grep -c 'Back-merge of PR-only branch main' <<<"$OUT")" "1" "…as a back-merge"
+rm -rf "$D"
+# The override that box used to print, given by hand: a local MAIN at an unstamped
+# commit, while origin has main. origin/MAIN does not exist, so the origin check was
+# skipped and the merge passed as a back-merge (0.27.0 release review). Packed, so a
+# case-insensitive filesystem cannot resolve origin/MAIN to the loose origin/main file.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/m dev; echo mm > "$D/mm"; git -C "$D" add -A; git -C "$D" commit -qm "feature: mm" >/dev/null
+git -C "$D" branch -D main >/dev/null 2>&1 || die "could not delete main in $D"
+git -C "$D" pack-refs --all
+git -C "$D" branch MAIN feature/m || die "could not create MAIN in $D"
+git -C "$D" rev-parse -q --verify refs/remotes/origin/MAIN >/dev/null && die "origin/MAIN resolves in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git merge --no-ff MAIN -m merge 2>&1); RC=$?
+say "$RC" "1" "^MAIN\$ given by hand: a local MAIN off origin/main is refused"
+say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
+# The refusal must not take origin/main for a stray here: it advised deleting it
+# (second fix review). origin has no MAIN; the pattern's case is the likelier fault.
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+say "$(grep -c 'As of the last fetch, origin has no ref spelled MAIN\.' <<<"$OUT")" "1" "…and, as a fact of the last fetch, that origin has no ref spelled MAIN"
+say "$(grep -c "Which is the PR-only branch is the project owner's call" <<<"$OUT")" "1" "…so which ref is the branch is the owner's call"
+say "$(judged "$OUT")" "0" "…calling no ref a stray, a variant or in the wrong case, nor saying to delete one"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+# …nor when origin holds MAIN as well, pushed at that commit: every case variant origin
+# has must hold it, not any one (security review of this fix). Two refs a case apart
+# need reftable on a case-insensitive filesystem, so the fixture checks it got them.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/m2 dev; echo m2 > "$D/m2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: m2" >/dev/null
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/MAIN feature/m2
+git -C "$D" branch -D main >/dev/null 2>&1; git -C "$D" branch MAIN feature/m2 2>/dev/null
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/main)" = "$(git -C "$D" rev-parse feature/m2)" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/heads/MAIN)" != "$(git -C "$D" rev-parse feature/m2)" ] \
+   || git -C "$D" rev-parse -q --verify refs/heads/main >/dev/null; then
+  echo "  ⏭️  origin/main beside origin/MAIN: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git merge --no-ff MAIN -m merge 2>&1); RC=$?
+  say "$RC" "1" "^MAIN\$ given by hand, origin/MAIN pushed at the commit: refused while origin/main lacks it"
+  say "$(grep -c 'Back-merge of PR-only branch' <<<"$OUT")" "0" "…not taken for a back-merge"
+  # The text sided with the pushed MAIN and cast the real main as the one that "goes"
+  # (third fix review): it lists origin/main and judges neither.
+  say "$(listed "$OUT" origin/main)$(listed "$OUT" origin/MAIN)" "10" "…listing origin/main, which lacks it, not origin/MAIN"
+  say "$(judged "$OUT")" "0" "…and judging neither"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
+# The reverse: origin/main holds a real back-merge, a stray origin/Main at an older
+# commit does not. Refused, as it must be, but with the variant named: the generic box
+# read as a broken gate (fix review).
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+OLD=$(git -C "$D" rev-parse main)
+git -C "$D" checkout -q main; echo m3 > "$D/m3"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" fetch -q origin
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/Main "$OLD"
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/Main)" != "$OLD" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/main)" = "$OLD" ]; then
+  echo "  ⏭️  a stale origin/Main beside origin/main: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+  say "$RC" "1" "a stale origin/Main beside origin/main: a back-merge of main is refused"
+  say "$(listed "$OUT" origin/Main)" "1" "…listing origin/Main as lacking it"
+  say "$(listed "$OUT" origin/main)" "0" "…and not origin/main, which holds it"
+  say "$(grep -c "Which is the PR-only branch is the project owner's call" <<<"$OUT")" "1" "…with two refs matching, saying which is real is the owner's call"
+  say "$(judged "$OUT")" "0" "…judging neither"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
+# Both off: local main forced off origin/main, and a stale origin/Main as well. Main
+# sorts first, and the refusal blamed it, so deleting it only brought the real refusal
+# (second fix review). origin/main itself is named.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+OLD=$(git -C "$D" rev-parse main)
+git -C "$D" checkout -q -b feature/f3 dev; echo f3 > "$D/f3"; git -C "$D" add -A; git -C "$D" commit -qm "feature: f3" >/dev/null
+git -C "$D" refs migrate --ref-format=reftable >/dev/null 2>&1
+git -C "$D" update-ref refs/remotes/origin/Main "$OLD"
+git -C "$D" branch -f main feature/f3 || die "could not point main at feature/f3 in $D"
+if [ "$(git -C "$D" rev-parse -q --verify refs/remotes/origin/Main)" != "$OLD" ] \
+   || [ "$(git -C "$D" rev-parse -q --verify refs/heads/main)" != "$(git -C "$D" rev-parse feature/f3)" ]; then
+  echo "  ⏭️  a forced main beside a stale origin/Main: skipped — this git cannot hold both refs on this filesystem"
+else
+  git -C "$D" checkout -q dev
+  OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+  say "$RC" "1" "a forced local main and a stale origin/Main: refused"
+  say "$(listed "$OUT" origin/main)$(listed "$OUT" origin/Main)" "11" "…listing both origin/main and origin/Main, not only the first"
+  say "$(judged "$OUT")" "0" "…judging neither"
+  git -C "$D" merge --abort 2>/dev/null
+fi
+rm -rf "$D"
+# A local main forced off origin/main says so, under the default exact-case pattern.
+D=$(mkrepo_with_origin); git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/f2 dev; echo f2 > "$D/f2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: f2" >/dev/null
+git -C "$D" branch -f main feature/f2 || die "could not point main at feature/f2 in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "a local main forced off origin/main is refused"
+say "$(listed "$OUT" origin/main)" "1" "…listing origin/main as lacking it"
+# One ref, spelled as the branch: there is no "which" to decide (fourth fix review).
+say "$(grep -c "owner's call" <<<"$OUT")" "0" "…and no question of which ref is the branch, with only one"
+say "$(grep -cE '^║ +git fetch --prune origin +║$' <<<"$OUT")$(grep -cE '^║ +git commit --no-edit +║$' <<<"$OUT")" "11" "…with the one route: fetch --prune, then commit --no-edit"
+git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
+# …while a real back-merge of main, with origin's main holding it, still lands.
+D=$(mkrepo_with_origin)
+git -C "$D" checkout -q main; echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" >/dev/null
+git -C "$D" push -q origin main 2>/dev/null || die "could not push main in $D"
+git -C "$D" fetch -q origin; git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "0" "…and a back-merge of main that origin holds still lands"
+say "$(grep -c 'Back-merge of PR-only branch main' <<<"$OUT")" "1" "…as a back-merge"
+rm -rf "$D"
+# The case is named only where it is the whole reason: a local main forced onto an
+# unstamped commit fails origin's check as well, and the case route would not land it.
+D=$(mkrepo_with_origin); conf_on "$D" dev 'PR_ONLY_BRANCHES=^MAIN$'; git -C "$D" fetch -q origin
+git -C "$D" checkout -q -b feature/z dev; echo z > "$D/z"; git -C "$D" add -A; git -C "$D" commit -qm "feature: z" >/dev/null
+git -C "$D" branch -f main feature/z || die "could not point main at feature/z in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff main -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES=^MAIN\$: a local main forced off origin/main is refused"
+say "$(grep -c 'Not taken for a back-merge' <<<"$OUT")" "0" "…without blaming the case"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…by the note gate"
+rm -rf "$D"
+# The two ways in, with prod PR-only so that no branch of the same name is there for a
+# case-variant one to collide with on a case-insensitive filesystem. A local PROD at an
+# unstamped commit:
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^prod$'
+git -C "$D" checkout -q -b feature/p dev; echo p > "$D/p"; git -C "$D" add -A; git -C "$D" commit -qm "feature: p" >/dev/null
+git -C "$D" branch PROD || die "could not create PROD in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff PROD -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES=^prod\$: a local PROD at an unstamped commit is not a back-merge"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…the note gate refuses it"
+rm -rf "$D"
+# …and Prod pushed to an origin that has no prod, read from its remote-tracking ref.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^prod$'
+O=$(mktemp -d); git init -q --bare "$O" || die "git init --bare failed in $O"
+git -C "$D" remote add origin "$O"
+git -C "$D" checkout -q -b feature/p dev; echo p > "$D/p"; git -C "$D" add -A; git -C "$D" commit -qm "feature: p" >/dev/null
+git -C "$D" push -q origin feature/p:Prod 2>/dev/null || die "could not push Prod to $O"
+git -C "$D" fetch -q origin; git -C "$D" rev-parse -q --verify origin/Prod >/dev/null || die "no origin/Prod in $D"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff origin/Prod -m merge 2>&1); RC=$?
+say "$RC" "1" "…nor is origin/Prod"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…the note gate refuses it"
+rm -rf "$D" "$O"
+# The other exemption: a PR-only branch is not note-gated by the derived set. A
+# conflicted merge skips pre-merge-commit, so commit-msg alone judges it; with
+# ^DEV$, dev is not exempt from the note gate.
+D=$(mkrepo); conf_on "$D" dev 'PR_ONLY_BRANCHES=^DEV$'
+git -C "$D" checkout -q -b feature/c dev
+echo theirs > "$D/f"; git -C "$D" add -A; git -C "$D" commit -qm "feature: c" >/dev/null
+git -C "$D" checkout -q dev; echo ours > "$D/f"; git -C "$D" add -A; git -C "$D" commit -qm "chore: ours" --no-verify >/dev/null
+git -C "$D" merge feature/c >/dev/null 2>&1; echo resolved > "$D/f"; git -C "$D" add f
+OUT=$(cd "$D" && git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES=^DEV\$: a conflicted, unstamped merge into dev is not exempt from the note gate"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…the note gate refuses it"
+rm -rf "$D"
+PM=$(mktemp -d)
+git init -q -b trunk "$PM" || die "git init failed in $PM"
+git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t; git -C "$PM" config merge.ff false
+mkdir -p "$PM/.ai"; printf 'PROTECTED_BRANCHES=^(TRUNK|QA)$\nPR_ONLY_BRANCHES=^TRUNK$\nINTEGRATION_BRANCH=trunk\n' > "$PM/.ai/flight-rules.conf"
+echo base > "$PM/f.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: base"
+for b in qa feature/real; do
+  git -C "$PM" checkout -qb "$b" trunk; echo "$b" > "$PM/${b//\//_}.txt"; git -C "$PM" add -A
+  git -C "$PM" commit -qm "chore: on $b"
+done
+git -C "$PM" checkout -q trunk
+mkdir -p "$PM/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PM/.ai/hooks/"; chmod +x "$PM"/.ai/hooks/*; git -C "$PM" config core.hooksPath "$PM/.ai/hooks"
+for b in qa feature/real; do git -C "$PM" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
+say "$(grep -cE "git branch -d '?qa'?( |$)" "$PM/.claude/post-merge-note.md" 2>/dev/null)" "0" "post-merge with PROTECTED_BRANCHES=^(TRUNK|QA)\$: qa is not offered for deletion"
+say "$(grep -cE "git branch -d feature/real( |$)" "$PM/.claude/post-merge-note.md" 2>/dev/null)" "1" "…while a merged feature branch is"
+rm -rf "$PM"
+
+echo "A trailing comment in the conf does not turn a gate off (#103 review):"
+# pre-merge-commit and pre-rebase kept it as part of the pattern, which then matched no
+# branch, so a local merge into main landed in a repo with no origin.
+D=$(mkrepo); conf_on "$D" main 'PR_ONLY_BRANCHES=^main$   # only main'; feature "$D" feature/k main
+git -C "$D" checkout -q main
+OUT=$(cd "$D" && git merge --no-ff feature/k -m merge 2>&1); RC=$?
+say "$RC" "1" "PR_ONLY_BRANCHES=^main\$ with a comment: a local merge into main is refused"
+say "$(grep -c 'main IS PR-ONLY — LOCAL MERGE BLOCKED' <<<"$OUT")" "1" "…by the PR-only box"
+git -C "$D" merge --abort 2>/dev/null
+echo m > "$D/m"; git -C "$D" add -A; git -C "$D" commit -qm "chore: on main" --no-verify >/dev/null || die "could not commit on main"
+OUT=$(cd "$D" && git rebase feature/k 2>&1); RC=$?
+say "$RC" "1" "…and a rebase of main"
+say "$(grep -c 'main IS PR-ONLY — REBASE BLOCKED' <<<"$OUT")" "1" "…by the PR-only box"
+git -C "$D" rebase --abort 2>/dev/null
+rm -rf "$D"
+
+echo "post-merge names what still runs from a worktree it lists for removal (#109):"
+# A server, database or watcher a check started in a worktree outlived the branch, and
+# nothing said so (AppliHawk, 2026-10-24). Listed, never stopped. Each fixture process
+# is a sleep: one whose working directory is the worktree, one whose command line
+# names another, one in a worktree whose name extends the first's (not a match), one
+# whose command line names a path that only ends with a worktree's (not a match), and
+# one naming a worktree after `=`. The EXIT trap stops them if the run is cut short.
+S1=""; S2=""; S3=""; S4=""; S5=""
+trap 'kill ${S1:-} ${S2:-} ${S3:-} ${S4:-} ${S5:-} 2>/dev/null' EXIT
+PB=$(cd "$(mktemp -d)" && pwd -P); PR="$PB/repo"
+git init -q -b trunk "$PR" || die "git init failed in $PR"
+git -C "$PR" config user.email t@t.t; git -C "$PR" config user.name t; git -C "$PR" config merge.ff false
+mkdir -p "$PR/.ai"; printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$PR/.ai/flight-rules.conf"
+echo base > "$PR/f.txt"; git -C "$PR" add -A; git -C "$PR" commit -qm "chore: base"
+for b in fix/srv fix/db fix/quiet fix/last; do
+  git -C "$PR" branch "$b" trunk && git -C "$PR" worktree add -q "$PB/wt-${b#fix/}" "$b" || die "could not add a worktree for $b"
+  echo "$b" > "$PB/wt-${b#fix/}/${b#fix/}.txt"; git -C "$PB/wt-${b#fix/}" add -A; git -C "$PB/wt-${b#fix/}" commit -qm "chore: $b" || die "could not commit on $b"
+done
+git -C "$PR" branch fix/srvx trunk && git -C "$PR" worktree add -q "$PB/wt-srvx" fix/srvx || die "could not add wt-srvx"
+mkdir -p "$PR/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PR/.ai/hooks/"
+chmod +x "$PR"/.ai/hooks/*; git -C "$PR" config core.hooksPath "$PR/.ai/hooks"
+(cd "$PB/wt-srv" && exec sleep 3001) & S1=$!
+(cd / && exec -a "dbserver -D $PB/wt-db/data" sleep 3002) & S2=$!
+(cd "$PB/wt-srvx" && exec sleep 3003) & S3=$!
+(cd / && exec -a "tool /mnt$PB/wt-quiet/data" sleep 3004) & S4=$!
+(cd / && exec -a "pg --data=$PB/wt-last/pg" sleep 3005) & S5=$!
+sleep 1
+# A docker that answers with nothing, so the machine's own Docker — down, or holding
+# containers — cannot change the result.
+mkdir -p "$PB/nod"; printf '#!/bin/sh\nexit 0\n' > "$PB/nod/docker"; chmod +x "$PB/nod/docker"
+for b in fix/srv fix/db fix/quiet; do PATH="$PB/nod:$PATH" git -C "$PR" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
+OUT=$(PATH="$PB/nod:$PATH" git -C "$PR" merge --no-verify --no-edit fix/last 2>&1); RC=$?
+PNOTE="$PR/.claude/post-merge-note.md"
+# section <branch>: the note's lines for that worktree, Branch: line to its remove line.
+section() { awk -v b="Branch: $1 " 'index($0, b) {p=1} p; p && /git worktree remove/ {exit}' "$PNOTE"; }
+# top: the worktree section's head, above the first worktree — where a tool failure goes.
+top() { awk '/^### ⚠ Worktrees still present/ {p=1; next} p && /^  Branch: / {exit} p' "$PNOTE"; }
+say "$RC" "0" "the merge lands"
+say "$(grep -c 'Branch: fix/srv ' "$PNOTE" 2>/dev/null)" "1" "…and the note lists wt-srv for removal"
+say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "a process working in the worktree is named under it"
+say "$(section fix/srv | grep -c 'Still running from it')" "1" "…with what to do about it"
+say "$(section fix/srv | grep -c 'ask before stopping anything you did not start')" "1" "…and to ask before stopping what you did not start"
+say "$(section fix/srv | grep -c "pid $S3,")" "0" "…and not one in wt-srvx, whose name only extends it"
+say "$(section fix/db | grep -c "pid $S2, up .*: 'dbserver -D $PB/wt-db/data ")" "1" "a process whose command line names the worktree is named under it"
+say "$(section fix/last | grep -c "pid $S5, up .*: 'pg --data=$PB/wt-last/pg ")" "1" "…so is one naming it after ="
+say "$(section fix/quiet | grep -c 'Branch: fix/quiet ')" "1" "a worktree with nothing running is listed"
+say "$(section fix/quiet | grep -c 'Still running')" "0" "…with nothing said about processes"
+say "$(grep -c "pid $S4" "$PNOTE")" "0" "…nor about one naming /mnt<its path>, a different directory"
+say "$(grep -c "Branch: fix/srv " <<<"$OUT")" "1" "the note is printed at merge time, not only written"
+say "$(grep -c "pid $S1, up " <<<"$OUT")" "1" "…what still runs included"
+say "$(kill -0 "$S1" "$S2" 2>/dev/null && echo alive)" "alive" "nothing is stopped by the hook"
+
+# The hook again on the same merge, with stand-ins on PATH. A stand-in ps or lsof logs
+# each call and runs the real one; the docker stand-in prints what each case needs.
+PSB=$(command -v ps); LSB=$(command -v lsof || true)
+shims() {   # shims <dir> <ps: log|fail> <docker: list|fail|hang|empty>
+  mkdir -p "$1"
+  case "$2" in
+    log)  printf '#!/bin/sh\necho x >> %q/ps.log\nexec %q "$@"\n' "$1" "$PSB" > "$1/ps" ;;
+    fail) printf '#!/bin/sh\nexit 127\n' > "$1/ps" ;;
+  esac
+  [ -n "$LSB" ] && printf '#!/bin/sh\necho x >> %q/lsof.log\nexec %q "$@"\n' "$1" "$LSB" > "$1/lsof"
+  case "$3" in
+    list)  { printf '#!/bin/sh\necho x >> %q/docker.log\n' "$1"
+             printf 'printf "c1\\t%s\\tsrv-web-1\\tUp 2 hours\\n"\n' "$PB/wt-srv"
+             printf 'printf "c4\\t%s\\tother-1\\tUp 1 hour\\n"\n' "/mnt$PB/wt-srv"
+             printf 'case " $* " in *" -a "*) printf "c2\\t%s\\tsrv-db-1\\tExited (0) 3 days ago\\n"; printf "c3\\t%s\\tsrvx-1\\tExited (1) 2 days ago\\n";; esac\n' "$PB/wt-srv/sub" "$PB/wt-srvx"
+           } > "$1/docker" ;;
+    fail)  printf '#!/bin/sh\necho "Cannot connect to the Docker daemon at unix:///x.sock" >&2\nexit 1\n' > "$1/docker" ;;
+    hang)  printf '#!/bin/sh\nexec sleep 10\n' > "$1/docker" ;;
+    empty) printf '#!/bin/sh\nexit 0\n' > "$1/docker" ;;
+  esac
+  chmod +x "$1"/*
+}
+rerun() { (cd "$PR" && PATH="$1:$PATH" "$PR/.ai/hooks/post-merge" 0 2>&1); }
+
+shims "$PB/a" log list; OUT=$(rerun "$PB/a"); RC=$?
+say "$RC" "0" "with Compose containers: the hook still exits 0"
+say "$(section fix/srv | grep -c "container c1 (srv-web-1), 'Up 2 hours'")" "1" "a running container started from the worktree is named under it"
+say "$(section fix/srv | grep -c "container c2 (srv-db-1), 'Exited")" "1" "…so is a stopped one under it (ps -a: old containers take disk space)"
+say "$(section fix/srv | grep -c 'container c3')" "0" "…not one from wt-srvx, whose name only extends it"
+say "$(section fix/srvx | grep -c 'container c3 (srvx-1)')" "1" "…which is named under wt-srvx, its own"
+say "$(grep -c 'container c4' "$PNOTE")" "0" "…nor one from /mnt<its path>"
+say "$(section fix/quiet | grep -c 'container')" "0" "…and none under a worktree with none"
+say "$(wc -l < "$PB/a/ps.log" | tr -d ' ')" "1" "ps runs once per merge, not once per worktree"
+say "$(wc -l < "$PB/a/docker.log" | tr -d ' ')" "1" "…docker too"
+if [ ! -r /proc/self/cwd ] && [ -n "$LSB" ]; then
+  say "$(wc -l < "$PB/a/lsof.log" | tr -d ' ')" "1" "…lsof too"
+fi
+
+shims "$PB/b" fail empty; OUT=$(rerun "$PB/b"); RC=$?
+say "$RC" "0" "with ps failing: the hook still exits 0"
+if [ -r /proc/self/cmdline ]; then
+  # Quoted, as every command line in the note is since 6b1200b: this case runs only on
+  # Linux, and expected the unquoted form until Ubuntu CI first ran it (2026-10-26).
+  say "$(section fix/srv | grep -cF "pid $S1, up ?: 'sleep 3001")" "1" "…and the processes come from /proc instead"
+  say "$(grep -c 'could not list processes' "$PNOTE")" "0" "…with nothing to report about ps"
+else
+  say "$(top | grep -c 'could not list processes (ps exited 127)')" "1" "…and the note says so, not 'nothing running'"
+  say "$(section fix/srv | grep -c "pid $S1 (command not known: ps failed)")" "1" "…still naming what works in the worktree, from lsof"
+fi
+
+shims "$PB/c" log fail; OUT=$(rerun "$PB/c"); RC=$?
+say "$RC" "0" "with docker failing: the hook still exits 0"
+say "$(top | grep -c "could not list containers (docker exited 1: 'Cannot connect to the Docker daemon")" "1" "…and the note says so, not 'no containers'"
+say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "…with the processes still listed"
+say "$(grep -c 'could not list containers' "$PNOTE")" "1" "…once, above the worktrees, not under each of them"
+say "$(section fix/quiet | grep -c 'Still running')" "0" "…where it is not mistaken for something still running"
+
+shims "$PB/d" log hang; T0=$SECONDS; OUT=$(rerun "$PB/d"); RC=$?; T1=$SECONDS
+say "$RC" "0" "with docker hanging: the hook still exits 0"
+say "$(top | grep -c 'could not list containers (docker ps gave no answer in 3s)')" "1" "…and says it was cut short"
+say "$([ $((T1 - T0)) -lt 8 ] && echo bounded)" "bounded" "…within seconds, not the 10 the stand-in sleeps"
+
+# No docker on PATH at all: a PATH of links to the tools the hook needs, docker left out.
+NB="$PB/nodocker"; mkdir -p "$NB"
+for t in bash sh env git awk sed grep tr head tail wc cut cat mktemp sleep readlink dirname basename find rm mkdir ps lsof; do
+  _p=$(command -v "$t") && ln -s "$_p" "$NB/$t"
+done
+[ -x "$NB/git" ] && [ -x "$NB/bash" ] || die "could not build a PATH without docker"
+OUT=$(cd "$PR" && PATH="$NB" "$PR/.ai/hooks/post-merge" 0 2>&1); RC=$?
+say "$RC" "0" "with no docker installed: the hook exits 0"
+say "$(grep -c -e '^    container ' -e 'docker exited' "$PNOTE")" "0" "…and says nothing about containers"
+say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "…while still listing the processes"
+kill "$S1" "$S2" "$S3" "$S4" "$S5" 2>/dev/null; wait "$S1" "$S2" "$S3" "$S4" "$S5" 2>/dev/null
+trap - EXIT
+rm -rf "$PB"
+
+echo "post-merge prints its note only when there is something to do, and at most 40 lines (#109):"
+# A `git pull` runs post-merge too; with nothing stale and nothing to delete it stays
+# one line, and reads no process list.
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+git -C "$QQ" checkout -qb fix/a && echo a > "$QQ/a" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: a" && git -C "$QQ" checkout -q trunk || die "could not build fix/a"
+git -C "$QQ" merge --no-edit fix/a >/dev/null 2>&1 && git -C "$QQ" branch -qd fix/a || die "could not merge and delete fix/a"
+mkdir -p "$PQ/s"; printf '#!/bin/sh\necho x >> %q/ps.log\nexec %q "$@"\n' "$PQ/s" "$(command -v ps)" > "$PQ/s/ps"; chmod +x "$PQ/s/ps"
+OUT=$(cd "$QQ" && PATH="$PQ/s:$PATH" .ai/hooks/post-merge 0 2>&1); RC=$?
+say "$RC" "0" "nothing to do: the hook exits 0"
+say "$(grep -c 'cleanup note written' <<<"$OUT")" "1" "…saying the note was written"
+say "$(grep -c -e 'Branch' -e 'Branches' -e 'Worktrees' <<<"$OUT")" "0" "…and printing none of it"
+say "$([ -f "$PQ/s/ps.log" ] && echo ran || echo not-run)" "not-run" "…and reading no process list"
+for i in $(seq 1 50); do git -C "$QQ" branch "old/b$i" trunk; done
+OUT=$(cd "$QQ" && .ai/hooks/post-merge 0 2>&1); RC=$?
+say "$RC" "0" "fifty merged branches: the hook exits 0"
+say "$(grep -c "git branch -d old/b" "$QQ/.claude/post-merge-note.md")" "50" "…the note file has every one"
+say "$(grep -c "more lines in .claude/post-merge-note.md" <<<"$OUT")" "1" "…the printed copy stops at 40 lines and says where the rest is"
+say "$([ "$(grep -c "git branch -d old/b" <<<"$OUT")" -lt 50 ] && echo cut)" "cut" "…having printed fewer than all fifty"
+rm -rf "$PQ"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

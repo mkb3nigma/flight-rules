@@ -174,6 +174,49 @@ check "custom REPLACES, not extends"     allow main 'git rm f.txt' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^integration$'
 check "custom: worktree dir in message"  deny  main 'git rm f.txt' \
       FLIGHT_RULES_WORKTREE_DIR='.worktrees'
+# A pattern bash cannot compile protected nothing: =~ returned 2, read as no match, and
+# a commit landed on the branch the typo meant to name (#103). Every branch is
+# protected until it is fixed; a valid pattern still lets a branch it does not name be.
+check "broken pattern: the branch it names"   deny  trunk     'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "broken pattern: any other branch too"  deny  feature/x 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "broken pattern: a destructive command" deny  feature/x 'git reset --hard HEAD~1' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk'
+check "valid pattern: a branch it does not name" allow feature/x 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^(trunk)$'
+# The broken pattern in the conf, and a command run against it: <desc> <branch>
+# <command> <verdict> <text the output must hold> <text it must not> [env…].
+broken_conf() {
+  local desc="$1" branch="$2" cmd="$3" want="$4" has="$5" hasnt="$6" D OUT RC got; shift 6
+  D=$(make_repo "$branch"); mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.ai/flight-rules.conf"
+  OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" env "$@" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); RC=$?
+  if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then got=deny; else got=allow; fi
+  if [[ $RC -eq 0 && "$got" == "$want" ]] && { [[ -z "$has" ]] || grep -qF -- "$has" <<<"$OUT"; } \
+     && { [[ -z "$hasnt" ]] || ! grep -qF -- "$hasnt" <<<"$OUT"; }; then
+    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s (rc=%s, %s)\n%s\n' "$desc" "$RC" "$got" "$OUT"
+  fi
+  rm -rf "$D"
+}
+broken_conf "broken pattern in the conf: denied, naming the pattern" feature/x 'git commit -m x' \
+  deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read, so every branch, \"feature/x\" included,' ''
+# Off in the env wins over a broken conf. The case it replaces set off with no broken
+# pattern anywhere, so it pinned nothing about the two together (group A fix review, F4).
+broken_conf "broken pattern in the conf, off in the env: allowed" trunk 'git commit -m x' \
+  allow '' '' FLIGHT_RULES_PROTECTED_BRANCHES=off
+# A branch create on feature/x is refused only because the broken pattern matches every
+# branch — a valid one would allow it — so the pattern's block names the cause. The
+# worktree block offered `off` and never named the pattern (group A fix review, F3;
+# round 3, V1).
+broken_conf "broken pattern, checkout -b: denied, naming the pattern" feature/x 'git checkout -b feature/y' \
+  deny 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read' 'PROTECTED_BRANCHES=off'
+# A mirror push is refused under any pattern, so it keeps its own block: the pattern's
+# said fixing it would let it through (group A fix review round 2, F7).
+broken_conf "broken pattern, mirror push: the protected-branch block" feature/x 'git push --mirror origin' \
+  deny 'protected branch \"every branch (--mirror)\"' 'is not a pattern bash can read'
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR='.worktrees' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
@@ -504,6 +547,33 @@ scan_case "renaming a .env to a template"    deny  "$TRACK_ENV && git mv .env .e
 scan_case "…but a key written into it"       deny  "$TRACK_ENV && printf '%s\n' \"\$AKIA\" >> .env && git add .env"
 scan_case "a .env renamed in"                deny  "printf 'X=1\n' > .env.example && git add .env.example && git commit -qm e && git mv .env.example .env"
 
+echo "Concluding a merge, the scan reads the resolution, as the git pre-commit hook does (#101):"
+# Against HEAD, the guard scanned every incoming commit, so it refused the commit #100's
+# box prints to conclude a merge whose incoming key had been reviewed, while git's hook
+# let it through (0.27.0 release review). MERGE_FROM: a conflicted merge of `other`,
+# which carries a key, stopped and staged with the resolution of f.txt given after it.
+MERGE_FROM='git checkout -qb other && printf "%s\n" "$AKIA" > k.txt && echo other > f.txt && git add . && git commit -qm other && git checkout -q feature/x && echo mine > f.txt && git commit -qam mine && { git merge other >/dev/null 2>&1; [ -f .git/MERGE_HEAD ]; } &&'
+scan_case "a key on the incoming side is not the resolution's"   allow "$MERGE_FROM echo resolved > f.txt && git add f.txt"
+scan_case "…a key written into the resolution is refused"         deny  "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt"
+scan_case "…with no AUTO_MERGE, merge-tree works the merge out"   allow "$MERGE_FROM echo resolved > f.txt && git add f.txt && rm -f .git/AUTO_MERGE"
+scan_case "…and the resolution's key is still refused there"      deny  "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt && rm -f .git/AUTO_MERGE"
+scan_case "…an octopus with no AUTO_MERGE is read in full"        deny  "$MERGE_FROM echo resolved > f.txt && git add f.txt && rm -f .git/AUTO_MERGE && git rev-parse HEAD^ >> .git/MERGE_HEAD"
+scan_case "…a tag named AUTO_MERGE is not git's merge"            deny  "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt && rm -f .git/AUTO_MERGE && git tag AUTO_MERGE \"\$(git write-tree)\""
+scan_case "a leftover MERGE_HEAD naming HEAD is an ordinary commit" deny "git rev-parse HEAD > .git/MERGE_HEAD && $STAGE_KEY"
+# Unstaging a file mid-merge commits HEAD's copy and drops the incoming change, so the
+# refusal must not say to; outside a merge it still does.
+MD=$(make_repo feature/x)
+(cd "$MD" && eval "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt") >/dev/null 2>&1 || die "could not build the merge in $MD"
+OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit --no-edit"}}' 2>/dev/null)
+say_n() { if [[ "$1" == "$2" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$3"; else FAIL=$((FAIL+1)); printf '  ❌ %s (got %s, want %s)\n' "$3" "$1" "$2"; fi; }
+say_n "$(grep -c 'do not unstage' <<<"$OUT")" 1 "mid-merge, the refusal says not to unstage"
+say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 0 "…and drops the advice to"
+rm -rf "$MD"; MD=$(make_repo feature/x)
+(cd "$MD" && eval "$STAGE_KEY") >/dev/null 2>&1 || die "could not stage a key in $MD"
+OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "outside a merge, it still says to unstage"
+rm -rf "$MD"
+
 echo "More ways to rewrite or discard a protected branch (post-merge review):"
 check "checkout <rev> -- <path>"          deny  main 'git checkout HEAD -- f.txt'
 check "checkout <branch> -- <path>"       deny  main 'git checkout other -- f.txt'
@@ -548,6 +618,14 @@ if grep -q 'git worktree add .ai/worktrees/<name> -b' <<<"$OUT"; then
   PASS=$((PASS+1)); printf '  ✅ block message shows the worktree command\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ block message lacks the worktree command\n'
+fi
+# A worktree directory with a space is quoted, so the route pastes as one path: printed
+# bare, it split into two arguments (fix review, 2026-10-26).
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR="my wt" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
+if grep -qF "git worktree add 'my wt'/<name> -b" <<<"$OUT" && grep -qF "cd 'my wt'/<name>" <<<"$OUT"; then
+  PASS=$((PASS+1)); printf '  ✅ …a worktree directory with a space is quoted to paste\n'
+else
+  FAIL=$((FAIL+1)); printf '  ❌ …a worktree directory with a space is printed unquoted\n'
 fi
 rm -rf "$D"
 # Another repo's branches are not ours to police (same scoping as the branch policy).
@@ -663,6 +741,21 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ the block is wrong for a deletion\n'
 fi
 rm -rf "$D"
+# The worktree the blocks suggest goes through /feature-start first: a raw worktree add
+# skips its open-branch count, the only gate on it (0.27.0 release review).
+for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|main|a commit on main'; do
+  D=$(make_repo "$(cut -d'|' -f2 <<<"$c")")
+  OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$(cut -d'|' -f1 <<<"$c")" '{tool_input:{command:$c}}')" 2>/dev/null)
+  if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q '/feature-start' <<<"$OUT" && grep -q 'open-branch limit\|OPEN_BRANCH_LIMIT' <<<"$OUT" \
+     && grep -q 'raw worktree add skips\|by hand, which skips' <<<"$OUT" \
+     && grep -q 'worktree add .* origin/<integration-branch>' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on origin/<integration-branch>\n' "$(cut -d'|' -f3 <<<"$c")"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s: the block does not point at /feature-start and its branch count\n' "$(cut -d'|' -f3 <<<"$c")"
+  fi
+  rm -rf "$D"
+done
 
 echo "Target parsing is per simple command, not per command STRING:"
 # Both directions were live and both are reproduced here (2026-09-10).
@@ -889,6 +982,78 @@ mg deny  "mid-merge: nor a forced push at a protected branch" \
 mg deny  "mid-merge: nor a local delete of a protected branch" \
          'git commit -m "merge feature/x" && git branch -D main'
 rm -rf "$MG"
+
+echo "…and the merge is the one in the -C target, not in the hook's own cwd (#98):"
+# `rev-parse --git-dir` printed `.git` relative to the -C target, and the test resolved
+# it from the cwd: from a linked worktree (where .git is a file) a merge being finished
+# in the main checkout was refused, and from a repo mid-merge a direct commit to another
+# repo's protected branch was waived. Each case runs with cwd ≠ the target.
+mgc() {   # mgc <expect> <desc> <cwd> <project dir> <command>
+  local expect="$1" desc="$2" cwd="$3" proj="$4" cmd="$5" out rc got
+  out=$(cd "$cwd" && CLAUDE_PROJECT_DIR="$proj" bash "$HOOK" \
+        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+MR=$(make_repo main)
+git -C "$MR" worktree add -q "$MR/.ai/worktrees/x" -b feature/x >/dev/null 2>&1 \
+  || die "could not add a worktree to $MR"
+printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$MR/.git/MERGE_HEAD"
+mgc allow "from a worktree, finishing the main checkout's merge is waived" \
+    "$MR/.ai/worktrees/x" "$MR" "git -C $MR commit --no-edit"
+# A linked worktree keeps its MERGE_HEAD in its own gitdir (.git/worktrees/<name>), so
+# the main checkout's .git is the wrong place to look for it, from either side.
+git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 \
+  || die "could not add a dev worktree to $MR"
+mgc deny  "from the main checkout, a merge there does not waive a commit in a worktree on dev" \
+    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
+printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$(git -C "$MR/.ai/worktrees/d" rev-parse --absolute-git-dir)/MERGE_HEAD"
+mgc allow "from the main checkout, finishing a merge in a worktree on dev is waived" \
+    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit --no-edit"
+NM=$(make_repo main)
+# git -C walks a path as the kernel does: lnk/.. is the parent of where lnk leads, not
+# the cwd. The guard already judged this as git does; pinned when install.sh's plain
+# cd was found to read lnk/.. by name (second fix review).
+LP=$(make_repo main); LQ=$(make_repo feature/q); mkdir -p "$LP/sub"
+ln -s "$LP/sub" "$LQ/lnk" || die "could not link $LQ/lnk to $LP/sub"
+[ "$(git -C "$LQ/lnk/.." branch --show-current)" = main ] || die "git -C lnk/.. did not reach $LP"
+mgc deny  "git -C through a link and ..: judged where git goes, the project's main" \
+    "$LQ" "$LP" "git -C lnk/.. commit -m x"
+rm -rf "$LP" "$LQ"
+mgc deny  "a merge in the cwd's repo does not waive a commit to another repo's main" \
+    "$MR" "$NM" "git -C $NM commit -m x"
+rm -rf "$MR" "$NM"
+
+echo "…and the project is found as git finds it, whatever the shell's cd settings (third fix review):"
+# The project dir is the harness's spelling. Through a symlink to a subdirectory, git
+# answers `../.git` from where the link leads, and plain cd applied it to the link's own
+# parent: here another repo, so the guard took the project for that one and allowed a
+# commit on main.
+LB=$(make_repo main); LA=$(make_repo feature/a); mkdir -p "$LB/sub"
+ln -s "$LB/sub" "$LA/proj" || die "could not link $LA/proj to $LB/sub"
+[ "$(git -C "$LA/proj" rev-parse --git-common-dir)" = "../.git" ] || die "git did not answer ../.git from the linked subdirectory: the case below tests nothing"
+mgc deny  "project dir a symlinked subdirectory whose link sits in another repo: a commit on main is refused" \
+    "$LA/proj" "$LA/proj" "git commit -m x"
+rm -rf "$LA" "$LB"
+# An exported CDPATH holding `.` made `cd .git` print where it went, so the comparison
+# never matched and the branch policy was off — for a worktree on dev committed to from
+# the main checkout, among others.
+MR=$(make_repo main)
+git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 || die "could not add a dev worktree to $MR"
+CDPATH=.:/usr mgc deny "CDPATH=.:/usr exported: a commit in a worktree on dev is still refused" \
+    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
+# …and with the project dir a subdirectory of its repo, committing on main from the top:
+# the target's `.git` is the relative answer CDPATH bent. The case before this one, with
+# target_root == the project dir, short-circuited before the compare and could not fail
+# (fourth fix review).
+mkdir -p "$MR/sub"
+CDPATH=.:/usr mgc deny "…and a commit on main, the project dir a subdirectory of the checkout" \
+    "$MR" "$MR/sub" "git commit -m x"
+rm -rf "$MR"
 
 echo "…and a harmless command is not made dangerous by its neighbour:"
 # The mirror of the section below, and the direction that had no coverage. The target

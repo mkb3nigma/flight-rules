@@ -13,11 +13,30 @@
 # Run from anywhere inside the repo. Reads the same conf the hooks read.
 
 set -uo pipefail
+# An exported CDPATH holding `.` makes cd print where it went, so a $(cd … && pwd -P)
+# came back as two lines and named no directory: the guard's project comparison never
+# matched and its branch policy was off (third fix review). Nothing here wants it.
+unset CDPATH
 QUIET=0; [[ "${1:-}" == "--problems-only" ]] && QUIET=1
 FAIL=0; WARN=0
 ok()   { [[ $QUIET -eq 1 ]] || printf '  ✅ %s\n' "$1"; }
 warn() { WARN=$((WARN+1)); printf '  ⚠️  %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$1"; }
+# shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
+# ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
+# leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
+# Nor sed: BSD sed stops on bytes that are not UTF-8 and printed '' (fourth review).
+# Leading = and ~ are quoted too: zsh expands both. The letters are spelled out: a
+# range like A-Z follows the locale's collation. Kept verbatim in step across
+# post-merge, install.sh, flight-rules-doctor.sh, session-start.sh, the agent guard
+# and the ref gate (tested).
+shq() {
+  local q="'\\''"
+  case "$1" in
+    ''|=*|'~'*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-]*) printf "'%s'" "${1//\'/$q}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 
 GIT_HOOKS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/git"   # the copies shipped beside this script
 SRC_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
@@ -44,6 +63,14 @@ release_of() {
   if [[ -n "$best" ]]; then printf '%s' "$best"; else printf '%s' "$found" | head -1; fi
 }
 
+# newer_than <a> <b>: a is a later release than b. Both dotted-numeric, or no answer
+# (false): a sha or "latest" as a cache directory, or a source with no plugin.json,
+# orders nothing, and the copy is reported behind as before. install.sh's, verbatim.
+newer_than() {
+    printf '%s\n%s\n' "$1" "$2" | grep -cE '^[0-9]+(\.[0-9]+)+$' | grep -qx 2 || return 1
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]
+}
+
 # A hook that is present, executable and EMPTY passes every other check here while
 # enforcing nothing. doctor already content-checks the agent guard (for a pre-conf copy);
 # these are the same idea for the six git hooks — one string each that a real copy must
@@ -55,8 +82,15 @@ hook_marker() {
     commit-msg)             printf 'pre-merge-check' ;;
     pre-rebase)             printf 'PR_ONLY' ;;
     post-merge)             printf 'post-merge-note' ;;
-    reference-transaction)  printf 'is-ancestor' ;;
+    reference-transaction)  printf 'PR_ONLY' ;;   # not is-ancestor, a common idiom (#97 review)
     pre-commit)             printf 'PRIVATE KEY' ;;
+    # Not a hook: tells flight-rules' install.sh from a project's own — a heuristic,
+    # like the rest. The phrase is in the header comment of every revision since it was
+    # added (7b7f968, 2026-07-19). merge.ff and core.hooksPath would not do: every
+    # flight-rules project is told to set both, so its own installer would match (second
+    # review, 2026-10-21). install.sh's hook_marker holds the same table; keep them in
+    # step (install.test.sh compares them).
+    install.sh)             printf 'committed git hooks into git' ;;
     *)                      printf 'flight-rules' ;;
   esac
 }
@@ -80,12 +114,12 @@ if [[ -z "$HOOKS_PATH" ]]; then
     # so name the copy first rather than print a command that fails (fix review).
     _cp=""
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
-      [[ -f "$ROOT/.ai/hooks/$h" ]] || _cp="$_cp$(printf 'cp %q %q/ && ' "$GIT_HOOKS_SRC/$h" "$ROOT/.ai/hooks")"
+      [[ -f "$ROOT/.ai/hooks/$h" ]] || _cp="$_cp$(printf 'cp %s %s/ && ' "$(shq "$GIT_HOOKS_SRC/$h")" "$(shq "$ROOT/.ai/hooks")")"
     done
     [[ -n "$_cp" ]] && _cp_note=" Commit the hooks it copies in, so the next clone has them."
-    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .ai/hooks/. To wire them up: %sbash %q   (git config is per clone; it also sets merge.ff false.%s Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$_cp" "$GIT_HOOKS_SRC/install.sh" "${_cp_note:-}")"
+    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .ai/hooks/. To wire them up: %sbash %s   (git config is per clone; it also sets merge.ff false.%s Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$_cp" "$(shq "$GIT_HOOKS_SRC/install.sh")" "${_cp_note:-}")"
   elif [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
-    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %q --from %q   (it also sets merge.ff false; then commit .ai/hooks/)' "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC")"
+    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %s --from %s   (it also sets merge.ff false; then commit .ai/hooks/)' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")")"
   else
     bad "core.hooksPath is not set — the merge gate is not installed (flight-rules' hooks/git/install.sh, or: git config core.hooksPath <dir>)"
   fi
@@ -101,51 +135,138 @@ else
         # release (pre-commit, 0.23.0) arrives as this line; say where to copy it from.
         # A flight-rules-doctor.sh copied in by hand has no git/ beside it to copy from.
         if [[ -f "$GIT_HOOKS_SRC/$h" ]]; then
-          bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from this flight-rules: cp '$GIT_HOOKS_SRC/$h' '$HOOKS_PATH/' && chmod +x '$HOOKS_PATH/$h'"
+          # Where to run it, as the update line below says: copied in on a protected
+          # branch, it could not be committed there (full release review, S5; #99).
+          bad "$h missing from $HOOKS_PATH — the gate is half built. On a branch (in a worktree when this checkout is on a protected branch), then commit it. Copy it in from this flight-rules: cp $(shq "$GIT_HOOKS_SRC/$h") $(shq "$HOOKS_PATH/") && chmod +x $(shq "$HOOKS_PATH/$h")"
           NEEDS_SYNC=1
         else
           bad "$h missing from $HOOKS_PATH — the gate is half built. Copy it in from flight-rules' hooks/git/ and chmod +x it"
         fi
       elif [[ ! -x "$HOOKS_DIR/$h" ]]; then
         bad "$h is not executable — git ignores it silently (chmod +x, and commit the mode)"
-      elif ! grep -q "$(hook_marker "$h")" "$HOOKS_DIR/$h"; then
-        # pre-commit is the one hook a project is likely to have had already (a linter),
-        # and the upgrade to 0.23.0 is when it meets this line; say where it goes.
-        _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
-        bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
-      elif grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/$h"; then
+      # Unreadable, or a grep that errors, is a check that could not run — not "no
+      # marker", which called the hook a stub and leaked grep's error (fix review, F15).
+      # Unreadable is a problem on its own: git cannot run it, so a command it gates
+      # fails, and what post-merge does just does not happen (group A fix review, F5).
+      elif [[ ! -r "$HOOKS_DIR/$h" ]]; then
+        bad "$h is unreadable — git cannot run it, so what it checks does not happen and a command it gates fails; doctor could not check it either (chmod +r, and commit the mode)"
+      elif { grep -q "$(hook_marker "$h")" "$HOOKS_DIR/$h" 2>/dev/null; _m=$?; [[ $_m -ne 0 ]]; }; then
+        if [[ $_m -ne 1 ]]; then
+          warn "$h could not be read (grep exited $_m) — could not check it"
+        else
+          # pre-commit is the one hook a project is likely to have had already (a linter),
+          # and the upgrade to 0.23.0 is when it meets this line; say where it goes.
+          _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
+          bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
+        fi
+      # The status is kept, as in install.sh: a grep that errors could not check it, and
+      # read as "not adapted", its error on screen (group A fix review, F13).
+      elif { grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/$h" 2>/dev/null; _a=$?; [[ $_a -eq 0 ]]; }; then
         # The project's own version, said so in the file: not compared with the release,
         # and never replaced by HOOK_SYNC=auto. Without the mark, an adapted hook drew a
         # ⚠️ into every session's context with no way to accept it (review, 2026-10-12).
         ok "$h adapted here (marked flight-rules: adapted) — not compared with this release; /rules-sync shows its diff against each new one"
+      elif [[ $_a -ne 1 ]]; then
+        warn "$h could not be read (grep exited $_a) — could not check it"
       elif [[ -f "$GIT_HOOKS_SRC/$h" ]] && ! cmp -s "$HOOKS_DIR/$h" "$GIT_HOOKS_SRC/$h"; then
         # Present, executable, the right hook — and not this release's. A plugin update
         # cannot touch it, so four hooks sat at 0.22.0 under a 0.23.0 plugin with every
         # line above green (AppliHawk, 2026-10-12). Byte-identical to an older cached
         # release is a stale copy, no doubt about it; matching no release may be the
         # project's own adaptation, which is a question, not a problem.
+        _newer=0
         if _ver=$(release_of "$HOOKS_DIR/$h"); then
           if [[ -n "$SRC_VERSION" && "$_ver" == "$SRC_VERSION" ]]; then
             # The copy IS the current release's; this doctor runs from a checkout whose
             # hooks/git has moved on since. Only a checkout can show this, never the plugin.
             warn "$h is the released $_ver copy, and this flight-rules checkout carries unreleased changes to it"
+          # A later release's copy is not behind: a session on that release wrote it, and
+          # this one runs the older plugin. A ❌ and a sync hint here pointed at a full
+          # install that downgraded it (fix review, 2026-10-24). install.sh's newer_than,
+          # verbatim (flight-rules-doctor.test.sh compares them).
+          elif newer_than "$_ver" "$SRC_VERSION"; then
+            warn "$h is the flight-rules $_ver copy, newer than this flight-rules ($SRC_VERSION) — a session on $_ver wrote it; start a new session to run $_ver here too"
+            _newer=1
           else
             bad "$h is the flight-rules $_ver copy — this flight-rules is ${SRC_VERSION:-newer}, so the hook running here is behind the one you installed"
           fi
         else
           warn "$h differs from this flight-rules' copy (${SRC_VERSION:-hooks/git/$h}) — adapted here on purpose, or a stale copy? diff it against $GIT_HOOKS_SRC/$h; if adapted, add a line '# flight-rules: adapted' to it and this stops"
         fi
-        NEEDS_SYNC=1
+        [[ $_newer -eq 1 ]] || NEEDS_SYNC=1
       else
         ok "$h installed and executable"
       fi
     done
+    # The sync updates install.sh with the hooks, so a stale copy is named too: 0.26.0
+    # changed only it, and under HOOK_SYNC=report nothing said so (#90). A warning, not a
+    # problem — it guards nothing, an old copy works as it did, and the commands printed
+    # here run this flight-rules' own. Not one that differs and lacks the marker: it is
+    # the project's own installer, and the hint below would have replaced it (batch
+    # review, 2026-10-21; install.sh leaves it alone since #97). A check that could not
+    # run says so — an unreadable file, or a grep that errors rather than answering,
+    # which read as "no marker" and left the file unmentioned (second and third reviews,
+    # 2026-10-21).
+    # Missing is noted on the full report only, with the cp that restores it: nothing
+    # needs it to run the hooks, the sync no longer puts it back unattended, and a
+    # project that removed it on purpose would get a warning every day (owner,
+    # 2026-10-21).
+    if [[ ! -e "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+      # From a worktree whose hooks are in another checkout, the cp lands at the same
+      # path in this one: written into that checkout, it was an untracked file there that
+      # a later merge bringing install.sh in refused to overwrite (#90 fix review, F9).
+      # Only when that directory is in this checkout too — untracked there, it is not,
+      # and the cp failed (group A fix review, F9) — and resolves inside it: a link back
+      # to the other checkout's copy took the cp there (group A fix review round 2, F0).
+      _dst="$HOOKS_DIR/install.sh"
+      _own=$(cd -P "$HOOKS_DIR" && git rev-parse --show-toplevel 2>/dev/null)
+      _hd=$(cd -P "$HOOKS_DIR" && pwd -P)
+      _cd1=$(cd -P "$HOOKS_DIR" && cd -P "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+      _cd2=$(cd -P "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+      _wd=$(cd -P "$ROOT/${_hd#"$_own"/}" 2>/dev/null && pwd -P)
+      if [[ -n "$_own" && "$_own" != "$ROOT" && -n "$_cd1" && "$_cd1" == "$_cd2" && "$_hd" == "$_own"/* \
+            && -n "$_wd" && "$_wd" == "$(cd -P "$ROOT" && pwd -P)"/* ]]; then
+        _dst="$ROOT/${_hd#"$_own"/}/install.sh"
+      fi
+      ok "$(printf 'install.sh is not in %s — nothing needs it to run the hooks; to restore it, on a branch: cp %s %s' "$HOOKS_PATH" "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$_dst")")"
+    elif [[ -f "$HOOKS_DIR/install.sh" && ! -r "$HOOKS_DIR/install.sh" ]]; then
+      warn "$HOOKS_PATH/install.sh is unreadable — could not check it"
+    # The adapted grep keeps its status, as the hooks' does above: an error read as "not
+    # marked" (group A fix review round 2, F1).
+    elif [[ -f "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]] \
+       && ! cmp -s "$HOOKS_DIR/install.sh" "$GIT_HOOKS_SRC/install.sh" \
+       && { grep -qE '^[[:space:]]*#[[:space:]]*flight-rules: adapted' "$HOOKS_DIR/install.sh" 2>/dev/null; _a=$?; [[ $_a -ne 0 ]]; }; then
+      if [[ $_a -ne 1 ]]; then
+        warn "$HOOKS_PATH/install.sh could not be read (grep exited $_a) — could not check it"
+      elif _ver=$(release_of "$HOOKS_DIR/install.sh"); then
+        if [[ -n "$SRC_VERSION" && "$_ver" == "$SRC_VERSION" ]]; then
+          warn "install.sh is the released $_ver copy, and this flight-rules checkout carries unreleased changes to it"
+          NEEDS_SYNC=1
+        elif newer_than "$_ver" "$SRC_VERSION"; then
+          warn "install.sh is the flight-rules $_ver copy, newer than this flight-rules ($SRC_VERSION) — a session on $_ver wrote it; start a new session to run $_ver here too"
+        else
+          warn "install.sh is the flight-rules $_ver copy — this flight-rules is ${SRC_VERSION:-newer}; only running $HOOKS_PATH/install.sh by hand gets the old one"
+          NEEDS_SYNC=1
+        fi
+      else
+        grep -qF "$(hook_marker install.sh)" "$HOOKS_DIR/install.sh"; _m=$?
+        if [[ $_m -eq 0 ]]; then
+          warn "install.sh differs from this flight-rules' copy (${SRC_VERSION:-hooks/git/install.sh}) — adapted here on purpose, or a stale copy? diff it against $GIT_HOOKS_SRC/install.sh; if adapted, add a line '# flight-rules: adapted' to it and this stops"
+          NEEDS_SYNC=1
+        elif [[ $_m -ne 1 ]]; then
+          warn "$HOOKS_PATH/install.sh could not be read (grep exited $_m) — could not check it"
+        fi
+      fi
+    fi
     if [[ "${NEEDS_SYNC:-0}" -eq 1 ]]; then
       # The --stale-only form is the one printed: this line reaches the user's screen
       # without the ⚠️ beside it, and the bare form overwrote an unmarked adapted hook
       # when run as printed (fix review, 2026-10-13 — reproduced).
-      printf '     to update: bash %q --from %q --stale-only   (replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace it. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
-        "$GIT_HOOKS_SRC/install.sh" "$GIT_HOOKS_SRC"
+      # --this-checkout and "on a branch": the plain form, run in a main checkout on a
+      # protected branch, left a diff that could not be committed or cleared there, and
+      # from a worktree it sent the user back to that checkout (#99, 2026-10-21).
+      printf '     to update: bash %s --from %s --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
+        "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"
     fi
     # The scan runs pre-commit.local only if it is executable, and skips it without a
     # word otherwise — a project's linter would stop running unnoticed.
@@ -168,7 +289,7 @@ else bad "neither jq nor python3 on PATH — the agent guard will deny every git
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 CONF=".ai/flight-rules.conf"
-KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
+KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC OPEN_BRANCH_LIMIT DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
 else
@@ -204,18 +325,18 @@ else
               _pr=$(sed -n -E 's/^[[:space:]]*PR_ONLY_BRANCHES[[:space:]]*=[[:space:]]*"?([^"[:space:]#]+)"?.*$/\1/p' "$CONF" | tail -1)
               _ib_is_pr_only=0
               if [[ -n "$_pr" && "$_pr" != "off" && "$_pr" != "none" && -n "$_ib" ]]; then
-                ( [[ "$_ib" =~ $_pr ]] ) 2>/dev/null && _ib_is_pr_only=1
+                ( shopt -s nocasematch; [[ "$_ib" =~ $_pr ]] ) 2>/dev/null && _ib_is_pr_only=1
               fi
               if ! grep -qE '^[[:space:]]*NOTE_GATED_BRANCHES[[:space:]]*=' "$CONF" \
                  && [[ -n "$_ib" && "$_ib" != "main" && "$_ib_is_pr_only" -eq 0 ]]; then
                 warn "…and with NOTE_GATED_BRANCHES unset, that empties the note gate as well — a merge into $_ib needs no pre-merge-check note. Name NOTE_GATED_BRANCHES to keep it"
               fi
               ;;
-            PR_ONLY_BRANCHES)    warn "$key=$val — no branch is PR-only: the ref gate and the local merge gate stand down (PROTECTED_BRANCHES still applies)" ;;
+            PR_ONLY_BRANCHES)    warn "$key=$val — no branch is PR-only: the ref gate, the local merge and rebase gates and the squash guard stand down (PROTECTED_BRANCHES still applies)" ;;
             NOTE_GATED_BRANCHES) warn "$key=$val — no branch requires a pre-merge-check note" ;;
           esac
         elif ( [[ "x" =~ $val ]] ) 2>/dev/null; [[ $? -eq 2 ]]; then
-          bad "$key='$val' is not a valid regex — bash rejects it and the hook fails closed or open depending on the path"
+          bad "$key='$val' is not a valid regex — every branch is taken as matching it, so each gate it sets is closed on every branch until it is fixed"
         elif [[ "$val" != ^* ]]; then
           warn "$key='$val' is unanchored — 'main' also matches 'maintenance'; use ^main\$"
         else ok "$key=$val"; fi ;;
@@ -228,10 +349,13 @@ else
           report) ok "$key=report" ;;
           *)      warn "$key='$val' is neither auto nor report — session-start treats it as report and syncs nothing" ;;
         esac ;;
+      OPEN_BRANCH_LIMIT)
+        if [[ "$val" =~ ^0*[1-9][0-9]*$ || "$val" == off ]]; then ok "$key=$val"
+        else warn "$key='$val' is neither a positive whole number nor off — session-start treats it as 5 and warns when that many branches are open"; fi ;;
       DG_COMIC)
         case "$val" in
           always|never) ok "$key=$val" ;;
-          *) warn "$key='$val' is neither always nor never — /dg treats it as always and ends every verdict with the comic" ;;
+          *) warn "$key='$val' is neither always nor never — /dg treats it as always and opens every verdict with the comic" ;;
         esac ;;
       DG_COMIC_PR)
         case "$val" in

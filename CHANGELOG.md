@@ -4,6 +4,143 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.27.0 — 2026-10-24
+
+### Upgrading
+
+**Git hooks changed** — `commit-msg`, `pre-commit`, `pre-merge-commit`, `pre-rebase`,
+`reference-transaction`, `post-merge` and `install.sh` — so sync them. With
+`HOOK_SYNC=auto` a session's first run does it and leaves the diff to commit — except on
+a protected branch, or from a worktree whose hooks are the main checkout's, where it
+prints the command to run instead (#99); with the default `report`, doctor names each
+stale copy and prints the command. From this release
+on, the automatic sync never replaces a copy that is a newer release's than the one
+syncing. A session still on 0.26.x has an installer without that check: left open, it
+can write its older copies back over newer ones on its first session start each day,
+until it is closed, and the next current session's daily check restores them. Close
+sessions on older versions after updating.
+
+**After `/plugin update` and `/reload-plugins`**, the next prompt now says the session is
+on the new version and that a new session loads its rules and runs the checks (#94). It
+comes from the plugin's own wiring (`hooks.json` passes `--plugin`); hand-wired setups
+get no such notice and need no change. A session already open when 0.27.0 arrives is not
+told: the version it started on was never recorded.
+
+**A full install no longer overwrites a project's own hooks** (#97). Before, only
+`pre-commit` was protected. It tells them apart by a phrase each flight-rules hook
+carries — a heuristic: a project's own `pre-commit` that mentions `PRIVATE KEY` is still
+taken for flight-rules' and replaced (#113). And when the install points git at flight-rules' hooks
+folder, it names any hooks git will stop running from `.git/hooks/` or a global hooks
+folder; running them alongside flight-rules' is #111.
+
+**The post-merge cleanup list looks different** (#109): it is printed at the merge, not
+only written to `.claude/post-merge-note.md`; names that need quoting are in `'…'` (plain
+ones are bare); and an annotation such as `↑ just merged` sits on its own line.
+
+One new key in `.ai/flight-rules.conf`, `OPEN_BRANCH_LIMIT`, **on by default at 5**: with
+five branches open, `/feature-start` asks before opening a sixth, and run with no one to
+ask, it opens none. `off` turns it off. Below.
+
+### Added
+
+- **Open-branch limit** (#108). At `OPEN_BRANCH_LIMIT` branches open and not yet merged
+  into the integration branch, local or `origin/`, session start warns — on screen and to the assistant,
+  naming which have passed `pre-merge-check` and wait to merge — and never blocks.
+  `/feature-start` counts before opening another and, at the limit, opens it only once
+  you say it is okay, naming where the limit is set; the guard's suggested commands and
+  this repo's CLAUDE.md point at it, since a raw `git worktree add` skips the count. `off` stands both down. A count
+  that cannot be made (no integration branch, a git failure, a protected pattern that
+  does not compile) is said to the assistant, never read as "under the limit".
+- **What testing started is stopped** (#109). The post-merge list names processes still
+  running from each merged worktree — by working directory or a path in the command
+  line — and Docker Compose containers started from it (`docker ps -a`, bounded to 3 s;
+  silent without docker, said when docker fails). It stops nothing. `pre-merge-check`
+  item 21 asks that what a branch's checks started is stopped before the stamp.
+- **`/dg` Review Domains** (#96): the classes a reviewer is asked to look for —
+  authorisation, untrusted input, fail-open defaults, races, magic values, swallowed
+  errors, time, unbounded work, compatibility, tests — reach every reviewer's brief on
+  code.
+- **`pre-merge-check`**: item 4 gates new type errors against the destination's set;
+  item 20 flags swallowed errors.
+
+### Fixed
+
+- **Hook downgrade**: the automatic sync took any release's exact copy as replaceable,
+  so a session on an older version replaced newer hooks with its own (batch review).
+  Doctor also called a newer copy "behind" and pointed at a command that downgraded it;
+  it is now a ⚠️ that says a newer session wrote it.
+- **Pasting the cleanup list could run code** (#109 reviews): git allows `'`, `;`, `$`
+  and backticks in a branch name, and the list printed names raw — in its commands and
+  on every other line. Every value from outside the hook is now quoted, with one shared
+  quoting function (`shq`, kept identical in the four scripts that print commands to
+  paste, and tested), which also fixes `printf %q` on macOS bash 3.2 splitting
+  non-ASCII names. A process row forged by a newline in a command line is dropped.
+- **A protected-branch pattern that does not compile protected nothing** (#103): the
+  guard and the gating git hooks now treat it as protecting every branch, say so, and
+  print a way out that works from where the refusal leaves you (`post-merge`'s cleanup
+  list offers nothing for deletion and does not say why, #113). A pattern that gates matches
+  case-insensitively, as the guard's does; one that exempts — a back-merge of a PR-only
+  branch — takes the pattern's exact case, and every case variant of the branch on
+  origin must hold the commit; a refusal lists those that do not, judging none of them.
+- **The secret scan skipped a merge's concluding commit** (#101), the hand-written
+  conflict resolution included; it now scans what the resolution adds — the agent guard
+  as git's hook does, where it had scanned every incoming commit and refused the commit
+  that finishes a refused merge — worked out with `git merge-tree` where git wrote no
+  `AUTO_MERGE`; with git older than 2.38, or for an octopus merge, everything staged is
+  still scanned. Mid-merge, neither refusal says to unstage a file: the merge would keep
+  `HEAD`'s copy and drop the incoming change.
+- **The merge-authorisation box printed a `git merge` that always failed** (#100) while
+  the refused merge was still in progress; it prints the command that concludes it. The
+  note gate's, PR-only merge and rebase refusals print no bypass any more: theirs failed
+  mid-merge, or met the ref gate wherever origin has the branch, and one that worked
+  would hand an assistant the skip the gate exists to stop.
+- **`HOOK_SYNC=auto` wrote into a checkout on a protected branch** (#99), leaving a diff
+  nobody could commit; there it now only compares and prints the command for a branch —
+  mid-merge, -rebase or -bisect too, when the command is for afterwards.
+- **The guard's branch policy could switch off** when the project directory was a symlink
+  to a subdirectory of its repository with the link itself inside another repository,
+  or when the shell exported a `CDPATH` that `cd .git` could resolve through (one
+  holding `.`, or naming a directory with its own `.git`, such as a dotfiles home): it
+  took the project for a different repository and allowed a commit on a protected
+  branch. It now finds the project as git does.
+- **`install.sh` read `--from` and the hooks path by name**, so a `..` after a link named
+  a different directory from the one git uses, and an exported `CDPATH` could misread
+  them too; it now walks them as the kernel does.
+- **The guard looked for `MERGE_HEAD` in its own working directory**, not the `-C`
+  target (#98): a false block from a worktree, and a waiver that leaked across repos.
+- **`HOOK_SYNC=auto` warned daily in every worktree whose hooks live in the main
+  checkout** (#93), even with nothing stale; it compares first and is silent when current.
+- **Doctor did not report a stale `.ai/hooks/install.sh`** (#90).
+- **Session start and `post-merge` read a quoted conf value with its quotes** —
+  `INTEGRATION_BRANCH='dev'`, `WORKTREE_DIR`, `HOOK_SYNC='auto'` — while doctor showed ✅;
+  a quoted `PROTECTED_BRANCHES` had `post-merge` offer `git branch -d main` as safe to
+  delete. Both read them as the guard does, `post-merge` with
+  `FLIGHT_RULES_PROTECTED_BRANCHES` first. Doctor's own branch helpers still keep a
+  single-quoted value's quotes (#113).
+- **Session start in a subdirectory found no conf**, so `HOOK_SYNC`, the open-branch
+  count and the branch parameters went to their defaults unsaid; it reads the
+  checkout's top, and `FLIGHT_RULES_WORKTREE_DIR` first, as the guard does.
+- **`/feature-start` stopped every branch as "diverged"** in a project that promotes by
+  PR: `main`'s merge commits are not a divergence when merging `main` in changes no file.
+- **The ref gate's way out branched off the PR-only branch**, into `.ai/worktrees`
+  whatever `WORKTREE_DIR` said; it now starts from `origin/<integration branch>`, in
+  `WORKTREE_DIR`, quoted to paste, as the guard's does. `pre-merge-commit`'s PR route
+  names the integration branch for a feature.
+
+### Changed
+
+- **`/dg` output order**: header, comic, rounds, verdict, then the decisions waiting — a
+  numbered list, not a table — so they are where a terminal leaves the reader. The skill
+  names it as its one departure from the principles' "lead with what needs deciding".
+- **`/dg`**: an extension's own pre-reviewer timeout is an inner limit under
+  `DG_WAIT_MINUTES` (#95). The release-review check's three known Markdown limits are
+  accepted rather than parsed further (#91).
+- **Principles**: a refused command may go to the person, told it was refused, by what
+  and why — an ask that carries its reasons, and never a hand-written `pre-merge-check`
+  note; a command you need the person to run is a decision you ask for, with what waits
+  on it and how many such asks are open; the UTC line moved to the checklists.
+- **READMEs**: flight-rules assumes a competent developer and does not babysit.
+
 ## 0.26.0 — 2026-10-20
 
 ### Upgrading

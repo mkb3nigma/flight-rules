@@ -17,8 +17,11 @@
 
 - A blocked command is information, not an obstacle: read the reason, do what it says,
   re-run. Never slip past a guard by editing it or its config, adding `--no-verify`, or
-  reshaping the command to dodge it. If the block is wrong, stop and say so — the owner
-  decides
+  reshaping the command to dodge it. A person may still run it, told that it was
+  refused, by what and why: that is a decision you are asking for (§7). Never one that
+  writes a `pre-merge-check` note by hand: the note says the check ran, and only
+  running it may write one. If the block is wrong, or refuses a step the project's own
+  workflow requires, stop and say so; that is a finding, and the owner decides
 - An action nothing can undo — force-pushing or rewriting shared history, deleting an
   unmerged branch, discarding uncommitted or stashed work you did not make, dropping
   data — needs a person's yes first; a request that names the action is that yes. With
@@ -33,8 +36,6 @@
   ask, take the reading the project's own evidence best supports, say which and why,
   then proceed. If something you need is answered by neither the request nor the
   project, say what is missing and stop — a guess is not one of the readings
-- Store instants in UTC — a stored time with no zone is a bug. Calendar arithmetic
-  (next day, 9am local, a recurrence) happens in the owning zone, not in UTC
 
 ## 2. Simplicity First
 
@@ -107,7 +108,8 @@
 - Lead with what needs deciding and your recommendation. Every decision you ask for is
   decidable from that message alone — what it is, why it came up, the evidence (or that
   there is none), what each option costs; one line for a small one. A label or ID may
-  name it, never stand in for it
+  name it, never stand in for it. A command you need the person to run is such a
+  decision; say also what waits on it, and how many such asks are open
 - Three or more findings is a register — one row each, stable IDs, severity. Issues
   woven through paragraphs cannot be tracked back to the sentence that raised them
 - Separate what you ran from what you concluded, and label which is which. Done means

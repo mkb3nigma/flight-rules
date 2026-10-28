@@ -17,7 +17,10 @@
 # Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
 # install.sh once per clone.
 #
-# Bypass (breaks the rules — emergencies only):  git rebase --no-verify
+# No bypass is printed. `git rebase --no-verify` skips this hook, but where origin has
+# the branch the ref gate (reference-transaction) still refuses the rewrite, and
+# --no-verify does not reach that hook (fix review, 2026-10-26, as S4 found in
+# pre-merge-commit).
 
 set -euo pipefail
 
@@ -27,9 +30,11 @@ CONF_PATH='.ai/flight-rules.conf'   # repo-relative
 read_conf_at_head() {
   local key="$1" path="$2" content
   content=$(git show "HEAD:$path" 2>/dev/null) || return 0
+  # A trailing `# comment` is stripped, as commit-msg and the ref gate strip it: kept,
+  # `^main$  # only main` matched no branch and turned this gate off (#103 review).
   printf '%s\n' "$content" \
     | sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" \
-    | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
 
@@ -37,7 +42,16 @@ PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHE
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 
 BRANCH="${2:-$(git branch --show-current)}"
-[[ "$BRANCH" =~ $PR_ONLY_RE ]] || exit 0
+# `off` names no branch. Read as a pattern it matched any branch with "off" in its name
+# (#103 review, 2026-10-22).
+[ "$PR_ONLY_RE" = "off" ] && exit 0
+# A pattern that does not compile matches every branch, not none: [[ =~ ]] returns 2
+# for it, which read as "no match" and turned the gate off (#103). Case-insensitively,
+# as the agent guard matches: `^MAIN$` let main be rebased (#103 review).
+shopt -s nocasematch
+_rc=0; [[ "$BRANCH" =~ $PR_ONLY_RE ]] || _rc=$?
+shopt -u nocasematch
+[ "$_rc" -eq 1 ] && exit 0
 
 # --- Box drawing (duplicated verbatim in pre-merge-commit and commit-msg) ------
 BOX_W=68
@@ -52,6 +66,41 @@ box_row() {
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
 
+# A refusal a broken pattern decided: the pattern named, where it is set, and the
+# command that gets past the gate it broke from where this refusal leaves you — the one
+# that finishes or repeats what was refused, never a second `git merge`, which an
+# unfinished merge refuses (#103 review; #100 was the same mistake). The route is for a
+# branch the pattern does not mean; on one it does, the pattern meant refuses as well.
+# <key> <value> <what> <branch> <command>
+broken_box() {
+    echo ""
+    box_top
+    box_row "⛔  $1 DOES NOT COMPILE — $3 BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "$1 is not a pattern that compiles:"
+    box_row "  $2"
+    box_row "so every branch is taken as matching it until it is fixed."
+    box_row ""
+    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
+    box_row "has landed, and if $4 is not a branch it means,"
+    box_row "give the pattern meant in front of this command:"
+    box_row "  FLIGHT_RULES_$1='<pattern>' \\"
+    box_row "    $5"
+    box_row "keeping any other FLIGHT_RULES_ setting it carried."
+    box_row ""
+    box_bot
+    echo ""
+}
+
+if [ "$_rc" -eq 2 ]; then
+    # <the same command>, not `git rebase <same arguments>`: `git pull --rebase` reaches
+    # here too, and its arguments are not a rebase's (#103 review).
+    broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" REBASE "$BRANCH" "<the same command>"
+    exit 1
+fi
+
 echo ""
 box_top
 box_row "⛔  $BRANCH IS PR-ONLY — REBASE BLOCKED" 1
@@ -61,8 +110,6 @@ box_row "Rebasing rewrites $BRANCH in place. It moves only through"
 box_row "a reviewed pull request; rebase the feature branch instead:"
 box_row ""
 box_row "  git checkout <feature> && git rebase $BRANCH"
-box_row ""
-box_row "Emergency bypass (discouraged):  git rebase --no-verify"
 box_row ""
 box_bot
 echo ""

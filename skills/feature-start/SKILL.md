@@ -17,7 +17,7 @@ restating one is invisible to enforcement, so the conf wins.
 
 Create a new branch as a git worktree per `rules/git-worktree-workflow.md`.
 Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`
-(defaults: `main` / `main` / `.ai/worktrees/`).
+(defaults: the hooks' anchored list, `^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)` / `main` / `.ai/worktrees/`).
 
 ## Rules (non-negotiable)
 - NEVER `git checkout -b` / `git switch -c` — always `git worktree add`
@@ -44,7 +44,18 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      ```bash
      git log --oneline origin/{INTEGRATION_BRANCH}..origin/main
      ```
-     If non-empty, check the reverse range too:
+     If non-empty, first check whether `main` brings anything the integration branch
+     lacks. A PR merged into `main` leaves a merge commit there and nowhere else, so in
+     a project that promotes by PR this range is never empty, and the reverse range
+     below read every such repo as diverged (0.27.0 release review):
+     ```bash
+     t=$(git merge-tree --write-tree origin/{INTEGRATION_BRANCH} origin/main) \
+       && [ "$t" = "$(git rev-parse 'origin/{INTEGRATION_BRANCH}^{tree}')" ] \
+       && echo "NOTHING TO RECONCILE"
+     ```
+     `NOTHING TO RECONCILE` → merging `main` in would change no file: say so in one
+     line and go on to step 5. Anything else — a conflict, or git older than 2.38, which
+     has no `--write-tree` — check the reverse range too:
      ```bash
      git log --oneline origin/main..origin/{INTEGRATION_BRANCH}
      ```
@@ -63,11 +74,56 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
        both ranges, ask. Never `git merge` here yourself.
    - **No remote** (`git remote` is empty): branch from the local
      `{INTEGRATION_BRANCH}`, skip fetch and reconcile, say so.
-5. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
+5. **Count the open branches — past the limit, ask.** The limit is
+   `FLIGHT_RULES_OPEN_BRANCH_LIMIT` if set, else `OPEN_BRANCH_LIMIT` in
+   `.ai/flight-rules.conf` (unset or not a positive whole number: 5; `off`: skip this
+   step) — as `session-start` reads it. Open means a branch checked out in a worktree
+   with commits in neither the local `{INTEGRATION_BRANCH}` nor
+   `origin/{INTEGRATION_BRANCH}` — step 4 fetches origin and never moves the local one,
+   so against it alone every branch merged by PR stayed open (0.27.0 release review) —
+   leaving out `{INTEGRATION_BRANCH}` itself and any
+   branch the protected pattern matches: `FLIGHT_RULES_PROTECTED_BRANCHES` if set, else
+   `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it — unset, the
+   hooks' anchored default, never a bare `main`, which matched `fix/domain-model` and
+   left `staging` counted (0.27.0 release review). It runs in whichever shell the
+   assistant has — zsh on macOS — so nothing in it relies on word splitting: a ref list
+   in one variable reached git as one argument there, and every branch read as
+   `COULD NOT COUNT` (fix review, 2026-10-26):
+   ```bash
+   p=${FLIGHT_RULES_PROTECTED_BRANCHES-}; [ -n "$p" ] || p='{PROTECTED_BRANCHES}'
+   [ -n "$p" ] || p='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
+   case $p in off|none) p='^$' ;; esac   # protects nothing: only the integration branch is left out
+   git rev-parse -q --verify refs/heads/{INTEGRATION_BRANCH} >/dev/null \
+     || git rev-parse -q --verify refs/remotes/origin/{INTEGRATION_BRANCH} >/dev/null \
+     || echo "COULD NOT COUNT: no {INTEGRATION_BRANCH}, local or origin/"
+   printf '' | grep -E -e "$p" >/dev/null 2>&1 || [ $? -eq 1 ] || echo "COULD NOT COUNT: the protected pattern does not compile"
+   l=$(git worktree list --porcelain) || echo "COULD NOT COUNT: git worktree list failed"
+   printf '%s\n' "$l" | sed -n 's|^branch refs/heads/||p' \
+     | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \
+     | while IFS= read -r b; do
+         n=$(git rev-list --count "refs/heads/$b" --ignore-missing \
+               --not refs/heads/{INTEGRATION_BRANCH} refs/remotes/origin/{INTEGRATION_BRANCH}) \
+           || { echo "COULD NOT COUNT: $b"; continue; }
+         [ "$n" -gt 0 ] && echo "$b"
+       done
+   ```
+   A `COULD NOT COUNT` line is never "under the limit": say what could not be counted
+   and ask, as at the limit (an error sent to `/dev/null` once read as zero open — fix
+   review, 2026-10-24). At or over the limit, show the person how many are open and
+   which, which of them have a passing note (`git notes --ref=pre-merge-check show
+   <branch>` begins `passed:`) and only wait to merge, and say where the limit is set:
+   *"OPEN_BRANCH_LIMIT is <n> in .ai/flight-rules.conf — raise it, or set it to off,
+   there"* (or that `FLIGHT_RULES_OPEN_BRANCH_LIMIT` set it). Create the branch only once
+   they say it is okay. Under the limit, say nothing. With no one to ask, create
+   nothing and report the count as the blocker — a question that cannot be put is not
+   a yes. A pile of open branches is
+   how this repo's own work came to depend on itself: more than ten sat unmerged
+   (2026-10-20 to 10-23), and the owner saw it only once they did (#108).
+6. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
    ```bash
    git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> origin/{INTEGRATION_BRANCH}
    ```
-6. **Symlink untracked env files** from the main checkout (symlinks, not copies —
+7. **Symlink untracked env files** from the main checkout (symlinks, not copies —
    copies go stale):
    ```bash
    ln -s "$PWD/<path>/.env" {WORKTREE_DIR}/<slug>/<path>/.env
@@ -81,10 +137,10 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    tolerate a symlink, but **do not symlink `node_modules`** — dev tools that resolve
    real paths (e.g. the Vite dev server) break through the link. Run a fresh
    `npm ci` in the worktree instead.
-7. **Confirm** — print the worktree path, the `cd` command, and the reminder:
+8. **Confirm** — print the worktree path, the `cd` command, and the reminder:
    "Work only in this directory. ONE purpose per branch." If the repo ships git hooks
    and `core.hooksPath` isn't set, print the one-time install command.
-8. **List worktrees** — `git worktree list`.
+9. **List worktrees** — `git worktree list`.
 
 ## Cleanup (after merge — required, never leave stale worktrees)
 

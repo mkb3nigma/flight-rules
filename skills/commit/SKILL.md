@@ -46,4 +46,6 @@ The hooks enforce the hard gates; this skill covers what a hook cannot judge.
 6. **If the guard denies — stop.** Relay the block message verbatim; it names the
    cause and the fix. Never retry with `--no-verify`, `-C`, another `cd`, a subshell,
    an alias or a conf edit: a variant that gets past the guard is a bug report. If the
-   block looks wrong, say so and wait — the owner decides, not the blocked agent.
+   block looks wrong, say so and wait — the owner decides, not the blocked agent. A
+   route the block prints for the person to run is put to them as a decision, with why
+   it was refused and what waits on it (`engineering-principles.md` §7).

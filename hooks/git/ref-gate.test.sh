@@ -23,6 +23,7 @@ trap 'rm -rf "$TMPROOT"' EXIT
 MAINPID=$$
 trap 'printf "\n%s\n" "ABORTED: the fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
 die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
 # A clone of a bare upstream: two commits on main, plus feature/x off-upstream.
 # $1: conf body, "default", or "none". $2: "armed" (default) or "bare" (no hook).
@@ -210,6 +211,85 @@ PR_ONLY_BRANCHES=^main\$"                                                      a
 conf_case "PR_ONLY_BRANCHES=off disables the gate" "PR_ONLY_BRANCHES=off"      allowed
 conf_case "a conf naming another branch"           "PR_ONLY_BRANCHES=^nope\$"  allowed
 conf_case "env override wins"                      "env:^nothing\$"            allowed
+# A pattern that does not compile matches every branch, not none: grep exits 2 for it,
+# which read as "no match" and let main move off its upstream (#103).
+conf_case "a PR_ONLY_BRANCHES that does not compile gates main" "PR_ONLY_BRANCHES=^(main" blocked
+conf_case "…from the environment too"                "env:^(main"                blocked
+# Case-insensitively, as the agent guard matches (#103 review).
+conf_case "PR_ONLY_BRANCHES=^MAIN\$ gates main"        "PR_ONLY_BRANCHES=^MAIN\$"  blocked
+# grep read a pattern starting with `-` as an option, exited 2, and gated every branch.
+conf_case "a pattern starting with - is a pattern"   "PR_ONLY_BRANCHES=-x|^nope\$" allowed
+D=$(make_repo "PR_ONLY_BRANCHES=^(main" armed); off_main "$D"
+OUT=$(git -C "$D" branch -f main "$(git -C "$D" rev-parse feature/x)" 2>&1); RC=$?
+if [ "$RC" -ne 0 ] && grep -qF 'PR_ONLY_BRANCHES DOES NOT COMPILE' <<<"$OUT" && grep -qF '^(main' <<<"$OUT" \
+   && grep -A1 -F "FLIGHT_RULES_PR_ONLY_BRANCHES='<pattern>' \\" <<<"$OUT" | grep -qF '<the same command>' \
+   && grep -qF 'if main is not a branch it means' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ …refused naming the pattern, with the command that lands its fix\n'
+else
+    FAIL=$((FAIL+1)); printf '  ❌ …refused naming the pattern (rc=%s)\n%s\n' "$RC" "$OUT"
+fi
+# Every branch with an upstream, not only the one the pattern meant: feature/x, pushed.
+git -C "$D" checkout -q feature/x; git -C "$D" push -q origin feature/x 2>/dev/null || die "could not push feature/x"
+git -C "$D" fetch -q origin
+echo more >> "$D/g.txt"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: more" >/dev/null 2>&1; RC=$?
+if [ "$RC" -ne 0 ] && [ "$(git -C "$D" rev-parse feature/x)" = "$(git -C "$D" rev-parse origin/feature/x)" ]; then
+    PASS=$((PASS+1)); printf '  ✅ …and a pushed feature branch is gated as well\n'
+else
+    FAIL=$((FAIL+1)); printf '  ❌ …a pushed feature branch moved off its upstream (rc=%s)\n' "$RC"
+fi
+# The way out the refusal prints: the pattern meant, in the environment, for that one
+# command. It lifts the gate where that pattern does not reach — here feature/x.
+FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' git -C "$D" commit -qm "feature: more" >/dev/null 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(git -C "$D" rev-parse feature/x)" != "$(git -C "$D" rev-parse origin/feature/x)" ]; then
+    PASS=$((PASS+1)); printf '  ✅ …and the pattern meant, in the environment, lifts it for that command\n'
+else
+    FAIL=$((FAIL+1)); printf '  ❌ …the pattern meant, in the environment, did not lift it (rc=%s)\n' "$RC"
+fi
+# An update that moves nothing is no move. With feature/x now ahead of its upstream,
+# `reset --hard HEAD` and `merge --abort` write it to the value it has, and were refused
+# as moves off origin/feature/x, leaving no undo (#103 review).
+AHEAD=$(git -C "$D" rev-parse feature/x)
+git -C "$D" reset -q --hard HEAD >/dev/null 2>&1
+say "$?" "0" "…but git reset --hard HEAD on it, ahead of its upstream, is not refused"
+git -C "$D" branch side origin/feature/x
+git -C "$D" checkout -q side; echo theirs > "$D/g.txt"; git -C "$D" commit -qam "feature: side" >/dev/null 2>&1 \
+  || die "could not commit on side"
+git -C "$D" checkout -q feature/x
+git -C "$D" merge side >/dev/null 2>&1 && die "the merge of side was meant to conflict"
+git -C "$D" merge --abort >/dev/null 2>&1
+say "$?" "0" "…nor is git merge --abort"
+say "$(git -C "$D" rev-parse feature/x)" "$AHEAD" "…and feature/x stays where it was"
+echo again >> "$D/g.txt"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: again" >/dev/null 2>&1; RC=$?
+say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse feature/x)" "$AHEAD" "…while a commit that does move it is still refused"
+# A refused cherry-pick stays in progress, so "the same command" again fails there; the
+# refusal names --continue, and that, with the pattern meant, lands it (#103 review).
+git -C "$D" reset -q --hard HEAD >/dev/null 2>&1 || die "could not clear feature/x"
+git -C "$D" checkout -q -b pick feature/x; echo p > "$D/p.txt"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: p" >/dev/null 2>&1 || die "could not commit on pick"
+git -C "$D" checkout -q feature/x
+OUT=$(git -C "$D" cherry-pick pick 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse feature/x)" "$AHEAD" "…a cherry-pick onto it is refused"
+say "$(grep -c 'git cherry-pick --continue' <<<"$OUT")" "1" "…naming its --continue"
+FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' GIT_EDITOR=true git -C "$D" cherry-pick --continue >/dev/null 2>&1
+say "$?" "0" "…which, with the pattern meant, lands it"
+say "$(git -C "$D" rev-parse feature/x^)" "$AHEAD" "…on feature/x"
+# A refused merge stays in progress too, and "the same command" again fails with "You
+# have not concluded your merge"; git commit --no-edit concludes it (0.27.0 release review).
+AHEAD=$(git -C "$D" rev-parse feature/x)
+git -C "$D" checkout -q -b mrg feature/x; echo m > "$D/m.txt"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: m" >/dev/null 2>&1 || die "could not commit on mrg"
+git -C "$D" checkout -q feature/x
+OUT=$(git -C "$D" merge --no-ff mrg -m "merge mrg" 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse feature/x)" "$AHEAD" "…a merge into it is refused"
+[ -f "$(git -C "$D" rev-parse --absolute-git-dir)/MERGE_HEAD" ] || die "the refused merge left no MERGE_HEAD: the case below tests nothing"
+say "$(grep -c 'So is a merge it stopped: give the pattern to git commit --no-edit' <<<"$OUT")" "1" "…naming the commit that concludes it"
+FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' git -C "$D" merge --no-ff mrg -m "merge mrg" >/dev/null 2>&1
+say "$?" "128" "…as the same command again fails"
+FLIGHT_RULES_PR_ONLY_BRANCHES='^main$' git -C "$D" commit --no-edit >/dev/null 2>&1
+say "$?" "0" "…while git commit --no-edit, with the pattern meant, lands it"
+say "$(git -C "$D" rev-parse feature/x^1)" "$AHEAD" "…as a merge on feature/x"
 conf_case "no conf at all falls back to ^main\$"   "none"                      blocked
 
 # The working-tree conf must NOT lift the gate: editing it is the bypass the agent
@@ -247,6 +327,26 @@ for phase in committed aborted; do
         FAIL=$((FAIL+1)); printf '  ❌ state=%s returned %s\n' "$phase" "$RC"
     fi
 done
+
+# route <output>: the two rows after "Do this instead:", frame and padding stripped, joined.
+route() { grep -A2 'Do this instead:' <<<"$1" | tail -2 | sed -e 's/^║ *//' -e 's/ *║$//' | tr '\n' ' ' | sed 's/ *$//'; }
+echo "The refusal's route starts where the guard and /feature-start start (full release review, S3):"
+# With no start point the suggested worktree branch was cut from HEAD, the PR-only
+# branch itself, into a fixed .ai/worktrees whatever WORKTREE_DIR said.
+d=$(make_repo "$(printf 'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\nWORKTREE_DIR=wt')" armed)
+OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && ! escaped "$d" && echo refused)" "refused" "a commit on main is refused, and main stays on origin/main"
+say "$(route "$OUT")" "git worktree add wt/<name> \\ -b <prefix>/<name> origin/dev" "…routing to a branch off origin/dev in WORKTREE_DIR"
+OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR=elsewhere/ git commit -q --allow-empty -m "chore: direct" 2>&1)
+say "$(route "$OUT")" "git worktree add elsewhere/<name> \\ -b <prefix>/<name> origin/dev" "…and FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it"
+OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR="my wt" git commit -q --allow-empty -m "chore: direct" 2>&1)
+say "$(route "$OUT")" "git worktree add 'my wt'/<name> \\ -b <prefix>/<name> origin/dev" "…a directory with a space, quoted to paste (fix review, 2026-10-26)"
+d=$(make_repo default armed)
+OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
+say "$(route "$OUT")" "git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> origin/main" "…with neither set: .ai/worktrees, off origin/main"
+# Width in bytes, of rows that are ASCII between the frames: the route rows against the
+# row above them. On one row the default route ran 4 columns past the frame.
+say "$(grep -A2 'Do this instead:' <<<"$OUT" | awk '{ print length($0) }' | sort -u | wc -l | tr -d ' ')" "1" "…and its rows stay inside the box"
 
 echo ""
 echo "$PASS passed, $FAIL failed"

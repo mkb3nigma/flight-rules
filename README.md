@@ -24,7 +24,9 @@ See [CHANGELOG.md](CHANGELOG.md) for what changes between versions.
 > guardrails, not a security boundary: anyone who means to get past them can, and an
 > assistant given full control of a machine is beyond anything a repository of rules can
 > reach. The design goal is to make the accidental path harder than the correct one, not
-> to be unbypassable. See [hooks/README.md](hooks/README.md#what-these-hooks-are--and-are-not).
+> to be unbypassable, and it assumes a competent developer: it catches what is easy to
+> overlook, stops and says why when it cannot go on, and does not babysit. See
+> [hooks/README.md](hooks/README.md#what-these-hooks-are--and-are-not).
 
 ## How it flows
 
@@ -102,13 +104,23 @@ itself: the hooks are the project's own committed files, and Claude Code has no 
 event for a plugin to act on. Every other clone needs them wired once, because git config is
 per clone: its first session's doctor message prints the command (the plugin's
 `install.sh`, which wires the committed hooks without replacing them). (The message needs `jq` or
-`python3`; without either, doctor's findings reach only the assistant.)
+`python3`; without either, doctor's findings reach only the assistant.) If the project already has
+hooks of its own, the install leaves them in place: one in the folder it installs into
+that it cannot recognise as flight-rules' (it carries no flight-rules marker and is no
+release's exact copy) is refused rather than overwritten, and the install says how to
+set it aside; and when git would stop reading hooks from `.git/hooks/` or a global
+hooks folder, the install names the ones that stop running. Running them alongside
+flight-rules' is [#111](https://github.com/mkb3nigma/flight-rules/issues/111).
 
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run
-only when one starts. If a git hook is behind the new release, that session's doctor
+only when one starts. After `/reload-plugins` instead, your next prompt says the session
+is on the new version and that a new session is what loads its rules and runs the checks. If a git hook is behind the new release, that session's doctor
 message prints the sync command with `--stale-only`: it replaces only copies identical
-to an older release, and leaves a hook you changed alone and names it. To have it run on
-its own, set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each release's
+to an older release, and leaves a hook you changed alone and names it. A project copy of
+`install.sh` that is behind, differs while carrying flight-rules' marker, or cannot be read
+is reported to the assistant only, not on screen: it guards nothing. To have the sync run on its own,
+set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each
+release's
 [CHANGELOG](CHANGELOG.md) entry starts with anything the update needs from you.
 
 **Any AI tool (rules, by pointer):** add one line to the project's rules entry point
