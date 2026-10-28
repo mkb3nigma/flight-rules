@@ -7,13 +7,13 @@
 
 ## What it is
 
-flight-rules helps a competent developer, and the AI assistants working with them, keep
-good code hygiene: the small things that are easy to overlook — a check not run, a doc
-left describing the old behaviour, a claim of "done" with nothing behind it, a worktree
-left behind — and four catastrophes: a leaked key, a commit on a protected branch, a
-protected branch moved without review, work destroyed or history rewritten, either on a
-protected branch. It is one source of truth, consumed by many projects and any
-assistant that reads Markdown. That is the whole job.
+flight-rules helps a competent developer — working alone or with AI assistants, which it
+holds to the same standard — keep good code hygiene: the small things that are easy to
+overlook — a check not run, a doc left describing the old behaviour, a claim of "done"
+with nothing behind it, a worktree left behind — and four catastrophes: a leaked key, a
+commit on a protected branch, a protected branch moved without review, work destroyed or
+history rewritten, either on a protected branch. It is one source of truth, consumed by
+many projects and any assistant that reads Markdown. That is the whole job.
 
 ## What it holds to
 
@@ -45,70 +45,80 @@ assistant that reads Markdown. That is the whole job.
    it costs outweighs what it catches (question 1). Nothing else cuts a line.
 
 5. **Stop and say.** Where it cannot go on, it stops, names what it saw and why that is
-   refused, and prints the legitimate route where one exists that is not the skip
-   itself. Its own automation — the sync, the doctor — makes no branch, worktree or file
-   write for the developer to get round a stop (#99). The assistant takes the printed
-   route and no other — a skip is the person's decision — and pushes nothing unasked.
+   refused, and prints the legitimate route where one exists that is not the skip itself
+   — a route a person can take without an assistant, since the developer working alone
+   is served as much as the one working with one. flight-rules' own automation — the
+   sync, the doctor — makes no branch, worktree or file write for the developer to get round a
+   stop (#99). The assistant takes the printed route and no other — a skip is the
+   person's decision — and pushes nothing unasked.
 
 ## The five questions
 
-A change that adds or widens a rule, a refusal, a check or its wiring, a skill step or a
-line that reaches a session answers all five; making a check stricter widens it. A
-change that adds or widens none of those is one of a closed set — a test, a fix or
-refactor that widens nothing, a doc that reaches no session and moves no documented
-boundary, an attribution or upstream pin that changes no claim, this repo's own conf, a
-CHANGELOG entry, a release's version bump, CI that changes no gate, a removal or
-loosening (it names what it drops and where that is covered, as `CLAUDE.md`'s deletion
-path asks, and answers question 1 with what the refusal cost) — and names which; that
-is its answer to questions 1, 2, 4 and 5. Question 3 every change answers, with its lines added by class. The answers go
-where the change is reviewed: the PR body, or, for a branch merged locally, the commit
-message of the change itself.
+Every change answers question 3, with its lines added by class. Beyond that, a change
+answers the questions that apply to it, and says in a phrase which do not and why:
+
+- All five apply to a change that adds or widens a rule, a refusal, a check or its
+  wiring, a skill step, or a line that reaches a session. Making a check stricter
+  widens it.
+- A change that weakens or removes one of those — or a test of one, a documented
+  boundary, a claim an upstream pin supports, a gate in CI — answers question 1 with
+  what it cost or why its warrant no longer holds, and question 2 for the adopters who
+  lose it. It names what it drops, and where that is covered or why it need not be.
+- Anything else — a test or doc that weakens nothing, a fix or refactor that changes
+  none of the above, an attribution, a CHANGELOG entry, a version bump, this repo's own
+  conf — names what it is.
+
+The answers go where the change is reviewed: the PR body, or, for a branch merged
+locally, the commit message of the change itself.
 
 1. **What went wrong without it — and was that reached by accident?** A slip — the
    wrong terminal tab, a `cd` that failed, a habit — an assistant acting without the
    developer's decision, or a shape an assistant emits routinely (a subshell, a chain,
    `git -C`) is what this repo guards against. A failure reached only on purpose by the
    developer — a crafted command, a forged byte — is recorded as an issue with its
-   disposition and no fix scheduled, and is **not a warrant** for a rule, a refusal or a
-   check; a probe counts when the path it shows is one a slip could also take. For a
-   `rules/` line or a skill step, the warrant `CLAUDE.md` → *How a rule gets in* names
-   is the answer; the accident test is asked of a refusal or a check. A removal answers with what the
-   refusal cost — false positives, turns, the route-around it taught.
+   disposition and no fix scheduled, and is **not a warrant** for a refusal or a check;
+   a probe counts when the path it shows is one a slip could also take. For a `rules/`
+   line or a skill step, the warrant `CLAUDE.md` → *How a rule gets in* names is the
+   answer; the accident test is asked of a refusal or a check. A removal answers with
+   what the refusal cost — false positives, turns, the route-around it taught — or why
+   its warrant no longer holds.
 2. **Would every adopting project want it, with any assistant?** Asked of what ships.
    If the honest answer names one project, it belongs in that project's extension; one
    tool, it ships only as the thin adapter principle 3 allows.
 3. **What does it cost — every reader, and whoever maintains it?** Lines added and net,
-   by class (`CLAUDE.md` → *Releasing* names the classes), stated with the change —
-   advisory, no check reads it — and summed at the release, where `pr-create` 2b reports
-   them with the CHANGELOG entry beside the number. This makes the cost visible; nothing
-   in flight-rules refuses a release for its size — the owner's decision, with the
-   number in view, is the gate. Size is not the failure; what hides in it is: a large
-   diff is read for these questions subsystem by subsystem, as `/dg` reads it for
-   defects. `CLAUDE.md`'s test mandate decides how a gap is closed, not whether; the
-   tests a closed gap needs are part of its cost.
+   by class (the *Releasing* paragraph of `CLAUDE.md` names the classes), stated with
+   the change — advisory, no check reads it — and summed at the release, where
+   `pr-create` 2b reports them with the CHANGELOG entry beside the number. This makes
+   the cost visible; nothing in flight-rules refuses a release for its size — the
+   owner's decision, with the number in view, is the gate. Size is not the failure;
+   what hides in it is: a large diff is read for these questions subsystem by
+   subsystem, as `/dg` reads it for defects. `CLAUDE.md`'s test mandate decides how a
+   gap is closed, not whether; the tests a closed gap needs are part of its cost.
 4. **Does it stop and say, or act for the developer?** When it refuses: does the
    refusal name its cause and print the legitimate route, where one exists that is not
-   the skip itself? A new refusal on a plausible everyday command is the owner's call —
-   name the commands it would block, then ask.
-5. **Is it enforced — or honest that it is not?** A hook, or a skill with the check
-   number; "advisory" only with the reason it cannot be checked. A dormant rule with a
-   real warrant stays: nothing is cut for being advisory or for not having fired lately.
+   the skip itself — one a person can take without an assistant? A new refusal on a
+   plausible everyday command is the owner's call — name the commands it would block,
+   then ask.
+5. **Is it enforced — or honest that it is not?** A hook, a CI check, or a skill with
+   the check number; "advisory" only with the reason it cannot be checked. A dormant
+   rule with a real warrant stays: nothing is cut for being advisory or for not having
+   fired lately.
 
 ## What follows
 
 - Prefer checks whose misfire is a false positive, not a silent pass. Question 1 decides
-  whether a check exists; once it does, a construct it cannot read is refused, not waved
-  through (`hooks/README.md` → *every uncertainty resolves toward deny*) — this is where
-  principle 1 yields, and question 3 prices it. A check's own crash, timeout or missing
-  tool fails loud, unconditionally (`engineering-principles.md` §2); where the fix adds
-  a refusal on legitimate work, question 4 applies.
+  whether a check exists; once it does, a construct it sees but cannot read is refused,
+  not waved through (`hooks/README.md` → *every uncertainty resolves toward deny*) —
+  this is where principle 1 yields, and question 3 prices it. A check's own crash,
+  timeout or missing tool fails loud, unconditionally (`engineering-principles.md` §2);
+  where the fix adds a refusal on legitimate work, question 4 applies.
 - A ref movement is the git hooks' to refuse; the agent guard is an early, specific
   message, not the enforcement (`hooks/README.md` → the layering lesson).
 - Where the questions are asked: `pre-merge-check` item 18 asks a rules-file diff for
-  its warrant and its enforcement (questions 1 and 5); `/dg` asks all five of every change in this repo
+  its warrant and its enforcement; `/dg` asks all five of every change in this repo
   (`.ai/skills/dg/EXTENSIONS.md`) and of the whole release diff at `pr-create` 2b,
-  subsystem by subsystem; questions 2, 3 and 4 are checked by no hook — advisory, and
-  said so.
+  subsystem by subsystem. No hook checks any of them, and questions 2, 3 and 4 only
+  `/dg` asks — advisory, and said so.
 
 ## How this file changes
 
