@@ -1,11 +1,14 @@
 # flight-rules — working in this repo
 
-This is the playbook itself, so it follows its own rules. Read `MISSION.md` first:
-it says what flight-rules is for, and a change here answers its five questions — or
-names the class that exempts it — before it is judged on anything else. Then `rules/` — every file, they are short — and
+This is the playbook itself, so it follows its own rules. `MISSION.md`, imported below
+so it loads with this file, says what flight-rules is for: a change here answers the
+questions of it that apply before it is judged on anything else. It loads only here —
+adopting projects never see it. Then `rules/` — every file, they are short — and
 treat them as binding here: `engineering-principles.md` for how to make a change,
 `git-worktree-workflow.md` for branching. The SessionStart hook injects the
 principles; the rest you read once.
+
+@MISSION.md
 
 ## Parameters
 
