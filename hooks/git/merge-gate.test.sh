@@ -1364,7 +1364,9 @@ fi
 shims "$PB/b" fail empty; OUT=$(rerun "$PB/b"); RC=$?
 say "$RC" "0" "with ps failing: the hook still exits 0"
 if [ -r /proc/self/cmdline ]; then
-  say "$(section fix/srv | grep -c "pid $S1, up ?: sleep 3001")" "1" "…and the processes come from /proc instead"
+  # Quoted, as every command line in the note is since 6b1200b: this case runs only on
+  # Linux, and expected the unquoted form until Ubuntu CI first ran it (2026-10-26).
+  say "$(section fix/srv | grep -cF "pid $S1, up ?: 'sleep 3001")" "1" "…and the processes come from /proc instead"
   say "$(grep -c 'could not list processes' "$PNOTE")" "0" "…with nothing to report about ps"
 else
   say "$(top | grep -c 'could not list processes (ps exited 127)')" "1" "…and the note says so, not 'nothing running'"
