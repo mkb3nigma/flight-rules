@@ -23,7 +23,8 @@ injects the principles; the rest you read once.
 Every change: `/feature-start <prefix>/<slug>` — `git fetch origin`, the open-branch
 count (`OPEN_BRANCH_LIMIT`, asked at the limit), then `git worktree add .ai/worktrees/<slug>
 -b <prefix>/<slug> origin/dev`; a raw `worktree add` skips the count — and commit there;
-the owner pushes it. Then, **as the owner**, merge it into `dev` locally — stamp the
+the owner pushes it. Then, **as the owner** (the assistant too, under the standing OK
+below), merge it into `dev` locally — stamp the
 `pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
 from the `dev` checkout, then push `dev`. No PR: `dev` is note-gated, not PR-only, and the
 local merge is what exercises the note gate, the authorisation trailer and the back-merge
@@ -33,6 +34,11 @@ and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `m
 
 An assistant pushes no branch, and runs no `/pr-create` (which pushes), unless the
 owner says so in that session — the owner reviews and pushes (standing instruction).
+The assistant may run the local merge into `dev` without asking, once a real
+`/pre-merge-check` on the branch tip has passed and stamped it: this standing OK (owner,
+2026-10-26) is the user's instruction that `git-worktree-workflow.md` Forbidden 8 and
+`pre-merge-check`'s closing line ask for. `main` still moves only through the reviewed
+promotion PR.
 A branch that has fallen behind `dev` or conflicts with it gets `dev` merged **into**
 it, is tested and stamped there, then merges back. The conflict is never resolved in
 the merge into `dev`, where the note would vouch for a tip that never held the
