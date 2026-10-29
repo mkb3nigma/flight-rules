@@ -72,11 +72,20 @@ NOTE_FILE="$REPO_ROOT/$NOTE_PATH"
 _merged_in=$(git rev-parse -q --verify 'HEAD^2' 2>/dev/null || echo "")
 is_feature_merge() {
   [[ -z "$_merged_in" ]] && return 1            # fast-forward / not a merge commit
-  local ref ref_sha
+  local ref ref_sha name
   for ref in main origin/main; do
     ref_sha=$(git rev-parse -q --verify "$ref" 2>/dev/null) || continue
     [[ "$_merged_in" == "$ref_sha" ]] && return 1   # merged-in commit IS main's tip → back-merge
   done
+  # …or the tip of any other protected branch, local or origin's: a project whose
+  # released branch is not called main back-merges it too (mission review G2,
+  # 2026-10-29). Case-insensitively, as every layer matches the pattern.
+  while read -r ref ref_sha; do
+    name=${ref#refs/heads/}; name=${name#refs/remotes/origin/}
+    [[ "$name" == "$INTEGRATION_BRANCH" ]] && continue
+    printf '%s' "$name" | grep -qiE -e "$PROTECTED_RE" 2>/dev/null || continue
+    [[ "$_merged_in" == "$ref_sha" ]] && return 1
+  done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin 2>/dev/null)
   # A pull of this branch's own upstream that had to merge is no feature either (fix
   # review, 2026-10-29): it neither prints what earlier merges left nor clears context.
   ref_sha=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) && [[ "$_merged_in" == "$ref_sha" ]] && return 1

@@ -637,6 +637,7 @@ grep -q 'WHO ASKED FOR THIS MERGE' <<<"$OUT"
 say "$?" "0" "a stamped but unauthorised merge is blocked"
 grep -q 'FLIGHT_RULES_MERGE_AUTHORISED=1' <<<"$OUT"
 say "$?" "0" "…and the block names the way to proceed"
+say "$(grep -c 'Merging it yourself? Then you asked' <<<"$OUT")" "1" "…and speaks to a person merging their own branch (mission review H2)"
 [ "$(git -C "$D" rev-parse dev)" = "$BEFORE" ]
 say "$?" "0" "…and dev did not move"
 # The command the box prints is run as printed, in the state the refusal left: it
@@ -1469,6 +1470,20 @@ git -C "$QQ" checkout -qb fix/a trunk && echo a > "$QQ/a" && git -C "$QQ" add -A
   && git -C "$QQ" checkout -q trunk && git -C "$QQ" merge -q --no-edit fix/a >/dev/null 2>&1 || die "could not merge fix/a"
 say "$(grep -cxF '*.log' "$QQ/.git/info/exclude")" "1" "an exclude file with no final newline: its last rule is kept whole"
 say "$(git -C "$QQ" status --porcelain | grep -c '\.claude')" "0" "…and the note is still not untracked"
+rm -rf "$PQ"
+
+echo "A back-merge of a released branch not called main prints nothing (mission review G2):"
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^(trunk|production)$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+git -C "$QQ" branch old/x trunk && git -C "$QQ" checkout -qb production trunk && echo p > "$QQ/p" && git -C "$QQ" add -A \
+  && git -C "$QQ" commit -qm "fix: hotfix on production" && git -C "$QQ" checkout -q trunk || die "could not build production"
+OUT=$(cd "$QQ" && git merge --no-edit production 2>&1); RC=$?
+say "$RC" "0" "a back-merge of production into trunk lands"
+say "$(grep -c -e 'Earlier merges left' -e 'Post-merge to' <<<"$OUT")" "0" "…and post-merge prints nothing for it, as for main"
 rm -rf "$PQ"
 
 echo "A pull of the integration branch's own upstream that had to merge prints nothing (fix review):"
