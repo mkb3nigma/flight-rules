@@ -149,24 +149,35 @@ is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
 # protected branch's tree, and the guard never sees them because no commit
 # follows. `git clean -n` and a bare `git checkout <branch>` are not destructive
 # and stay allowed.
+# plain_unstage <segment>: 0 when it is exactly `git restore --staged …` or `git rm
+# --cached …` — the word git, the verb, then only options from a short list that touch no
+# file in the tree, and plain paths. Anything else — another option (`--no-cached`,
+# `--worktree` or a prefix of it, `--end-of-options`), a quote, `$`, a backtick, `#`, a
+# redirection or a glob, a global option before the verb, a wrapper — is not plainly
+# that, and is judged as before. An allowlist, not a list of what to refuse: each
+# refuse-list fix opened the next shape (two commit security reviews, 2026-10-29).
+plain_unstage() {
+  local w i verb have=0
+  case "$1" in *[\'\"\`\$\\\#\;\&\|\<\>\(\)\{\}\*\?\[]*) return 1 ;; esac
+  read -r -a w <<<"$1"
+  [ "${#w[@]}" -ge 3 ] && [ "${w[0]}" = git ] || return 1
+  verb=${w[1]}
+  for (( i = 2; i < ${#w[@]}; i++ )); do
+    case "$verb:${w[$i]}" in
+      rm:--cached|restore:--staged|restore:-S) have=1 ;;
+      rm:-r|rm:-q|rm:--quiet|restore:-q|restore:--quiet|restore:--source=?*) ;;
+      *:-*) return 1 ;;
+    esac
+  done
+  [ "$have" -eq 1 ]
+}
+
 is_destructive() {
-  # `restore --staged` (without --worktree) only unstages, and `rm --cached` only
-  # untracks: neither touches a file in the tree, and both are everyday on the main
-  # checkout (mission review H4, 2026-10-29). Only for a segment that is plainly that one
-  # command: a second `git`, a substitution, a comment or a `--` could each make the
-  # flag belong to something else, and then it is judged as before (commit security
-  # review). git takes any unambiguous prefix of `--worktree`, so `--w…` counts as it.
+  # `restore --staged` only unstages and `rm --cached` only untracks: neither touches a
+  # file in the tree, and both are everyday on the main checkout (mission review H4,
+  # 2026-10-29) — in their plain form only (plain_unstage).
   if [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)${E} ]]; then
-    local _keep=0 _plain=1
-    [[ "$1" =~ ${B}git[[:space:]].*${B}git([[:space:]]|$) ]] && _plain=0
-    [[ "$1" == *'$('* || "$1" == *'`'* ]] && _plain=0
-    [[ "$1" =~ (^|[[:space:]])(#|--)([[:space:]]|$) ]] && _plain=0
-    if [ "$_plain" -eq 1 ]; then
-      [[ "$1" =~ ${B}git[[:space:]]+restore[[:space:]](.*[[:space:]])?(--staged|-S)([[:space:]]|$) ]] \
-        && ! [[ "$1" =~ [[:space:]](--w[[:alnum:]-]*|-W|-[[:alnum:]]*W[[:alnum:]]*)([[:space:]=]|$) ]] && _keep=1
-      [[ "$1" =~ ${B}git[[:space:]]+rm[[:space:]](.*[[:space:]])?--cached([[:space:]]|$) ]] && _keep=1
-    fi
-    [ "$_keep" -eq 1 ] || return 0
+    plain_unstage "$1" || return 0
   fi
   [[ "$1" =~ ${B}git[[:space:]]+reset[[:space:]]+.*--(hard|merge) ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+clean[[:space:]]+.*-[a-zA-Z]*f ]] && return 0

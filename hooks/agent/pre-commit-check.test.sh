@@ -110,24 +110,29 @@ check "git clean -fd on dev"             deny  dev  'git clean -fd'
 check "git clean --force on dev"         deny  dev  'git clean --force'
 check "git checkout -- . on dev"         deny  dev  'git checkout -- .'
 check "git restore on staging"           deny  staging 'git restore f.txt'
-# Unstaging and untracking touch no file in the tree (mission review H4, 2026-10-29). The
-# plain forms are crossed with every wrapper below (SAFE, DANGER_MAIN); these are the rest.
-check "restore -S on dev"                allow dev 'git restore -S f.txt'
-check "restore --staged . on dev"        allow dev 'git restore --staged .'
-check "rm -r --cached on dev"            allow dev 'git rm -r --cached build/'
+# Unstaging and untracking touch no file in the tree (mission review H4, 2026-10-29), so
+# their plain form is allowed; anything not plainly that is judged as before.
+check "restore --staged on dev"          allow dev 'git restore --staged f.txt'
+check "restore -S, two paths"            allow dev 'git restore -S a.txt b.txt'
+check "restore --staged ."               allow dev 'git restore --staged .'
+check "restore --source --staged"        allow dev 'git restore --source=HEAD~1 --staged f.txt'
+check "rm --cached on dev"               allow dev 'git rm --cached f.txt'
+check "rm -r --cached"                   allow dev 'git rm -r --cached build/'
 check "restore --staged --worktree"      deny  dev 'git restore --staged --worktree f.txt'
+check "restore --staged --work (prefix)" deny  dev 'git restore --staged --work f'
 check "restore -SW"                      deny  dev 'git restore -SW f.txt'
-check "restore --source --staged -W"     deny  dev 'git restore --source=HEAD~1 --staged -W f.txt'
-check "plain restore, --staged elsewhere" deny dev 'git restore f.txt && echo --staged'
-check "plain rm, --cached elsewhere"     deny  dev 'git rm f.txt; echo --cached'
-check "rm --cached then plain rm"        deny  dev 'git rm --cached a && git rm b'
-check "restore --staged-ish file"        deny  dev 'git restore --staged-notes'
-# Not plainly the one command: judged as before (commit security review, 2026-10-29).
+check "restore --no-staged"              deny  dev 'git restore --staged --no-staged f'
+check "rm --cached --no-cached"          deny  dev 'git rm --cached --no-cached f'
+check "rm --end-of-options"              deny  dev 'git rm --cached --end-of-options f'
+check "rm -- --cached (a path)"          deny  dev 'git rm -- --cached'
+check "rm, --cached quoted"              deny  dev "git rm f '--cached'"
 check "rm, --cached in a comment"        deny  dev 'git rm b # --cached'
 check "rm --cached, a rm in backticks"   deny  dev 'git rm --cached a `git rm b`'
-check "rm --cached, a rm in \$( )"       deny  dev 'git rm --cached a $(git rm b)'
-check "rm -- --cached (a path)"          deny  dev 'git rm -- --cached'
-check "restore --staged --work (prefix)" deny  dev 'git restore --staged --work f'
+check "rm --cached, a glob"              deny  dev 'git rm --cached *.log'
+check "plain restore, --staged elsewhere" deny dev 'git restore f.txt && echo --staged'
+check "rm --cached then plain rm"        deny  dev 'git rm --cached a && git rm b'
+check "rm --cached under a git prefix"   allow dev 'git --no-pager rm --cached f'   # normalised to the plain form
+check "rm under a git prefix"            deny  dev 'git --no-pager rm f'
 check "git commit on dev (regression)"   deny  dev  'git commit -m "x"'
 
 echo "Shell metacharacters must not smuggle a destructive command past the guard:"
@@ -938,10 +943,7 @@ DANGER_ANY=( 'git branch -D main'
 SAFE=( 'git status --short'
        'git log --oneline -5'
        'echo hello'
-       'git branch --list'
-       # Unstaging and untracking touch no file in the tree (mission review H4).
-       'git restore --staged f.txt'
-       'git rm --cached f.txt' )
+       'git branch --list' )
 
 j=0
 while [ $j -lt ${#PREFIX_NAME[@]} ]; do
