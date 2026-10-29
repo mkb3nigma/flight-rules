@@ -151,8 +151,8 @@ locally with no PR, its commit messages.
 21. **What the checks started is stopped** — a server, database, container, watcher or
     background job started for items 1–3, or by this session on this branch, is stopped
     before the stamp; `ps` and the stack's own tools (`docker ps`, …) show what still
-    runs from this worktree. One the checks did not start — the developer's own server,
-    an editor — is named, not stopped: ask before stopping anything you did not start. A container the checks created is removed, not only
+    runs from this worktree. One neither the checks nor this session started — the
+    developer's own server, an editor — is named, not stopped: ask before stopping anything you did not start. A container the checks created is removed, not only
     stopped (`docker compose down`, `docker rm`): a stopped one still takes disk space.
     One left on purpose is reported as `LEFT RUNNING: <what> — <why>; stop with
     <command>`. ⚠️ on one with no reason: it outlives the branch, and once the worktree

@@ -153,8 +153,9 @@ is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
 # --cached …` — the word git, the verb, then only options from a short list that touch no
 # file in the tree, and plain paths. Anything else — another option (`--no-cached`,
 # `--worktree` or a prefix of it, `--end-of-options`), a quote, `$`, a backtick, `#`, a
-# redirection or a glob, a global option before the verb, a wrapper — is not plainly
-# that, and is judged as before. An allowlist, not a list of what to refuse: each
+# redirection or a glob, a shell wrapper — is not plainly that, and is judged as before.
+# Global options git knows (`--no-pager`, `-C <dir>`) are normalised away before this
+# runs, as for every matcher. An allowlist, not a list of what to refuse: each
 # refuse-list fix opened the next shape (two commit security reviews, 2026-10-29).
 # A subshell with nocasematch off: the caller matches branch names case-insensitively, and
 # with it on here `-s` (restore's --source, which writes the tree) passed as `-S`.

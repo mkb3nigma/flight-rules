@@ -1483,7 +1483,8 @@ git -C "$QQ" branch old/x trunk && git -C "$QQ" checkout -qb production trunk &&
   && git -C "$QQ" commit -qm "fix: hotfix on production" && git -C "$QQ" checkout -q trunk || die "could not build production"
 OUT=$(cd "$QQ" && git merge --no-edit production 2>&1); RC=$?
 say "$RC" "0" "a back-merge of production into trunk lands"
-say "$(grep -c -e 'Earlier merges left' -e 'Post-merge to' <<<"$OUT")" "0" "…and post-merge prints nothing for it, as for main"
+# Everything post-merge prints starts with one of these; git's own merge lines do not.
+say "$(grep -c -e '^## ' -e '^### ' -e '^Earlier merges' -e 'post-merge:' <<<"$OUT")" "0" "…and post-merge prints nothing for it, as for main"
 rm -rf "$PQ"
 
 echo "A pull of the integration branch's own upstream that had to merge prints nothing (fix review):"
