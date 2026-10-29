@@ -34,9 +34,9 @@ Open a GitHub PR for the current feature branch. Project parameters:
   individually green, because five merges landed after the batch run and the integration
   branch was never tested whole.
 - A release PR also needs `/dg` on the **whole** diff, `origin/main...<sha>` — step 2b —
-  with the verdict and every finding's disposition in the PR body, and the `release
-  review` check fails a PR into `main` whose **Adversarial review** section is missing
-  or empty. Warrant: AppliHawk's
+  with the verdict and every finding's disposition in the PR body; where the project
+  runs flight-rules' `release review` workflow (`.github/workflows/release-review.yml`),
+  it fails a PR into `main` whose **Adversarial review** section is missing or empty. Warrant: AppliHawk's
   0.16.0 was declared release-ready on 2026-10-11 with every branch past
   `/pre-merge-check` (which runs no AI review) and the suite green on the final
   integration commit; `/dg` on the 93-commit, 224-file diff the next day found a
@@ -121,7 +121,7 @@ branch from a local copy and opening a fresh PR against the correct base.
    Nothing has tested the sum until something runs everything on the merged tree. A red
    offline run costs the same minutes as a red CI run and none of anyone's attention.
 
-   A local run covers one platform. Where CI runs the suites on more, read CI's result
+   A local run covers one platform. Where CI runs the suites on more, push, then read CI's result
    for that same sha (`gh run list --commit <full sha>` — a short sha matches no run,
    and an empty list has nothing red in it; the final 0.25.0 review). It lists workflow
    runs, not platforms: a matrix of OSes is one run, its conclusion covering every job
@@ -140,7 +140,7 @@ branch from a local copy and opening a fresh PR against the correct base.
    — a `##` inside the section ends it (outside a code fence), and the check below then finds it empty. No
    round tables or banter. The comic, banter score included, goes in only as the
    project's `DG_COMIC_PR` says (`/dg` step 6; default `never`), as `### Comic` at the
-   section's end. The `release review` workflow checks the section is there, holds text
+   section's end. Where the project runs it, the `release review` workflow checks the section is there, holds text
    other than the template's placeholders, and holds a `### Verdict`, outside a code
    fence, with text under it that is not a heading — the header lines alone are not a
    verdict (#83), nor is a bare heading — and re-checks on every body edit. The assistant may decline a minor or important finding with its reason, where the

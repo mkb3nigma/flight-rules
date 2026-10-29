@@ -31,7 +31,7 @@ count (`OPEN_BRANCH_LIMIT`, asked at the limit), then `git worktree add .ai/work
 the owner pushes it. Then, **as the owner** (the assistant too, under the standing OK
 below), merge it into `dev` locally — stamp the
 `pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
-from the `dev` checkout, then push `dev`. No PR: `dev` is note-gated, not PR-only, and the
+from the `dev` checkout; the owner then pushes `dev`. No PR: `dev` is note-gated, not PR-only, and the
 local merge is what exercises the note gate, the authorisation trailer and the back-merge
 exemption — a GitHub-button merge runs none of them. **A contributor** cannot push `dev`
 and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `main` or
@@ -73,7 +73,7 @@ pushed, reporting the sha), then 2b (`/dg origin/main...<that sha>`, verdict and
 dispositions in the PR body, with the release's added and net lines by class — `MISSION.md`
 question 3's count, each file in the first class it matches: tests = `**/*.test.sh`;
 hooks = `hooks/**` minus `*.md`, `*.json`; CI = `.github/**`; session-reaching = `rules/**`, `skills/*/SKILL.md`,
-`.ai/skills/**`, `MISSION.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`; other = the rest, the five summing to `--numstat`'s total —
+`.ai/skills/**`, `.claude/skills/**`, `MISSION.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`; other = the rest, the five summing to `--numstat`'s total —
 and the five questions asked of each subsystem; a critical finding is the owner's call; a finding applied
 arrives through a branch merged to `dev`, then 2a again on the new tip and `/dg` on the
 fix's own diff), and `--base main`. That promotion is the one PR whose head is
@@ -81,7 +81,8 @@ a protected branch, which `pr-create`'s constraint names as its only exception.
 
 ## The skills run here too
 
-`.claude/skills/<name>/SKILL.md` are three-line pointers at `skills/<name>/SKILL.md`,
+`.claude/skills/<name>/SKILL.md` are three-line pointers at `skills/<name>/SKILL.md` — except
+`upstream-check`, which maintains this repo only and lives there whole, unshipped —
 so `/pre-merge-check`, `/pr-create`, `/commit` and the rest work in this repo without
 the plugin (which would register the guard twice). Use them on your own changes.
 
@@ -161,5 +162,4 @@ assistant, in projects that know nothing of this repo.
 - macOS ships BSD `grep`, `sed` and bash 3.2. CI runs the suites on both macOS and
   Ubuntu; do not use `grep -P`, `mapfile`, or `sed -i` without a suffix.
 - Hook behaviour changed? Say so in the PR body. The `.claude-plugin/plugin.json` bump
-  happens once per release, on a `chore/release-<v>` branch — see **Releasing, end to
-  end** above — never in a feature PR.
+  happens once per release, on a `chore/release-<v>` branch — see **Releasing** above — never in a feature PR.

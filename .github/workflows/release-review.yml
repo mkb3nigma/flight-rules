@@ -23,7 +23,7 @@ jobs:
         run: |
           body=$(printf '%s\n' "$BODY" | tr -d '\r')
           if ! printf '%s\n' "$body" | grep -q '^## Adversarial review'; then
-            echo "::error::PR into main has no '## Adversarial review' section — run /dg origin/main...<sha> (pr-create step 2b) and put the verdict and dispositions in the body"
+            echo "::error::PR into main has no '## Adversarial review' section — run /dg origin/main...<sha> (pr-create step 2b), or review that diff yourself, and put the verdict and dispositions in the body"
             exit 1
           fi
           # A heading with nothing under it, or the template's placeholders left in

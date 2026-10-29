@@ -322,6 +322,8 @@ if echo "$NOTE" | grep -q "^passed:"; then
         # printed here never worked (AppliHawk, 2026-10-21, #100).
         box_row "If the user asked for it, say so and finish the merge:"
         box_row "  FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit"
+        # A person merging their own branch reads this box too (mission review H2).
+        box_row "Merging it yourself? Then you asked: the same command."
         box_row ""
         box_row "If they did not: stop, and ask. Setting that variable"
         box_row "to get unblocked is the whole thing this prevents,"

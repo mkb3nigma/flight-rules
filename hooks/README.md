@@ -386,7 +386,10 @@ Guards that fire on the assistant's own events, before git ever runs:
 
 - **`pre-commit-check.sh`** — PreToolUse guard on the Bash tool. On a protected branch
   it denies `git commit` and everything that rewrites or discards the tree without one:
-  `rm`, `restore`, `reset --hard|--merge`, `clean -f`, `checkout -- .` and
+  `rm` and `restore` (not a plain `rm --cached` or `restore --staged` — only safe options
+  and paths, nothing wrapped around it — which untracks or unstages and touches no file),
+  `reset --hard|--merge`, `clean -f`,
+  `checkout -- .` and
   `checkout <rev> -- <path>`, `switch --discard-changes`, `rebase` (not its
   `--abort`/`--continue`), `stash drop|clear`. From any branch it denies a push that
   force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,

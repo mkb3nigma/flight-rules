@@ -101,7 +101,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    printf '' | grep -E -e "$p" >/dev/null 2>&1 || [ $? -eq 1 ] || echo "COULD NOT COUNT: the protected pattern does not compile"
    l=$(git worktree list --porcelain) || echo "COULD NOT COUNT: git worktree list failed"
    printf '%s\n' "$l" | sed -n 's|^branch refs/heads/||p' \
-     | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \
+     | grep -vixF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \
      | while IFS= read -r b; do
          n=$(git rev-list --count "refs/heads/$b" --ignore-missing \
                --not refs/heads/{INTEGRATION_BRANCH} refs/remotes/origin/{INTEGRATION_BRANCH}) \
@@ -151,7 +151,8 @@ git worktree remove {WORKTREE_DIR}/<slug>
 git branch -d <branch>
 ```
 
-To find others already merged, **list them and delete by name** — one command per
+Merged by PR, the local `{INTEGRATION_BRANCH}` lacks the merge until it is pulled, so pull it
+first. To find others already merged, **list them and delete by name** — one command per
 branch, never piped into `xargs`:
 
 ```bash
