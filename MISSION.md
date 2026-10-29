@@ -108,9 +108,9 @@ locally, the commit message of the change itself.
    gap is closed, not whether; the tests a closed gap needs are part of its cost.
 4. **Does it stop and say, or act for the developer?** When it refuses: does the refusal
    name its cause and print the legitimate route, where one exists that is not the skip
-   itself — one a person can take without an assistant? When nothing needs doing, is it
-   quiet on every run? A new refusal on a plausible everyday command is the owner's call
-   — name the commands it would block, then ask.
+   itself — one a person can take without an assistant? When nothing needs doing, do its
+   hooks and checks stay quiet, run after healthy run? A new refusal on a plausible
+   everyday command is the owner's call — name the commands it would block, then ask.
 5. **Is it enforced — or honest that it is not?** A hook, a CI check, or a skill with
    the check number — for a ref movement, a git hook (*What follows*); "advisory" only
    with the reason it cannot be checked. A dormant rule with a real warrant stays:
