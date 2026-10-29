@@ -156,7 +156,10 @@ is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
 # redirection or a glob, a global option before the verb, a wrapper — is not plainly
 # that, and is judged as before. An allowlist, not a list of what to refuse: each
 # refuse-list fix opened the next shape (two commit security reviews, 2026-10-29).
-plain_unstage() {
+# A subshell with nocasematch off: the caller matches branch names case-insensitively, and
+# with it on here `-s` (restore's --source, which writes the tree) passed as `-S`.
+plain_unstage() (
+  shopt -u nocasematch
   local w i verb have=0
   case "$1" in *[\'\"\`\$\\\#\;\&\|\<\>\(\)\{\}\*\?\[]*) return 1 ;; esac
   read -r -a w <<<"$1"
@@ -170,7 +173,7 @@ plain_unstage() {
     esac
   done
   [ "$have" -eq 1 ]
-}
+)
 
 is_destructive() {
   # `restore --staged` only unstages and `rm --cached` only untracks: neither touches a
