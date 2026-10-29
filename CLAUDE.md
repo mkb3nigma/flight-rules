@@ -73,7 +73,7 @@ pushed, reporting the sha), then 2b (`/dg origin/main...<that sha>`, verdict and
 dispositions in the PR body, with the release's added and net lines by class — `MISSION.md`
 question 3's count, each file in the first class it matches: tests = `**/*.test.sh`;
 hooks = `hooks/**` minus `*.md`, `*.json`; CI = `.github/**`; session-reaching = `rules/**`, `skills/*/SKILL.md`,
-`.ai/skills/**`, `MISSION.md`, `CLAUDE.md`; other = the rest, the five summing to `--numstat`'s total —
+`.ai/skills/**`, `MISSION.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`; other = the rest, the five summing to `--numstat`'s total —
 and the five questions asked of each subsystem; a critical finding is the owner's call; a finding applied
 arrives through a branch merged to `dev`, then 2a again on the new tip and `/dg` on the
 fix's own diff), and `--base main`. That promotion is the one PR whose head is

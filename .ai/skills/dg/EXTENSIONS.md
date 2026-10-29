@@ -23,7 +23,7 @@ persona's — carries `MISSION.md` → *The five questions* verbatim, and:
   asked of each subsystem, not once of the sum — a change against the mission hides in a
   large diff the way a defect does. The subsystems: git hooks (`hooks/git/`); agent
   hooks and doctor (`hooks/agent/`, `hooks/*.sh`); skills (`skills/`); rules and this
-  repo's instructions (`rules/`, `MISSION.md`, `CLAUDE.md`); configuration and wiring
+  repo's instructions (`rules/`, `MISSION.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`); configuration and wiring
   (`.ai/`, `.claude/`, `.claude-plugin/`, `hooks/hooks.json`); CI (`.github/`); other
   docs (READMEs, CHANGELOG, attributions). A test is reviewed with the subsystem it
   tests; a file that fits none goes to the nearest, and is named. A review of the
