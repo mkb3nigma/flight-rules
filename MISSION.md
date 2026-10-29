@@ -15,6 +15,11 @@ commit on a protected branch, a protected branch moved without review, work dest
 history rewritten, either on a protected branch. It is one source of truth, consumed by
 many projects and any assistant that reads Markdown. That is the whole job.
 
+It is not a security boundary (principle 1), and not a project's CI or its own checks:
+those live in that project — its pipeline, its `.ai/` extensions (#65). What it finds
+left behind that it did not make — a container testing started — it names, and does not
+stop (#109).
+
 ## What it holds to
 
 1. **Hygiene, not a security wall.** Anyone who means to get past it can, and it does
@@ -47,10 +52,12 @@ many projects and any assistant that reads Markdown. That is the whole job.
 5. **Stop and say.** Where it cannot go on, it stops, names what it saw and why that is
    refused, and prints the legitimate route where one exists that is not the skip itself
    — a route a person can take without an assistant, since the developer working alone
-   is served as much as the one working with one. flight-rules' own automation — the
-   sync, the doctor — makes no branch, worktree or file write for the developer to get round a
-   stop (#99). The assistant takes the printed route and no other — a skip is the
-   person's decision — and pushes nothing unasked.
+   is served as much as the one working with one. Where nothing needs doing, it says
+   nothing: a notice that repeats on every healthy run is noise, and noise hides the
+   warning that matters. flight-rules' own automation — the sync, the doctor — makes no
+   branch, worktree or file write for the developer to get round a stop (#99). The
+   assistant takes the printed route and no other — a skip is the person's decision —
+   and pushes nothing unasked.
 
 ## The five questions
 
@@ -85,7 +92,10 @@ locally, the commit message of the change itself.
 2. **Would every adopting project want it, with any assistant?** Asked of what ships:
    this repo's own `CLAUDE.md`, `MISSION.md`, conf and CI do not, and answer it so. If
    the honest answer names one project, it belongs in that project's extension; one
-   tool, it ships only as the thin adapter principle 3 allows.
+   tool, it ships only as the thin adapter principle 3 allows. A change that ships also
+   says what an adopter already on the previous release must do — the CHANGELOG entry's
+   *Upgrading* — and an update never silently undoes their setup: a newer copy, a
+   setting they chose.
 3. **What does it cost — every reader, and whoever maintains it?** Lines added and net,
    by class (the *Releasing* paragraph of `CLAUDE.md` names the classes), stated with
    the change — advisory, no check reads it — and summed at the release, where
@@ -95,11 +105,11 @@ locally, the commit message of the change itself.
    what hides in it is: a large diff is read for these questions subsystem by
    subsystem, as `/dg` reads it for defects. `CLAUDE.md`'s test mandate decides how a
    gap is closed, not whether; the tests a closed gap needs are part of its cost.
-4. **Does it stop and say, or act for the developer?** When it refuses: does the
-   refusal name its cause and print the legitimate route, where one exists that is not
-   the skip itself — one a person can take without an assistant? A new refusal on a
-   plausible everyday command is the owner's call — name the commands it would block,
-   then ask.
+4. **Does it stop and say, or act for the developer?** When it refuses: does the refusal
+   name its cause and print the legitimate route, where one exists that is not the skip
+   itself — one a person can take without an assistant? When nothing needs doing, is it
+   quiet? A new refusal on a plausible everyday command is the owner's call — name the
+   commands it would block, then ask.
 5. **Is it enforced — or honest that it is not?** A hook, a CI check, or a skill with
    the check number — for a ref movement, a git hook (*What follows*); "advisory" only
    with the reason it cannot be checked. A dormant rule with a real warrant stays:
