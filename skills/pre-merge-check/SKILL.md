@@ -21,6 +21,8 @@ review (use `/dg` for that).
 
 Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATION_BRANCH}`;
 `hotfix/*` → `main`; anything else → ask. Compare with `git diff <dest>...HEAD`.
+Where an item asks what "the PR" shows, it means the PR body — or, for a branch merged
+locally with no PR, its commit messages.
 
 ## Checks (adapt the stack-specific ones to the project's `{TEST_COMMANDS}`)
 
@@ -35,7 +37,9 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
    docs-only branch or known-baseline failures, but must be reported as
    `WAIVED: <reason>` — never silent.
 4. **Type check** — e.g. `tsc --noEmit`, `mypy`; show errors in full. ❌ on an error
-   this branch adds: run the checker on `<dest>` and on HEAD, and fail on any error not
+   this branch adds: run the checker on HEAD and on `<dest>` — a detached worktree of it
+   (`git worktree add --detach <tmp> <dest>`, removed after), not a checkout here — and
+   fail on any error not
    in `<dest>`'s set, matched by file, code and message — not by line, nor by count,
    which passes a branch that fixes one error and adds another. A project adopting a
    checker on existing code gates on that baseline and pays the rest down. Item 5
@@ -131,7 +135,8 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     exactly what an authored one does. Its warrant is the pin.
 19. **Datetimes stored without a zone** — grep the diff's added lines. ❌ on a
     timestamp or datetime column declared without a timezone, or on `datetime.now()`
-    / `date.today()` with no tz argument, or the stack's equivalent. ⚠️ on
+    with no tz argument, or `date.today()` (the machine's local date — take
+    `datetime.now(<tz>).date()`), or the stack's equivalent. ⚠️ on
     `new Date(…)`, `time.time()` or a locale date parse — right for a reader, wrong for
     storage, so say which this one is. Converting a stored UTC instant for a reader is
     never a hit, whoever the reader is: a screen, an email, a report, a scheduled job.
@@ -144,9 +149,10 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
     each of those shapes satisfies it — check that it does: ESLint `no-empty` misses a
     catch that only returns.
 21. **What the checks started is stopped** — a server, database, container, watcher or
-    background job started for items 1–3, or anywhere else on this branch, is stopped
+    background job started for items 1–3, or by this session on this branch, is stopped
     before the stamp; `ps` and the stack's own tools (`docker ps`, …) show what still
-    runs from this worktree. A container the checks created is removed, not only
+    runs from this worktree. One the checks did not start — the developer's own server,
+    an editor — is named, not stopped: ask before stopping anything you did not start. A container the checks created is removed, not only
     stopped (`docker compose down`, `docker rm`): a stopped one still takes disk space.
     One left on purpose is reported as `LEFT RUNNING: <what> — <why>; stop with
     <command>`. ⚠️ on one with no reason: it outlives the branch, and once the worktree

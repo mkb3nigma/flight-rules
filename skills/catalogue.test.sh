@@ -61,11 +61,14 @@ while IFS= read -r pat; do
 done <<EOF
 $GUARD_PATS
 EOF
-# …and nothing in the skill's list that the guard no longer has.
+# …and nothing in the skill's list that the guard no longer has. An extraction that finds
+# nothing would pass this half on its own, so it is checked first (review, 2026-10-29).
+SKILL_PATS=$(awk '/^   ```$/{n++; next} n==1' "$SKILL" | sed -n -E 's/^   ([^ #][^#]*[^ #])[[:space:]]+#.*/\1/p')
+[ -n "$SKILL_PATS" ] || bad "$SKILL: no fenced pattern list found — this test is reading the wrong thing"
 while IFS= read -r pat; do
   [ -n "$pat" ] || continue
   grep -qF -- "$pat" "$GUARD" || bad "$SKILL lists a pattern the guard does not have: $pat"
-done < <(awk '/^   ```$/{n++; next} n==1' "$SKILL" | sed -n -E 's/^   ([^ #][^#]*[^ #])[[:space:]]+#.*/\1/p')
+done <<<"$SKILL_PATS"
 [ "$FAIL" -eq 0 ] && ok "$N guard patterns, all present in the skill and none extra"
 
 # The git pre-commit hook runs the same six on what the commit records (#71). A key the
