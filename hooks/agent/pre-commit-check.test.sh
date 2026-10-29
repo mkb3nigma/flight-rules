@@ -110,6 +110,18 @@ check "git clean -fd on dev"             deny  dev  'git clean -fd'
 check "git clean --force on dev"         deny  dev  'git clean --force'
 check "git checkout -- . on dev"         deny  dev  'git checkout -- .'
 check "git restore on staging"           deny  staging 'git restore f.txt'
+# Unstaging and untracking touch no file in the tree (mission review H4, 2026-10-29). The
+# plain forms are crossed with every wrapper below (SAFE, DANGER_MAIN); these are the rest.
+check "restore -S on dev"                allow dev 'git restore -S f.txt'
+check "restore --staged . on dev"        allow dev 'git restore --staged .'
+check "rm -r --cached on dev"            allow dev 'git rm -r --cached build/'
+check "restore --staged --worktree"      deny  dev 'git restore --staged --worktree f.txt'
+check "restore -SW"                      deny  dev 'git restore -SW f.txt'
+check "restore --source --staged -W"     deny  dev 'git restore --source=HEAD~1 --staged -W f.txt'
+check "plain restore, --staged elsewhere" deny dev 'git restore f.txt && echo --staged'
+check "plain rm, --cached elsewhere"     deny  dev 'git rm f.txt; echo --cached'
+check "rm --cached then plain rm"        deny  dev 'git rm --cached a && git rm b'
+check "restore --staged-ish file"        deny  dev 'git restore --staged-notes'
 check "git commit on dev (regression)"   deny  dev  'git commit -m "x"'
 
 echo "Shell metacharacters must not smuggle a destructive command past the guard:"
@@ -903,6 +915,7 @@ DANGER_MAIN=( 'git commit -m x'
               'git reset --hard HEAD~1'
               'git clean -fd'
               'git restore f.txt'
+              'git restore --staged -W f.txt'
               'git stash drop'
               'git stash clear'
               'git rebase'
@@ -919,7 +932,10 @@ DANGER_ANY=( 'git branch -D main'
 SAFE=( 'git status --short'
        'git log --oneline -5'
        'echo hello'
-       'git branch --list' )
+       'git branch --list'
+       # Unstaging and untracking touch no file in the tree (mission review H4).
+       'git restore --staged f.txt'
+       'git rm --cached f.txt' )
 
 j=0
 while [ $j -lt ${#PREFIX_NAME[@]} ]; do
@@ -935,8 +951,9 @@ while [ $j -lt ${#PREFIX_NAME[@]} ]; do
   done
   j=$((j+1))
 done
+_git_safe=0; for core in "${SAFE[@]}"; do case "$core" in git\ *) _git_safe=$((_git_safe+1)) ;; esac; done
 printf '  ✅ %s git-invocation-prefix combinations\n' \
-  "$(( ${#PREFIX_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + 3) ))"
+  "$(( ${#PREFIX_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + _git_safe) ))"
 
 i=0
 while [ $i -lt ${#WRAP_NAME[@]} ]; do

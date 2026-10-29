@@ -150,7 +150,17 @@ is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
 # follows. `git clean -n` and a bare `git checkout <branch>` are not destructive
 # and stay allowed.
 is_destructive() {
-  [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)${E} ]] && return 0
+  # `restore --staged` (without --worktree) only unstages, and `rm --cached` only
+  # untracks: neither touches a file in the tree, and both are everyday on the main
+  # checkout (mission review H4, 2026-10-29). The segment is one command, so a flag
+  # elsewhere in a chain cannot lend itself to this one.
+  if [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)${E} ]]; then
+    local _keep=0
+    [[ "$1" =~ ${B}git[[:space:]]+restore[[:space:]](.*[[:space:]])?(--staged|-S)([[:space:]]|$) ]] \
+      && ! [[ "$1" =~ [[:space:]](--worktree|-W|-[[:alnum:]]*W[[:alnum:]]*)([[:space:]=]|$) ]] && _keep=1
+    [[ "$1" =~ ${B}git[[:space:]]+rm[[:space:]](.*[[:space:]])?--cached([[:space:]]|$) ]] && _keep=1
+    [ "$_keep" -eq 1 ] || return 0
+  fi
   [[ "$1" =~ ${B}git[[:space:]]+reset[[:space:]]+.*--(hard|merge) ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+clean[[:space:]]+.*-[a-zA-Z]*f ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+(--|\.)${E} ]] && return 0
