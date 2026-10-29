@@ -1457,6 +1457,35 @@ git -C "$QQ" checkout -qb fix/a trunk && echo a > "$QQ/a" && git -C "$QQ" add -A
   && git -C "$QQ" checkout -q trunk && git -C "$QQ" merge -q --no-edit fix/a >/dev/null 2>&1 || die "could not merge fix/a"
 say "$(cksum < "$QQ/.git/info/exclude")" "$EXB" "a project that already ignores it: info/exclude is not touched"
 rm -rf "$PQ"
+# An info/exclude whose last line has no newline: the rule goes on a line of its own.
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+mkdir -p "$QQ/.git/info"; printf '*.log' > "$QQ/.git/info/exclude"
+git -C "$QQ" checkout -qb fix/a trunk && echo a > "$QQ/a" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: a" \
+  && git -C "$QQ" checkout -q trunk && git -C "$QQ" merge -q --no-edit fix/a >/dev/null 2>&1 || die "could not merge fix/a"
+say "$(grep -cxF '*.log' "$QQ/.git/info/exclude")" "1" "an exclude file with no final newline: its last rule is kept whole"
+say "$(git -C "$QQ" status --porcelain | grep -c '\.claude')" "0" "…and the note is still not untracked"
+rm -rf "$PQ"
+
+echo "A pull of the integration branch's own upstream that had to merge prints nothing (fix review):"
+PQ=$(cd "$(mktemp -d)" && pwd -P); U="$PQ/up"
+git init -q -b trunk "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one || die "could not build the upstream"
+git clone -q "$U" "$PQ/r" 2>/dev/null || die "could not clone"; QQ="$PQ/r"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+git -C "$QQ" branch old/x trunk || die "could not leave an earlier merged branch"
+git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m two || die "could not advance the upstream"
+OUT=$(cd "$QQ" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "0" "a pull that merges the upstream: it lands"
+say "$(git -C "$QQ" rev-parse -q --verify HEAD^2 >/dev/null && echo merge)" "merge" "…as a merge commit"
+say "$(grep -c -e 'Earlier merges left' -e 'Post-merge to' -e 'cleanup note written' <<<"$OUT")" "0" "…and post-merge prints nothing for it"
+rm -rf "$PQ"
+rm -rf "$PQ"
 
 echo "A pull that only catches up is named, with the pull that works (hooks review H1, 2026-10-28):"
 # merge.ff=false makes a plain `git pull` that only catches up a merge commit, and the
@@ -1476,7 +1505,7 @@ for b in main dev; do
   git -C "$R" checkout -q "$b"
   OUT=$(cd "$R" && git pull 2>&1); RC=$?
   say "$RC" "1" "$b, a plain pull that only catches up: still refused"
-  say "$(grep -c "only catches up with" <<<"$OUT")" "1" "…named as a pull that only catches up"
+  say "$(grep -c "only catches up with" <<<"$OUT")" "1" "…named as a merge that only catches up"
   say "$(grep -c "origin/$b; merge.ff=false made it a merge commit" <<<"$OUT")" "1" "…with origin/$b named"
   say "$(grep -c '  git pull --ff-only  ' <<<"$OUT")" "1" "…and the pull that works"
   say "$(grep -c -e 'gh pr create' -e 'Run /pre-merge-check' <<<"$OUT")" "0" "…not the route for a merge"

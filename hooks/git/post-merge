@@ -77,6 +77,9 @@ is_feature_merge() {
     ref_sha=$(git rev-parse -q --verify "$ref" 2>/dev/null) || continue
     [[ "$_merged_in" == "$ref_sha" ]] && return 1   # merged-in commit IS main's tip → back-merge
   done
+  # A pull of this branch's own upstream that had to merge is no feature either (fix
+  # review, 2026-10-29): it neither prints what earlier merges left nor clears context.
+  ref_sha=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) && [[ "$_merged_in" == "$ref_sha" ]] && return 1
   return 0
 }
 
@@ -324,8 +327,10 @@ mkdir -p "$(dirname "$NOTE_FILE")"
 # untracked .claude/ in git status (hooks review H20, 2026-10-28). Not .gitignore:
 # that would be a change to commit. Cosmetic, so a write that fails says nothing.
 if ! git check-ignore -q "$NOTE_PATH" 2>/dev/null; then
+  # A file whose last line has no newline would have the rule glued onto it (fix review).
   _ex=$(git rev-parse --git-path info/exclude 2>/dev/null) && [[ -n "$_ex" ]] \
     && mkdir -p "$(dirname "$_ex")" 2>/dev/null \
+    && { [[ ! -s "$_ex" || -z "$(tail -c1 "$_ex")" ]] || printf '\n' >> "$_ex"; } 2>/dev/null \
     && printf '/%s\n' "$NOTE_PATH" >> "$_ex" 2>/dev/null || true
 fi
 {

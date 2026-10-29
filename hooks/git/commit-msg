@@ -425,9 +425,9 @@ if [ -n "$OFF_SHORT" ]; then
     box_row ""
 fi
 if [ -n "$CATCHUP" ]; then
-    box_row "This is a git pull that only catches up with"
+    box_row "This merge only catches up with"
     box_row "$CATCHUP; merge.ff=false made it a merge commit."
-    box_row "Undo it (below), and pull without one:"
+    box_row "Undo it (below), and catch up without one:"
     box_row "  git pull --ff-only"
 else
     box_row "Run /pre-merge-check in the feature worktree first. When"

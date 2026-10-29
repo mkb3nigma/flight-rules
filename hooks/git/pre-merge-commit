@@ -153,9 +153,9 @@ if [ "$_rc" -eq 0 ] && [ -n "$CATCHUP" ]; then
     box_row "⛔  $CURRENT_BRANCH IS PR-ONLY — LOCAL MERGE BLOCKED" 1
     box_sep
     box_row ""
-    box_row "This is a git pull that only catches up with"
+    box_row "This merge only catches up with"
     box_row "$CATCHUP; merge.ff=false made it a merge commit."
-    box_row "Undo it, and pull without one:"
+    box_row "Undo it, and catch up without one:"
     box_row "  git merge --abort"
     box_row "  git pull --ff-only"
     box_row ""
