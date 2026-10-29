@@ -1,9 +1,14 @@
 # flight-rules — working in this repo
 
-This is the playbook itself, so it follows its own rules. Read `rules/` — every file,
-they are short — and treat them as binding here: `engineering-principles.md` for how
-to make a change, `git-worktree-workflow.md` for branching. The SessionStart hook
-injects the principles; the rest you read once.
+This is the playbook itself, so it follows its own rules. `MISSION.md`, imported below
+so it loads with this file, says what flight-rules is for: a change here answers the
+questions of it that apply before it is judged on anything else. It loads only here —
+adopting projects never see it. Then `rules/` — every file, they are short — and
+treat them as binding here: `engineering-principles.md` for how to make a change,
+`git-worktree-workflow.md` for branching. The SessionStart hook injects the
+principles; the rest you read once.
+
+@MISSION.md
 
 ## Parameters
 
@@ -65,7 +70,11 @@ nowhere else to put it. Bump `.claude-plugin/plugin.json` and add the CHANGELOG 
 a `chore/release-<v>` branch, merge that to `dev`, then open the promotion PR: run
 `pr-create` step 2a first (every `{TEST_COMMANDS}` entry on the exact commit being
 pushed, reporting the sha), then 2b (`/dg origin/main...<that sha>`, verdict and
-dispositions in the PR body; a critical finding is the owner's call; a finding applied
+dispositions in the PR body, with the release's added and net lines by class — `MISSION.md`
+question 3's count: tests = `*.test.sh`; hooks = `hooks/**` minus `*.test.sh`, `*.md`,
+`*.json`; CI = `.github/**`; session-reaching = `rules/**`, `skills/*/SKILL.md`,
+`.ai/skills/**`, `MISSION.md`, `CLAUDE.md`; other = the rest, the five summing to `--numstat`'s total —
+and the five questions asked of each subsystem; a critical finding is the owner's call; a finding applied
 arrives through a branch merged to `dev`, then 2a again on the new tip and `/dg` on the
 fix's own diff), and `--base main`. That promotion is the one PR whose head is
 a protected branch, which `pr-create`'s constraint names as its only exception.
@@ -98,7 +107,8 @@ checked harder than code. Each added or widened item must pass all four, in the 
 
 1. **Names the warrant** — the reason to believe the failure in point 2 is real rather
    than plausible. One of:
-   **(a) an event** — a commit, PR, sha, date, or a probe that showed the hole. It does
+   **(a) an event** — a commit, PR, sha, date, or a probe that showed the hole (for a
+   refusal or a check, one a slip could also reach: `MISSION.md` question 1). It does
    not have to be public: a private-repo sha and date is a citation (`ATTRIBUTIONS.md`
    already carries one).
    **(b) an upstream** this playbook adapts from, with an `UPSTREAMS.md` row pinned at
@@ -121,7 +131,7 @@ checked harder than code. Each added or widened item must pass all four, in the 
    different model family than the author (the skill says why), with the verdict in
    the PR body and each finding's disposition, applied or declined with a reason.
 
-`pre-merge-check` item 18 asks for 1–3 on any diff under `rules/`. A deletion or
+`pre-merge-check` item 18 asks for 1–3 on any diff to a rules file (item 18 lists them). A deletion or
 tightening skips the four points but still names what it drops and where that is now
 covered — a widening framed as a "fold" is how coverage quietly disappears. The same
 questions are put to every bullet of `engineering-principles.md` at each release: it
