@@ -48,6 +48,7 @@ flowchart TB
 ## Layout
 
 ```
+MISSION.md What flight-rules is for — the questions every change to it answers
 rules/     Always-on principles a project's CLAUDE.md / .cursorrules should point at
 skills/    Invocable workflows — see the catalog below
 hooks/     Enforcement templates — git merge-gate hooks + agent commit/secret guards
