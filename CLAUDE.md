@@ -71,9 +71,9 @@ a `chore/release-<v>` branch, merge that to `dev`, then open the promotion PR: r
 `pr-create` step 2a first (every `{TEST_COMMANDS}` entry on the exact commit being
 pushed, reporting the sha), then 2b (`/dg origin/main...<that sha>`, verdict and
 dispositions in the PR body, with the release's added and net lines by class — `MISSION.md`
-question 3's count: tests = `*.test.sh`; hooks = `hooks/**` minus `*.test.sh`, `*.md`,
-`*.json`; CI = `.github/**`; session-reaching = `rules/**`, `skills/*/SKILL.md`,
-`.ai/skills/**`, `MISSION.md`, `CLAUDE.md`; other = the rest, the five summing to `--numstat`'s total —
+question 3's count, each file in the first class it matches: tests = `**/*.test.sh`;
+hooks = `hooks/**` minus `*.md`, `*.json`; CI = `.github/**`; session-reaching = `rules/**`, `skills/*/SKILL.md`,
+`.ai/skills/**`, `MISSION.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`; other = the rest, the five summing to `--numstat`'s total —
 and the five questions asked of each subsystem; a critical finding is the owner's call; a finding applied
 arrives through a branch merged to `dev`, then 2a again on the new tip and `/dg` on the
 fix's own diff), and `--base main`. That promotion is the one PR whose head is
@@ -121,7 +121,7 @@ checked harder than code. Each added or widened item must pass all four, in the 
    Never sufficient: a benefit with no failure attached, or "best practice".
 2. **Says what goes wrong without it**, concretely. If the honest answer is "nothing
    much", it does not go in.
-3. **Says how it is enforced** — a hook, or a skill with the check number. "Advisory"
+3. **Says how it is enforced** — a hook, a CI check, or a skill with the check number. "Advisory"
    is an answer only with the reason the item cannot be checked. Each release asks
    again whether enforcement has become possible. An item is cut only when its warrant
    is gone or another item covers it — never for being advisory, or for not having
@@ -131,7 +131,8 @@ checked harder than code. Each added or widened item must pass all four, in the 
    different model family than the author (the skill says why), with the verdict in
    the PR body and each finding's disposition, applied or declined with a reason.
 
-`pre-merge-check` item 18 asks for 1–3 on any diff to a rules file (item 18 lists them). A deletion or
+`pre-merge-check` item 18 asks for 1–3 on any diff to a rules file (item 18 and
+`.ai/skills/pre-merge-check/EXTENSIONS.md` list them). A deletion or
 tightening skips the four points but still names what it drops and where that is now
 covered — a widening framed as a "fold" is how coverage quietly disappears. The same
 questions are put to every bullet of `engineering-principles.md` at each release: it
