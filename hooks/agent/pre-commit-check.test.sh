@@ -122,6 +122,12 @@ check "plain restore, --staged elsewhere" deny dev 'git restore f.txt && echo --
 check "plain rm, --cached elsewhere"     deny  dev 'git rm f.txt; echo --cached'
 check "rm --cached then plain rm"        deny  dev 'git rm --cached a && git rm b'
 check "restore --staged-ish file"        deny  dev 'git restore --staged-notes'
+# Not plainly the one command: judged as before (commit security review, 2026-10-29).
+check "rm, --cached in a comment"        deny  dev 'git rm b # --cached'
+check "rm --cached, a rm in backticks"   deny  dev 'git rm --cached a `git rm b`'
+check "rm --cached, a rm in \$( )"       deny  dev 'git rm --cached a $(git rm b)'
+check "rm -- --cached (a path)"          deny  dev 'git rm -- --cached'
+check "restore --staged --work (prefix)" deny  dev 'git restore --staged --work f'
 check "git commit on dev (regression)"   deny  dev  'git commit -m "x"'
 
 echo "Shell metacharacters must not smuggle a destructive command past the guard:"

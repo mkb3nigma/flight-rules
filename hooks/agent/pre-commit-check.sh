@@ -152,13 +152,20 @@ is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
 is_destructive() {
   # `restore --staged` (without --worktree) only unstages, and `rm --cached` only
   # untracks: neither touches a file in the tree, and both are everyday on the main
-  # checkout (mission review H4, 2026-10-29). The segment is one command, so a flag
-  # elsewhere in a chain cannot lend itself to this one.
+  # checkout (mission review H4, 2026-10-29). Only for a segment that is plainly that one
+  # command: a second `git`, a substitution, a comment or a `--` could each make the
+  # flag belong to something else, and then it is judged as before (commit security
+  # review). git takes any unambiguous prefix of `--worktree`, so `--w…` counts as it.
   if [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)${E} ]]; then
-    local _keep=0
-    [[ "$1" =~ ${B}git[[:space:]]+restore[[:space:]](.*[[:space:]])?(--staged|-S)([[:space:]]|$) ]] \
-      && ! [[ "$1" =~ [[:space:]](--worktree|-W|-[[:alnum:]]*W[[:alnum:]]*)([[:space:]=]|$) ]] && _keep=1
-    [[ "$1" =~ ${B}git[[:space:]]+rm[[:space:]](.*[[:space:]])?--cached([[:space:]]|$) ]] && _keep=1
+    local _keep=0 _plain=1
+    [[ "$1" =~ ${B}git[[:space:]].*${B}git([[:space:]]|$) ]] && _plain=0
+    [[ "$1" == *'$('* || "$1" == *'`'* ]] && _plain=0
+    [[ "$1" =~ (^|[[:space:]])(#|--)([[:space:]]|$) ]] && _plain=0
+    if [ "$_plain" -eq 1 ]; then
+      [[ "$1" =~ ${B}git[[:space:]]+restore[[:space:]](.*[[:space:]])?(--staged|-S)([[:space:]]|$) ]] \
+        && ! [[ "$1" =~ [[:space:]](--w[[:alnum:]-]*|-W|-[[:alnum:]]*W[[:alnum:]]*)([[:space:]=]|$) ]] && _keep=1
+      [[ "$1" =~ ${B}git[[:space:]]+rm[[:space:]](.*[[:space:]])?--cached([[:space:]]|$) ]] && _keep=1
+    fi
     [ "$_keep" -eq 1 ] || return 0
   fi
   [[ "$1" =~ ${B}git[[:space:]]+reset[[:space:]]+.*--(hard|merge) ]] && return 0
