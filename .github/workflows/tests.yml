@@ -19,12 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Syntax check every script
+        # Every file is checked and the step fails if any did: with `bash -n f && echo`,
+        # set -e skipped each failure and the step took the last file's status (mission
+        # review CI-1, 2026-10-29).
         run: |
-          set -e
+          fail=0
           for f in hooks/*.sh hooks/agent/*.sh hooks/git/* skills/*.sh; do
             case "$f" in *.md) continue ;; esac
-            bash -n "$f" && echo "ok  $f"
+            if bash -n "$f"; then echo "ok  $f"; else echo "::error file=$f::bash -n failed"; fail=1; fi
           done
+          exit "$fail"
       - name: Git hooks are executable
         # A hook tracked as 644 is silently ignored by git ("hook was ignored
         # because it's not set as executable") — the note gate shipped that way.
