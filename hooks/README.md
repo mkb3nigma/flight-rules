@@ -209,10 +209,23 @@ that the logic has exactly one home.
   violation, and it needs no `MERGE_HEAD`. It only sees merges git completes in one
   step: a **conflicted** merge stops before the merge commit and never reaches this
   hook, which is why `reference-transaction` below is the actual guarantee and this
-  is the early, specific message. Sync with `git pull --ff-only origin main`.
+  is the early, specific message. Sync with `git pull --ff-only origin main`. A plain
+  `git pull` that only catches up with the branch's own upstream is a merge commit
+  under `merge.ff false`, so it lands here, and in `commit-msg` on a note-gated branch;
+  both refusals name it and print `git pull --ff-only`. `pull.ff` is deliberately left
+  alone: set to `true` or `only`, it lets `git pull origin <any branch>` fast-forward a
+  protected branch past every gate (probed 2026-10-29).
 - **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`; unset,
   the set is *protected but not PR-only*) require a passing `pre-merge-check` note on the
-  incoming commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
+  incoming commit. The refusal prints `/pre-merge-check`, and describes a route for a
+  developer working without an assistant: run the project's checks — its tests at the
+  least — then record what ran on the branch's tip and finish the merge the refusal left
+  in progress:
+  `git notes --ref=pre-merge-check add -m 'passed: <what you ran>' <branch>` then
+  `FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit`. The box describes it rather than
+  printing it ready to paste: an assistant reads the box too, and only running the
+  check may write its note (`engineering-principles.md`, Stops). This check used to live in
+  `pre-merge-commit` and was a **silent no-op**:
   modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
   lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
   runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates
@@ -304,9 +317,12 @@ that the logic has exactly one home.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
   unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
-  (stale worktrees, deletable branches) to `.claude/post-merge-note.md` and, when it has
-  something to do, prints it to whoever merged (at most 40 lines; no flight-rules hook
-  reads the file, #110). Each command is on a line of its own, quoted to be pasted, with
+  (stale worktrees, deletable branches) to `.claude/post-merge-note.md` — excluded in the
+  clone's `.git/info/exclude` unless the project already ignores it, so it never shows as
+  untracked. After a feature merge it prints what *that* merge left — its worktree, what
+  runs from it, its branch — and one line counting what earlier merges left; a pull, a
+  fast-forward or a back-merge prints nothing (at most 40 lines; no flight-rules hook
+  reads the file, #110; re-listing everything on every merge and pull was noise). Each command is on a line of its own, quoted to be pasted, with
   what to know about it — just merged, or refused until a push — on the line below. Under each stale worktree it names what still runs from it — processes
   working there or with its path in their command line, and Docker Compose containers
   from it, stopped ones included — so what a check started is stopped or removed before
