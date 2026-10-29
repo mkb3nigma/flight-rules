@@ -27,16 +27,23 @@ done
 
 echo "Pointer files in .claude/skills/ match the shipped set one-to-one:"
 POINTERS=$(find .claude/skills -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sed 's|.claude/skills/||' | sort)
+# A skill that maintains this repo only (/upstream-check) lives whole in .claude/skills/
+# and does not ship; anything else there is a pointer at a shipped skill.
 for p in $POINTERS; do
-  grep -q "^$p\$" <<<"$SKILLS" || bad ".claude/skills/$p points at a skill that does not exist"
-  grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null || bad ".claude/skills/$p/SKILL.md does not reference skills/$p/SKILL.md"
+  if ! grep -q "^$p\$" <<<"$SKILLS"; then
+    grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null \
+      && bad ".claude/skills/$p points at a skill that does not exist"
+    REPO_ONLY="${REPO_ONLY-}$p "
+  else
+    grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null || bad ".claude/skills/$p/SKILL.md does not reference skills/$p/SKILL.md"
+  fi
   pn=$(sed -n -E 's/^name: (.*)$/\1/p' ".claude/skills/$p/SKILL.md" | head -1)
   [ "$pn" = "$p" ] || bad ".claude/skills/$p: frontmatter name '$pn' ≠ '$p'"
 done
 for s in $SKILLS; do
   grep -q "^$s\$" <<<"$POINTERS" || bad "skills/$s has no pointer in .claude/skills/ — not runnable in this repo"
 done
-[ "$SKILLS" = "$POINTERS" ] && ok "$(wc -w <<<"$SKILLS" | tr -d ' ') skills, $(wc -w <<<"$POINTERS" | tr -d ' ') pointers, same set"
+ok "$(wc -w <<<"$SKILLS" | tr -d ' ') shipped skills, each with a pointer; this repo's own: ${REPO_ONLY:-none}"
 
 echo "README catalogue lists exactly the shipped skills:"
 LISTED=$(sed -n -E 's/^\| \[`\/([a-z-]+)`\]\(skills\/[a-z-]+\/SKILL\.md\).*/\1/p' README.md | sort)

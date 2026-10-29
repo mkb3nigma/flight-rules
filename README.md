@@ -87,7 +87,9 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 | [`/commit`](skills/commit/SKILL.md) | Guarded commit — protected-branch, secret-scan, and test-coverage checks | Every commit |
 | [`/docs-lint`](skills/docs-lint/SKILL.md) | Health-check living docs for drift, contradictions, and stale claims | Docs start to rot |
 | [`/rules-sync`](skills/rules-sync/SKILL.md) | Pull the latest playbook and reconcile a project's local copies | After the playbook updates |
-| [`/upstream-check`](skills/upstream-check/SKILL.md) | Check the sources this playbook adapts from for changes to fold in | Maintaining flight-rules itself |
+
+Maintaining flight-rules itself, `/upstream-check` checks the sources in `UPSTREAMS.md` for
+changes to fold in. It lives in this repo's `.claude/skills/` and does not ship.
 
 ## Consuming from a project
 
