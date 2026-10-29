@@ -209,10 +209,19 @@ that the logic has exactly one home.
   violation, and it needs no `MERGE_HEAD`. It only sees merges git completes in one
   step: a **conflicted** merge stops before the merge commit and never reaches this
   hook, which is why `reference-transaction` below is the actual guarantee and this
-  is the early, specific message. Sync with `git pull --ff-only origin main`.
+  is the early, specific message. Sync with `git pull --ff-only origin main`. A plain
+  `git pull` that only catches up with the branch's own upstream is a merge commit
+  under `merge.ff false`, so it lands here, and in `commit-msg` on a note-gated branch;
+  both refusals name it and print `git pull --ff-only`. `pull.ff` is deliberately left
+  alone: set to `true` or `only`, it lets `git pull origin <any branch>` fast-forward a
+  protected branch past every gate (probed 2026-10-29).
 - **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`; unset,
   the set is *protected but not PR-only*) require a passing `pre-merge-check` note on the
-  incoming commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
+  incoming commit. The refusal prints `/pre-merge-check`, and a route for a developer
+  working without an assistant: run the project's checks, write the note on the tip's
+  sha saying what ran, and finish the merge — an assistant runs the skill instead, since
+  only running the check may write its note. This check used to live in
+  `pre-merge-commit` and was a **silent no-op**:
   modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
   lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
   runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates

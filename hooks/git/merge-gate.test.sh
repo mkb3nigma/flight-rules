@@ -1424,6 +1424,59 @@ say "$(grep -c "more lines in .claude/post-merge-note.md" <<<"$OUT")" "1" "…th
 say "$([ "$(grep -c "git branch -d old/b" <<<"$OUT")" -lt 50 ] && echo cut)" "cut" "…having printed fewer than all fifty"
 rm -rf "$PQ"
 
+echo "A pull that only catches up is named, with the pull that works (hooks review H1, 2026-10-28):"
+# merge.ff=false makes a plain `git pull` that only catches up a merge commit, and the
+# gate refused it with a route for a merge. pull.ff is not the fix: it lets `git pull
+# origin <any branch>` fast-forward past the gate (probed 2026-10-29) — so the gate still
+# refuses, and says what happened. A pull of any other branch keeps the normal box.
+PU=$(cd "$(mktemp -d)" && pwd -P); U="$PU/up"
+git init -q -b main "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one \
+  && git -C "$U" branch dev || die "could not build the upstream"
+git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone the upstream"
+R="$PU/r"; git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
+mkdir -p "$R/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.ai/hooks/" || die "could not copy the hooks"
+chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"; git -C "$R" config merge.ff false
+git -C "$R" checkout -q -b dev origin/dev || die "no dev in the clone"
+for b in main dev; do git -C "$U" checkout -q "$b" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "$b two" || die "could not advance $b"; done
+for b in main dev; do
+  git -C "$R" checkout -q "$b"
+  OUT=$(cd "$R" && git pull 2>&1); RC=$?
+  say "$RC" "1" "$b, a plain pull that only catches up: still refused"
+  say "$(grep -c "only catches up with" <<<"$OUT")" "1" "…named as a pull that only catches up"
+  say "$(grep -c "origin/$b; merge.ff=false made it a merge commit" <<<"$OUT")" "1" "…with origin/$b named"
+  say "$(grep -c '  git pull --ff-only  ' <<<"$OUT")" "1" "…and the pull that works"
+  say "$(grep -c -e 'gh pr create' -e 'Run /pre-merge-check' <<<"$OUT")" "0" "…not the route for a merge"
+  git -C "$R" merge --abort 2>/dev/null
+  (cd "$R" && git pull -q --ff-only 2>/dev/null); say "$(git -C "$R" rev-parse HEAD)" "$(git -C "$R" rev-parse "origin/$b")" "…and taking that route lands it"
+done
+git -C "$R" checkout -q -b fix/x dev && git -C "$R" commit -q --allow-empty -m "fix: x" && git -C "$R" checkout -q dev || die "could not build fix/x"
+OUT=$(cd "$R" && git pull . fix/x 2>&1); RC=$?
+say "$RC" "1" "dev, a pull of another branch: refused by the note gate"
+say "$(grep -c 'only catches up' <<<"$OUT")" "0" "…not named a catch-up"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…the note gate's box"
+git -C "$R" merge --abort 2>/dev/null
+git -C "$R" checkout -q main
+# --no-rebase: main and fix/x have diverged, and git asks how to reconcile before any hook.
+OUT=$(cd "$R" && git pull --no-rebase . fix/x 2>&1); RC=$?
+say "$RC" "1" "main, a pull of another branch: refused as a local merge"
+say "$(grep -c 'only catches up' <<<"$OUT")" "0" "…not named a catch-up"
+say "$(grep -c 'gh pr create' <<<"$OUT")" "1" "…with the pull-request route"
+git -C "$R" merge --abort 2>/dev/null
+
+echo "The note gate prints a route a person can take without an assistant (hooks review H3):"
+# The only route printed was /pre-merge-check, a slash command (MISSION.md principle 5).
+git -C "$R" checkout -q dev
+OUT=$(cd "$R" && git merge --no-edit fix/x 2>&1)
+SHORT=$(git -C "$R" rev-parse --short fix/x)
+say "$(grep -c 'Working without an assistant' <<<"$OUT")" "1" "unstamped merge: the box speaks to the developer working alone"
+say "$(grep -c "'passed: <what you ran>' $SHORT" <<<"$OUT")" "1" "…with the note command on the tip's sha"
+say "$(grep -c 'An assistant runs /pre-merge-check instead' <<<"$OUT")" "1" "…and says an assistant does not take it"
+git -C "$R" notes --ref=pre-merge-check add -m "passed: ran the tests by hand" "$SHORT" || die "could not write the note"
+(cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit -q --no-edit >/dev/null 2>&1); RC=$?
+say "$RC" "0" "…and the route it prints finishes the merge"
+say "$(git -C "$R" rev-parse dev^2)" "$(git -C "$R" rev-parse fix/x)" "…with fix/x merged into dev"
+rm -rf "$PU"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

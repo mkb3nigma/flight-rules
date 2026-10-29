@@ -358,6 +358,17 @@ if echo "$NOTE" | grep -q "^passed:"; then
     exit 0
 fi
 
+# A plain `git pull` that only catches up with the branch's own upstream lands here
+# too: merge.ff=false makes even that a merge commit (hooks review H1, 2026-10-28). It
+# is not let through, and pull.ff is not set for it — either lets `git pull origin
+# <any branch>` fast-forward a protected branch past every gate (probed 2026-10-29).
+# The refusal names it and prints the pull that works.
+CATCHUP=""
+_up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
+    && [ "$_up" = "$MERGE_SHA" ] \
+    && git merge-base --is-ancestor HEAD "$_up" 2>/dev/null \
+    && CATCHUP=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)
+
 # Both boxes say what `--abort` costs: it runs `reset --merge`, and on a leftover
 # MERGE_HEAD nobody is merging it deleted the staged work beside it (final release
 # /dg, 2026-10-18). For a real refused merge it is still the undo.
@@ -413,9 +424,28 @@ if [ -n "$OFF_SHORT" ]; then
     box_row "  git commit --no-edit"
     box_row ""
 fi
-box_row "Run /pre-merge-check in the feature worktree first. When"
-box_row "every check passes it stamps a note on the commit, and"
-box_row "this hook lets the merge through."
+if [ -n "$CATCHUP" ]; then
+    box_row "This is a git pull that only catches up with"
+    box_row "$CATCHUP; merge.ff=false made it a merge commit."
+    box_row "Undo it (below), and pull without one:"
+    box_row "  git pull --ff-only"
+else
+    box_row "Run /pre-merge-check in the feature worktree first. When"
+    box_row "every check passes it stamps a note on the commit, and"
+    box_row "this hook lets the merge through."
+    box_row ""
+    # The developer working alone is served as much as one with an assistant
+    # (MISSION.md principle 5): a slash command was the only route printed (hooks review
+    # H3, 2026-10-28). The sha, not the branch name: a name goes into a pasted command.
+    box_row "Working without an assistant: run the project's checks"
+    box_row "yourself — its tests at the least — then record what ran"
+    box_row "on the branch's tip, and finish the merge:"
+    box_row "  git notes --ref=pre-merge-check add \\"
+    box_row "    -m 'passed: <what you ran>' $(git rev-parse --short "$MERGE_SHA")"
+    box_row "  FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit"
+    box_row "An assistant runs /pre-merge-check instead: only running"
+    box_row "the check may write its note."
+fi
 box_row ""
 box_row "Undo this half-finished merge:   git merge --abort"
 box_row "  — it also drops what you staged. A merge you never"

@@ -129,6 +129,40 @@ if [ "$_rc" -eq 2 ]; then
     echo "Undo this half-finished merge:   git merge --abort"
     exit 1
 fi
+# A plain `git pull` that only catches up with the branch's own upstream lands here
+# too: merge.ff=false makes even that a merge commit (hooks review H1, 2026-10-28). It
+# is not let through, and pull.ff is not set for it — either lets `git pull origin
+# <any branch>` fast-forward a protected branch past every gate (probed 2026-10-29).
+# The refusal names it and prints the pull that works.
+# MERGE_HEAD is not written yet when this hook runs; a pull says what it merges in
+# FETCH_HEAD, the lines not marked not-for-merge. Only the message depends on it.
+CATCHUP=""
+case "${GIT_REFLOG_ACTION:-}" in
+pull*)
+    _fh=$(git rev-parse --git-path FETCH_HEAD 2>/dev/null)
+    _in=$(grep -v '	not-for-merge	' "$_fh" 2>/dev/null | cut -f1)
+    _up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
+        && [ "$_up" = "$_in" ] \
+        && git merge-base --is-ancestor HEAD "$_up" 2>/dev/null \
+        && CATCHUP=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)
+    ;;
+esac
+if [ "$_rc" -eq 0 ] && [ -n "$CATCHUP" ]; then
+    echo ""
+    box_top
+    box_row "⛔  $CURRENT_BRANCH IS PR-ONLY — LOCAL MERGE BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "This is a git pull that only catches up with"
+    box_row "$CATCHUP; merge.ff=false made it a merge commit."
+    box_row "Undo it, and pull without one:"
+    box_row "  git merge --abort"
+    box_row "  git pull --ff-only"
+    box_row ""
+    box_bot
+    echo ""
+    exit 1
+fi
 if [ "$_rc" -eq 0 ]; then
     echo ""
     box_top
