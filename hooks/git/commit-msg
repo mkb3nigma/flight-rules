@@ -436,15 +436,14 @@ else
     box_row ""
     # The developer working alone is served as much as one with an assistant
     # (MISSION.md principle 5): a slash command was the only route printed (hooks review
-    # H3, 2026-10-28). The sha, not the branch name: a name goes into a pasted command.
+    # H3, 2026-10-28). Described, with the command in the README, not printed ready to
+    # paste: an assistant reads this box too, and takes the route it prints (commit
+    # security review, 2026-10-29).
     box_row "Working without an assistant: run the project's checks"
     box_row "yourself — its tests at the least — then record what ran"
-    box_row "on the branch's tip, and finish the merge:"
-    box_row "  git notes --ref=pre-merge-check add \\"
-    box_row "    -m 'passed: <what you ran>' $(git rev-parse --short "$MERGE_SHA")"
-    box_row "  FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit"
-    box_row "An assistant runs /pre-merge-check instead: only running"
-    box_row "the check may write its note."
+    box_row "as a note on the branch's tip (hooks/README.md → commit-msg"
+    box_row "has the command) and finish the merge. An assistant runs"
+    box_row "/pre-merge-check instead: only running it may write the note."
 fi
 box_row ""
 box_row "Undo this half-finished merge:   git merge --abort"

@@ -319,6 +319,15 @@ note_branch() {
 
 # --- Write note file ---
 mkdir -p "$(dirname "$NOTE_FILE")"
+# The note is this hook's file, not the project's: unless the project already ignores
+# it, it goes in this clone's info/exclude, so the first merge does not leave an
+# untracked .claude/ in git status (hooks review H20, 2026-10-28). Not .gitignore:
+# that would be a change to commit. Cosmetic, so a write that fails says nothing.
+if ! git check-ignore -q "$NOTE_PATH" 2>/dev/null; then
+  _ex=$(git rev-parse --git-path info/exclude 2>/dev/null) && [[ -n "$_ex" ]] \
+    && mkdir -p "$(dirname "$_ex")" 2>/dev/null \
+    && printf '/%s\n' "$NOTE_PATH" >> "$_ex" 2>/dev/null || true
+fi
 {
   # Every name from outside the hook — a branch, a path, an upstream, a command line, a
   # container, docker's own words — goes through shq, on every line, not only the
@@ -379,18 +388,43 @@ mkdir -p "$(dirname "$NOTE_FILE")"
 } > "$NOTE_FILE"
 
 # Printed as well as written: no flight-rules hook reads the file (#110; a user's own
-# hook may), so the merger — the owner or an assistant — is who sees it. Only when there is something to do: a `git pull`
-# runs this hook too, and a clean one stays one line. At most 40 lines; the file has all.
-echo ""
-if [[ ${#STALE_WORKTREES[@]} -gt 0 || -n "$ALL_MERGED" ]]; then
-  _n=$(wc -l < "$NOTE_FILE" | tr -d ' ')
-  head -40 "$NOTE_FILE"
+# hook may), so the merger — the owner or an assistant — sees it here. Only what this
+# merge left is printed in full — its worktree, what still runs from it, its branch —
+# and what earlier merges left as one count line. Re-listing every earlier worktree and
+# branch on every merge, and the whole note on every pull, was noise that hid the new
+# line (hooks review H21, 2026-10-28; MISSION.md principle 5). A pull, a fast-forward or
+# a back-merge prints nothing; the file has everything. At most 40 lines.
+PRINT=""
+if is_feature_merge; then
+  # Read back from the note, not worked out again: the process list is read once.
+  # ENVIRON, not awk -v, which would read a backslash in a name as an escape.
+  _blk=$(B="  Branch: $(shq "$JUST_MERGED")  →" awk 'index($0, ENVIRON["B"]) == 1 {p=1}
+    p {print} p && /^  git worktree remove / {exit}' "$NOTE_FILE")
+  _brl=$(L="  git branch -d $(shq "$JUST_MERGED")" awk '$0 == ENVIRON["L"] {print; if ((getline n) > 0 && n ~ /^    ↑/) print n; exit}' "$NOTE_FILE")
+  _old_wt=${#STALE_WORKTREES[@]}; [[ -n "$_blk" ]] && _old_wt=$((_old_wt - 1))
+  _old_br=$(printf '%s\n' "$PREVIOUSLY_MERGED" | grep -c . || true)
+  if [[ -n "$_blk" ]]; then
+    PRINT+="### ⚠ Its worktree is still present (remove after confirming work is merged):"$'\n'
+    [[ -n "$RUN_ERR" ]] && PRINT+="  ⚠ $RUN_ERR"$'\n'
+    [[ -n "$DOCKER_ERR" ]] && PRINT+="  ⚠ $DOCKER_ERR"$'\n'
+    PRINT+="$_blk"$'\n'
+  fi
+  [[ -n "$_brl" ]] && PRINT+="### ⚠ Its branch is merged (safe to delete):"$'\n'"$_brl"$'\n'
+  if [[ "$_old_wt" -gt 0 || "$_old_br" -gt 0 ]]; then
+    PRINT+="Earlier merges left $_old_wt worktree(s) and $_old_br branch(es) to clean up — listed in $NOTE_PATH"$'\n'
+  fi
+  [[ -n "$PRINT" ]] && PRINT="## Post-merge to $(shq "$INTEGRATION_BRANCH"): $(shq "$MERGED_BRANCH")"$'\n'"$PRINT"
+fi
+if [[ -n "$PRINT" ]]; then
+  echo ""
+  _n=$(printf '%s' "$PRINT" | wc -l | tr -d ' ')
+  printf '%s' "$PRINT" | head -40
   [[ "$_n" -gt 40 ]] && echo "  … $((_n - 40)) more lines in $NOTE_PATH"
   echo ""
 fi
 if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
   echo "✅ post-merge: context cleared ($CLEARED_COUNT items), cleanup note written to $NOTE_PATH."
-else
+elif [[ -n "$PRINT" ]]; then
   echo "✅ post-merge: cleanup note written to $NOTE_PATH."
 fi
 exit 0
