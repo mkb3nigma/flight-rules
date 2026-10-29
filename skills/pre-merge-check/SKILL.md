@@ -118,9 +118,10 @@ Destination: `feature/* fix/* refactor/* test/* docs/* chore/*` → `{INTEGRATIO
 18. **Rules earn their place** — for every item the diff adds to or widens in a rules
     file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
     warrant, what goes wrong without it, and how it is enforced. The warrant is an
-    event (commit/PR/sha/date/probe — a private-repo sha and date counts), an
+    event (commit/PR/sha/date/probe — a private-repo sha and date counts; a probe for a
+    refusal or a check, one a slip could also reach), an
     `UPSTREAMS.md`-pinned source the item was adapted from, or the failure description
-    itself declared as testimony. Enforcement is a hook, or a skill with check number;
+    itself declared as testimony. Enforcement is a hook, a CI check, or a skill with check number;
     "advisory" only with the reason it cannot be checked.
     ❌ if any of the three is missing; ⚠️ if the diff was not put through adversarial
     review (`/dg`) with the verdict and each finding's disposition in the PR body. A
