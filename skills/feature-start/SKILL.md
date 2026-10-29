@@ -59,16 +59,18 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      ```bash
      git log --oneline origin/main..origin/{INTEGRATION_BRANCH}
      ```
-     - Reverse range **empty** → the integration branch is strictly behind; a
-       fast-forward is safe. Print the commits that will move, then update the remote
-       branch without touching any local checkout:
+     - Reverse range **empty** → the integration branch is strictly behind, and a
+       fast-forward brings it up. That moves a protected branch on the remote, so it
+       is the person's to run, not this skill's: print the commits that would move and
+       the command, and stop — a branch cut now would miss them. An assistant runs it
+       only when the person says so.
        ```bash
        git push origin origin/main:refs/heads/{INTEGRATION_BRANCH} && git fetch origin
        ```
-       This is a plain (never forced) push of already-reviewed commits; the guard
-       allows it for that reason. If the push is still rejected, the likely causes are
-       a stale `origin/*` (fetch and re-check), host branch protection, or missing
-       permission — say which you think it is and ask; do not guess "diverged".
+       It is a plain push of already-reviewed commits, never forced. If it is
+       rejected, the likely causes are a stale `origin/*` (fetch and re-check), host
+       branch protection, or missing permission — not "diverged". Once it has landed,
+       start again at step 4.
      - Reverse range **non-empty** → the branches have diverged and reconciling them
        is a real merge into a protected branch, which is the user's call. STOP, show
        both ranges, ask. Never `git merge` here yourself.
