@@ -5,8 +5,6 @@
 #   2. Lists merged branches safe to delete
 #   3. Writes a note file, and prints it when it has something to do (no flight-rules
 #      hook reads the file — a user's own may: #110)
-#   4. (Optional, off by default) clears the AI assistant's stored conversation
-#      context for this project so the next session starts fresh
 #
 # Adapt the parameters below, commit into the repo, install via install.sh.
 
@@ -39,9 +37,6 @@ PROTECTED_RE="${PROTECTED_RE:-^(main|master|dev|develop|development|staging|stag
 case "$PROTECTED_RE" in off|none) PROTECTED_RE='^$' ;; esac
 NOTE_PATH='.claude/post-merge-note.md'  # where the note is written (and printed; no
                                         # flight-rules hook reads the file: #110)
-CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
-                                           # files for this project (keeps memory/).
-                                           # Read the block below before enabling.
 
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
@@ -65,10 +60,10 @@ CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 REPO_ROOT=$(git rev-parse --show-toplevel)
 NOTE_FILE="$REPO_ROOT/$NOTE_PATH"
 
-# A "feature completed — start fresh" event is only a topic branch actually merged
-# IN: a merge commit whose second parent is NOT main's tip. Skip fast-forwards (no
-# merge commit) and back-merges of main into the integration branch (routine
-# reconcile/maintenance) — those must not clear the assistant's context.
+# A feature merge is only a topic branch actually merged IN: a merge commit whose
+# second parent is NOT main's tip. Skip fast-forwards (no merge commit) and
+# back-merges of main into the integration branch (routine reconcile/maintenance) —
+# those print nothing.
 _merged_in=$(git rev-parse -q --verify 'HEAD^2' 2>/dev/null || echo "")
 is_feature_merge() {
   [[ -z "$_merged_in" ]] && return 1            # fast-forward / not a merge commit
@@ -86,8 +81,8 @@ is_feature_merge() {
     printf '%s' "$name" | grep -qiE -e "$PROTECTED_RE" 2>/dev/null || continue
     [[ "$_merged_in" == "$ref_sha" ]] && return 1
   done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin 2>/dev/null)
-  # A pull of this branch's own upstream that had to merge is no feature either (fix
-  # review, 2026-10-29): it neither prints what earlier merges left nor clears context.
+  # A pull of this branch's own upstream that had to merge is no feature either, and
+  # prints nothing (fix review, 2026-10-29).
   ref_sha=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) && [[ "$_merged_in" == "$ref_sha" ]] && return 1
   return 0
 }
@@ -289,34 +284,6 @@ if [[ ${#STALE_WORKTREES[@]} -gt 0 ]]; then
   load_containers
 fi
 
-# --- Optional: clear Claude Code conversation context (keeps memory/) ---
-# Deletes conversation .jsonl files + their artifact dirs for THIS project under
-# ~/.claude/projects/. Guards: skips files touched in the last 5 minutes (active
-# session) and never touches memory/. Useful when your flow is "one branch, one
-# session"; leave off if you keep long-running sessions across merges.
-CLEARED_COUNT=0
-if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
-  # Claude Code encodes the project path by replacing "/" AND "." with "-"
-  # (observed: /x/.ai/worktrees/y → -x--ai-worktrees-y). A root the encoding does
-  # not match simply finds no directory and deletes nothing — it fails safe.
-  ENCODED_PATH=$(printf '%s' "$REPO_ROOT" | tr '/.' '--')
-  CLAUDE_PROJECT_DIR="$HOME/.claude/projects/$ENCODED_PATH"
-  if [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
-    while IFS= read -r f; do
-      rm -f "$f" && (( CLEARED_COUNT++ )) || true
-    done < <(find "$CLAUDE_PROJECT_DIR" -maxdepth 1 -name "*.jsonl" -mmin +5 2>/dev/null)
-    while IFS= read -r d; do
-      basename_d=$(basename "$d")
-      [[ "$basename_d" == "memory" ]] && continue
-      if [[ "$basename_d" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-        if [[ ! -f "$CLAUDE_PROJECT_DIR/$basename_d.jsonl" ]]; then
-          rm -rf "$d" && (( CLEARED_COUNT++ )) || true
-        fi
-      fi
-    done < <(find "$CLAUDE_PROJECT_DIR" -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
-  fi
-fi
-
 # note_branch <branch> [just]: the command on a line of its own, what to know about it on
 # the next. On the same line, "← just merged" was pasted along with the command, and
 # `git branch -d fix/x  ← just merged` deleted merged branches named `just` and
@@ -436,9 +403,7 @@ if [[ -n "$PRINT" ]]; then
   [[ "$_n" -gt 40 ]] && echo "  … $((_n - 40)) more lines in $NOTE_PATH"
   echo ""
 fi
-if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
-  echo "✅ post-merge: context cleared ($CLEARED_COUNT items), cleanup note written to $NOTE_PATH."
-elif [[ -n "$PRINT" ]]; then
+if [[ -n "$PRINT" ]]; then
   echo "✅ post-merge: cleanup note written to $NOTE_PATH."
 fi
 exit 0

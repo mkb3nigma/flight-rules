@@ -328,9 +328,6 @@ that the logic has exactly one home.
   from it, stopped ones included — so what a check started is stopped or removed before
   the worktree goes. It lists them and stops nothing; a `ps`, `lsof` or `docker` that
   fails is said so, not read as nothing running (#109).
-  Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
-  conversations for the project so the next session starts fresh — read the guarded
-  block in the script before enabling.
 - **`install.sh`** — one-time per clone: `chmod` the hooks, set
   `core.hooksPath`, and set `merge.ff false` so the merge gate always fires
   (a fast-forward merge would silently skip `pre-merge-commit`). It installs into
