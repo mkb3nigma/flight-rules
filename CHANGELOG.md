@@ -84,7 +84,8 @@ either now points at a retired slot.
 - **`rules/git-worktree-workflow.md`**: a revert is made on a branch cut from the
   branch being reverted, not in place; a merge into the integration branch is never
   made from a worktree, while merging it into a feature branch belongs there; Required
-  8 matches `/feature-start` step 4.
+  8 matches `/feature-start` step 4; its preamble no longer states how the playbook
+  re-examines its own advisory items, which is the playbook's policy, not the project's.
 
 ### Changed — this repo
 

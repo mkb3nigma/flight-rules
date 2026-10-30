@@ -17,9 +17,6 @@ branch — feature work physically cannot dirty the main checkout.
 
 Each item says how it is enforced — **hook**, **skill**, **advisory**, or **reminded**
 (no gate, but `post-merge` shows it at the merge and `session-start.sh` at the next session).
-Advisory items are re-examined at every plugin release for enforcement that has become
-possible; one is deleted only when its warrant is gone or another item covers it, never
-for having gone unenforced.
 
 ### 🚫 Forbidden
 1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
