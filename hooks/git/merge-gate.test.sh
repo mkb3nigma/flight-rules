@@ -1793,13 +1793,15 @@ git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
 
 echo "A git that cannot work out the clean merge (older than 2.38, simulated):"
 # standin <dir> <version|real>: a git whose merge-tree dies on --write-tree, as 2.37 and
-# older do, reporting <version>, or its own with real (an error on a modern git). Git
-# puts its exec path first on a hook's PATH, so the stand-in goes there, not on PATH.
+# older do, reporting <version>, or its own with real (an error on a modern git). Under
+# GIT_TRACE it prints a trace line first, as git does. Git puts its exec path first on
+# a hook's PATH, so the stand-in goes there, not on PATH.
 REALGIT=$(command -v git)
 standin() {
   for f in "$(git --exec-path)"/*; do ln -s "$f" "$1/" || die "could not link $f"; done
   rm -f "$1/git"
   { echo '#!/bin/sh'
+    echo '[ -n "$GIT_TRACE" ] && echo "12:00:00.000000 git.c:506               trace: built-in: git $*" >&2'
     echo '[ "$1" = merge-tree ] && [ "$2" = --write-tree ] && { echo "fatal: unknown rev --write-tree" >&2; exit 128; }'
     [ "$2" = real ] || echo "[ \"\$1\" = version ] && { echo 'git version $2'; exit 0; }"
     echo "exec \"$REALGIT\" \"\$@\""; } > "$1/git"
@@ -1828,6 +1830,9 @@ d=$(mkrepo); feature "$d" fix/e dev; git -C "$d" checkout -q dev
 OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$ERRGIT" git merge --no-edit fix/e 2>&1); RC=$?
 say "$RC$(grep -c 'THIS MERGE COULD NOT BE CHECKED' <<<"$OUT")" "11" "a stamped clean merge git failed to check: refused"
 say "$(grep -c 'fatal: unknown rev --write-tree' <<<"$OUT")" "1" "…quoting git's own error"
+git -C "$d" merge --abort 2>/dev/null
+OUT=$(cd "$d" && GIT_TRACE=1 FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$ERRGIT" git merge --no-edit fix/e 2>&1); RC=$?
+say "$RC$(grep -c '║   fatal: unknown rev --write-tree' <<<"$OUT")$(grep -c '║   12:00:00' <<<"$OUT")" "110" "…under GIT_TRACE=1 too, not the trace line before it"
 say "$(grep -c 'needs git 2.38' <<<"$OUT")" "0" "…not blaming the git version"
 say "$(grep -c 'finish the merge — the check runs again' <<<"$OUT")$(grep -c 'or undo it (below), merge dev into the branch in' <<<"$OUT")" "11" "…offering both ways on"
 OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
