@@ -27,12 +27,20 @@ done
 
 echo "Pointer files in .claude/skills/ match the shipped set one-to-one:"
 POINTERS=$(find .claude/skills -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sed 's|.claude/skills/||' | sort)
-# A skill that maintains this repo only (/upstream-check) lives whole in .claude/skills/
-# and does not ship; anything else there is a pointer at a shipped skill.
+# A skill that maintains this repo only lives whole in .claude/skills/ and does not ship;
+# it is named here, so a stray or misnamed directory fails rather than passing as one
+# (0.28.0 release review). Anything else there is a pointer at a shipped skill.
+REPO_ONLY_SKILLS="upstream-check"
 for p in $POINTERS; do
   if ! grep -q "^$p\$" <<<"$SKILLS"; then
-    grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null \
-      && bad ".claude/skills/$p points at a skill that does not exist"
+    if grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null; then
+      bad ".claude/skills/$p points at a skill that does not exist"
+    else
+      case " $REPO_ONLY_SKILLS " in
+        *" $p "*) ;;
+        *) bad ".claude/skills/$p is neither a pointer at a shipped skill nor a repo-only skill this test names" ;;
+      esac
+    fi
     REPO_ONLY="${REPO_ONLY-}$p "
   else
     grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null || bad ".claude/skills/$p/SKILL.md does not reference skills/$p/SKILL.md"

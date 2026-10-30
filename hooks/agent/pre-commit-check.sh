@@ -170,6 +170,12 @@ plain_unstage() (
     case "$verb:${w[$i]}" in
       rm:--cached|restore:--staged|restore:-S) have=1 ;;
       rm:-r|rm:-q|rm:--quiet|restore:-q|restore:--quiet|restore:--source=?*) ;;
+      # The value as its own word: the next one, and never an option, or `--source
+      # --staged` would pass with git reading --staged as the source (0.28.0 release
+      # review: the spaced form was refused as discarding work).
+      restore:--source|restore:-s)
+        i=$((i+1))
+        [ "$i" -lt "${#w[@]}" ] && [ "${w[$i]#-}" = "${w[$i]}" ] || return 1 ;;
       *:-*) return 1 ;;
     esac
   done
