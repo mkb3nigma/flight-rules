@@ -1587,6 +1587,15 @@ rb 'PROTECTED_BRANCHES=^(MAIN|DEV)$' dev;            say "$RC" "1" "conf in anot
 rb 'PROTECTED_BRANCHES=off' dev;                     say "$RC" "0" "PROTECTED_BRANCHES=off: dev rebases"
 rb 'PROTECTED_BRANCHES=off' feature/offline;         say "$RC" "0" "…and off is no pattern: feature/offline rebases"
 rb '' dev 'FLIGHT_RULES_PROTECTED_BRANCHES=^nothing$'; say "$RC" "0" "the environment wins over the default"
+for a in refs/heads/dev heads/dev; do
+  d=$(mkrepo); git -C "$d" checkout -q dev; echo own > "$d/own"; git -C "$d" add -A
+  git -C "$d" commit -qm "chore: own" --no-verify >/dev/null || die "could not commit on dev"
+  git -C "$d" checkout -q main; echo m > "$d/m"; git -C "$d" add -A
+  git -C "$d" commit -qm "chore: m" --no-verify >/dev/null || die "could not move main"
+  OUT=$(cd "$d" && git rebase main "$a" 2>&1); RC=$?
+  say "$RC$(grep -c 'dev IS PROTECTED' <<<"$OUT")" "11" "git rebase main $a, from main: refused as dev"
+  git -C "$d" rebase --abort 2>/dev/null; rm -rf "$d"
+done
 rb 'PROTECTED_BRANCHES=^(dev' feature/r;             say "$RC" "1" "a PROTECTED_BRANCHES that does not compile refuses every rebase"
 say "$(grep -c 'PROTECTED_BRANCHES DOES NOT COMPILE — REBASE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
 

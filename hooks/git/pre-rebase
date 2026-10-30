@@ -50,6 +50,10 @@ PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf_at_head PROTECTED_B
 PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
 
 BRANCH="${2:-$(git branch --show-current)}"
+# git passes the branch as typed: `refs/heads/dev` and `heads/dev` matched no pattern
+# (codex review of #118, probed). Matched by the branch name they resolve to.
+_full=$(git rev-parse -q --symbolic-full-name "$BRANCH" 2>/dev/null) || _full=""
+case "$_full" in refs/heads/?*) BRANCH=${_full#refs/heads/} ;; esac
 # re_rc <branch> <pattern>: 0 a match, 1 none, 2 the pattern does not compile.
 # `off` names no branch. Read as a pattern it matched any branch with "off" in its name
 # (#103 review, 2026-10-22).
@@ -139,7 +143,8 @@ else
     box_row ""
     box_row "  git pull --no-rebase"
     box_row ""
-    box_row "— or rebase the feature branch onto $BRANCH."
+    box_row "— or rebase the feature branch onto $BRANCH. A merge into a"
+    box_row "branch that needs a pre-merge-check note needs one here too."
 fi
 box_row ""
 box_bot
