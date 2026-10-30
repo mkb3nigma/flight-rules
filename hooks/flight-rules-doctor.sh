@@ -312,7 +312,7 @@ else
           # about a correctly configured project.
           case "$key" in
             PROTECTED_BRANCHES)
-              warn "$key=$val — no protected branches in the agent guard, branch creation is no longer routed through a worktree, and the ref gate stands down (the secret scan stays on, and PR_ONLY_BRANCHES still refuses local merges and rebases into a PR-only branch)"
+              warn "$key=$val — no protected branches in the agent guard, branch creation is no longer routed through a worktree, pre-rebase refuses only PR-only branches, and the ref gate stands down (the secret scan stays on, and PR_ONLY_BRANCHES still refuses local merges and rebases into a PR-only branch)"
               # The note gate's default set is DERIVED from this key — "protected but
               # not PR-only" — so turning protection off empties it. Measured
               # 2026-09-13: a merge landed on an integration branch with no note and

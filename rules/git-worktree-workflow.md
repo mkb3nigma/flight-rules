@@ -35,7 +35,7 @@ for having gone unenforced.
    passed honestly); on PR-only branches the host's CI and review are the gate
 5. Force-pushing or rebasing a protected branch, or deleting it — locally or on the
    remote — hook
-   (agent guard; the `pre-rebase` git hook covers PR-only branches only)
+   (agent guard; the `pre-rebase` git hook refuses the rebase)
 6. Creating branches with `git checkout -b` / `git switch -c` while on a protected
    branch — always `git worktree add` — hook (the guard enforces it there, which is where
    a branch made in place strands feature work in the checkout you meant to keep clean;
@@ -133,7 +133,8 @@ Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once
   `commit-msg` requires a passing `pre-merge-check` note to merge into a **note-gated**
   branch (`{NOTE_GATED_BRANCHES}`), exempting back-merges of `main`, refuses squash
   merges into a PR-only branch, and refuses a merge that does not say who asked for it;
-  `pre-rebase` refuses to rebase one; `post-merge` writes the cleanup note.
+  `pre-rebase` refuses to rebase any protected branch; `post-merge` writes the cleanup
+  note.
   They read `.ai/flight-rules.conf` from a state the incoming branch cannot edit —
   `reference-transaction` from the **upstream**, the rest **as committed on the merge
   target** — so a branch cannot relax the rule judging it.

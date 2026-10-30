@@ -24,7 +24,8 @@ PROTECTED_BRANCHES=off
 ```
 
 `off` is wider than it looks in one direction and narrower in another. It also stops
-`checkout -b`/`switch -c` being denied, and — when `NOTE_GATED_BRANCHES` is unset —
+`checkout -b`/`switch -c` being denied and `pre-rebase` refusing a rebase of a branch
+that is not PR-only, and — when `NOTE_GATED_BRANCHES` is unset —
 silences the note gate, because the gated set is derived as *protected but not PR-only*
 and with no protected branches that set is empty. A project with a `dev` branch loses its
 `pre-merge-check` gate without being told; name `NOTE_GATED_BRANCHES` explicitly to keep
@@ -250,16 +251,19 @@ that the logic has exactly one home.
   `MERGE_NEEDS_INSTRUCTION=off` drops the check; that is recorded in the trailer too,
   so history still distinguishes the two.
   Tests: `merge-gate.test.sh` (no arguments, no network).
-- **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
-  `main` rewrites it with no merge commit, so nothing else fires.
+- **`pre-rebase`** — refuses to rebase a protected branch: `git rebase feature` on
+  `main` rewrites it with no merge commit, so nothing else fires. A PR-only branch is
+  told to rebase the feature branch instead; any other protected branch to merge
+  (`git pull --no-rebase`). A `git pull --rebase` reaches it only when the branch has
+  commits of its own — one that is only behind fast-forwards and runs no hook.
 - **`reference-transaction`** — the backstop for everything that moves a REF, and the
   only hook that sees every one of those. One rule: **a PR-only branch may only move to
   a commit already on `origin/<branch>`.**
   Read the scope precisely: it fires when a ref moves. `git rm`, `git clean -fd`,
   `git restore`, `git checkout -- .` and `git stash drop` destroy work and move no ref,
   so **this hook never sees them** — the agent guard is the only thing between an agent
-  and that class. Verified 2026-09-11 on a repo with the full gate installed: a commit on
-  `main` was blocked and the ref held, while `git rm`, `git clean -fd` and
+  and that class, and it leaves `git stash drop` to the person (#118). Verified
+  2026-09-11 on a repo with the full gate installed: a commit on `main` was blocked and the ref held, while `git rm`, `git clean -fd` and
   `git stash drop` all succeeded and destroyed their target. An earlier wording here
   ("the only hook that sees every write path") read as though it covered them; it does
   not, and a change was built on that misreading before the error was caught. It asks where the ref landed, not which command moved it, so
@@ -388,7 +392,8 @@ Guards that fire on the assistant's own events, before git ever runs:
   `reset --hard|--merge`, `clean -f`,
   `checkout -- .` and
   `checkout <rev> -- <path>`, `switch --discard-changes`, `rebase` (not its
-  `--abort`/`--continue`), `stash drop|clear`. From any branch it denies a push that
+  `--abort`/`--continue`) — not `stash drop|clear`: a stash belongs to the repository,
+  not the branch (#118). From any branch it denies a push that
   force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
   `+refspec`, `--delete`, `origin :main`, `--mirror`); a push that names some other
   ref is judged on that ref, not on the branch you happen to stand on, so post-merge

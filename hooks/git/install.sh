@@ -404,7 +404,7 @@ for required in $HOOKS; do
     if [ ! -f "$HOOKS_DIR/$required" ]; then
         echo "❌ $HOOKS_DIR/$required is missing — copy it in before installing."
         [ "$required" = "commit-msg" ] && echo "   Without it the note gate never runs and merges go unchecked."
-        [ "$required" = "pre-rebase" ] && echo "   Without it a PR-only branch can be rewritten with a local rebase."
+        [ "$required" = "pre-rebase" ] && echo "   Without it a protected branch can be rewritten with a local rebase."
         [ "$required" = "pre-commit" ] && echo "   Without it nothing scans what \`git add f && git commit\` or \`commit -a\` stages for a key."
         [ "$required" = "reference-transaction" ] && echo "   Without it cherry-pick, revert, branch -f, update-ref and a CONFLICTED merge all reach a PR-only branch unguarded."
         exit 1
