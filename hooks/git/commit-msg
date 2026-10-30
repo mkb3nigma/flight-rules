@@ -226,10 +226,16 @@ MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 # histories). Histories with no common commit are merged as git merge was told to
 # merge them, or it would not have got this far. MT_ERR keeps git's own first line.
 MT_ERR=""
-# first_error: git's first error line, past any trace it printed before it — GIT_TRACE
-# and the GIT_TRACE2 formats start a line with a timestamp, GIT_TRACE2_EVENT with a
-# JSON object; quoted, the trace stood in for the error (fix review of 44bc927).
-first_error() { grep -v -E '^[0-9]{2}:[0-9]{2}:[0-9]{2}\.|^\{"event"' | head -1; }
+# git_error <args>: the first line git prints running <args> with every GIT_TRACE*
+# variable unset, so it is git's error and not a trace line before it. Matching the
+# trace formats missed GIT_TRACE_BARE and GIT_TRACE2_BRIEF (fix reviews of 44bc927 and
+# da203ed). Always a line: one that printed nothing says so.
+git_error() {
+    local u=() v e
+    for v in $(env | sed -n 's/^\(GIT_TRACE[A-Za-z0-9_]*\)=.*/\1/p'); do u+=(-u "$v"); done
+    e=$(env ${u[@]+"${u[@]}"} git "$@" 2>&1 >/dev/null | head -1) || true
+    printf '%s' "${e:-git $1 failed and printed nothing}"
+}
 git_has_write_tree() {
     local v maj min
     v=$(git version 2>/dev/null); v=${v#git version }
@@ -244,14 +250,13 @@ clean_merge() {
     [ "$r" -eq 1 ] && return 1
     if [ "$r" -ne 0 ]; then
         git_has_write_tree || return 2
-        MT_ERR=$(git merge-tree --write-tree $a HEAD "$MERGE_SHA" 2>&1 >/dev/null | first_error)
-        MT_ERR=${MT_ERR:-git merge-tree exited $r and printed nothing}
+        MT_ERR=$(git_error merge-tree --write-tree $a HEAD "$MERGE_SHA")
         return 3
     fi
     t=$(printf '%s\n' "$t" | head -1)
     # stdout only: GIT_TRACE and friends write to stderr, and joined to the tree id they
     # refused a clean merge as one that resolved a conflict (fix review of e78a57e).
-    i=$(git write-tree 2>/dev/null) || { MT_ERR=$(git write-tree 2>&1 >/dev/null | first_error); return 3; }
+    i=$(git write-tree 2>/dev/null) || { MT_ERR=$(git_error write-tree); return 3; }
     [ -n "$t" ] || { MT_ERR="git merge-tree printed no tree"; return 3; }
     [ "$t" = "$i" ]
 }
