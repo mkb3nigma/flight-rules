@@ -18,15 +18,9 @@ natively.
 
 See [CHANGELOG.md](CHANGELOG.md) for what changes between versions.
 
-> **What the hooks are for.** They catch the workflow slip — a fix committed straight to
-> a protected branch instead of on a worktree branch, a merge of work whose checks never
-> ran, a `git rm` with a relative path after a `cd` that silently failed. They are
-> guardrails, not a security boundary: anyone who means to get past them can, and an
-> assistant given full control of a machine is beyond anything a repository of rules can
-> reach. The design goal is to make the accidental path harder than the correct one, not
-> to be unbypassable, and it assumes a competent developer: it catches what is easy to
-> overlook, stops and says why when it cannot go on, and does not babysit. See
-> [hooks/README.md](hooks/README.md#what-these-hooks-are--and-are-not).
+> **What the hooks are for.** They catch the slip, not someone who means to get past
+> them: [What these hooks are — and are not](hooks/README.md#what-these-hooks-are--and-are-not).
+> What flight-rules is for, and what it holds to, is [MISSION.md](MISSION.md).
 
 ## How it flows
 
