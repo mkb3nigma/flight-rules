@@ -6,20 +6,38 @@ this one does; every verdict below was run against both, not reasoned about.
 
 ## 0.28.0 — 2026-10-30
 
-A release that takes away more than it adds. Each refusal, step and rule was
-re-checked against what flight-rules is for. What had no failure behind it is gone,
+Each refusal, step and rule was re-checked against what flight-rules is for. What had no failure behind it is gone,
 what was refused for no reason is allowed, and what a slip could still get through is
 closed.
 
 ### Upgrading
 
-**Git hooks changed** — `commit-msg`, `pre-merge-commit`, `pre-rebase`, `post-merge` and
-`install.sh` — so sync them, as for 0.27.0. The agent guard arrives with the plugin.
+**Git hooks changed** — `commit-msg`, `pre-merge-commit`, `pre-rebase`, `post-merge`,
+`reference-transaction` and `install.sh` — so sync them, as for 0.27.0. The agent guard arrives with the plugin.
 
 **`pre-rebase` now refuses a rebase of every protected branch**, not only a PR-only one
 (#118). A project that rebases a protected branch on purpose — its `dev`, say — takes it
-out of `PROTECTED_BRANCHES`. A `git pull` with `pull.rebase=true` on a branch that is
-only behind still fast-forwards, and runs no hook.
+out of `PROTECTED_BRANCHES`, and that drops more than the rebase refusal there: the
+agent guard's refusal of commits and destructive commands, the `checkout -b` rule, and —
+unless `NOTE_GATED_BRANCHES` is set — the `pre-merge-check` note gate, whose default set
+is derived from `PROTECTED_BRANCHES`. To keep the note gate, set `NOTE_GATED_BRANCHES`
+(`^dev$`, say). A PR-only branch's rebase was refused before and still is. A `git pull`
+with `pull.rebase=true` on a branch that is only behind still fast-forwards, and runs
+no hook; on one that has diverged from its upstream, the merge the refusal prints, `git
+pull --no-rebase`, needs no note when it merges cleanly.
+
+**A merge into `dev` whose conflict was resolved in place is refused now, stamped or
+not.** A stamped branch passed as "verified", and a `git merge main` as "already
+reviewed", though nothing tested the resolution. A clean merge passes as before. A
+conflicted one is resolved on a branch — `dev` merged into the feature branch, or `main`
+into a branch cut from `dev` — tested and stamped there, and merged back; the box says
+so. The check needs **git 2.38 or later** (`git merge-tree --write-tree`): on an older
+git, a back-merge of `main` needs a note, and a stamped merge lands with a warning that
+nothing checked it. On a newer git, a merge the check fails on is refused with git's
+error and both ways on.
+
+**Rules changed**: `rules/git-worktree-workflow.md`. A project that copied it runs
+`/rules-sync` to fold the changes in; one that reads the plugin's copy needs nothing.
 
 **Removed:**
 - `rules/dependency-lockfile.md`. A project that copied it keeps its copy; `/rules-sync`
@@ -43,20 +61,37 @@ either now points at a retired slot.
   it, but `pre-rebase` covered PR-only branches only. It now refuses any protected
   branch, read as `commit-msg` reads the pattern, and names the branch even when given
   as `refs/heads/dev` or `heads/dev`. The route it prints is a merge (`git pull
-  --no-rebase`), or a rebase of the feature branch.
+  --no-rebase`), or a rebase of the feature branch. The note gate passes that merge
+  without a note when it is git's clean merge of exactly the tip of `origin/<the
+  branch>`, its upstream: a branch only behind reaches the same content by a
+  fast-forward, with no gate. Before, on a `dev` with local merges not yet pushed, the
+  printed route met a second refusal whose route did not fit.
+- **A conflict resolved in the merge into `dev` landed untested.** A passing note and
+  the back-merge exemption vouched for the incoming commit, not for what the merge
+  committed. They, and the new own-upstream exemption, now hold only for git's clean
+  merge (`git merge-tree`); the refusal prints the route for a conflict.
 - **A plain `git pull` that only caught up was refused as a merge.** `merge.ff false`
   turns it into a merge commit, and the gates refused it with a route for a feature
-  merge. They now name it as a catch-up and print `git merge --abort` and `git pull
+  merge, under the title "pre-merge check required". They now name it as a catch-up and print `git merge --abort` and `git pull
   --ff-only`. `pull.ff` is not the fix: with it set, `git pull . <branch>` fast-forwards
   the integration branch past the note gate.
 - **The note gate's route needed an assistant.** It named only `/pre-merge-check`; it
   now also says what a developer working alone does: run the checks, then record the
-  note (`hooks/README.md` has the command).
+  note (flight-rules' `hooks/README.md` has the command; a copy-in project has the hooks,
+  not the README).
 - **`post-merge` repeated everything on every merge and pull.** After a feature merge
   it prints what that merge left — its worktree, what runs from it, its branch — and one
   line counting what earlier merges left. A pull, a fast-forward or a back-merge prints
-  nothing. A back-merge of a released branch not called `main` is recognised too. Its
-  note file goes in the clone's `info/exclude`, so it never shows as untracked.
+  nothing. A back-merge of a released branch not called `main` is recognised too, and
+  a merge whose message names no branch (`git merge -m …`) is named by the branch at the
+  merged commit. Its note file goes in the clone's `info/exclude` once, so it never shows
+  as untracked — unless the project tracks it, when it is left alone.
+- **`none` was a pattern to the git hooks.** The agent guard, `session-start`,
+  `post-merge` and the doctor read `PROTECTED_BRANCHES=none` as `off` (the doctor
+  `PR_ONLY_BRANCHES` and `NOTE_GATED_BRANCHES` too); the git hooks read it as a branch
+  name. They now read it as `off` for all three keys.
+- **The post-merge note offered `git branch -d main`** as just merged after a back-merge
+  of `main`. A protected branch is never listed now.
 - **Unstaging and untracking were refused on a protected branch.** The guard now allows
   `git restore --staged` and `git rm --cached` there, in their plain form only (a short
   list of options that touch no file, plain paths, nothing wrapped around them).
@@ -76,8 +111,8 @@ either now points at a retired slot.
   no longer warns above ~20 commits. None had a failure behind it (#119).
 - **Skills load less.** What only some runs read now sits in a file beside the skill:
   `/dg`'s contract for a wired pre-review CLI and its comic page, and `/pr-create`'s
-  stacked PRs and release steps. A feature PR's `/pr-create` loads 968 words, down from
-  2,000; `/dg` loads 3,517, down from 4,168, plus 513 when a wired CLI runs.
+  stacked PRs and release steps. A feature PR's `/pr-create` loads 961 words, down from
+  1,890; `/dg` loads 3,521, down from 4,168, plus 513 when a wired CLI runs.
 - **`/pre-merge-check`**: item 4 type-checks the destination in a detached worktree;
   item 21 stops what the checks or this session started, and names — does not stop —
   anything else.
@@ -85,7 +120,9 @@ either now points at a retired slot.
   branch being reverted, not in place; a merge into the integration branch is never
   made from a worktree, while merging it into a feature branch belongs there; Required
   8 matches `/feature-start` step 4; its preamble no longer states how the playbook
-  re-examines its own advisory items, which is the playbook's policy, not the project's.
+  re-examines its own advisory items, which is the playbook's policy, not the project's;
+  five items — one purpose per branch, the open-branch limit, branch and commit
+  prefixes, and reading each commit's diff — now say what goes wrong without them.
 
 ### Changed — this repo
 

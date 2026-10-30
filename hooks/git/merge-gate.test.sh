@@ -1525,6 +1525,7 @@ for b in main dev; do
   say "$(grep -c "origin/$b; merge.ff=false made it a merge commit" <<<"$OUT")" "1" "…with origin/$b named"
   say "$(grep -c '  git pull --ff-only  ' <<<"$OUT")" "1" "…and the pull that works"
   say "$(grep -c -e 'gh pr create' -e 'Run /pre-merge-check' <<<"$OUT")" "0" "…not the route for a merge"
+  [ "$b" = dev ] && say "$(grep -c 'A CATCH-UP PULL MADE A MERGE COMMIT' <<<"$OUT")$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "10" "…titled a catch-up, not a request for a check (0.28.0 release review)"
   git -C "$R" merge --abort 2>/dev/null
   (cd "$R" && git pull -q --ff-only 2>/dev/null); say "$(git -C "$R" rev-parse HEAD)" "$(git -C "$R" rev-parse "origin/$b")" "…and taking that route lands it"
 done
@@ -1548,6 +1549,7 @@ git -C "$R" checkout -q dev
 OUT=$(cd "$R" && git merge --no-edit fix/x 2>&1)
 say "$(grep -c 'Working without an assistant' <<<"$OUT")" "1" "unstamped merge: the box speaks to the developer working alone"
 say "$(grep -c 'hooks/README.md → commit-msg' <<<"$OUT")" "1" "…pointing at the command"
+say "$(grep -c "(flight-rules'" <<<"$OUT")" "1" "…in flight-rules' README, which a copy-in project does not have (0.28.0 release review)"
 say "$(grep -c -e 'git notes' -e "$(git -C "$R" rev-parse --short fix/x)" <<<"$OUT")" "0" "…not printing it ready to paste: an assistant reads the box"
 say "$(grep -c 'An assistant runs' <<<"$OUT")" "1" "…and says an assistant does not take it"
 # The README's command, run as a person would.
@@ -1587,6 +1589,11 @@ rb 'PROTECTED_BRANCHES=^(MAIN|DEV)$' dev;            say "$RC" "1" "conf in anot
 rb 'PROTECTED_BRANCHES=off' dev;                     say "$RC" "0" "PROTECTED_BRANCHES=off: dev rebases"
 rb 'PROTECTED_BRANCHES=off' feature/offline;         say "$RC" "0" "…and off is no pattern: feature/offline rebases"
 rb '' dev 'FLIGHT_RULES_PROTECTED_BRANCHES=^nothing$'; say "$RC" "0" "the environment wins over the default"
+# `none` is `off`, as every other layer reads it (0.28.0 release review): read as a
+# pattern, it refused fix/none-default.
+rb 'PROTECTED_BRANCHES=none' dev;                    say "$RC" "0" "PROTECTED_BRANCHES=none: dev rebases"
+rb 'PROTECTED_BRANCHES=none' fix/none-default;       say "$RC" "0" "…and none is no pattern: fix/none-default rebases"
+rb '' fix/none-default 'FLIGHT_RULES_PROTECTED_BRANCHES=none'; say "$RC" "0" "…nor in the environment"
 for a in refs/heads/dev heads/dev; do
   d=$(mkrepo); git -C "$d" checkout -q dev; echo own > "$d/own"; git -C "$d" add -A
   git -C "$d" commit -qm "chore: own" --no-verify >/dev/null || die "could not commit on dev"
@@ -1616,6 +1623,288 @@ OUT=$(cd "$R" && git -c pull.rebase=true pull -q 2>&1); RC=$?
 say "$RC" "1" "commits of its own: the rebasing pull is refused"
 say "$(grep -c 'dev IS PROTECTED — REBASE BLOCKED' <<<"$OUT")" "1" "…by the protected box"
 rm -rf "$PQ"
+
+echo "A diverged dev merges its own upstream without a note; nothing else does (0.28.0 release review):"
+# Local merges not pushed yet, and origin/dev moved on: pre-rebase refuses the rebasing
+# pull and prints `git pull --no-rebase`, which the note gate then refused with a route
+# that did not fit. What it brings is already on the shared branch.
+PU=$(cd "$(mktemp -d)" && pwd -P); U="$PU/up"
+git init -q -b main "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one \
+  && git -C "$U" branch dev && git -C "$U" branch other || die "could not build the upstream"
+git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone the upstream"
+R="$PU/r"; git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
+mkdir -p "$R/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.ai/hooks/" || die "could not copy the hooks"
+chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"; git -C "$R" config merge.ff false
+git -C "$R" checkout -q -b dev origin/dev || die "no dev in the clone"
+feature "$R" fix/x dev; git -C "$R" checkout -q dev
+(cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/x >/dev/null 2>&1) || die "could not merge fix/x into dev"
+git -C "$U" checkout -q dev || die "no dev upstream"
+for m in two three; do git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "dev $m" || die "could not advance dev"; done
+OUT=$(cd "$R" && git -c pull.rebase=true pull -q 2>&1); RC=$?
+say "$RC" "1" "the rebasing pull is refused"
+say "$(grep -c 'git pull --no-rebase' <<<"$OUT")" "1" "…with git pull --no-rebase as the route"
+say "$(grep -c 'pre-merge-check note' <<<"$OUT")" "0" "…and no warning of a note it would need"
+OUT=$(cd "$R" && git merge --no-edit origin/dev~1 2>&1); RC=$?
+say "$RC" "1" "a merge of an older origin/dev commit: refused by the note gate"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…with its box"
+git -C "$R" merge --abort 2>/dev/null
+OUT=$(cd "$R" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "0" "the printed route, git pull --no-rebase, lands"
+say "$(git -C "$R" rev-parse -q --verify HEAD^2)" "$(git -C "$R" rev-parse origin/dev)" "…merging origin/dev's tip"
+say "$(grep -c "own upstream, origin/dev" <<<"$OUT")" "1" "…named as dev's own upstream"
+git -C "$U" checkout -q other && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "other two" || die "could not advance other"
+git -C "$R" branch -q --set-upstream-to=origin/other dev 2>/dev/null || { git -C "$R" fetch -q origin && git -C "$R" branch -q --set-upstream-to=origin/other dev; } || die "could not track origin/other"
+OUT=$(cd "$R" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "1" "dev set to track origin/other: pulling it is refused by the note gate"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…with its box"
+git -C "$R" merge --abort 2>/dev/null
+rm -rf "$PU"
+
+echo "A merge whose subject names no branch is named by the branch at the merged commit (0.28.0 release review):"
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+git -C "$QQ" checkout -qb fix/x trunk && echo x > "$QQ/x" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: x" \
+  && git -C "$QQ" checkout -q trunk || die "could not build fix/x"
+OUT=$(cd "$QQ" && git merge -m "feat: land x" fix/x 2>&1); RC=$?
+say "$RC" "0" "git merge -m … fix/x lands"
+say "$(grep -c 'Post-merge to trunk: fix/x' <<<"$OUT")" "1" "…and post-merge names fix/x"
+say "$(grep -c -e 'unknown' -e 'Earlier merges left' <<<"$OUT")" "0" "…not unknown, nor its own branch among earlier merges'"
+rm -rf "$PQ"
+
+echo "A note file the project tracks: info/exclude is not written (0.28.0 release review):"
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks" "$QQ/.claude"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo old > "$QQ/.claude/post-merge-note.md"; echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+for b in fix/a fix/b fix/c; do
+  git -C "$QQ" checkout -qb "$b" trunk && echo "$b" > "$QQ/${b#fix/}" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: $b" \
+    && git -C "$QQ" checkout -q trunk && git -C "$QQ" merge -q --no-edit "$b" >/dev/null 2>&1 || die "could not merge $b"
+done
+say "$(cat "$QQ/.git/info/exclude" 2>/dev/null | grep -cxF '/.claude/post-merge-note.md')" "0" "three merges: no exclude line for a note the project tracks"
+rm -rf "$PQ"
+
+echo "Both exemptions hold only for git's clean merge (fix review of 0.28.0's release review):"
+# own_up <conflict|clean|union>: a clone whose dev holds a stamped local merge that
+# changed x, and origin/dev moved on — changing x too (conflict), or y (clean); union
+# gives x a union merge driver, so the conflict merges cleanly. Sets PU and R.
+own_up() {
+  PU=$(cd "$(mktemp -d)" && pwd -P); U="$PU/up"
+  git init -q -b main "$U" || die "could not build the upstream"
+  echo base > "$U/x"; [ "$1" = union ] && echo 'x merge=union' > "$U/.gitattributes"
+  git -C "$U" add -A && git -C "$U" -c user.email=t@t.t -c user.name=t commit -qm one && git -C "$U" branch dev || die "could not commit the upstream"
+  git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone"; R="$PU/r"
+  git -C "$R" config user.email t@t.t; git -C "$R" config user.name t; git -C "$R" config merge.ff false
+  mkdir -p "$R/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.ai/hooks/" || die "could not copy the hooks"
+  chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"
+  git -C "$R" checkout -q -b dev origin/dev && git -C "$R" checkout -q -b fix/l dev || die "no dev in the clone"
+  echo local >> "$R/x"; git -C "$R" add -A; git -C "$R" commit -qm "fix: l" >/dev/null || die "could not commit fix/l"
+  git -C "$R" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/l" HEAD
+  git -C "$R" checkout -q dev && (cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/l >/dev/null 2>&1) || die "could not merge fix/l"
+  git -C "$U" checkout -q dev || die "no dev upstream"
+  if [ "$1" = clean ]; then echo y > "$U/y"; else echo upstream >> "$U/x"; fi
+  git -C "$U" add -A && git -C "$U" -c user.email=t@t.t -c user.name=t commit -qm "dev two" || die "could not advance dev"
+}
+own_up conflict
+(cd "$R" && git pull -q --no-rebase --no-edit >/dev/null 2>&1)
+say "$(git -C "$R" rev-parse -q --verify MERGE_HEAD >/dev/null && echo stopped)" "stopped" "a conflicted pull of dev's own upstream stops for the conflict"
+echo resolved > "$R/x"; git -C "$R" add x
+OUT=$(cd "$R" && git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "…and, resolved in place, its commit is refused"
+say "$(grep -c "needs no note when it commits git's clean merge" <<<"$OUT")" "1" "…named as a merge that is not git's clean one"
+say "$(grep -c 'merge the same commit into a branch' <<<"$OUT")" "1" "…with the route for a conflict"
+say "$(grep -c 'Merge of dev' <<<"$OUT")" "0" "…not exempted"
+git -C "$R" merge --abort 2>/dev/null; rm -rf "$PU"
+own_up clean
+git -C "$R" fetch -q origin || die "could not fetch"
+(cd "$R" && git merge -q --no-commit origin/dev >/dev/null 2>&1)
+echo extra > "$R/extra"; git -C "$R" add extra
+OUT=$(cd "$R" && git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "a clean merge of dev's own upstream with something else staged: refused"
+git -C "$R" merge --abort 2>/dev/null
+OUT=$(cd "$R" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "0" "…while the clean pull lands"
+rm -rf "$PU"
+own_up union
+OUT=$(cd "$R" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "0" "a merge driver git honours merges cleanly, and the pull lands"
+say "$(grep -c 'Merge of dev' <<<"$OUT")" "1" "…as dev's own upstream"
+rm -rf "$PU"
+d=$(mkrepo)
+git -C "$d" checkout -q main && echo m > "$d/f" && git -C "$d" commit -qam "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+git -C "$d" checkout -q dev && echo d > "$d/f" && git -C "$d" commit -qam "feat: d" --no-verify >/dev/null || die "could not move dev"
+(cd "$d" && git merge -q --no-edit main >/dev/null 2>&1)
+say "$(git -C "$d" rev-parse -q --verify MERGE_HEAD >/dev/null && echo stopped)" "stopped" "a back-merge of main that conflicts stops for the conflict"
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "…and, resolved in place, its commit is refused"
+say "$(grep -c 'A back-merge of main' <<<"$OUT")" "1" "…named as a back-merge that is not git's clean one"
+say "$(grep -c 'already reviewed' <<<"$OUT")" "0" "…not passed as already reviewed"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
+
+d=$(mkrepo)
+git -C "$d" checkout -q main && echo h > "$d/h" && git -C "$d" add -A && git -C "$d" commit -qm "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+git -C "$d" checkout -q dev && echo d > "$d/f" && git -C "$d" commit -qam "feat: d" --no-verify >/dev/null || die "could not move dev"
+OUT=$(cd "$d" && git merge -X ours --no-edit main 2>&1); RC=$?
+say "$RC$(grep -c 'already reviewed' <<<"$OUT")" "01" "a back-merge with -X that resolved nothing is git's clean merge, and passes"
+rm -rf "$d"
+
+echo "A passing note holds only for git's clean merge too (0.28.0 fix review):"
+# stamped_conflict: dev and a stamped fix/s both changed f since they split. Sets d.
+stamped_conflict() {
+  d=$(mkrepo)
+  git -C "$d" checkout -q -b fix/s dev && echo s > "$d/f" && git -C "$d" commit -qam "fix: s" >/dev/null || die "could not commit fix/s"
+  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/s" HEAD
+  git -C "$d" checkout -q dev && echo d > "$d/f" && git -C "$d" commit -qam "feat: d" --no-verify >/dev/null || die "could not move dev"
+}
+stamped_conflict
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/s >/dev/null 2>&1)
+say "$(git -C "$d" rev-parse -q --verify MERGE_HEAD >/dev/null && echo stopped)" "stopped" "a stamped branch that conflicts with dev stops for the conflict"
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "…and, resolved in the merge into dev, its commit is refused"
+say "$(grep -c 'THE NOTE DID NOT CHECK THIS MERGE' <<<"$OUT")" "1" "…named as a merge the note did not check"
+say "$(grep -c 'merge dev into the branch' <<<"$OUT")" "1" "…with the route: dev merged into the branch"
+say "$(grep -c "hooks/README.md → commit-msg has the" <<<"$OUT")" "1" "…and the stamp a person working alone records"
+say "$(grep -c 'Pre-merge check verified' <<<"$OUT")" "0" "…not passed as verified"
+git -C "$d" merge --abort 2>/dev/null
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -X theirs --no-edit fix/s 2>&1); RC=$?
+say "$RC$(grep -c 'THE NOTE DID NOT CHECK THIS MERGE' <<<"$OUT")" "11" "a conflict -X resolved in the merge into dev: refused"
+git -C "$d" merge --abort 2>/dev/null
+# The route the box prints, taken: dev merged into the branch, resolved and stamped there.
+git -C "$d" checkout -q fix/s && (cd "$d" && git merge -q --no-edit dev >/dev/null 2>&1)
+echo resolved > "$d/f"; git -C "$d" add f; git -C "$d" commit -q --no-edit >/dev/null 2>&1 || die "could not resolve on fix/s"
+git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/s" HEAD
+git -C "$d" checkout -q dev
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit fix/s 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "…resolved on the branch and stamped there, it lands"
+say "$(grep -c 'merge-tree --write-tree failed' <<<"$OUT")" "0" "…with no warning"
+feature "$d" fix/t dev; git -C "$d" checkout -q dev
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-commit fix/t >/dev/null 2>&1)
+echo extra > "$d/extra"; git -C "$d" add extra
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "a stamped clean merge with something else staged: refused"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
+
+echo "A git that cannot work out the clean merge (older than 2.38, simulated):"
+# standin <dir> <version|real>: a git whose merge-tree dies on --write-tree, as 2.37 and
+# older do, reporting <version>, or its own with real (an error on a modern git). Under
+# GIT_TRACE it prints a trace line first, as git does — bare under GIT_TRACE_BARE. Git puts its exec path first on
+# a hook's PATH, so the stand-in goes there, not on PATH.
+REALGIT=$(command -v git)
+standin() {
+  for f in "$(git --exec-path)"/*; do ln -s "$f" "$1/" || die "could not link $f"; done
+  rm -f "$1/git"
+  { echo '#!/bin/sh'
+    echo '[ -n "$GIT_TRACE" ] && [ -n "$GIT_TRACE_BARE" ] && echo "trace: built-in: git $*" >&2'
+    echo '[ -n "$GIT_TRACE" ] && [ -z "$GIT_TRACE_BARE" ] && echo "12:00:00.000000 git.c:506               trace: built-in: git $*" >&2'
+    echo '[ "$1" = merge-tree ] && [ "$2" = --write-tree ] && { echo "fatal: unknown rev --write-tree" >&2; exit 128; }'
+    [ "$2" = real ] || echo "[ \"\$1\" = version ] && { echo 'git version $2'; exit 0; }"
+    echo "exec \"$REALGIT\" \"\$@\""; } > "$1/git"
+  chmod +x "$1/git"
+}
+OLDGIT=$(cd "$(mktemp -d)" && pwd -P); standin "$OLDGIT" 2.37.1
+stamped_conflict
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$OLDGIT" git merge -q --no-edit fix/s >/dev/null 2>&1)
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$OLDGIT" git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "a stamped merge resolved in place lands, as before 0.28.0"
+say "$(grep -c 'merge-tree --write-tree failed here (it needs git 2.38 or later)' <<<"$OUT")" "1" "…saying nothing checked it"
+rm -rf "$d"
+d=$(mkrepo)
+git -C "$d" checkout -q main && echo h > "$d/h" && git -C "$d" add -A && git -C "$d" commit -qm "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+git -C "$d" checkout -q dev
+OUT=$(cd "$d" && GIT_EXEC_PATH="$OLDGIT" git merge --no-edit main 2>&1); RC=$?
+say "$RC" "1" "a clean back-merge of main is gated: git cannot tell it is clean"
+say "$(grep -c 'git cannot tell: git merge-tree --write-tree failed here' <<<"$OUT")" "1" "…and the box says that, not that a conflict was resolved"
+say "$(grep -c 'a conflict was resolved here' <<<"$OUT")" "0" "…blaming no one"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d" "$OLDGIT"
+
+echo "A git 2.38 or later that fails to work it out: refused, with git's error (0.28.0 fix review):"
+ERRGIT=$(cd "$(mktemp -d)" && pwd -P); standin "$ERRGIT" real
+d=$(mkrepo); feature "$d" fix/e dev; git -C "$d" checkout -q dev
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$ERRGIT" git merge --no-edit fix/e 2>&1); RC=$?
+say "$RC$(grep -c 'THIS MERGE COULD NOT BE CHECKED' <<<"$OUT")" "11" "a stamped clean merge git failed to check: refused"
+say "$(grep -c 'fatal: unknown rev --write-tree' <<<"$OUT")" "1" "…quoting git's own error"
+git -C "$d" merge --abort 2>/dev/null
+OUT=$(cd "$d" && GIT_TRACE=1 FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$ERRGIT" git merge --no-edit fix/e 2>&1); RC=$?
+say "$RC$(grep -c '║   fatal: unknown rev --write-tree' <<<"$OUT")$(grep -c '║   12:00:00' <<<"$OUT")" "110" "…under GIT_TRACE=1 too, not the trace line before it"
+git -C "$d" merge --abort 2>/dev/null
+OUT=$(cd "$d" && GIT_TRACE=1 GIT_TRACE_BARE=1 FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$ERRGIT" git merge --no-edit fix/e 2>&1); RC=$?
+say "$RC$(grep -c '║   fatal: unknown rev --write-tree' <<<"$OUT")$(grep -c '║   trace: ' <<<"$OUT")" "110" "…and with GIT_TRACE_BARE, whose trace line has no timestamp"
+say "$(grep -c 'needs git 2.38' <<<"$OUT")" "0" "…not blaming the git version"
+say "$(grep -c 'finish the merge — the check runs again' <<<"$OUT")$(grep -c 'or undo it (below), merge dev into the branch in' <<<"$OUT")" "11" "…offering both ways on"
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "…and, the cause gone, finishing it runs the check again and lands"
+rm -rf "$d"
+d=$(mkrepo)
+git -C "$d" checkout -q main && echo h > "$d/h" && git -C "$d" add -A && git -C "$d" commit -qm "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+git -C "$d" checkout -q dev
+OUT=$(cd "$d" && GIT_EXEC_PATH="$ERRGIT" git merge --no-edit main 2>&1); RC=$?
+say "$RC$(grep -c 'fatal: unknown rev --write-tree' <<<"$OUT")$(grep -c 'a conflict was resolved here' <<<"$OUT")" "110" "a clean back-merge git failed to check: gated, quoting git, blaming no one"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d" "$ERRGIT"
+
+d=$(mkrepo); feature "$d" fix/tr dev; git -C "$d" checkout -q dev
+OUT=$(cd "$d" && GIT_TRACE=1 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit fix/tr 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "a stamped clean merge under GIT_TRACE=1 lands: git's trace is not read as the tree"
+rm -rf "$d"
+
+echo "Unrelated histories are checked as git merge was told to merge them (0.28.0 fix review):"
+# unrelated <same|other>: a stamped orphan branch adding f (add/add with dev) or g.
+unrelated() {
+  d=$(mkrepo)
+  git -C "$d" checkout -q --orphan fix/o && git -C "$d" rm -rqf . >/dev/null || die "could not make fix/o"
+  if [ "$1" = same ]; then echo o > "$d/f"; else echo o > "$d/g"; fi
+  git -C "$d" add -A && git -C "$d" commit -qm "fix: o" >/dev/null || die "could not commit fix/o"
+  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/o" HEAD
+  git -C "$d" checkout -q dev
+}
+unrelated other
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --allow-unrelated-histories --no-edit fix/o 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")$(grep -c 'merge-tree' <<<"$OUT")" "010" "a stamped clean merge of an unrelated history lands, checked"
+rm -rf "$d"
+unrelated same
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --allow-unrelated-histories --no-edit fix/o >/dev/null 2>&1)
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c 'THE NOTE DID NOT CHECK THIS MERGE' <<<"$OUT")" "11" "…its add/add conflict resolved in place: refused"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
+
+echo "none is off for PR_ONLY_BRANCHES and NOTE_GATED_BRANCHES too (fix review of 0.28.0's release review):"
+rb 'PR_ONLY_BRANCHES=none' fix/none-x; say "$RC" "0" "PR_ONLY_BRANCHES=none: fix/none-x rebases"
+for k in PR_ONLY_BRANCHES NOTE_GATED_BRANCHES; do
+  d=$(mkrepo); conf_on "$d" main "$k=none"
+  git -C "$d" checkout -q -b none-x main && git -C "$d" checkout -q -b fix/q none-x && echo q > "$d/q" && git -C "$d" add -A \
+    && git -C "$d" commit -qm "fix: q" >/dev/null && git -C "$d" checkout -q none-x || die "could not build none-x"
+  OUT=$(cd "$d" && FLIGHT_RULES_PROTECTED_BRANCHES='^(main|none-x)$' git merge --no-edit fix/q 2>&1); RC=$?
+  if [ "$k" = NOTE_GATED_BRANCHES ]; then
+    say "$RC" "0" "$k=none, none-x protected: no note gate, the merge lands"
+  else
+    say "$RC$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")$(grep -c 'PR-ONLY' <<<"$OUT")" "110" "$k=none, none-x protected: not PR-only, so the note gate refuses it, not the PR-only box"
+  fi
+  rm -rf "$d"
+done
+
+echo "The post-merge note never offers to delete a protected branch (fix review of 0.28.0's release review):"
+for how in "-m sync" "--no-edit"; do
+  PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+  git init -q -b main "$QQ" || die "git init failed"
+  git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+  mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$QQ/.ai/flight-rules.conf"
+  cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+  echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+  git -C "$QQ" branch dev && git -C "$QQ" branch old/x || die "could not branch"
+  echo h > "$QQ/h"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "fix: hotfix" || die "could not move main"
+  git -C "$QQ" checkout -q dev && (cd "$QQ" && git merge -q $how main >/dev/null 2>&1) || die "could not back-merge main"
+  say "$(grep -c 'git branch -d old/x' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "1" "git merge $how main: the note is written, listing old/x"
+  say "$(grep -c 'git branch -d main' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "0" "…and not main"
+  rm -rf "$PQ"
+done
 
 echo
 echo "$PASS passed, $FAIL failed"

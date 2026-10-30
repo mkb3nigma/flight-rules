@@ -42,8 +42,8 @@ Match by path/basename:
 - `{LOCAL_RULES_DIRS}/<name>.md` ↔ `{PLAYBOOK_PATH}/rules/<name>.md`
 - `.ai/skills/<name>/SKILL.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md` (copy-in)
 - `.ai/skills/<name>/<file>` ↔ `{PLAYBOOK_PATH}/skills/<name>/<file>` — the files a
-  copied-in skill reads from its own directory — each one its SKILL.md names as
-  "`<file>` beside this file". One upstream has and the copy lacks is
+  copied-in skill reads from its own directory — each one its SKILL.md, or a file its
+  SKILL.md names, names as "`<file>` beside this file". One upstream has and the copy lacks is
   **Available-but-not-adopted** with its `cp` command: the copied SKILL.md looks for it
   beside itself, and the step that reads it cannot run without it.
 - `.ai/skills/<name>/EXTENSIONS.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md`

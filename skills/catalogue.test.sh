@@ -27,12 +27,25 @@ done
 
 echo "Pointer files in .claude/skills/ match the shipped set one-to-one:"
 POINTERS=$(find .claude/skills -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sed 's|.claude/skills/||' | sort)
-# A skill that maintains this repo only (/upstream-check) lives whole in .claude/skills/
-# and does not ship; anything else there is a pointer at a shipped skill.
+# A skill that maintains this repo only lives whole in .claude/skills/ and does not ship;
+# it is named here, so a stray or misnamed directory fails rather than passing as one
+# (0.28.0 release review). Anything else there is a pointer at a shipped skill.
+REPO_ONLY_SKILLS="upstream-check"
+# unshipped_verdict <dir> <name>: what is wrong with <dir>/<name>, a directory that is not
+# a shipped skill — nothing for a repo-only skill named above.
+unshipped_verdict() {
+  if grep -q "skills/$2/SKILL.md" "$1/$2/SKILL.md" 2>/dev/null; then
+    echo "$1/$2 points at a skill that does not exist"
+  else
+    case " $REPO_ONLY_SKILLS " in
+      *" $2 "*) ;;
+      *) echo "$1/$2 is neither a pointer at a shipped skill nor a repo-only skill this test names" ;;
+    esac
+  fi
+}
 for p in $POINTERS; do
   if ! grep -q "^$p\$" <<<"$SKILLS"; then
-    grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null \
-      && bad ".claude/skills/$p points at a skill that does not exist"
+    v=$(unshipped_verdict .claude/skills "$p"); [ -z "$v" ] || bad "$v"
     REPO_ONLY="${REPO_ONLY-}$p "
   else
     grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null || bad ".claude/skills/$p/SKILL.md does not reference skills/$p/SKILL.md"
@@ -44,6 +57,19 @@ for s in $SKILLS; do
   grep -q "^$s\$" <<<"$POINTERS" || bad "skills/$s has no pointer in .claude/skills/ — not runnable in this repo"
 done
 ok "$(wc -w <<<"$SKILLS" | tr -d ' ') shipped skills, each with a pointer; this repo's own: ${REPO_ONLY:-none}"
+# The real tree has no stray directory, so the verdict is also run on one that does: a
+# check no input reaches is no check (fix review of 0.28.0's release review).
+T=$(mktemp -d) || { bad "could not make a temp dir for the repo-only fixture"; T=""; }
+if [ -n "$T" ]; then
+  for d in stray upstream upstream-check ghost; do mkdir -p "$T/$d"; printf -- '---\nname: %s\n---\n' "$d" > "$T/$d/SKILL.md"; done
+  echo 'Read and follow `skills/ghost/SKILL.md`.' >> "$T/ghost/SKILL.md"
+  for d in stray upstream; do
+    [ -n "$(unshipped_verdict "$T" "$d")" ] && ok "a stray $d/ is refused" || bad "a stray $d/ passed as repo-only"
+  done
+  [ -z "$(unshipped_verdict "$T" upstream-check)" ] && ok "…the named repo-only skill is not" || bad "the named repo-only skill was refused"
+  case "$(unshipped_verdict "$T" ghost)" in *"points at a skill that does not exist") ok "…and a pointer at a missing skill is named as one" ;; *) bad "a pointer at a missing skill was not named" ;; esac
+  rm -rf "$T"
+fi
 
 echo "README catalogue lists exactly the shipped skills:"
 LISTED=$(sed -n -E 's/^\| \[`\/([a-z-]+)`\]\(skills\/[a-z-]+\/SKILL\.md\).*/\1/p' README.md | sort)

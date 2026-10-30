@@ -130,9 +130,9 @@ locally with no PR, its commit messages.
     ❌ if any of the three is missing; ⚠️ if the diff was not put through adversarial
     review (`/dg`) with the verdict and each finding's disposition in the PR body. A
     deletion or tightening skips those but must say what it drops and where that is now
-    covered. **Folds from an upstream are additions**: `/upstream-check` step 4 folds by
-    hand into `rules/` as well as `skills/`, and an adopted paragraph costs a reader
-    exactly what an authored one does. Its warrant is the pin.
+    covered. **Folds from an upstream are additions**: a paragraph adopted by hand from a
+    source the project adapts, into `rules/` or `skills/`, costs a reader exactly what an
+    authored one does. Its warrant is the pin.
 19. **Datetimes stored without a zone** — grep the diff's added lines. ❌ on a
     timestamp or datetime column declared without a timezone, or on `datetime.now()`
     with no tz argument, or `date.today()` (the machine's local date — take
