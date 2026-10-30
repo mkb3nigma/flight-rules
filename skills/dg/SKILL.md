@@ -128,7 +128,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `✅ <reviewer>` — it ran (name the model; a same-family one with none wired is
      no warning);
    - `✅ <reviewer> (<model>, not cross-family)` — a wired CLI ran, but on a
-     same-family or unreported model (see the command's last point below);
+     same-family or unreported model (`pre-review-cli.md`, its last point);
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
@@ -146,43 +146,12 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    verdict will read as thorough agreement. What this step buys is failure-mode
    diversity, not an extra opinion.
 
-   The preference is symmetric and names no vendor: whichever model drives the personas,
-   the pre-reviewer should be a different one — the roles swap freely depending on which
-   assistant a project runs as its main. This file states only the preference; a project
-   wires the concrete command for whichever CLI it has in its extensions. The command:
-   - **names no model.** Which model a CLI runs is the user's choice, made in that CLI's
-     own config, and with none there the CLI's default follows its releases. A pin
-     anywhere can go stale, the config included — when a configured model is refused, the
-     run fails and the warning above names the config line: a `model = "gpt-5.5"` pin in
-     `~/.codex/config.toml` failed Codex pre-reviews on 2026-09-09 (*"does not exist or
-     you do not have access to it"*) and 2026-10-16 (*"not supported"*),
-     `gpt-5.2-codex` the same way on 2026-05-20;
-   - **sets effort to `high`** with the CLI's own flag where it has one, so a review
-     never runs at a `medium` default. Where it has none, say so in the header. An
-     unknown level failed loudly in `codex` and `agy` (2026-10-16), which is the warning
-     above; a CLI that may ignore it silently is treated as having none;
-   - **runs read-only, or tells the reviewer to use no tools** where the CLI has no
-     read-only mode — a denied tool call in headless mode is a dead turn. No tools means
-     none from MCP servers or plugins either: `claude -p --tools ""` still loaded
-     every connected MCP server's tools until `--strict-mcp-config` (2026-10-16);
-   - **feeds the brief and subject the way the CLI reads them** — `agy -p` ignored
-     piped stdin and answered nothing (agy 1.4.0, 2026-10-16). A CLI that takes the
-     prompt only as an argument gets a large range split by subsystem, as in step 1;
-   - **keeps the final message and stderr apart**, for the completion check;
-   - **reports the model that actually ran** in the header, read from the CLI's output
-     or log, else `model unreported`. A CLI is not a family: `agy` also serves Claude
-     models. A run whose model is the same family as the one running this skill, or
-     unreported, counts but not as cross-family: `✅ <reviewer> (<model>, not
-     cross-family)`.
-
-   E.g. from Claude Code:
-   `out=$(mktemp) err=$(mktemp);`
-   `cat <brief> <subject> | codex exec -s read-only -c model_reasoning_effort=high -o "$out" - 2>"$err"`
-   (stdin, so a large diff is not squeezed through one argument; `$out`, fresh each run,
-   holds the final message the completion check reads, `$err` the reason it failed, and
-   its `model:` line the model that ran). From Codex:
-   `cat <brief> <subject> | claude -p --effort high --tools "" --strict-mcp-config --output-format json > "$out" 2>"$err"`
-   (`.result` is the final message, the keys of `.modelUsage` the model that ran).
+   A project wires the concrete command for whichever CLI it has, in its extensions; this
+   file states only the preference. The command names no model, sets effort to `high`,
+   runs read-only with no tools, feeds the brief the way the CLI reads it, keeps the
+   final message and stderr apart, and reports the model that actually ran:
+   `pre-review-cli.md` beside this file gives each point's reason and an example from
+   each side — read it whenever a wired CLI runs; a review with none never needs it.
 
    Same-family fallback is correct, and stays the default when no second model is
    reachable. A same-family pre-review still beats none — never skip the step for want
@@ -248,36 +217,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    `[AGREED]`, `[CONTESTED]` or `[DISMISSED]` (the rules below). It comes right after the
    header, before the rounds: a terminal shows a reply's end, and with the comic last the
    owner scrolled back past it for the decisions — "while the banter is fun, it seems to
-   overshadow the actual content" (2026-10-24). First, it is read or skipped; last, it
-   stood between the reader and what needs deciding.
+   overshadow the actual content" (2026-10-24).
 
-   **A page, on request only.** If the person asks for the comic as a page, fill
-   `comic-template.html` from this skill's directory with the same panels; a copy of
-   this skill without it says so.
-   - `{{REVIEW_TARGET}}`, `{{ROUND_COUNT}}`, `{{GILFOYLE_SCORE}}`, `{{DINESH_SCORE}}`,
-     `{{DATE}}` from the review.
-   - `{{PANELS}}`: the text comic's panels, from the banter — back-and-forth pairs, a rare Gilfoyle
-     concession, the most technically devastating lines — 1–3 sentences each:
-     `<div class="panel gilfoyle|dinesh [full-width]"><span class="panel-number">N</span><div class="panel-header"><div class="avatar"><svg><use href="#gilfoyle-avatar|#dinesh-avatar"/></svg></div>GILFOYLE|DINESH</div><div class="panel-body"><div class="speech">…</div></div></div>`.
-   - `{{VERDICT_ITEMS}}`: one per verdict finding, tagged by its verdict section —
-     AGREED (both flagged), CONTESTED (severity disputed, or a defence held), DISMISSED:
-     `<div class="verdict-item"><span class="tag tag-agreed|tag-contested|tag-dismissed">AGREED|CONTESTED|DISMISSED</span> …</div>`.
-     Nothing is FIXED when the comic is drawn: the reviewers are read-only.
-
-   HTML-escape every piece of text before it goes in (`&`, `<`, `>`, `"`) — the target,
-   the date and scores, each quote inside a `speech` div, each verdict item's text after
-   its tag — and never the wrapper markup above, which is the template's own and would
-   print as tags. All of that text comes from the subject under review, and an unescaped
-   `<script>` in a diff would run when the page opens. The template's
-   Content-Security-Policy stops scripts, forms and a `<base>` as a second line, but not
-   a `<meta http-equiv="refresh">`, which still navigates the page (headless Edge,
-   2026-10-17): escaping is the control, not the CSP. Write
-   it to a fresh file (`mktemp -t dg-comic.XXXXXX`, renamed `.html`), give the path, and
-   open it (`open`, or `xdg-open`). Asked for a PNG, render one with a headless browser
-   already installed — any Chromium (Chrome, Chromium, Edge; on macOS the binary inside
-   its `.app/Contents/MacOS/`) with `--headless --screenshot=<png> --window-size=1200,2400
-   file://<html>`, or `wkhtmltoimage`; never `npx --yes` — and give its path. The page
-   and the PNG stay local: a PR gets the ASCII comic, under `DG_COMIC_PR`.
+   **A page, on request only.** If the person asks for the comic as a page or a PNG,
+   `comic-page.md` beside this file says how; a copy of this skill without it says so.
+   Either stays local: a PR gets the ASCII comic, under `DG_COMIC_PR`.
 
 ## Personas (condensed)
 
