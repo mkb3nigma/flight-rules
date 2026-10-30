@@ -1840,6 +1840,11 @@ OUT=$(cd "$d" && GIT_EXEC_PATH="$ERRGIT" git merge --no-edit main 2>&1); RC=$?
 say "$RC$(grep -c 'fatal: unknown rev --write-tree' <<<"$OUT")$(grep -c 'a conflict was resolved here' <<<"$OUT")" "110" "a clean back-merge git failed to check: gated, quoting git, blaming no one"
 git -C "$d" merge --abort 2>/dev/null; rm -rf "$d" "$ERRGIT"
 
+d=$(mkrepo); feature "$d" fix/tr dev; git -C "$d" checkout -q dev
+OUT=$(cd "$d" && GIT_TRACE=1 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit fix/tr 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "a stamped clean merge under GIT_TRACE=1 lands: git's trace is not read as the tree"
+rm -rf "$d"
+
 echo "Unrelated histories are checked as git merge was told to merge them (0.28.0 fix review):"
 # unrelated <same|other>: a stamped orphan branch adding f (add/add with dev) or g.
 unrelated() {

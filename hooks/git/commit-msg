@@ -245,7 +245,9 @@ clean_merge() {
         return 3
     fi
     t=$(printf '%s\n' "$t" | head -1)
-    i=$(git write-tree 2>&1) || { MT_ERR=$(printf '%s\n' "$i" | head -1); return 3; }
+    # stdout only: GIT_TRACE and friends write to stderr, and joined to the tree id they
+    # refused a clean merge as one that resolved a conflict (fix review of e78a57e).
+    i=$(git write-tree 2>/dev/null) || { MT_ERR=$(git write-tree 2>&1 >/dev/null | head -1); return 3; }
     [ -n "$t" ] || { MT_ERR="git merge-tree printed no tree"; return 3; }
     [ "$t" = "$i" ]
 }
