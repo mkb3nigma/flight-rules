@@ -66,7 +66,6 @@ for having gone unenforced.
    diff was read cannot be checked
 5. Commit after every logical unit of work — small commits, easy rollback — advisory:
    what a logical unit is, is a judgement
-   (`pre-merge-check` 16 only warns at the other extreme, ~20+)
 6. Symlink untracked env files from the main checkout into new worktrees
    (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`.
    Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 7)

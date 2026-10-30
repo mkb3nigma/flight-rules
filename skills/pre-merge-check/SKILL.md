@@ -107,7 +107,7 @@ locally with no PR, its commit messages.
     line — "for now", "temporary", "remove after", "until we" — with no issue and no
     condition. Judge comments and prose, not identifiers or string literals: a token
     grep over the diff flags enum members such as `ActionStatus.TODO`.
-16. **Commit-count sanity** — ⚠️ above ~20 commits: consider splitting.
+16. *Retired (#119); numbered so later items keep theirs.*
 17. **Docs match the change** — ask **"what claims does this diff make false?"**, then
     go find them. Not a grep for renamed symbols: a change that renames nothing and only
     makes a sentence untrue leaves every grep empty. Run narrowly it has missed four
