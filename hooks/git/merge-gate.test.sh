@@ -1557,6 +1557,57 @@ say "$RC" "0" "…and the route it prints finishes the merge"
 say "$(git -C "$R" rev-parse dev^2)" "$(git -C "$R" rev-parse fix/x)" "…with fix/x merged into dev"
 rm -rf "$PU"
 
+echo "pre-rebase refuses every protected branch, not only PR-only ones (#118):"
+# The agent guard refused a rebase of dev; this hook refused only main's, so one a
+# person typed was refused by nothing. Crossed: branch × where the pattern comes from ×
+# its case.
+# rb <conf or ''> <branch> [VAR=value]: <branch> with a commit of its own and main one
+# ahead, so the rebase has work to do; then `git rebase main` on it. Sets OUT and RC.
+rb() {
+  local d; d=$(mkrepo)
+  [ -n "$1" ] && conf_on "$d" main "$1"
+  git -C "$d" checkout -q -B "$2" main || die "could not make $2"
+  echo own > "$d/own"; git -C "$d" add -A; git -C "$d" commit -qm "chore: own" --no-verify >/dev/null || die "could not commit on $2"
+  git -C "$d" checkout -q main; echo m > "$d/m"; git -C "$d" add -A
+  git -C "$d" commit -qm "chore: m" --no-verify >/dev/null || die "could not move main"
+  git -C "$d" checkout -q "$2" || die "could not return to $2"
+  OUT=$(cd "$d" && env ${3:+"$3"} git rebase main 2>&1); RC=$?
+  git -C "$d" rebase --abort 2>/dev/null; rm -rf "$d"
+}
+for b in dev staging release/2; do
+  rb '' "$b"; say "$RC" "1" "default list: a rebase of $b is refused"
+done
+rb '' dev
+say "$(grep -c 'dev IS PROTECTED — REBASE BLOCKED' <<<"$OUT")" "1" "…by the protected box, not the PR-only one"
+say "$(grep -c 'git pull --no-rebase' <<<"$OUT")" "1" "…which prints the merge that keeps its history"
+rb '' feature/r;                                     say "$RC" "0" "default list: a feature branch rebases"
+rb 'PROTECTED_BRANCHES=^(main|dev)$' dev;            say "$RC" "1" "conf ^(main|dev)\$: dev is refused"
+rb 'PROTECTED_BRANCHES=^(main|dev)$' staging;        say "$RC" "0" "…and staging, which it leaves out, rebases"
+rb 'PROTECTED_BRANCHES=^(MAIN|DEV)$' dev;            say "$RC" "1" "conf in another case: dev is still refused"
+rb 'PROTECTED_BRANCHES=off' dev;                     say "$RC" "0" "PROTECTED_BRANCHES=off: dev rebases"
+rb 'PROTECTED_BRANCHES=off' feature/offline;         say "$RC" "0" "…and off is no pattern: feature/offline rebases"
+rb '' dev 'FLIGHT_RULES_PROTECTED_BRANCHES=^nothing$'; say "$RC" "0" "the environment wins over the default"
+rb 'PROTECTED_BRANCHES=^(dev' feature/r;             say "$RC" "1" "a PROTECTED_BRANCHES that does not compile refuses every rebase"
+say "$(grep -c 'PROTECTED_BRANCHES DOES NOT COMPILE — REBASE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+
+echo "pull.rebase=true: a dev that is only behind still pulls; one with commits of its own is refused (#118):"
+PQ=$(cd "$(mktemp -d)" && pwd -P); U="$PQ/up"
+git init -q -b dev "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one || die "could not build the upstream"
+git clone -q "$U" "$PQ/r" 2>/dev/null || die "could not clone"; R="$PQ/r"
+git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
+mkdir -p "$R/.ai/hooks"; cp "$H/pre-rebase" "$R/.ai/hooks/" && chmod +x "$R/.ai/hooks/pre-rebase" || die "could not copy pre-rebase"
+git -C "$R" config core.hooksPath "$R/.ai/hooks"
+git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m two || die "could not advance the upstream"
+OUT=$(cd "$R" && git -c pull.rebase=true pull -q 2>&1); RC=$?
+say "$RC" "0" "only behind: the pull fast-forwards and pre-rebase never runs"
+say "$(git -C "$R" rev-parse HEAD)" "$(git -C "$U" rev-parse HEAD)" "…and dev is caught up"
+git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m three || die "could not advance the upstream"
+git -C "$R" commit -q --allow-empty -m "chore: own" || die "could not commit in the clone"
+OUT=$(cd "$R" && git -c pull.rebase=true pull -q 2>&1); RC=$?
+say "$RC" "1" "commits of its own: the rebasing pull is refused"
+say "$(grep -c 'dev IS PROTECTED — REBASE BLOCKED' <<<"$OUT")" "1" "…by the protected box"
+rm -rf "$PQ"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# pre-rebase hook — refuse to rebase a PR-only branch.
+# pre-rebase hook — refuse to rebase a protected branch.
 #
 # `git rebase feature` while on main rewrites main in place: no merge commit is
 # created, so neither pre-merge-commit nor commit-msg ever fires, and the branch
 # that is supposed to move only through reviewed pull requests has just been
 # rewritten locally. git offers exactly one hook for this moment; this is it.
+# Every protected branch, not only PR-only ones: the agent guard refused a rebase of
+# dev, and this hook did not, so one a person typed was refused by nothing (#118).
+# `git pull --rebase` reaches here only when the branch has commits of its own; one
+# that is only behind fast-forwards and runs no hook (probed, git 2.56, 2026-10-30).
 #
 # Arguments from git: $1 = the upstream being rebased onto, $2 = the branch being
 # rebased (absent when it is the current branch).
 #
-# Configuration — first match wins:
+# Configuration — first match wins, for each of the two keys:
 #   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
+#                             FLIGHT_RULES_PROTECTED_BRANCHES='^(main|dev)$'
 #   2. .ai/flight-rules.conf **as committed on HEAD** (read as data, never sourced)
 #   3. The default below
 #
@@ -25,6 +30,7 @@
 set -euo pipefail
 
 DEFAULT_PR_ONLY='^main$'
+DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
 CONF_PATH='.ai/flight-rules.conf'   # repo-relative
 
 read_conf_at_head() {
@@ -40,18 +46,27 @@ read_conf_at_head() {
 
 PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
+PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf_at_head PROTECTED_BRANCHES "$CONF_PATH")}"
+PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
 
 BRANCH="${2:-$(git branch --show-current)}"
+# re_rc <branch> <pattern>: 0 a match, 1 none, 2 the pattern does not compile.
 # `off` names no branch. Read as a pattern it matched any branch with "off" in its name
 # (#103 review, 2026-10-22).
-[ "$PR_ONLY_RE" = "off" ] && exit 0
 # A pattern that does not compile matches every branch, not none: [[ =~ ]] returns 2
 # for it, which read as "no match" and turned the gate off (#103). Case-insensitively,
 # as the agent guard matches: `^MAIN$` let main be rebased (#103 review).
-shopt -s nocasematch
-_rc=0; [[ "$BRANCH" =~ $PR_ONLY_RE ]] || _rc=$?
-shopt -u nocasematch
-[ "$_rc" -eq 1 ] && exit 0
+re_rc() {
+    local r=0
+    [ "$2" = "off" ] && return 1
+    shopt -s nocasematch
+    [[ "$1" =~ $2 ]] || r=$?
+    shopt -u nocasematch
+    return "$r"
+}
+_rc=0; re_rc "$BRANCH" "$PR_ONLY_RE" || _rc=$?
+_prc=0; re_rc "$BRANCH" "$PROTECTED_RE" || _prc=$?
+[ "$_rc" -eq 1 ] && [ "$_prc" -eq 1 ] && exit 0
 
 # --- Box drawing (duplicated verbatim in pre-merge-commit and commit-msg) ------
 BOX_W=68
@@ -94,22 +109,38 @@ broken_box() {
     echo ""
 }
 
+# <the same command>, not `git rebase <same arguments>`: `git pull --rebase` reaches
+# here too, and its arguments are not a rebase's (#103 review).
 if [ "$_rc" -eq 2 ]; then
-    # <the same command>, not `git rebase <same arguments>`: `git pull --rebase` reaches
-    # here too, and its arguments are not a rebase's (#103 review).
     broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" REBASE "$BRANCH" "<the same command>"
+    exit 1
+fi
+if [ "$_rc" -eq 1 ] && [ "$_prc" -eq 2 ]; then
+    broken_box PROTECTED_BRANCHES "$PROTECTED_RE" REBASE "$BRANCH" "<the same command>"
     exit 1
 fi
 
 echo ""
 box_top
-box_row "⛔  $BRANCH IS PR-ONLY — REBASE BLOCKED" 1
-box_sep
-box_row ""
-box_row "Rebasing rewrites $BRANCH in place. It moves only through"
-box_row "a reviewed pull request; rebase the feature branch instead:"
-box_row ""
-box_row "  git checkout <feature> && git rebase $BRANCH"
+if [ "$_rc" -eq 0 ]; then
+    box_row "⛔  $BRANCH IS PR-ONLY — REBASE BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "Rebasing rewrites $BRANCH in place. It moves only through"
+    box_row "a reviewed pull request; rebase the feature branch instead:"
+    box_row ""
+    box_row "  git checkout <feature> && git rebase $BRANCH"
+else
+    box_row "⛔  $BRANCH IS PROTECTED — REBASE BLOCKED" 1
+    box_sep
+    box_row ""
+    box_row "Rebasing rewrites $BRANCH's history in place. Merge instead"
+    box_row "— a pull that would rebase becomes:"
+    box_row ""
+    box_row "  git pull --no-rebase"
+    box_row ""
+    box_row "— or rebase the feature branch onto $BRANCH."
+fi
 box_row ""
 box_bot
 echo ""
