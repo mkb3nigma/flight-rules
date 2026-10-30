@@ -60,7 +60,7 @@ platform guarantees and the failure in full — read it before stacking.
    any failure, and report that sha; where CI runs more platforms, open the PR only
    once CI is green for it. `release-pr.md` beside this file, 2a, has how to read CI.
 2b. **Release PR only** — `/dg origin/main...<sha>` on the commit 2a tested. The
-   verdict, every finding's disposition and the lines the release adds by class go in
+   verdict and every finding's disposition go in
    the PR body under **Adversarial review**; a critical finding is the owner's to
    disposition. `release-pr.md` beside this file, 2b, has the section's format — what
    the `release review` check reads — and what follows a finding applied.
