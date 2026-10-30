@@ -90,6 +90,27 @@ else
   bad "$GITHOOK and $GUARD disagree on the secret patterns: $(diff <(sort <<<"$GUARD_PATS") <(sort <<<"$HOOK_PATS") | grep '^[<>]' | tr '\n' ' ')"
 fi
 
+echo "Every file a skill names beside itself is there, and every file there is named:"
+# Steps that only some runs need keep their rule and point at a file beside SKILL.md
+# (#119). A missing file leaves the step pointing at nothing; a file no step names is
+# a contract nothing reads. The convention is the phrase "`<file>` beside this file",
+# in SKILL.md or in a file it names.
+MISS=0; NREF=0
+for s in $SKILLS; do
+  d="skills/$s"
+  # Lines joined first: prose wraps the phrase anywhere.
+  refs=$(cat "$d"/*.md | tr '\n' ' ' | grep -oE '`[A-Za-z0-9._-]+`[[:space:]]+beside[[:space:]]+this[[:space:]]+file' \
+    | sed -E 's/^`([^`]*)`.*/\1/' | sort -u)
+  for r in $refs; do
+    NREF=$((NREF+1))
+    [ -f "$d/$r" ] || { MISS=$((MISS+1)); bad "$d names \`$r\` beside it; there is no $d/$r"; }
+  done
+  for f in $(find "$d" -mindepth 1 -maxdepth 1 -type f ! -name SKILL.md -exec basename {} \; | sort); do
+    grep -qxF -- "$f" <<<"$refs" || { MISS=$((MISS+1)); bad "$d/$f is named nowhere in $d as \`$f\` beside this file"; }
+  done
+done
+[ "$MISS" -eq 0 ] && ok "$NREF named, all present; no file unnamed"
+
 echo "Plugin description names every skill that has a slash command in it:"
 for s in $(grep -oE '/[a-z-]+' .claude-plugin/plugin.json | tr -d / | sort -u); do
   grep -q "^$s\$" <<<"$SKILLS" || bad "plugin.json mentions /$s, which does not ship"
