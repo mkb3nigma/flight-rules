@@ -74,13 +74,14 @@ is_feature_merge() {
   done
   # …or the tip of any other protected branch, local or origin's: a project whose
   # released branch is not called main back-merges it too (mission review G2,
-  # 2026-10-29). Case-insensitively, as every layer matches the pattern.
-  while read -r ref ref_sha; do
+  # 2026-10-29). Case-insensitively, as every layer matches the pattern. Only the refs
+  # at the merged commit: a grep per ref in the repo took seconds a merge with
+  # thousands of remote branches (0.28.0 release review).
+  while read -r ref; do
     name=${ref#refs/heads/}; name=${name#refs/remotes/origin/}
     [[ "$name" == "$INTEGRATION_BRANCH" ]] && continue
-    printf '%s' "$name" | grep -qiE -e "$PROTECTED_RE" 2>/dev/null || continue
-    [[ "$_merged_in" == "$ref_sha" ]] && return 1
-  done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin 2>/dev/null)
+    printf '%s' "$name" | grep -qiE -e "$PROTECTED_RE" 2>/dev/null && return 1
+  done < <(git for-each-ref --points-at "$_merged_in" --format='%(refname)' refs/heads refs/remotes/origin 2>/dev/null)
   # A pull of this branch's own upstream that had to merge is no feature either, and
   # prints nothing (fix review, 2026-10-29).
   ref_sha=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) && [[ "$_merged_in" == "$ref_sha" ]] && return 1
@@ -101,6 +102,11 @@ MERGED_BRANCH=$(printf '%s\n' "$MERGE_MSG" | sed -nE \
   -e "s|^Merge remote-tracking branch '[^/']+/([^']+)'.*|\\1|p" \
   -e 's|^Merge pull request #[0-9]+ from [^/]+/(.*)$|\1|p' \
   -e 's/^Merge ([^ ]+) into .*/\1/p' | head -1)
+# A subject none of those shapes fits — `git merge -m "…" fix/x`, a merge by sha — names
+# no branch, and the merge's own worktree was then counted among earlier merges' (0.28.0
+# release review): the local branch at the merged commit names it instead.
+[[ -z "$MERGED_BRANCH" && -n "$_merged_in" ]] && MERGED_BRANCH=$(git for-each-ref --points-at "$_merged_in" \
+  --format='%(refname:lstrip=2)' refs/heads 2>/dev/null | grep -vxF "$INTEGRATION_BRANCH" | head -1)
 [[ -z "$MERGED_BRANCH" ]] && MERGED_BRANCH="unknown"
 
 # All branches already merged into the integration branch.
@@ -301,10 +307,14 @@ mkdir -p "$(dirname "$NOTE_FILE")"
 # The note is this hook's file, not the project's: unless the project already ignores
 # it, it goes in this clone's info/exclude, so the first merge does not leave an
 # untracked .claude/ in git status (hooks review H20, 2026-10-28). Not .gitignore:
-# that would be a change to commit. Cosmetic, so a write that fails says nothing.
-if ! git check-ignore -q "$NOTE_PATH" 2>/dev/null; then
+# that would be a change to commit. Cosmetic, so a write that fails says nothing. A note
+# the project tracks is ignored by nothing, so it is left alone, and a line already there
+# is not written again: every merge added one (0.28.0 release review).
+if ! git check-ignore -q "$NOTE_PATH" 2>/dev/null \
+    && ! git ls-files --error-unmatch -- "$NOTE_PATH" >/dev/null 2>&1; then
   # A file whose last line has no newline would have the rule glued onto it (fix review).
   _ex=$(git rev-parse --git-path info/exclude 2>/dev/null) && [[ -n "$_ex" ]] \
+    && ! grep -qxF "/$NOTE_PATH" "$_ex" 2>/dev/null \
     && mkdir -p "$(dirname "$_ex")" 2>/dev/null \
     && { [[ ! -s "$_ex" || -z "$(tail -c1 "$_ex")" ]] || printf '\n' >> "$_ex"; } 2>/dev/null \
     && printf '/%s\n' "$NOTE_PATH" >> "$_ex" 2>/dev/null || true

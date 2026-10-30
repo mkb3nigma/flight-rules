@@ -72,6 +72,9 @@ PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHE
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 PROTECTED_RE_CONF="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf_at_head PROTECTED_BRANCHES "$CONF_PATH")}"
 PROTECTED_RE_CONF="${PROTECTED_RE_CONF:-$DEFAULT_PROTECTED}"
+# `none` is `off`, as the agent guard, session-start, post-merge and the doctor read it
+# (0.28.0 release review).
+[ "$PROTECTED_RE_CONF" = none ] && PROTECTED_RE_CONF=off
 
 CURRENT_BRANCH=$(git branch --show-current)
 
@@ -279,6 +282,23 @@ while read -r ref sha; do
     exit 0
 done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin)
 
+# A merge of the branch's own upstream, on a branch that has diverged from it — local
+# merges not pushed yet, and the shared branch moved on (a pull request merged on the
+# host) — needs no note either: what it brings is already on the shared branch, which
+# took it through the host's review or the owner's push, and a note on this side could
+# not vouch for that anyway. pre-rebase prints `git pull --no-rebase` for exactly this,
+# and this gate then refused it with a route that did not fit (0.28.0 release review).
+# Only the exact tip of refs/remotes/origin/<this branch>, set as its upstream: `git pull
+# . <branch>` or `git pull origin <other>` is a merge like any other. A branch that is
+# only behind is the catch-up below, which needs no merge commit at all.
+_upref=$(git rev-parse -q --symbolic-full-name '@{upstream}' 2>/dev/null) || _upref=""
+if [ "$_upref" = "refs/remotes/origin/$CURRENT_BRANCH" ] \
+    && [ "$(git rev-parse -q --verify "$_upref" 2>/dev/null)" = "$MERGE_SHA" ] \
+    && ! git merge-base --is-ancestor HEAD "$MERGE_SHA" 2>/dev/null; then
+    echo "✅ Merge of $CURRENT_BRANCH's own upstream, origin/$CURRENT_BRANCH — already on the shared branch, no note needed"
+    exit 0
+fi
+
 MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
 
 NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
@@ -376,7 +396,12 @@ _up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
 # /dg, 2026-10-18). For a real refused merge it is still the undo.
 echo ""
 box_top
-box_row "❌  PRE-MERGE CHECK REQUIRED" 1
+# A catch-up needs no check, so its box does not ask for one (0.28.0 release review).
+if [ -n "$CATCHUP" ]; then
+    box_row "❌  A CATCH-UP PULL MADE A MERGE COMMIT" 1
+else
+    box_row "❌  PRE-MERGE CHECK REQUIRED" 1
+fi
 box_sep
 box_row ""
 box_row "Merging: $MERGE_BRANCH"
@@ -441,11 +466,14 @@ else
     # H3, 2026-10-28). Described, with the command in the README, not printed ready to
     # paste: an assistant reads this box too, and takes the route it prints (commit
     # security review, 2026-10-29).
+    # flight-rules' README, by name: install.sh copies the hooks into a project, not the
+    # README (0.28.0 release review).
     box_row "Working without an assistant: run the project's checks"
     box_row "yourself — its tests at the least — then record what ran"
-    box_row "as a note on the branch's tip (hooks/README.md → commit-msg"
-    box_row "has the command) and finish the merge. An assistant runs"
-    box_row "/pre-merge-check instead: only running it may write the note."
+    box_row "as a note on the branch's tip (flight-rules'"
+    box_row "hooks/README.md → commit-msg has the command) and finish"
+    box_row "the merge. An assistant runs /pre-merge-check instead:"
+    box_row "only running it may write the note."
 fi
 box_row ""
 box_row "Undo this half-finished merge:   git merge --abort"

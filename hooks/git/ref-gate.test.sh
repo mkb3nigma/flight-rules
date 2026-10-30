@@ -207,6 +207,9 @@ conf_case "comment, single space"         "PR_ONLY_BRANCHES=^main\$ # x"        
 conf_case "PROTECTED_BRANCHES=off opts out here too" "PROTECTED_BRANCHES=off"  allowed
 conf_case "…even with PR_ONLY left at its default"   "PROTECTED_BRANCHES=off
 PR_ONLY_BRANCHES=^main\$"                                                      allowed
+# `none` is `off` to the guard, session-start, post-merge and the doctor; here too (0.28.0
+# release review).
+conf_case "PROTECTED_BRANCHES=none is off here too"  "PROTECTED_BRANCHES=none" allowed
 
 conf_case "PR_ONLY_BRANCHES=off disables the gate" "PR_ONLY_BRANCHES=off"      allowed
 conf_case "a conf naming another branch"           "PR_ONLY_BRANCHES=^nope\$"  allowed

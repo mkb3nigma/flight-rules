@@ -1525,6 +1525,7 @@ for b in main dev; do
   say "$(grep -c "origin/$b; merge.ff=false made it a merge commit" <<<"$OUT")" "1" "…with origin/$b named"
   say "$(grep -c '  git pull --ff-only  ' <<<"$OUT")" "1" "…and the pull that works"
   say "$(grep -c -e 'gh pr create' -e 'Run /pre-merge-check' <<<"$OUT")" "0" "…not the route for a merge"
+  [ "$b" = dev ] && say "$(grep -c 'A CATCH-UP PULL MADE A MERGE COMMIT' <<<"$OUT")$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "10" "…titled a catch-up, not a request for a check (0.28.0 release review)"
   git -C "$R" merge --abort 2>/dev/null
   (cd "$R" && git pull -q --ff-only 2>/dev/null); say "$(git -C "$R" rev-parse HEAD)" "$(git -C "$R" rev-parse "origin/$b")" "…and taking that route lands it"
 done
@@ -1548,6 +1549,7 @@ git -C "$R" checkout -q dev
 OUT=$(cd "$R" && git merge --no-edit fix/x 2>&1)
 say "$(grep -c 'Working without an assistant' <<<"$OUT")" "1" "unstamped merge: the box speaks to the developer working alone"
 say "$(grep -c 'hooks/README.md → commit-msg' <<<"$OUT")" "1" "…pointing at the command"
+say "$(grep -c "(flight-rules'" <<<"$OUT")" "1" "…in flight-rules' README, which a copy-in project does not have (0.28.0 release review)"
 say "$(grep -c -e 'git notes' -e "$(git -C "$R" rev-parse --short fix/x)" <<<"$OUT")" "0" "…not printing it ready to paste: an assistant reads the box"
 say "$(grep -c 'An assistant runs' <<<"$OUT")" "1" "…and says an assistant does not take it"
 # The README's command, run as a person would.
@@ -1587,6 +1589,11 @@ rb 'PROTECTED_BRANCHES=^(MAIN|DEV)$' dev;            say "$RC" "1" "conf in anot
 rb 'PROTECTED_BRANCHES=off' dev;                     say "$RC" "0" "PROTECTED_BRANCHES=off: dev rebases"
 rb 'PROTECTED_BRANCHES=off' feature/offline;         say "$RC" "0" "…and off is no pattern: feature/offline rebases"
 rb '' dev 'FLIGHT_RULES_PROTECTED_BRANCHES=^nothing$'; say "$RC" "0" "the environment wins over the default"
+# `none` is `off`, as every other layer reads it (0.28.0 release review): read as a
+# pattern, it refused fix/none-default.
+rb 'PROTECTED_BRANCHES=none' dev;                    say "$RC" "0" "PROTECTED_BRANCHES=none: dev rebases"
+rb 'PROTECTED_BRANCHES=none' fix/none-default;       say "$RC" "0" "…and none is no pattern: fix/none-default rebases"
+rb '' fix/none-default 'FLIGHT_RULES_PROTECTED_BRANCHES=none'; say "$RC" "0" "…nor in the environment"
 for a in refs/heads/dev heads/dev; do
   d=$(mkrepo); git -C "$d" checkout -q dev; echo own > "$d/own"; git -C "$d" add -A
   git -C "$d" commit -qm "chore: own" --no-verify >/dev/null || die "could not commit on dev"
@@ -1615,6 +1622,71 @@ git -C "$R" commit -q --allow-empty -m "chore: own" || die "could not commit in 
 OUT=$(cd "$R" && git -c pull.rebase=true pull -q 2>&1); RC=$?
 say "$RC" "1" "commits of its own: the rebasing pull is refused"
 say "$(grep -c 'dev IS PROTECTED — REBASE BLOCKED' <<<"$OUT")" "1" "…by the protected box"
+rm -rf "$PQ"
+
+echo "A diverged dev merges its own upstream without a note; nothing else does (0.28.0 release review):"
+# Local merges not pushed yet, and origin/dev moved on: pre-rebase refuses the rebasing
+# pull and prints `git pull --no-rebase`, which the note gate then refused with a route
+# that did not fit. What it brings is already on the shared branch.
+PU=$(cd "$(mktemp -d)" && pwd -P); U="$PU/up"
+git init -q -b main "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one \
+  && git -C "$U" branch dev && git -C "$U" branch other || die "could not build the upstream"
+git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone the upstream"
+R="$PU/r"; git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
+mkdir -p "$R/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.ai/hooks/" || die "could not copy the hooks"
+chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"; git -C "$R" config merge.ff false
+git -C "$R" checkout -q -b dev origin/dev || die "no dev in the clone"
+feature "$R" fix/x dev; git -C "$R" checkout -q dev
+(cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/x >/dev/null 2>&1) || die "could not merge fix/x into dev"
+git -C "$U" checkout -q dev || die "no dev upstream"
+for m in two three; do git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "dev $m" || die "could not advance dev"; done
+OUT=$(cd "$R" && git -c pull.rebase=true pull -q 2>&1); RC=$?
+say "$RC" "1" "the rebasing pull is refused"
+say "$(grep -c 'git pull --no-rebase' <<<"$OUT")" "1" "…with git pull --no-rebase as the route"
+say "$(grep -c 'pre-merge-check note' <<<"$OUT")" "0" "…and no warning of a note it would need"
+OUT=$(cd "$R" && git merge --no-edit origin/dev~1 2>&1); RC=$?
+say "$RC" "1" "a merge of an older origin/dev commit: refused by the note gate"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…with its box"
+git -C "$R" merge --abort 2>/dev/null
+OUT=$(cd "$R" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "0" "the printed route, git pull --no-rebase, lands"
+say "$(git -C "$R" rev-parse -q --verify HEAD^2)" "$(git -C "$R" rev-parse origin/dev)" "…merging origin/dev's tip"
+say "$(grep -c "own upstream, origin/dev" <<<"$OUT")" "1" "…named as dev's own upstream"
+git -C "$U" checkout -q other && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "other two" || die "could not advance other"
+git -C "$R" branch -q --set-upstream-to=origin/other dev 2>/dev/null || { git -C "$R" fetch -q origin && git -C "$R" branch -q --set-upstream-to=origin/other dev; } || die "could not track origin/other"
+OUT=$(cd "$R" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "1" "dev set to track origin/other: pulling it is refused by the note gate"
+say "$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "1" "…with its box"
+git -C "$R" merge --abort 2>/dev/null
+rm -rf "$PU"
+
+echo "A merge whose subject names no branch is named by the branch at the merged commit (0.28.0 release review):"
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+git -C "$QQ" checkout -qb fix/x trunk && echo x > "$QQ/x" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: x" \
+  && git -C "$QQ" checkout -q trunk || die "could not build fix/x"
+OUT=$(cd "$QQ" && git merge -m "feat: land x" fix/x 2>&1); RC=$?
+say "$RC" "0" "git merge -m … fix/x lands"
+say "$(grep -c 'Post-merge to trunk: fix/x' <<<"$OUT")" "1" "…and post-merge names fix/x"
+say "$(grep -c -e 'unknown' -e 'Earlier merges left' <<<"$OUT")" "0" "…not unknown, nor its own branch among earlier merges'"
+rm -rf "$PQ"
+
+echo "A note file the project tracks: info/exclude is not written (0.28.0 release review):"
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks" "$QQ/.claude"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo old > "$QQ/.claude/post-merge-note.md"; echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+for b in fix/a fix/b fix/c; do
+  git -C "$QQ" checkout -qb "$b" trunk && echo "$b" > "$QQ/${b#fix/}" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: $b" \
+    && git -C "$QQ" checkout -q trunk && git -C "$QQ" merge -q --no-edit "$b" >/dev/null 2>&1 || die "could not merge $b"
+done
+say "$(cat "$QQ/.git/info/exclude" 2>/dev/null | grep -cxF '/.claude/post-merge-note.md')" "0" "three merges: no exclude line for a note the project tracks"
 rm -rf "$PQ"
 
 echo
