@@ -60,6 +60,9 @@ read_conf_at_head() {
 
 PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
+# `none` is `off`, as the agent guard, session-start, post-merge and the doctor read it
+# (0.28.0 release review).
+[ "$PR_ONLY_RE" = none ] && PR_ONLY_RE=off
 
 CURRENT_BRANCH=$(git branch --show-current)
 

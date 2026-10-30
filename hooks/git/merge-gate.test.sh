@@ -1689,6 +1689,95 @@ done
 say "$(cat "$QQ/.git/info/exclude" 2>/dev/null | grep -cxF '/.claude/post-merge-note.md')" "0" "three merges: no exclude line for a note the project tracks"
 rm -rf "$PQ"
 
+echo "Both exemptions hold only for git's clean merge (fix review of 0.28.0's release review):"
+# own_up <conflict|clean|union>: a clone whose dev holds a stamped local merge that
+# changed x, and origin/dev moved on — changing x too (conflict), or y (clean); union
+# gives x a union merge driver, so the conflict merges cleanly. Sets PU and R.
+own_up() {
+  PU=$(cd "$(mktemp -d)" && pwd -P); U="$PU/up"
+  git init -q -b main "$U" || die "could not build the upstream"
+  echo base > "$U/x"; [ "$1" = union ] && echo 'x merge=union' > "$U/.gitattributes"
+  git -C "$U" add -A && git -C "$U" -c user.email=t@t.t -c user.name=t commit -qm one && git -C "$U" branch dev || die "could not commit the upstream"
+  git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone"; R="$PU/r"
+  git -C "$R" config user.email t@t.t; git -C "$R" config user.name t; git -C "$R" config merge.ff false
+  mkdir -p "$R/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.ai/hooks/" || die "could not copy the hooks"
+  chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"
+  git -C "$R" checkout -q -b dev origin/dev && git -C "$R" checkout -q -b fix/l dev || die "no dev in the clone"
+  echo local >> "$R/x"; git -C "$R" add -A; git -C "$R" commit -qm "fix: l" >/dev/null || die "could not commit fix/l"
+  git -C "$R" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/l" HEAD
+  git -C "$R" checkout -q dev && (cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/l >/dev/null 2>&1) || die "could not merge fix/l"
+  git -C "$U" checkout -q dev || die "no dev upstream"
+  if [ "$1" = clean ]; then echo y > "$U/y"; else echo upstream >> "$U/x"; fi
+  git -C "$U" add -A && git -C "$U" -c user.email=t@t.t -c user.name=t commit -qm "dev two" || die "could not advance dev"
+}
+own_up conflict
+(cd "$R" && git pull -q --no-rebase --no-edit >/dev/null 2>&1)
+say "$(git -C "$R" rev-parse -q --verify MERGE_HEAD >/dev/null && echo stopped)" "stopped" "a conflicted pull of dev's own upstream stops for the conflict"
+echo resolved > "$R/x"; git -C "$R" add x
+OUT=$(cd "$R" && git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "…and, resolved in place, its commit is refused"
+say "$(grep -c "needs no note when it commits git's clean merge" <<<"$OUT")" "1" "…named as a merge that is not git's clean one"
+say "$(grep -c 'merge the same commit into a branch' <<<"$OUT")" "1" "…with the route for a conflict"
+say "$(grep -c 'Merge of dev' <<<"$OUT")" "0" "…not exempted"
+git -C "$R" merge --abort 2>/dev/null; rm -rf "$PU"
+own_up clean
+git -C "$R" fetch -q origin || die "could not fetch"
+(cd "$R" && git merge -q --no-commit origin/dev >/dev/null 2>&1)
+echo extra > "$R/extra"; git -C "$R" add extra
+OUT=$(cd "$R" && git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "a clean merge of dev's own upstream with something else staged: refused"
+git -C "$R" merge --abort 2>/dev/null
+OUT=$(cd "$R" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "0" "…while the clean pull lands"
+rm -rf "$PU"
+own_up union
+OUT=$(cd "$R" && git pull --no-rebase --no-edit 2>&1); RC=$?
+say "$RC" "0" "a merge driver git honours merges cleanly, and the pull lands"
+say "$(grep -c 'Merge of dev' <<<"$OUT")" "1" "…as dev's own upstream"
+rm -rf "$PU"
+d=$(mkrepo)
+git -C "$d" checkout -q main && echo m > "$d/f" && git -C "$d" commit -qam "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+git -C "$d" checkout -q dev && echo d > "$d/f" && git -C "$d" commit -qam "feat: d" --no-verify >/dev/null || die "could not move dev"
+(cd "$d" && git merge -q --no-edit main >/dev/null 2>&1)
+say "$(git -C "$d" rev-parse -q --verify MERGE_HEAD >/dev/null && echo stopped)" "stopped" "a back-merge of main that conflicts stops for the conflict"
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "…and, resolved in place, its commit is refused"
+say "$(grep -c 'A back-merge of main' <<<"$OUT")" "1" "…named as a back-merge that is not git's clean one"
+say "$(grep -c 'already reviewed' <<<"$OUT")" "0" "…not passed as already reviewed"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
+
+echo "none is off for PR_ONLY_BRANCHES and NOTE_GATED_BRANCHES too (fix review of 0.28.0's release review):"
+rb 'PR_ONLY_BRANCHES=none' fix/none-x; say "$RC" "0" "PR_ONLY_BRANCHES=none: fix/none-x rebases"
+for k in PR_ONLY_BRANCHES NOTE_GATED_BRANCHES; do
+  d=$(mkrepo); conf_on "$d" main "$k=none"
+  git -C "$d" checkout -q -b none-x main && git -C "$d" checkout -q -b fix/q none-x && echo q > "$d/q" && git -C "$d" add -A \
+    && git -C "$d" commit -qm "fix: q" >/dev/null && git -C "$d" checkout -q none-x || die "could not build none-x"
+  OUT=$(cd "$d" && FLIGHT_RULES_PROTECTED_BRANCHES='^(main|none-x)$' git merge --no-edit fix/q 2>&1); RC=$?
+  if [ "$k" = NOTE_GATED_BRANCHES ]; then
+    say "$RC" "0" "$k=none, none-x protected: no note gate, the merge lands"
+  else
+    say "$RC$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")$(grep -c 'PR-ONLY' <<<"$OUT")" "110" "$k=none, none-x protected: not PR-only, so the note gate refuses it, not the PR-only box"
+  fi
+  rm -rf "$d"
+done
+
+echo "The post-merge note never offers to delete a protected branch (fix review of 0.28.0's release review):"
+for how in "-m sync" "--no-edit"; do
+  PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+  git init -q -b main "$QQ" || die "git init failed"
+  git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+  mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$QQ/.ai/flight-rules.conf"
+  cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+  echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+  git -C "$QQ" branch dev && git -C "$QQ" branch old/x || die "could not branch"
+  echo h > "$QQ/h"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "fix: hotfix" || die "could not move main"
+  git -C "$QQ" checkout -q dev && (cd "$QQ" && git merge -q $how main >/dev/null 2>&1) || die "could not back-merge main"
+  say "$(grep -c 'git branch -d old/x' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "1" "git merge $how main: the note is written, listing old/x"
+  say "$(grep -c 'git branch -d main' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "0" "…and not main"
+  rm -rf "$PQ"
+done
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

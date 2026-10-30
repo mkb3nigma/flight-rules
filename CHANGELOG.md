@@ -24,7 +24,16 @@ is derived from `PROTECTED_BRANCHES`. To keep the note gate, set `NOTE_GATED_BRA
 (`^dev$`, say). A PR-only branch's rebase was refused before and still is. A `git pull`
 with `pull.rebase=true` on a branch that is only behind still fast-forwards, and runs
 no hook; on one that has diverged from its upstream, the merge the refusal prints, `git
-pull --no-rebase`, needs no note.
+pull --no-rebase`, needs no note when it merges cleanly.
+
+**A back-merge of `main` that conflicts now needs a note.** A `git merge main` on `dev`
+whose conflict was resolved in place passed as "already reviewed", though the resolution
+was never tested. A clean back-merge passes as before; a conflicted one is merged into a
+branch cut from `dev` instead, tested and stamped there, and merged back — the box says
+so.
+
+**Rules changed**: `rules/git-worktree-workflow.md`. A project that copied it runs
+`/rules-sync` to fold the changes in; one that reads the plugin's copy needs nothing.
 
 **Removed:**
 - `rules/dependency-lockfile.md`. A project that copied it keeps its copy; `/rules-sync`
@@ -49,9 +58,14 @@ either now points at a retired slot.
   branch, read as `commit-msg` reads the pattern, and names the branch even when given
   as `refs/heads/dev` or `heads/dev`. The route it prints is a merge (`git pull
   --no-rebase`), or a rebase of the feature branch. The note gate passes that merge
-  without a note when it brings exactly the tip of `origin/<the branch>`, its upstream:
-  what it brings is already on the shared branch. Before, on a `dev` with local merges
-  not yet pushed, the printed route met a second refusal whose route did not fit.
+  without a note when it is git's clean merge of exactly the tip of `origin/<the
+  branch>`, its upstream: a branch only behind reaches the same content by a
+  fast-forward, with no gate. Before, on a `dev` with local merges not yet pushed, the
+  printed route met a second refusal whose route did not fit.
+- **A conflict resolved in a back-merge landed untested.** The back-merge exemption
+  vouched for the incoming commit, not for what the merge committed. It, and the new
+  own-upstream exemption, now hold only for git's clean merge (`git merge-tree`); the
+  refusal prints the route for a conflict.
 - **A plain `git pull` that only caught up was refused as a merge.** `merge.ff false`
   turns it into a merge commit, and the gates refused it with a route for a feature
   merge, under the title "pre-merge check required". They now name it as a catch-up and print `git merge --abort` and `git pull
@@ -68,10 +82,12 @@ either now points at a retired slot.
   a merge whose message names no branch (`git merge -m …`) is named by the branch at the
   merged commit. Its note file goes in the clone's `info/exclude` once, so it never shows
   as untracked — unless the project tracks it, when it is left alone.
-- **`PROTECTED_BRANCHES=none` was a pattern to the git hooks.** The agent guard,
-  `session-start`, `post-merge` and the doctor read `none` as `off`; `commit-msg`,
-  `pre-rebase` and `reference-transaction` read it as a branch name. They now read it as
-  `off` too.
+- **`none` was a pattern to the git hooks.** The agent guard, `session-start`,
+  `post-merge` and the doctor read `PROTECTED_BRANCHES=none` as `off` (the doctor
+  `PR_ONLY_BRANCHES` and `NOTE_GATED_BRANCHES` too); the git hooks read it as a branch
+  name. They now read it as `off` for all three keys.
+- **The post-merge note offered `git branch -d main`** as just merged after a back-merge
+  of `main`. A protected branch is never listed now.
 - **Unstaging and untracking were refused on a protected branch.** The guard now allows
   `git restore --staged` and `git rm --cached` there, in their plain form only (a short
   list of options that touch no file, plain paths, nothing wrapped around them).

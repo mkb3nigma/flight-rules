@@ -238,10 +238,18 @@ that the logic has exactly one home.
   local `main`, a `MAIN` or `origin/Main`, or a stale `upstream/main` exempts nothing.
   A **merge of the branch's own upstream** on a branch that has diverged from it — `git
   pull --no-rebase` on a `dev` holding local merges not yet pushed, after a pull request
-  merged on the host — passes without a note too: what it brings is already on the shared
-  branch. Only the exact tip of `origin/<this branch>`, set as its upstream, counts; `git
-  pull . <branch>`, `git pull origin <other>` or an older commit of it is gated as usual,
-  and a branch that is only behind is the catch-up above.
+  merged on the host — passes without a note too: a branch only behind reaches the same
+  content by a fast-forward pull, with no gate at all. Only the exact tip of
+  `origin/<this branch>`, set as its upstream, counts; `git pull . <branch>`, `git pull
+  origin <other>` or an older commit of it is gated as usual, and a branch that is only
+  behind is the catch-up above. Both exemptions hold only for **git's clean merge**: the
+  hook compares what the merge commits with `git merge-tree --write-tree` of the two
+  sides, so a conflict resolved in the merge, or anything else staged with it, is gated
+  like any merge — the conflict is resolved on a branch, tested and stamped there, and
+  merged back, and the refusal says so. A merge driver merge-tree honours passes; a merge
+  made with `-X`, a replayed rerere resolution, or git older than 2.38 is gated too. One
+  thing gets through by design: a commit written by hand into `refs/remotes/origin/<x>`
+  — a forged ref, reached only on purpose (#122).
   The same hook refuses the commit that would complete a **squash merge** into a
   PR-only branch, which creates no merge commit and so never fires `pre-merge-commit`.
   **A passing note is not consent.** The agent writes that note itself, so a stamped

@@ -72,9 +72,11 @@ PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHE
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 PROTECTED_RE_CONF="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf_at_head PROTECTED_BRANCHES "$CONF_PATH")}"
 PROTECTED_RE_CONF="${PROTECTED_RE_CONF:-$DEFAULT_PROTECTED}"
-# `none` is `off`, as the agent guard, session-start, post-merge and the doctor read it
-# (0.28.0 release review).
+# `none` is `off`, for every key, as the agent guard, session-start, post-merge and the
+# doctor read it (0.28.0 release review).
 [ "$PROTECTED_RE_CONF" = none ] && PROTECTED_RE_CONF=off
+[ "$PR_ONLY_RE" = none ] && PR_ONLY_RE=off
+[ "$NOTE_GATED_RE" = none ] && NOTE_GATED_RE=off
 
 CURRENT_BRANCH=$(git branch --show-current)
 
@@ -208,6 +210,24 @@ MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
 
 MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 
+# clean_merge: 0 when what this merge commits is exactly git's clean merge of HEAD and
+# the incoming commit. Both exemptions below vouch for the incoming commit, not for a
+# conflict resolved here or anything else staged: either landed, untested, as "no note
+# needed" (fix review of 0.28.0's release review — CLAUDE.md: a conflict is never
+# resolved in the merge into a protected branch). A merge driver merge-tree honours
+# passes; one made with -X, a replayed rerere resolution, or a git older than 2.38 (no
+# --write-tree) reads as not clean, and is gated like any merge. `git write-tree` reads
+# the index git hands this hook, so `commit -a` is judged on what it commits.
+# NOT_CLEAN names the exemption a merge missed this way, for the refusal to say.
+NOT_CLEAN=""
+clean_merge() {
+    local t i
+    t=$(git merge-tree --write-tree HEAD "$MERGE_SHA" 2>/dev/null) || return 1
+    t=$(printf '%s\n' "$t" | head -1)
+    i=$(git write-tree 2>/dev/null) || return 1
+    [ -n "$t" ] && [ "$t" = "$i" ]
+}
+
 # A back-merge — the incoming commit is the tip of a PR-only branch (default main)
 # — needs no note. Everything on that branch arrived through a reviewed pull
 # request, and reconciling it into the integration branch is routine maintenance,
@@ -278,25 +298,31 @@ while read -r ref sha; do
     # command for it: the one it printed, pasted with ^MAIN$, made a local MAIN a
     # reviewed back-merge (0.27.0 release review).
     [ -n "$case_only" ] && { CASE_ONLY="$short"; continue; }
-    echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
-    exit 0
+    if clean_merge; then
+        echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
+        exit 0
+    fi
+    NOT_CLEAN="back-merge of $short"
 done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin)
 
-# A merge of the branch's own upstream, on a branch that has diverged from it — local
-# merges not pushed yet, and the shared branch moved on (a pull request merged on the
-# host) — needs no note either: what it brings is already on the shared branch, which
-# took it through the host's review or the owner's push, and a note on this side could
-# not vouch for that anyway. pre-rebase prints `git pull --no-rebase` for exactly this,
-# and this gate then refused it with a route that did not fit (0.28.0 release review).
-# Only the exact tip of refs/remotes/origin/<this branch>, set as its upstream: `git pull
-# . <branch>` or `git pull origin <other>` is a merge like any other. A branch that is
-# only behind is the catch-up below, which needs no merge commit at all.
+# A clean merge of the branch's own upstream, on a branch that has diverged from it —
+# local merges not pushed yet, and the shared branch moved on (a pull request merged on
+# the host) — needs no note either. A branch only behind reaches the same content by the
+# fast-forward pull the catch-up below prints, with no gate at all, so refusing the
+# diverged form protected nothing; it commits only what clean_merge vouches for.
+# pre-rebase prints `git pull --no-rebase` for exactly this, and this gate then refused
+# it with a route that did not fit (0.28.0 release review). Only the exact tip of
+# refs/remotes/origin/<this branch>, set as its upstream: `git pull . <branch>` or `git
+# pull origin <other>` is a merge like any other.
 _upref=$(git rev-parse -q --symbolic-full-name '@{upstream}' 2>/dev/null) || _upref=""
 if [ "$_upref" = "refs/remotes/origin/$CURRENT_BRANCH" ] \
     && [ "$(git rev-parse -q --verify "$_upref" 2>/dev/null)" = "$MERGE_SHA" ] \
     && ! git merge-base --is-ancestor HEAD "$MERGE_SHA" 2>/dev/null; then
-    echo "✅ Merge of $CURRENT_BRANCH's own upstream, origin/$CURRENT_BRANCH — already on the shared branch, no note needed"
-    exit 0
+    if clean_merge; then
+        echo "✅ Merge of $CURRENT_BRANCH's own upstream, origin/$CURRENT_BRANCH — what a fast-forward would bring, no note needed"
+        exit 0
+    fi
+    NOT_CLEAN="merge of origin/$CURRENT_BRANCH, $CURRENT_BRANCH's own upstream"
 fi
 
 MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
@@ -451,7 +477,19 @@ if [ -n "$OFF_SHORT" ]; then
     box_row "  git commit --no-edit"
     box_row ""
 fi
-if [ -n "$CATCHUP" ]; then
+if [ -n "$NOT_CLEAN" ]; then
+    # A conflict is resolved on a branch, tested and stamped there, then merged back:
+    # the note then vouches for a tip that holds the resolution (CLAUDE.md).
+    box_row "A $NOT_CLEAN"
+    box_row "needs no note when it commits git's clean merge, and this"
+    box_row "one does not: a conflict was resolved here, or something"
+    box_row "else was staged. (A merge made with -X, a replayed rerere"
+    box_row "resolution, or a git older than 2.38 reads the same way.)"
+    box_row "Undo it (below), then merge the same commit into a branch"
+    box_row "cut from $CURRENT_BRANCH, in a worktree: resolve and test it"
+    box_row "there, run /pre-merge-check (or the checks, by hand), and"
+    box_row "merge that branch back."
+elif [ -n "$CATCHUP" ]; then
     box_row "This merge only catches up with"
     box_row "$CATCHUP; merge.ff=false made it a merge commit."
     box_row "Undo it (below), and catch up without one:"

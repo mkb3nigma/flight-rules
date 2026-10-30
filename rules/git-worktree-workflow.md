@@ -61,7 +61,8 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    is advisory
 2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`,
    `hotfix/` — the prefix is what a pull request is routed by (`hotfix/` to `main`, the
-   rest to `{INTEGRATION_BRANCH}`); a branch without one has no route — skill
+   rest to `{INTEGRATION_BRANCH}`); a branch without one is routed only by asking, every
+   time — skill
    (`feature-start` 3; `pr-create` routes on it)
 3. Conventional commit messages using the same prefixes (`hotfix/` branches commit as
    `fix:` — there is no `hotfix:` message prefix) — the prefix says what kind of change

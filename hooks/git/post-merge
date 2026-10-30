@@ -363,7 +363,11 @@ fi
   if [[ -n "$ALL_MERGED" ]]; then
     echo "### ⚠ Branches merged into $(shq "$INTEGRATION_BRANCH") (safe to delete):"
     # Merged straight from origin/<x> with no local <x>, there is nothing to delete.
+    # Never a protected branch: the merged-in side of a back-merge is main, and the note
+    # offered `git branch -d main` as safe to delete — ALL_MERGED filters protected names,
+    # this line did not (fix review of 0.28.0's release review).
     if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]] \
+       && ! printf '%s' "$JUST_MERGED" | grep -qiE -e "$PROTECTED_RE" 2>/dev/null \
        && git show-ref --verify -q "refs/heads/$JUST_MERGED"; then
       note_branch "$JUST_MERGED" just
     fi
