@@ -250,9 +250,13 @@ that the logic has exactly one home.
   with `dev` merged into it, or for an exemption a branch cut from `dev` — tested and
   stamped there, and merged back; the refusal says so. A merge driver merge-tree honours
   passes, and so does `-X` where it resolved nothing; a conflict `-X` resolved, or a
-  replayed rerere resolution, is refused. Where `merge-tree --write-tree` fails — git
-  older than 2.38 has none — the hook cannot tell: the two exemptions are gated, saying
-  why, and a stamped merge goes on as before, with a warning that nothing checked it.
+  replayed rerere resolution, is refused. Histories with no common commit are compared
+  as `git merge --allow-unrelated-histories` merged them. On git older than 2.38, which
+  has no `--write-tree`, the hook cannot tell: the two exemptions are gated, saying
+  why, and a stamped merge goes on as before, with a warning that nothing checked it. On
+  a newer git, a `merge-tree` that fails — a partial clone that cannot fetch an object,
+  say — refuses the merge, quoting git's error and printing both ways on: fix the cause
+  and finish the merge, which checks again, or take the merge to a branch.
   One thing gets through by design: a commit written by hand into
   `refs/remotes/origin/<x>` — a forged ref, reached only on purpose (#122).
   The same hook refuses the commit that would complete a **squash merge** into a

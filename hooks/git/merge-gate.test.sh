@@ -1792,13 +1792,20 @@ say "$RC" "1" "a stamped clean merge with something else staged: refused"
 git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
 
 echo "A git that cannot work out the clean merge (older than 2.38, simulated):"
-# A git whose merge-tree has no --write-tree, as 2.37 and older die on it. Git puts its
-# exec path first on a hook's PATH, so the stand-in goes there, not on PATH.
-OLDGIT=$(cd "$(mktemp -d)" && pwd -P); REALGIT=$(command -v git)
-for f in "$(git --exec-path)"/*; do ln -s "$f" "$OLDGIT/" || die "could not link $f"; done
-rm -f "$OLDGIT/git"
-printf '#!/bin/sh\n[ "$1" = merge-tree ] && [ "$2" = --write-tree ] && { echo "fatal: unknown rev --write-tree" >&2; exit 128; }\nexec "%s" "$@"\n' "$REALGIT" > "$OLDGIT/git"
-chmod +x "$OLDGIT/git"
+# standin <dir> <version|real>: a git whose merge-tree dies on --write-tree, as 2.37 and
+# older do, reporting <version>, or its own with real (an error on a modern git). Git
+# puts its exec path first on a hook's PATH, so the stand-in goes there, not on PATH.
+REALGIT=$(command -v git)
+standin() {
+  for f in "$(git --exec-path)"/*; do ln -s "$f" "$1/" || die "could not link $f"; done
+  rm -f "$1/git"
+  { echo '#!/bin/sh'
+    echo '[ "$1" = merge-tree ] && [ "$2" = --write-tree ] && { echo "fatal: unknown rev --write-tree" >&2; exit 128; }'
+    [ "$2" = real ] || echo "[ \"\$1\" = version ] && { echo 'git version $2'; exit 0; }"
+    echo "exec \"$REALGIT\" \"\$@\""; } > "$1/git"
+  chmod +x "$1/git"
+}
+OLDGIT=$(cd "$(mktemp -d)" && pwd -P); standin "$OLDGIT" 2.37.1
 stamped_conflict
 (cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$OLDGIT" git merge -q --no-edit fix/s >/dev/null 2>&1)
 echo resolved > "$d/f"; git -C "$d" add f
@@ -1814,6 +1821,45 @@ say "$RC" "1" "a clean back-merge of main is gated: git cannot tell it is clean"
 say "$(grep -c 'git cannot tell: git merge-tree --write-tree failed here' <<<"$OUT")" "1" "…and the box says that, not that a conflict was resolved"
 say "$(grep -c 'a conflict was resolved here' <<<"$OUT")" "0" "…blaming no one"
 git -C "$d" merge --abort 2>/dev/null; rm -rf "$d" "$OLDGIT"
+
+echo "A git 2.38 or later that fails to work it out: refused, with git's error (0.28.0 fix review):"
+ERRGIT=$(cd "$(mktemp -d)" && pwd -P); standin "$ERRGIT" real
+d=$(mkrepo); feature "$d" fix/e dev; git -C "$d" checkout -q dev
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$ERRGIT" git merge --no-edit fix/e 2>&1); RC=$?
+say "$RC$(grep -c 'THIS MERGE COULD NOT BE CHECKED' <<<"$OUT")" "11" "a stamped clean merge git failed to check: refused"
+say "$(grep -c 'fatal: unknown rev --write-tree' <<<"$OUT")" "1" "…quoting git's own error"
+say "$(grep -c 'needs git 2.38' <<<"$OUT")" "0" "…not blaming the git version"
+say "$(grep -c 'finish the merge — the check runs again' <<<"$OUT")$(grep -c 'or undo it (below), merge dev into the branch in' <<<"$OUT")" "11" "…offering both ways on"
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "…and, the cause gone, finishing it runs the check again and lands"
+rm -rf "$d"
+d=$(mkrepo)
+git -C "$d" checkout -q main && echo h > "$d/h" && git -C "$d" add -A && git -C "$d" commit -qm "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+git -C "$d" checkout -q dev
+OUT=$(cd "$d" && GIT_EXEC_PATH="$ERRGIT" git merge --no-edit main 2>&1); RC=$?
+say "$RC$(grep -c 'fatal: unknown rev --write-tree' <<<"$OUT")$(grep -c 'a conflict was resolved here' <<<"$OUT")" "110" "a clean back-merge git failed to check: gated, quoting git, blaming no one"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d" "$ERRGIT"
+
+echo "Unrelated histories are checked as git merge was told to merge them (0.28.0 fix review):"
+# unrelated <same|other>: a stamped orphan branch adding f (add/add with dev) or g.
+unrelated() {
+  d=$(mkrepo)
+  git -C "$d" checkout -q --orphan fix/o && git -C "$d" rm -rqf . >/dev/null || die "could not make fix/o"
+  if [ "$1" = same ]; then echo o > "$d/f"; else echo o > "$d/g"; fi
+  git -C "$d" add -A && git -C "$d" commit -qm "fix: o" >/dev/null || die "could not commit fix/o"
+  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/o" HEAD
+  git -C "$d" checkout -q dev
+}
+unrelated other
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --allow-unrelated-histories --no-edit fix/o 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")$(grep -c 'merge-tree' <<<"$OUT")" "010" "a stamped clean merge of an unrelated history lands, checked"
+rm -rf "$d"
+unrelated same
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --allow-unrelated-histories --no-edit fix/o >/dev/null 2>&1)
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c 'THE NOTE DID NOT CHECK THIS MERGE' <<<"$OUT")" "11" "…its add/add conflict resolved in place: refused"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
 
 echo "none is off for PR_ONLY_BRANCHES and NOTE_GATED_BRANCHES too (fix review of 0.28.0's release review):"
 rb 'PR_ONLY_BRANCHES=none' fix/none-x; say "$RC" "0" "PR_ONLY_BRANCHES=none: fix/none-x rebases"

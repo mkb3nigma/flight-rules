@@ -33,7 +33,8 @@ conflicted one is resolved on a branch — `dev` merged into the feature branch,
 into a branch cut from `dev` — tested and stamped there, and merged back; the box says
 so. The check needs **git 2.38 or later** (`git merge-tree --write-tree`): on an older
 git, a back-merge of `main` needs a note, and a stamped merge lands with a warning that
-nothing checked it.
+nothing checked it. On a newer git, a merge the check fails on is refused with git's
+error and both ways on.
 
 **Rules changed**: `rules/git-worktree-workflow.md`. A project that copied it runs
 `/rules-sync` to fold the changes in; one that reads the plugin's copy needs nothing.
