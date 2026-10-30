@@ -27,10 +27,10 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 ## Steps
 
 1. **Check current branch** — the main checkout normally rests on `{INTEGRATION_BRANCH}`;
-   that's fine (worktree creation never commits to it). If the working tree is dirty,
-   stop and ask what to do with the changes.
-2. **Check stashes** — `git stash list`; if any exist, list them and ask whether to
-   proceed or resolve first.
+   that's fine (worktree creation never commits to it). If it has uncommitted edits,
+   say in one line that they stay there and do not come into the new worktree, and go
+   on: edits there are usually work begun on the wrong branch.
+2. *Retired (#119); numbered so later steps keep theirs.*
 3. **Validate the branch name** — ask if not provided; verify the prefix.
 4. **Sync the base from origin — non-negotiable.**
    - `git fetch origin` first, **always**. New branches derive from

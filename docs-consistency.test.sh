@@ -367,7 +367,6 @@ pre-merge-check 1 test suite
 pre-merge-check 3 E2E
 pre-merge-check 8 Conventional
 pre-merge-check 9 Single-purpose
-pre-merge-check 16 Commit-count
 pre-merge-check 21 checks started'
 REFS=$(grep -o -E '`[a-z-]+` [0-9]+(–[0-9]+)?' rules/*.md | sed -E 's/^[^:]*://; s/`//g; s/–/ /' \
   | awk '{print $1, $2; if ($3 != "") print $1, $3}' | sort -u)
