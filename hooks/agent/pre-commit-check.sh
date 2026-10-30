@@ -189,13 +189,13 @@ is_destructive() {
   # `git checkout <rev> -- <path>` overwrites the path from <rev>; `git switch
   # --discard-changes`/`-f` throws local edits away; `git rebase` rewrites the
   # branch in place (its --abort/--quit/--continue are the way OUT of one and stay
-  # allowed); `git stash drop|clear` deletes the only copy of stashed work.
+  # allowed). Not `git stash drop|clear`: a stash belongs to the repository, not to the
+  # branch, so standing on a protected one makes a drop no riskier (#118).
   [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+[^[:space:]-][^[:space:]]*[[:space:]]+--${E} ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+.*(--discard-changes|--force|-[a-zA-Z]*f[a-zA-Z]*)${E} ]] && return 0
   if [[ "$1" =~ ${B}git[[:space:]]+rebase${E} ]]; then
     [[ "$1" =~ ${B}git[[:space:]]+rebase[[:space:]]+.*--(abort|quit|continue|skip)${E} ]] || return 0
   fi
-  [[ "$1" =~ ${B}git[[:space:]]+stash[[:space:]]+(drop|clear)${E} ]] && return 0
   return 1
 }
 
