@@ -242,14 +242,19 @@ that the logic has exactly one home.
   content by a fast-forward pull, with no gate at all. Only the exact tip of
   `origin/<this branch>`, set as its upstream, counts; `git pull . <branch>`, `git pull
   origin <other>` or an older commit of it is gated as usual, and a branch that is only
-  behind is the catch-up above. Both exemptions hold only for **git's clean merge**: the
-  hook compares what the merge commits with `git merge-tree --write-tree` of the two
-  sides, so a conflict resolved in the merge, or anything else staged with it, is gated
-  like any merge — the conflict is resolved on a branch, tested and stamped there, and
-  merged back, and the refusal says so. A merge driver merge-tree honours passes; a merge
-  made with `-X`, a replayed rerere resolution, or git older than 2.38 is gated too. One
-  thing gets through by design: a commit written by hand into `refs/remotes/origin/<x>`
-  — a forged ref, reached only on purpose (#122).
+  behind is the catch-up above. Both exemptions, and a passing note, hold only for
+  **git's clean merge**: the hook compares what the merge commits with `git merge-tree
+  --write-tree` of the two sides, so a conflict resolved in the merge, or anything else
+  staged with it, is refused — the note vouches for the branch's tip, which never held
+  that resolution. The conflict is resolved on a branch instead — the feature branch,
+  with `dev` merged into it, or for an exemption a branch cut from `dev` — tested and
+  stamped there, and merged back; the refusal says so. A merge driver merge-tree honours
+  passes, and so does `-X` where it resolved nothing; a conflict `-X` resolved, or a
+  replayed rerere resolution, is refused. Where `merge-tree --write-tree` fails — git
+  older than 2.38 has none — the hook cannot tell: the two exemptions are gated, saying
+  why, and a stamped merge goes on as before, with a warning that nothing checked it.
+  One thing gets through by design: a commit written by hand into
+  `refs/remotes/origin/<x>` — a forged ref, reached only on purpose (#122).
   The same hook refuses the commit that would complete a **squash merge** into a
   PR-only branch, which creates no merge commit and so never fires `pre-merge-commit`.
   **A passing note is not consent.** The agent writes that note itself, so a stamped

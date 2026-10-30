@@ -26,11 +26,14 @@ with `pull.rebase=true` on a branch that is only behind still fast-forwards, and
 no hook; on one that has diverged from its upstream, the merge the refusal prints, `git
 pull --no-rebase`, needs no note when it merges cleanly.
 
-**A back-merge of `main` that conflicts now needs a note.** A `git merge main` on `dev`
-whose conflict was resolved in place passed as "already reviewed", though the resolution
-was never tested. A clean back-merge passes as before; a conflicted one is merged into a
-branch cut from `dev` instead, tested and stamped there, and merged back — the box says
-so.
+**A merge into `dev` whose conflict was resolved in place is refused now, stamped or
+not.** A stamped branch passed as "verified", and a `git merge main` as "already
+reviewed", though nothing tested the resolution. A clean merge passes as before. A
+conflicted one is resolved on a branch — `dev` merged into the feature branch, or `main`
+into a branch cut from `dev` — tested and stamped there, and merged back; the box says
+so. The check needs **git 2.38 or later** (`git merge-tree --write-tree`): on an older
+git, a back-merge of `main` needs a note, and a stamped merge lands with a warning that
+nothing checked it.
 
 **Rules changed**: `rules/git-worktree-workflow.md`. A project that copied it runs
 `/rules-sync` to fold the changes in; one that reads the plugin's copy needs nothing.
@@ -62,10 +65,10 @@ either now points at a retired slot.
   branch>`, its upstream: a branch only behind reaches the same content by a
   fast-forward, with no gate. Before, on a `dev` with local merges not yet pushed, the
   printed route met a second refusal whose route did not fit.
-- **A conflict resolved in a back-merge landed untested.** The back-merge exemption
-  vouched for the incoming commit, not for what the merge committed. It, and the new
-  own-upstream exemption, now hold only for git's clean merge (`git merge-tree`); the
-  refusal prints the route for a conflict.
+- **A conflict resolved in the merge into `dev` landed untested.** A passing note and
+  the back-merge exemption vouched for the incoming commit, not for what the merge
+  committed. They, and the new own-upstream exemption, now hold only for git's clean
+  merge (`git merge-tree`); the refusal prints the route for a conflict.
 - **A plain `git pull` that only caught up was refused as a merge.** `merge.ff false`
   turns it into a merge commit, and the gates refused it with a route for a feature
   merge, under the title "pre-merge check required". They now name it as a catch-up and print `git merge --abort` and `git pull

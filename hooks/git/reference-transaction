@@ -125,8 +125,7 @@ while read -r _old new ref; do
         [ -z "$PR_ONLY_RE" ] && PR_ONLY_RE=$(read_conf_from HEAD PR_ONLY_BRANCHES)
         PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
     fi
-    # `none` is `off`, as the agent guard, session-start, post-merge and the doctor read
-    # it (0.28.0 release review).
+    # `none` is `off`, as the doctor reads it (0.28.0 release review).
     [ "$PR_ONLY_RE" = none ] && PR_ONLY_RE=off
     [ "$PR_ONLY_RE" = "off" ] && continue
 

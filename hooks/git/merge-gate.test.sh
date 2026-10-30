@@ -1747,6 +1747,74 @@ say "$(grep -c 'A back-merge of main' <<<"$OUT")" "1" "…named as a back-merge 
 say "$(grep -c 'already reviewed' <<<"$OUT")" "0" "…not passed as already reviewed"
 git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
 
+d=$(mkrepo)
+git -C "$d" checkout -q main && echo h > "$d/h" && git -C "$d" add -A && git -C "$d" commit -qm "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+git -C "$d" checkout -q dev && echo d > "$d/f" && git -C "$d" commit -qam "feat: d" --no-verify >/dev/null || die "could not move dev"
+OUT=$(cd "$d" && git merge -X ours --no-edit main 2>&1); RC=$?
+say "$RC$(grep -c 'already reviewed' <<<"$OUT")" "01" "a back-merge with -X that resolved nothing is git's clean merge, and passes"
+rm -rf "$d"
+
+echo "A passing note holds only for git's clean merge too (0.28.0 fix review):"
+# stamped_conflict: dev and a stamped fix/s both changed f since they split. Sets d.
+stamped_conflict() {
+  d=$(mkrepo)
+  git -C "$d" checkout -q -b fix/s dev && echo s > "$d/f" && git -C "$d" commit -qam "fix: s" >/dev/null || die "could not commit fix/s"
+  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/s" HEAD
+  git -C "$d" checkout -q dev && echo d > "$d/f" && git -C "$d" commit -qam "feat: d" --no-verify >/dev/null || die "could not move dev"
+}
+stamped_conflict
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/s >/dev/null 2>&1)
+say "$(git -C "$d" rev-parse -q --verify MERGE_HEAD >/dev/null && echo stopped)" "stopped" "a stamped branch that conflicts with dev stops for the conflict"
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "…and, resolved in the merge into dev, its commit is refused"
+say "$(grep -c 'THE NOTE DID NOT CHECK THIS MERGE' <<<"$OUT")" "1" "…named as a merge the note did not check"
+say "$(grep -c 'merge dev into the branch' <<<"$OUT")" "1" "…with the route: dev merged into the branch"
+say "$(grep -c "hooks/README.md → commit-msg has the" <<<"$OUT")" "1" "…and the stamp a person working alone records"
+say "$(grep -c 'Pre-merge check verified' <<<"$OUT")" "0" "…not passed as verified"
+git -C "$d" merge --abort 2>/dev/null
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -X theirs --no-edit fix/s 2>&1); RC=$?
+say "$RC$(grep -c 'THE NOTE DID NOT CHECK THIS MERGE' <<<"$OUT")" "11" "a conflict -X resolved in the merge into dev: refused"
+git -C "$d" merge --abort 2>/dev/null
+# The route the box prints, taken: dev merged into the branch, resolved and stamped there.
+git -C "$d" checkout -q fix/s && (cd "$d" && git merge -q --no-edit dev >/dev/null 2>&1)
+echo resolved > "$d/f"; git -C "$d" add f; git -C "$d" commit -q --no-edit >/dev/null 2>&1 || die "could not resolve on fix/s"
+git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/s" HEAD
+git -C "$d" checkout -q dev
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit fix/s 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "…resolved on the branch and stamped there, it lands"
+say "$(grep -c 'merge-tree --write-tree failed' <<<"$OUT")" "0" "…with no warning"
+feature "$d" fix/t dev; git -C "$d" checkout -q dev
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-commit fix/t >/dev/null 2>&1)
+echo extra > "$d/extra"; git -C "$d" add extra
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit 2>&1); RC=$?
+say "$RC" "1" "a stamped clean merge with something else staged: refused"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d"
+
+echo "A git that cannot work out the clean merge (older than 2.38, simulated):"
+# A git whose merge-tree has no --write-tree, as 2.37 and older die on it. Git puts its
+# exec path first on a hook's PATH, so the stand-in goes there, not on PATH.
+OLDGIT=$(cd "$(mktemp -d)" && pwd -P); REALGIT=$(command -v git)
+for f in "$(git --exec-path)"/*; do ln -s "$f" "$OLDGIT/" || die "could not link $f"; done
+rm -f "$OLDGIT/git"
+printf '#!/bin/sh\n[ "$1" = merge-tree ] && [ "$2" = --write-tree ] && { echo "fatal: unknown rev --write-tree" >&2; exit 128; }\nexec "%s" "$@"\n' "$REALGIT" > "$OLDGIT/git"
+chmod +x "$OLDGIT/git"
+stamped_conflict
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$OLDGIT" git merge -q --no-edit fix/s >/dev/null 2>&1)
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$OLDGIT" git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "a stamped merge resolved in place lands, as before 0.28.0"
+say "$(grep -c 'merge-tree --write-tree failed here (it needs git 2.38 or later)' <<<"$OUT")" "1" "…saying nothing checked it"
+rm -rf "$d"
+d=$(mkrepo)
+git -C "$d" checkout -q main && echo h > "$d/h" && git -C "$d" add -A && git -C "$d" commit -qm "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+git -C "$d" checkout -q dev
+OUT=$(cd "$d" && GIT_EXEC_PATH="$OLDGIT" git merge --no-edit main 2>&1); RC=$?
+say "$RC" "1" "a clean back-merge of main is gated: git cannot tell it is clean"
+say "$(grep -c 'git cannot tell: git merge-tree --write-tree failed here' <<<"$OUT")" "1" "…and the box says that, not that a conflict was resolved"
+say "$(grep -c 'a conflict was resolved here' <<<"$OUT")" "0" "…blaming no one"
+git -C "$d" merge --abort 2>/dev/null; rm -rf "$d" "$OLDGIT"
+
 echo "none is off for PR_ONLY_BRANCHES and NOTE_GATED_BRANCHES too (fix review of 0.28.0's release review):"
 rb 'PR_ONLY_BRANCHES=none' fix/none-x; say "$RC" "0" "PR_ONLY_BRANCHES=none: fix/none-x rebases"
 for k in PR_ONLY_BRANCHES NOTE_GATED_BRANCHES; do

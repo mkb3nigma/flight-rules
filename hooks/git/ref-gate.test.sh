@@ -211,6 +211,13 @@ PR_ONLY_BRANCHES=^main\$"                                                      a
 # release review).
 conf_case "PROTECTED_BRANCHES=none is off here too"  "PROTECTED_BRANCHES=none" allowed
 
+# …and PR_ONLY_BRANCHES=none is off, not a pattern: read as one it matches none-x
+# (0.28.0 fix review).
+d=$(make_repo "$(printf 'PR_ONLY_BRANCHES=none\nPROTECTED_BRANCHES=^(main|none-x)$')" armed)
+git -C "$d" branch none-x main && git -C "$d" push -q origin none-x 2>/dev/null || die "could not push none-x"
+git -C "$d" branch -f none-x feature/x >/dev/null 2>&1
+say "$(git -C "$d" rev-parse none-x)" "$(git -C "$d" rev-parse feature/x)" "PR_ONLY_BRANCHES=none: none-x moves off its upstream"
+
 conf_case "PR_ONLY_BRANCHES=off disables the gate" "PR_ONLY_BRANCHES=off"      allowed
 conf_case "a conf naming another branch"           "PR_ONLY_BRANCHES=^nope\$"  allowed
 conf_case "env override wins"                      "env:^nothing\$"            allowed
