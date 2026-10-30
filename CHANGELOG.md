@@ -4,6 +4,98 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.28.0 — 2026-10-30
+
+A release that takes away more than it adds. Each refusal, step and rule was
+re-checked against what flight-rules is for. What had no failure behind it is gone,
+what was refused for no reason is allowed, and what a slip could still get through is
+closed.
+
+### Upgrading
+
+**Git hooks changed** — `commit-msg`, `pre-merge-commit`, `pre-rebase`, `post-merge` and
+`install.sh` — so sync them, as for 0.27.0. The agent guard arrives with the plugin.
+
+**`pre-rebase` now refuses a rebase of every protected branch**, not only a PR-only one
+(#118). A project that rebases a protected branch on purpose — its `dev`, say — takes it
+out of `PROTECTED_BRANCHES`. A `git pull` with `pull.rebase=true` on a branch that is
+only behind still fast-forwards, and runs no hook.
+
+**Removed:**
+- `rules/dependency-lockfile.md`. A project that copied it keeps its copy; `/rules-sync`
+  lists it as local-only.
+- `/upstream-check` from the plugin. It checks the sources flight-rules adapts from, so it
+  maintains this repo only, and lives here.
+- `CLEAR_AI_CONTEXT`. Set, it is ignored: `post-merge` deletes no conversations.
+
+**A project that copied `/dg` or `/pr-create` into `.ai/skills/`** copies the files now
+beside them: `dg/pre-review-cli.md`, `dg/comic-page.md`, `pr-create/stacked-prs.md` and
+`pr-create/release-pr.md`. `/rules-sync` names each one, with its `cp` command. Plugin
+users need do nothing.
+
+**Retired numbers**: `/feature-start` step 2 and `/pre-merge-check` item 16 are retired
+and keep their numbers, so the steps after them do too. A project extension that cites
+either now points at a retired slot.
+
+### Fixed
+
+- **A rebase of `dev` by hand was refused by nothing** (#118). The agent guard refused
+  it, but `pre-rebase` covered PR-only branches only. It now refuses any protected
+  branch, read as `commit-msg` reads the pattern, and names the branch even when given
+  as `refs/heads/dev` or `heads/dev`. The route it prints is a merge (`git pull
+  --no-rebase`), or a rebase of the feature branch.
+- **A plain `git pull` that only caught up was refused as a merge.** `merge.ff false`
+  turns it into a merge commit, and the gates refused it with a route for a feature
+  merge. They now name it as a catch-up and print `git merge --abort` and `git pull
+  --ff-only`. `pull.ff` is not the fix: with it set, `git pull . <branch>` fast-forwards
+  the integration branch past the note gate.
+- **The note gate's route needed an assistant.** It named only `/pre-merge-check`; it
+  now also says what a developer working alone does: run the checks, then record the
+  note (`hooks/README.md` has the command).
+- **`post-merge` repeated everything on every merge and pull.** After a feature merge
+  it prints what that merge left — its worktree, what runs from it, its branch — and one
+  line counting what earlier merges left. A pull, a fast-forward or a back-merge prints
+  nothing. A back-merge of a released branch not called `main` is recognised too. Its
+  note file goes in the clone's `info/exclude`, so it never shows as untracked.
+- **Unstaging and untracking were refused on a protected branch.** The guard now allows
+  `git restore --staged` and `git rm --cached` there, in their plain form only (a short
+  list of options that touch no file, plain paths, nothing wrapped around them).
+- **Dropping a stash was refused on a protected branch, and nowhere else** (#118). A
+  stash belongs to the repository, not the branch. The guard no longer refuses it;
+  discarding work an assistant did not make still needs a person's yes
+  (`engineering-principles.md` → Stops).
+- **`/feature-start` pushed to a protected branch.** When `main` held commits the
+  integration branch lacked, it ran the fast-forward push itself. It now prints it for
+  the person.
+- **`commit-msg`'s "who asked" box** has a line for a person merging their own branch.
+
+### Changed
+
+- **Skills stop less.** `/feature-start` notes uncommitted edits in the main checkout in
+  one line and goes on, instead of stopping; it no longer stops on a stash. `/pre-merge-check`
+  no longer warns above ~20 commits. None had a failure behind it (#119).
+- **Skills load less.** What only some runs read now sits in a file beside the skill:
+  `/dg`'s contract for a wired pre-review CLI and its comic page, and `/pr-create`'s
+  stacked PRs and release steps. A feature PR's `/pr-create` loads 968 words, down from
+  2,000; `/dg` loads 3,517, down from 4,168, plus 513 when a wired CLI runs.
+- **`/pre-merge-check`**: item 4 type-checks the destination in a detached worktree;
+  item 21 stops what the checks or this session started, and names — does not stop —
+  anything else.
+- **`rules/git-worktree-workflow.md`**: a revert is made on a branch cut from the
+  branch being reverted, not in place; a merge into the integration branch is never
+  made from a worktree, while merging it into a feature branch belongs there; Required
+  8 matches `/feature-start` step 4.
+
+### Changed — this repo
+
+- **`MISSION.md`** says what flight-rules is for, and five questions every change to it
+  answers. `CLAUDE.md` imports it, and `AGENTS.md` and `GEMINI.md` point other
+  assistants at it. It loads only for changes to flight-rules, never in an adopting
+  project. `/dg` asks its questions of every change here.
+- `CLAUDE.md` records the owner's standing OK for the assistant to merge a stamped
+  branch into `dev`; `main` still moves only through the release PR.
+- CI's syntax check fails on any broken file, not only on the last one it checked.
+
 ## 0.27.0 — 2026-10-24
 
 ### Upgrading
