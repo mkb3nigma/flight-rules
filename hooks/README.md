@@ -225,8 +225,9 @@ that the logic has exactly one home.
   describes a route for a developer working without an assistant: run the project's
   checks — its tests at the least — then record what ran on the branch's tip and finish
   the merge the refusal left in progress:
-  `git notes --ref=pre-merge-check add -m "passed: <date> tree:$(git rev-parse '<branch>^{tree}')" -m 'ran: <what you ran>' <branch>`
-  then `FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit`. The box describes it rather than
+  `git notes --ref=pre-merge-check add -f -m "passed: <date> tree:$(git rev-parse '<branch>^{tree}')" -m 'ran: <what you ran>' <branch>`
+  then `FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit` (`-f` replaces a note already
+  there, as on a branch stamped before notes carried their evidence). The box describes it rather than
   printing it ready to paste: an assistant reads the box too, and only running the
   check may write its note (`engineering-principles.md`, Stops). This check used to live in
   `pre-merge-commit` and was a **silent no-op**:

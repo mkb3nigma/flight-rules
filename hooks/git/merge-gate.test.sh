@@ -1560,8 +1560,10 @@ say "$(grep -c 'hooks/README.md → commit-msg' <<<"$OUT")" "1" "…pointing at 
 say "$(grep -c "(flight-rules'" <<<"$OUT")" "1" "…in flight-rules' README, which a copy-in project does not have (0.28.0 release review)"
 say "$(grep -c -e 'git notes' -e "$(git -C "$R" rev-parse --short fix/x)" <<<"$OUT")" "0" "…not printing it ready to paste: an assistant reads the box"
 say "$(grep -c 'An assistant runs' <<<"$OUT")" "1" "…and says an assistant does not take it"
-# The README's command, run as a person would.
-git -C "$R" notes --ref=pre-merge-check add -m "passed: 2026-10-31T00:00:00Z tree:$(git -C "$R" rev-parse 'fix/x^{tree}')" \
+# The README's command, run as a person would — over a bare note, as every branch stamped
+# before notes carried their evidence holds one: without -f it failed there (fix review, N-D1).
+git -C "$R" notes --ref=pre-merge-check add -m "passed: 2026-10-01T00:00:00Z branch:fix/x" fix/x || die "could not write the old note"
+git -C "$R" notes --ref=pre-merge-check add -f -m "passed: 2026-10-31T00:00:00Z tree:$(git -C "$R" rev-parse 'fix/x^{tree}')" \
   -m 'ran: the tests, by hand' fix/x || die "could not write the note"
 (cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit -q --no-edit >/dev/null 2>&1); RC=$?
 say "$RC" "0" "…and the route it prints finishes the merge"
@@ -1931,9 +1933,18 @@ ev() {
 ev -m "passed: 2026-10-31T00:00:00Z branch:feature/e"
 say "$RC" "1" "a bare passed: note, as written before: refused"
 say "$(grep -c 'THE NOTE DOES NOT SHOW THE CHECK' <<<"$OUT")" "1" "…saying the note does not show the check"
-say "$(grep -c 'it names no tree: it checked' <<<"$OUT")" "1" "…and what it lacks"
+say "$(grep -c 'its passed: line has no tree:<hash>' <<<"$OUT")" "1" "…and what it lacks"
 say "$(grep -c '/pre-merge-check again' <<<"$OUT")" "1" "…with the route"
 say "$(grep -c 'Working without an assistant' <<<"$OUT")" "1" "…and the one for a person working alone"
+# Typed by hand, a tree comes short, in capitals or after a space: refused, and named as
+# a tree that is not a full hash — not as "no tree" (fix review, N-G1). A literal tree
+# stands in: the cause is decided before the tree is compared.
+for t in "tree:abc123def456" "tree:$(printf 'A%.0s' $(seq 40))" "tree: $(printf 'a%.0s' $(seq 40))"; do
+  ev -m "passed: 2026-10-31T00:00:00Z branch:feature/e $t" -m "ran: ./test.sh → exit 0, 3 passed"
+  say "$RC" "1" "passed: … $(printf '%.18s' "$t")…: refused"
+  say "$(grep -c 'its tree: is not a full, lowercase tree hash' <<<"$OUT")" "1" "…named as not a full tree hash"
+  say "$(grep -c "git rev-parse '<branch>^{tree}'" <<<"$OUT")" "1" "…and where the full one comes from"
+done
 ev -m "passed: 2026-10-31T00:00:00Z branch:feature/e tree:$(printf '%040d' 0)" -m "ran: ./test.sh → exit 0, 3 passed"
 say "$RC" "1" "a note naming another tree: refused"
 say "$(grep -c "its tree: is 000000000000, not this commit's" <<<"$OUT")" "1" "…saying whose tree it names"

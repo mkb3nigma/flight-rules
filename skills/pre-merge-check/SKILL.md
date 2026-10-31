@@ -175,11 +175,13 @@ green to a human and red to CI — then:
   tests ran.
 - Clean → `Result: ✅ READY TO MERGE` and stamp — the tree it checked, and one `ran:` per
   command run, with its exit status and last line of output, as the table has them. The
-  merge gate refuses a note without both (#107):
+  merge gate refuses a note without both (#107). Each `ran:` goes in single quotes, so a
+  `"`, `$` or backtick in a command or its output is written as it is (a `'` in it is
+  written `'\''`):
   ```bash
   git notes --ref=pre-merge-check add -f \
     -m "passed: $(date -u +%Y-%m-%dT%H:%M:%SZ) branch:$(git branch --show-current) tree:$(git rev-parse 'HEAD^{tree}')" \
-    -m "ran: <command> → exit 0, <last line>" \
+    -m 'ran: <command> → exit 0, <last line>' \
     HEAD
   ```
 
