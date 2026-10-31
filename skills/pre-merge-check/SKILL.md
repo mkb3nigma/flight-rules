@@ -168,9 +168,19 @@ status and its last line of output, so "passed" is evidence, not a claim. The tw
 disagree: a runner printing "402 passed" above a summary line while exiting 1 reads
 green to a human and red to CI — then:
 - Any ❌ → `Result: NOT READY` — do NOT stamp.
-- Clean → `Result: ✅ READY TO MERGE` and stamp:
+- `git status --porcelain` prints anything → a ⚠️ row naming the files: *uncommitted, not
+  reviewed*. The checks read `git diff <dest>...HEAD` and the stamp vouches for the
+  commit alone, but the tests ran with these edits on disk — say so; commit them and run
+  again if they belong to the branch. Advisory: no hook sees what was on disk when the
+  tests ran.
+- Clean → `Result: ✅ READY TO MERGE` and stamp — the tree it checked, and one `ran:` per
+  command run, with its exit status and last line of output, as the table has them. The
+  merge gate refuses a note without both (#107):
   ```bash
-  git notes --ref=pre-merge-check add -f -m "passed: $(date -u +%Y-%m-%dT%H:%M:%SZ) branch:$(git branch --show-current)" HEAD
+  git notes --ref=pre-merge-check add -f \
+    -m "passed: $(date -u +%Y-%m-%dT%H:%M:%SZ) branch:$(git branch --show-current) tree:$(git rev-parse 'HEAD^{tree}')" \
+    -m "ran: <command> → exit 0, <last line>" \
+    HEAD
   ```
 
 Always end with: this command does not merge or push; warnings are non-blocking but

@@ -38,6 +38,14 @@ mkrepo() {
   printf '%s' "$d"
 }
 
+# stamp <repo> <rev> <branch>: the note /pre-merge-check writes — passed, the tree the
+# check ran on and what ran (#107). A bare passed: is refused; cases below say so.
+stamp() {
+  git -C "$1" notes --ref=pre-merge-check add -f \
+    -m "passed: 2026-10-31T00:00:00Z branch:$3 tree:$(git -C "$1" rev-parse "$2^{tree}")" \
+    -m "ran: ./test.sh → exit 0, 3 passed" "$2"
+}
+
 echo "Note gate (merging a feature branch into dev):"
 
 # 1. Unstamped merge into dev must be BLOCKED.
@@ -57,7 +65,7 @@ rm -rf "$D"
 D=$(mkrepo)
 git -C "$D" checkout -q -b feature/x dev
 echo change > "$D/f2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: x"
-git -C "$D" notes --ref=pre-merge-check add -f -m "passed: 2026-08-01T00:00:00Z branch:feature/x" HEAD
+stamp "$D" HEAD feature/x
 git -C "$D" checkout -q dev
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-ff feature/x -m "merge" >/dev/null 2>&1
 say "$?" "0" "stamped AND authorised merge into dev is allowed"
@@ -625,7 +633,7 @@ mkauth() {  # $1 = extra conf line; echoes the repo dir, on dev, feature/x stamp
   git -C "$d" checkout -qb feature/x 2>/dev/null
   echo x > "$d/x.txt"; git -C "$d" add -A >/dev/null 2>&1
   git -C "$d" commit -qm "feature: x" >/dev/null 2>&1
-  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-09-10T00:00:00Z branch:feature/x" HEAD >/dev/null 2>&1
+  stamp "$d" HEAD feature/x >/dev/null 2>&1
   git -C "$d" checkout -q dev 2>/dev/null
   printf '%s' "$d"
 }
@@ -856,7 +864,7 @@ route() { grep -A1 -F "FLIGHT_RULES_$2='<pattern>' \\" <<<"$1" | head -2 | sed -
 feature() {   # <repo> <name> <base>: a one-commit branch off <base>, stamped
   git -C "$1" checkout -q -b "$2" "$3" || die "could not branch $2"
   echo "$2" > "$1/$(echo "$2" | tr / _)"; git -C "$1" add -A; git -C "$1" commit -qm "feature: $2" >/dev/null || die "could not commit on $2"
-  git -C "$1" notes --ref=pre-merge-check add -f -m "passed: 2026-10-22T00:00:00Z branch:$2" HEAD
+  stamp "$1" HEAD $2
 }
 
 # pre-merge-commit: a broken PR_ONLY_BRANCHES let every local merge through.
@@ -910,7 +918,7 @@ for KEY in NOTE_GATED_BRANCHES PROTECTED_BRANCHES; do
   say "$RC" "1" "$KEY that does not compile: an unstamped merge into dev is refused"
   say "$(grep -cF "Gated because $KEY (^(dev)" <<<"$OUT")" "1" "…saying the pattern is why"
   git -C "$D" merge --abort 2>/dev/null
-  git -C "$D" notes --ref=pre-merge-check add -f -m "passed: 2026-10-22T00:00:00Z branch:feature/n" feature/n
+  stamp "$D" feature/n feature/n
   (cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/n -m merge) >/dev/null 2>&1
   say "$?" "0" "…while a stamped, authorised one lands as usual"
   # Every branch is gated, so a sync merge of dev into a feature branch is refused too,
@@ -983,7 +991,7 @@ git -C "$D" fetch -q origin
 git -C "$D" checkout -q -b fix/conf dev
 printf 'PR_ONLY_BRANCHES=^main$\n' > "$D/.ai/flight-rules.conf"
 git -C "$D" commit -qam "fix: conf" >/dev/null || die "could not commit the conf fix"
-git -C "$D" notes --ref=pre-merge-check add -f -m "passed: 2026-10-23T00:00:00Z branch:fix/conf" HEAD
+stamp "$D" HEAD fix/conf
 git -C "$D" checkout -q dev
 OUT=$(cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff fix/conf -m "Merge fix/conf" 2>&1); RC=$?
 say "$RC" "1" "e2e: the owner's merge of the fix into dev is refused by the broken pattern"
@@ -1553,7 +1561,8 @@ say "$(grep -c "(flight-rules'" <<<"$OUT")" "1" "…in flight-rules' README, whi
 say "$(grep -c -e 'git notes' -e "$(git -C "$R" rev-parse --short fix/x)" <<<"$OUT")" "0" "…not printing it ready to paste: an assistant reads the box"
 say "$(grep -c 'An assistant runs' <<<"$OUT")" "1" "…and says an assistant does not take it"
 # The README's command, run as a person would.
-git -C "$R" notes --ref=pre-merge-check add -m "passed: ran the tests by hand" fix/x || die "could not write the note"
+git -C "$R" notes --ref=pre-merge-check add -m "passed: 2026-10-31T00:00:00Z tree:$(git -C "$R" rev-parse 'fix/x^{tree}')" \
+  -m 'ran: the tests, by hand' fix/x || die "could not write the note"
 (cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git commit -q --no-edit >/dev/null 2>&1); RC=$?
 say "$RC" "0" "…and the route it prints finishes the merge"
 say "$(git -C "$R" rev-parse dev^2)" "$(git -C "$R" rev-parse fix/x)" "…with fix/x merged into dev"
@@ -1704,7 +1713,7 @@ own_up() {
   chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"
   git -C "$R" checkout -q -b dev origin/dev && git -C "$R" checkout -q -b fix/l dev || die "no dev in the clone"
   echo local >> "$R/x"; git -C "$R" add -A; git -C "$R" commit -qm "fix: l" >/dev/null || die "could not commit fix/l"
-  git -C "$R" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/l" HEAD
+  stamp "$R" HEAD fix/l
   git -C "$R" checkout -q dev && (cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/l >/dev/null 2>&1) || die "could not merge fix/l"
   git -C "$U" checkout -q dev || die "no dev upstream"
   if [ "$1" = clean ]; then echo y > "$U/y"; else echo upstream >> "$U/x"; fi
@@ -1759,7 +1768,7 @@ echo "A passing note holds only for git's clean merge too (0.28.0 fix review):"
 stamped_conflict() {
   d=$(mkrepo)
   git -C "$d" checkout -q -b fix/s dev && echo s > "$d/f" && git -C "$d" commit -qam "fix: s" >/dev/null || die "could not commit fix/s"
-  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/s" HEAD
+  stamp "$d" HEAD fix/s
   git -C "$d" checkout -q dev && echo d > "$d/f" && git -C "$d" commit -qam "feat: d" --no-verify >/dev/null || die "could not move dev"
 }
 stamped_conflict
@@ -1779,7 +1788,7 @@ git -C "$d" merge --abort 2>/dev/null
 # The route the box prints, taken: dev merged into the branch, resolved and stamped there.
 git -C "$d" checkout -q fix/s && (cd "$d" && git merge -q --no-edit dev >/dev/null 2>&1)
 echo resolved > "$d/f"; git -C "$d" add f; git -C "$d" commit -q --no-edit >/dev/null 2>&1 || die "could not resolve on fix/s"
-git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/s" HEAD
+stamp "$d" HEAD fix/s
 git -C "$d" checkout -q dev
 OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit fix/s 2>&1); RC=$?
 say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")" "01" "…resolved on the branch and stamped there, it lands"
@@ -1861,7 +1870,7 @@ unrelated() {
   git -C "$d" checkout -q --orphan fix/o && git -C "$d" rm -rqf . >/dev/null || die "could not make fix/o"
   if [ "$1" = same ]; then echo o > "$d/f"; else echo o > "$d/g"; fi
   git -C "$d" add -A && git -C "$d" commit -qm "fix: o" >/dev/null || die "could not commit fix/o"
-  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-30T00:00:00Z branch:fix/o" HEAD
+  stamp "$d" HEAD fix/o
   git -C "$d" checkout -q dev
 }
 unrelated other
@@ -1905,6 +1914,57 @@ for how in "-m sync" "--no-edit"; do
   say "$(grep -c 'git branch -d main' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "0" "…and not main"
   rm -rf "$PQ"
 done
+
+echo "A note counts only with its evidence: the tree it checked, and what ran (#107):"
+# An assistant wrote bare passed: notes by hand 12 times, mostly into merge commands
+# handed over to paste. Each shape is merged, stamped and authorised, so the note is the
+# only thing that differs. ev <note args…>: feature/e with that note; sets OUT and RC.
+ev() {
+  local d; d=$(mkrepo)
+  git -C "$d" checkout -q -b feature/e dev
+  echo e > "$d/e"; git -C "$d" add -A; git -C "$d" commit -qm "feature: e" || die "could not commit on feature/e"
+  [ "$#" -gt 0 ] && { git -C "$d" notes --ref=pre-merge-check add -f "$@" feature/e || die "could not write the note"; }
+  git -C "$d" checkout -q dev
+  OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit feature/e 2>&1); RC=$?
+  rm -rf "$d"
+}
+ev -m "passed: 2026-10-31T00:00:00Z branch:feature/e"
+say "$RC" "1" "a bare passed: note, as written before: refused"
+say "$(grep -c 'THE NOTE DOES NOT SHOW THE CHECK' <<<"$OUT")" "1" "…saying the note does not show the check"
+say "$(grep -c 'it names no tree: it checked' <<<"$OUT")" "1" "…and what it lacks"
+say "$(grep -c '/pre-merge-check again' <<<"$OUT")" "1" "…with the route"
+say "$(grep -c 'Working without an assistant' <<<"$OUT")" "1" "…and the one for a person working alone"
+ev -m "passed: 2026-10-31T00:00:00Z branch:feature/e tree:$(printf '%040d' 0)" -m "ran: ./test.sh → exit 0, 3 passed"
+say "$RC" "1" "a note naming another tree: refused"
+say "$(grep -c "its tree: is 000000000000, not this commit's" <<<"$OUT")" "1" "…saying whose tree it names"
+# The tree is only known once the commit exists: written in a second pass.
+d=$(mkrepo); git -C "$d" checkout -q -b feature/e dev
+echo e > "$d/e"; git -C "$d" add -A; git -C "$d" commit -qm "feature: e" || die "could not commit on feature/e"
+t=$(git -C "$d" rev-parse 'feature/e^{tree}'); git -C "$d" checkout -q dev
+for ran in none "ran:" "ran:   "; do
+  if [ "$ran" = none ]; then set --; else set -- -m "$ran"; fi
+  git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-31T00:00:00Z branch:feature/e tree:$t" "$@" feature/e \
+    || die "could not write the note"
+  OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit feature/e 2>&1); RC=$?
+  git -C "$d" merge --abort 2>/dev/null
+  say "$RC" "1" "the right tree, ran: line '$ran' saying nothing: refused"
+  say "$(grep -c 'it has no ran: line saying what ran' <<<"$OUT")" "1" "…saying it has no ran: line"
+done
+git -C "$d" notes --ref=pre-merge-check add -f -m "passed: 2026-10-31T00:00:00Z branch:feature/e tree:$t" -m "ran: ./test.sh → exit 0, 3 passed" feature/e \
+  || die "could not write the note"
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit feature/e 2>&1); RC=$?
+say "$RC" "0" "the right tree and a ran: line: the merge lands"
+say "$(grep -c 'Pre-merge check verified' <<<"$OUT")" "1" "…verified"
+# Carried onto a commit it never checked — git notes copy, or notes.rewriteRef on an amend.
+echo more > "$d/more"; git -C "$d" checkout -q feature/e; git -C "$d" add -A
+git -C "$d" commit -qm "feature: more" --no-verify >/dev/null || die "could not commit more"
+git -C "$d" notes --ref=pre-merge-check copy -f feature/e~1 feature/e || die "could not copy the note"
+git -C "$d" checkout -q dev
+OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-edit feature/e 2>&1); RC=$?
+git -C "$d" merge --abort 2>/dev/null
+say "$RC" "1" "the note copied onto a later commit: refused"
+say "$(grep -c "not this commit's" <<<"$OUT")" "1" "…its tree is the earlier commit's"
+rm -rf "$d"
 
 echo
 echo "$PASS passed, $FAIL failed"

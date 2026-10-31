@@ -218,12 +218,15 @@ that the logic has exactly one home.
   protected branch past every gate (probed 2026-10-29).
 - **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`; unset,
   the set is *protected but not PR-only*) require a passing `pre-merge-check` note on the
-  incoming commit. The refusal prints `/pre-merge-check`, and describes a route for a
-  developer working without an assistant: run the project's checks — its tests at the
-  least — then record what ran on the branch's tip and finish the merge the refusal left
-  in progress:
-  `git notes --ref=pre-merge-check add -m 'passed: <what you ran>' <branch>` then
-  `FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit`. The box describes it rather than
+  incoming commit. A note passes only with its evidence (#107): a `passed:` line naming
+  `tree:<hash>`, the tree the check ran on, which must be the incoming commit's, and a
+  `ran:` line saying what ran. A bare `passed:`, as notes were written before, is refused,
+  and the box says what it lacks. The refusal prints `/pre-merge-check`, and
+  describes a route for a developer working without an assistant: run the project's
+  checks — its tests at the least — then record what ran on the branch's tip and finish
+  the merge the refusal left in progress:
+  `git notes --ref=pre-merge-check add -m "passed: <date> tree:$(git rev-parse '<branch>^{tree}')" -m 'ran: <what you ran>' <branch>`
+  then `FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit`. The box describes it rather than
   printing it ready to paste: an assistant reads the box too, and only running the
   check may write its note (`engineering-principles.md`, Stops). This check used to live in
   `pre-merge-commit` and was a **silent no-op**:

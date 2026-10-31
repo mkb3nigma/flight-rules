@@ -1003,13 +1003,16 @@ open() {
 }
 OB() { (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?"; }
 D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
-git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/a" fix/a || die "could not stamp fix/a"
+git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/a tree:$(git -C "$D" rev-parse 'fix/a^{tree}')" \
+  -m "ran: ./test.sh → exit 0, 3 passed" fix/a || die "could not stamp fix/a"
+# A bare passed: is what the gate refuses (#107), so it is not waiting either.
+git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/b" fix/b || die "could not stamp fix/b"
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "at the limit: exits 0"
 say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…warns on screen, with the count, the limit and where it is set"
 say "$(usr <<<"$J" | grep -c '/feature-start asks before it opens another')" "1" "…saying /feature-start asks before opening more"
 say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the stamped one as waiting to merge"
-say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other as not yet passed"
+say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other, whose bare passed: note the gate refuses, as not yet passed"
 say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT is 2')" "1" "…telling the assistant too"
 say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: the open-branch warning")" "1" "…which is told the user saw it"
 # From a subdirectory, the same conf: read from $(pwd), there was none, and the warning
