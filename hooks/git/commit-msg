@@ -72,6 +72,11 @@ PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHE
 PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 PROTECTED_RE_CONF="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf_at_head PROTECTED_BRANCHES "$CONF_PATH")}"
 PROTECTED_RE_CONF="${PROTECTED_RE_CONF:-$DEFAULT_PROTECTED}"
+# `none` is `off`, for every key, as the doctor reads all three and the agent guard,
+# session-start and post-merge read PROTECTED_BRANCHES (0.28.0 release review).
+[ "$PROTECTED_RE_CONF" = none ] && PROTECTED_RE_CONF=off
+[ "$PR_ONLY_RE" = none ] && PR_ONLY_RE=off
+[ "$NOTE_GATED_RE" = none ] && NOTE_GATED_RE=off
 
 CURRENT_BRANCH=$(git branch --show-current)
 
@@ -205,6 +210,60 @@ MERGE_HEAD_FILE="$GIT_DIR/MERGE_HEAD"
 
 MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 
+# clean_merge: 0 when what this merge commits is exactly git's clean merge of HEAD and
+# the incoming commit, 1 when it is not, 2 when this git is too old to tell, 3 when git
+# failed to work it out. Both exemptions below,
+# and a passing note, vouch for the incoming commit, not for a conflict resolved here or
+# anything else staged: either landed, untested, as "no note needed" or as "verified"
+# (fix reviews of 0.28.0's release review — CLAUDE.md: a conflict is never resolved in
+# the merge into a protected branch). A merge driver merge-tree honours passes, and so
+# does -X where it resolved nothing; a conflict -X resolved, or a replayed rerere
+# resolution, reads as not clean. `git write-tree` reads the index git hands this hook,
+# so `commit -a` is judged on what it commits. Worked out once, here: three paths ask.
+# merge-tree exits 1 for a conflict and above 1 for any error. Only a git older than
+# 2.38, which has no --write-tree, is "too old to tell"; every other error was read as
+# that too, and blamed the git version on 2.56 (0.28.0 fix review: unrelated
+# histories). Histories with no common commit are merged as git merge was told to
+# merge them, or it would not have got this far. MT_ERR keeps git's own first line.
+MT_ERR=""
+# git_error <args>: the first line git prints running <args> with every GIT_TRACE*
+# variable unset, so it is git's error and not a trace line before it. Matching the
+# trace formats missed GIT_TRACE_BARE and GIT_TRACE2_BRIEF (fix reviews of 44bc927 and
+# da203ed). Always a line: one that printed nothing says so.
+git_error() {
+    local u=() v e
+    for v in $(env | sed -n 's/^\(GIT_TRACE[A-Za-z0-9_]*\)=.*/\1/p'); do u+=(-u "$v"); done
+    e=$(env ${u[@]+"${u[@]}"} git "$@" 2>&1 >/dev/null | head -1) || true
+    printf '%s' "${e:-git $1 failed and printed nothing}"
+}
+git_has_write_tree() {
+    local v maj min
+    v=$(git version 2>/dev/null); v=${v#git version }
+    maj=${v%%.*}; min=${v#*.}; min=${min%%.*}
+    case "$maj.$min" in *[!0-9.]*|.*|*.) return 0 ;; esac   # unreadable: no excuse
+    [ "$maj" -gt 2 ] || { [ "$maj" -eq 2 ] && [ "$min" -ge 38 ]; }
+}
+clean_merge() {
+    local t i r=0 a=""
+    git merge-base HEAD "$MERGE_SHA" >/dev/null 2>&1 || a=--allow-unrelated-histories
+    t=$(git merge-tree --write-tree $a HEAD "$MERGE_SHA" 2>/dev/null) || r=$?
+    [ "$r" -eq 1 ] && return 1
+    if [ "$r" -ne 0 ]; then
+        git_has_write_tree || return 2
+        MT_ERR=$(git_error merge-tree --write-tree $a HEAD "$MERGE_SHA")
+        return 3
+    fi
+    t=$(printf '%s\n' "$t" | head -1)
+    # stdout only: GIT_TRACE and friends write to stderr, and joined to the tree id they
+    # refused a clean merge as one that resolved a conflict (fix review of e78a57e).
+    i=$(git write-tree 2>/dev/null) || { MT_ERR=$(git_error write-tree); return 3; }
+    [ -n "$t" ] || { MT_ERR="git merge-tree printed no tree"; return 3; }
+    [ "$t" = "$i" ]
+}
+CLEAN=0; clean_merge || CLEAN=$?
+# NOT_CLEAN names the exemption a merge missed this way, for the refusal to say.
+NOT_CLEAN=""
+
 # A back-merge — the incoming commit is the tip of a PR-only branch (default main)
 # — needs no note. Everything on that branch arrived through a reviewed pull
 # request, and reconciling it into the integration branch is routine maintenance,
@@ -275,15 +334,50 @@ while read -r ref sha; do
     # command for it: the one it printed, pasted with ^MAIN$, made a local MAIN a
     # reviewed back-merge (0.27.0 release review).
     [ -n "$case_only" ] && { CASE_ONLY="$short"; continue; }
-    echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
-    exit 0
+    if [ "$CLEAN" -eq 0 ]; then
+        echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
+        exit 0
+    fi
+    NOT_CLEAN="back-merge of $short"
 done < <(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes/origin)
+
+# A clean merge of the branch's own upstream, on a branch that has diverged from it —
+# local merges not pushed yet, and the shared branch moved on (a pull request merged on
+# the host) — needs no note either. A branch only behind reaches the same content by the
+# fast-forward pull the catch-up below prints, with no gate at all, so refusing the
+# diverged form protected nothing; it commits only what clean_merge vouches for.
+# pre-rebase prints `git pull --no-rebase` for exactly this, and this gate then refused
+# it with a route that did not fit (0.28.0 release review). Only the exact tip of
+# refs/remotes/origin/<this branch>, set as its upstream: `git pull . <branch>` or `git
+# pull origin <other>` is a merge like any other.
+_upref=$(git rev-parse -q --symbolic-full-name '@{upstream}' 2>/dev/null) || _upref=""
+if [ "$_upref" = "refs/remotes/origin/$CURRENT_BRANCH" ] \
+    && [ "$(git rev-parse -q --verify "$_upref" 2>/dev/null)" = "$MERGE_SHA" ] \
+    && ! git merge-base --is-ancestor HEAD "$MERGE_SHA" 2>/dev/null; then
+    if [ "$CLEAN" -eq 0 ]; then
+        echo "✅ Merge of $CURRENT_BRANCH's own upstream, origin/$CURRENT_BRANCH — what a fast-forward would bring, no note needed"
+        exit 0
+    fi
+    NOT_CLEAN="merge of this branch's own upstream"
+fi
 
 MERGE_BRANCH=$(git name-rev --name-only "$MERGE_SHA" 2>/dev/null || echo "$MERGE_SHA")
 
 NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
 
-if echo "$NOTE" | grep -q "^passed:"; then
+# A passing note on a merge that is not git's clean merge is refused below: the note
+# checked the tip, and this merge commits something the tip never held. So is one git
+# failed to check — the error is shown and the person picks the way on (owner, 0.28.0
+# fix review). Where git is too old to tell, the merge goes on as before 0.28.0, said
+# aloud — refusing it would shut the note gate on every git older than 2.38.
+NOTE_PASSED=""
+echo "$NOTE" | grep -q "^passed:" && NOTE_PASSED=1
+if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then
+    if [ "$CLEAN" -eq 2 ]; then
+        echo "⚠️  git merge-tree --write-tree failed here (it needs git 2.38 or later), so"
+        echo "   nothing checked that this merge commits only what the note checked: a"
+        echo "   conflict resolved in it lands untested."
+    fi
     # The note proves a check ran. It does NOT prove anyone asked for this merge:
     # the agent writes the note itself, so a stamped merge that nobody requested
     # used to print a green tick and land silently (measured 2026-09-10 — the
@@ -322,6 +416,8 @@ if echo "$NOTE" | grep -q "^passed:"; then
         # printed here never worked (AppliHawk, 2026-10-21, #100).
         box_row "If the user asked for it, say so and finish the merge:"
         box_row "  FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit"
+        # A person merging their own branch reads this box too (mission review H2).
+        box_row "Merging it yourself? Then you asked: the same command."
         box_row ""
         box_row "If they did not: stop, and ask. Setting that variable"
         box_row "to get unblocked is the whole thing this prevents,"
@@ -358,12 +454,32 @@ if echo "$NOTE" | grep -q "^passed:"; then
     exit 0
 fi
 
+# A plain `git pull` that only catches up with the branch's own upstream lands here
+# too: merge.ff=false makes even that a merge commit (hooks review H1, 2026-10-28). It
+# is not let through, and pull.ff is not set for it — either lets `git pull origin
+# <any branch>` fast-forward a protected branch past every gate (probed 2026-10-29).
+# The refusal names it and prints the pull that works.
+CATCHUP=""
+_up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
+    && [ "$_up" = "$MERGE_SHA" ] \
+    && git merge-base --is-ancestor HEAD "$_up" 2>/dev/null \
+    && CATCHUP=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)
+
 # Both boxes say what `--abort` costs: it runs `reset --merge`, and on a leftover
 # MERGE_HEAD nobody is merging it deleted the staged work beside it (final release
 # /dg, 2026-10-18). For a real refused merge it is still the undo.
 echo ""
 box_top
-box_row "❌  PRE-MERGE CHECK REQUIRED" 1
+# A catch-up needs no check, so its box does not ask for one (0.28.0 release review).
+if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -eq 3 ]; then
+    box_row "❌  THIS MERGE COULD NOT BE CHECKED" 1
+elif [ -n "$NOTE_PASSED" ]; then
+    box_row "❌  THE NOTE DID NOT CHECK THIS MERGE" 1
+elif [ -n "$CATCHUP" ]; then
+    box_row "❌  A CATCH-UP PULL MADE A MERGE COMMIT" 1
+else
+    box_row "❌  PRE-MERGE CHECK REQUIRED" 1
+fi
 box_sep
 box_row ""
 box_row "Merging: $MERGE_BRANCH"
@@ -413,9 +529,88 @@ if [ -n "$OFF_SHORT" ]; then
     box_row "  git commit --no-edit"
     box_row ""
 fi
-box_row "Run /pre-merge-check in the feature worktree first. When"
-box_row "every check passes it stamps a note on the commit, and"
-box_row "this hook lets the merge through."
+# A conflict is resolved on a branch, tested and stamped there, then merged back: the
+# note then vouches for a tip that holds the resolution (CLAUDE.md). Where git failed to
+# check, both ways on are printed and neither is chosen: the hook does not guess past
+# an error.
+if [ "$CLEAN" -eq 3 ] && { [ -n "$NOTE_PASSED" ] || [ -n "$NOT_CLEAN" ]; }; then
+    if [ -n "$NOTE_PASSED" ]; then
+        box_row "The pre-merge-check note vouches for the branch's tip, and"
+        box_row "this hook checks that the merge commits only git's clean"
+        box_row "merge of it. git failed to work that out:"
+    else
+        box_row "A $NOT_CLEAN"
+        box_row "needs no note when it commits git's clean merge. git"
+        box_row "failed to work that out:"
+    fi
+    box_row "  ${MT_ERR:0:62}"
+    box_row "Nothing is committed yet. Either fix what git names and"
+    box_row "finish the merge — the check runs again:"
+    box_row "  git commit --no-edit   (with any FLIGHT_RULES_ setting"
+    box_row "                          the merge was run with)"
+    if [ -n "$NOTE_PASSED" ]; then
+        box_row "or undo it (below), merge $CURRENT_BRANCH into the branch in"
+        box_row "its worktree, test it there, run /pre-merge-check again,"
+        box_row "and merge the branch back."
+    else
+        box_row "or undo it (below), merge the same commit into a branch"
+        box_row "cut from $CURRENT_BRANCH, in a worktree, test it there, run"
+        box_row "/pre-merge-check, and merge that branch back."
+    fi
+elif [ -n "$NOTE_PASSED" ]; then
+    box_row "The pre-merge-check note vouches for the branch's tip."
+    box_row "This merge commits more than git's clean merge of it: a"
+    box_row "conflict was resolved here (by hand, by -X or by rerere),"
+    box_row "or something else was staged — and no check ran on that."
+    box_row "Undo it (below), then merge $CURRENT_BRANCH into the branch,"
+    box_row "in its worktree: resolve and test it there, run"
+    box_row "/pre-merge-check again, and merge the branch back."
+elif [ -n "$NOT_CLEAN" ] && [ "$CLEAN" -eq 2 ]; then
+    box_row "A $NOT_CLEAN"
+    box_row "needs no note when it commits git's clean merge, and this"
+    box_row "git cannot tell: git merge-tree --write-tree failed here"
+    box_row "(it needs git 2.38 or later). With a newer git, finish it:"
+    box_row "  git commit --no-edit"
+    box_row "Or undo it (below), merge the same commit into a branch"
+    box_row "cut from $CURRENT_BRANCH, in a worktree, test it there, run"
+    box_row "/pre-merge-check, and merge that branch back."
+elif [ -n "$NOT_CLEAN" ]; then
+    box_row "A $NOT_CLEAN"
+    box_row "needs no note when it commits git's clean merge, and this"
+    box_row "one does not: a conflict was resolved here (by hand, by -X"
+    box_row "or by rerere), or something else was staged."
+    box_row "Undo it (below), then merge the same commit into a branch"
+    box_row "cut from $CURRENT_BRANCH, in a worktree: resolve and test it"
+    box_row "there, run /pre-merge-check, and merge that branch back."
+elif [ -n "$CATCHUP" ]; then
+    box_row "This merge only catches up with"
+    box_row "$CATCHUP; merge.ff=false made it a merge commit."
+    box_row "Undo it (below), and catch up without one:"
+    box_row "  git pull --ff-only"
+else
+    box_row "Run /pre-merge-check in the feature worktree first. When"
+    box_row "every check passes it stamps a note on the commit, and"
+    box_row "this hook lets the merge through."
+fi
+# Every route above but the catch-up's ends in a stamp, so each names the one a person
+# working alone takes (0.28.0 fix review: the new routes said "run the checks" and not
+# how to record them).
+if [ -n "$NOTE_PASSED" ] || [ -n "$NOT_CLEAN" ] || [ -z "$CATCHUP" ]; then
+    box_row ""
+    # The developer working alone is served as much as one with an assistant
+    # (MISSION.md principle 5): a slash command was the only route printed (hooks review
+    # H3, 2026-10-28). Described, with the command in the README, not printed ready to
+    # paste: an assistant reads this box too, and takes the route it prints (commit
+    # security review, 2026-10-29).
+    # flight-rules' README, by name: install.sh copies the hooks into a project, not the
+    # README (0.28.0 release review).
+    box_row "Working without an assistant: run the project's checks"
+    box_row "yourself — its tests at the least — then record what ran"
+    box_row "as a note on the tip of the branch being merged"
+    box_row "(flight-rules' hooks/README.md → commit-msg has the"
+    box_row "command). An assistant runs /pre-merge-check instead:"
+    box_row "only running it may write the note."
+fi
 box_row ""
 box_row "Undo this half-finished merge:   git merge --abort"
 box_row "  — it also drops what you staged. A merge you never"

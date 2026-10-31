@@ -42,10 +42,10 @@ Match by path/basename:
 - `{LOCAL_RULES_DIRS}/<name>.md` ↔ `{PLAYBOOK_PATH}/rules/<name>.md`
 - `.ai/skills/<name>/SKILL.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md` (copy-in)
 - `.ai/skills/<name>/<file>` ↔ `{PLAYBOOK_PATH}/skills/<name>/<file>` — the files a
-  copied-in skill reads from its own directory (today `dg/comic-template.html`). One
-  upstream has and the copy lacks is **Available-but-not-adopted** with its `cp`
-  command: the copied SKILL.md looks for it beside itself, and without it `/dg` cannot
-  make the comic's page on request; the ASCII comic needs no file.
+  copied-in skill reads from its own directory — each one its SKILL.md, or a file its
+  SKILL.md names, names as "`<file>` beside this file". One upstream has and the copy lacks is
+  **Available-but-not-adopted** with its `cp` command: the copied SKILL.md looks for it
+  beside itself, and the step that reads it cannot run without it.
 - `.ai/skills/<name>/EXTENSIONS.md` ↔ `{PLAYBOOK_PATH}/skills/<name>/SKILL.md`
   (the recommended model — the project holds only a delta, so there is nothing to
   diff line-by-line; see Step 3b)
@@ -73,7 +73,7 @@ Treat pure line-rewrapping / whitespace as non-substantive (note it, don't dwell
 ## Step 3b — EXTENSIONS.md and the conf
 An extension is a delta, so it breaks silently when the skill under it moves. For each
 one, report ✖ if: a step it replaces or inserts after no longer exists upstream; a
-`{PLACEHOLDER}` it fills is no longer used, or is one of the six branch/path
+`{PLACEHOLDER}` it fills is no longer used, or is one of the five branch/path
 parameters (those live in the conf only — the hooks never read an extension); a rule it
 overrides has since become a hook.
 Then `.ai/flight-rules.conf`: the hooks ignore unknown keys, so a typo silently falls

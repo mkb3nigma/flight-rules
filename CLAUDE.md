@@ -1,9 +1,14 @@
 # flight-rules — working in this repo
 
-This is the playbook itself, so it follows its own rules. Read `rules/` — every file,
-they are short — and treat them as binding here: `engineering-principles.md` for how
-to make a change, `git-worktree-workflow.md` for branching. The SessionStart hook
-injects the principles; the rest you read once.
+This is the playbook itself, so it follows its own rules. `MISSION.md`, imported below
+so it loads with this file, says what flight-rules is for: a change here answers the
+questions of it that apply before it is judged on anything else. It loads only here —
+adopting projects never see it. Then `rules/` — every file, they are short — and
+treat them as binding here: `engineering-principles.md` for how to make a change,
+`git-worktree-workflow.md` for branching. The SessionStart hook injects the
+principles; the rest you read once.
+
+@MISSION.md
 
 ## Parameters
 
@@ -23,9 +28,10 @@ injects the principles; the rest you read once.
 Every change: `/feature-start <prefix>/<slug>` — `git fetch origin`, the open-branch
 count (`OPEN_BRANCH_LIMIT`, asked at the limit), then `git worktree add .ai/worktrees/<slug>
 -b <prefix>/<slug> origin/dev`; a raw `worktree add` skips the count — and commit there;
-the owner pushes it. Then, **as the owner**, merge it into `dev` locally — stamp the
+the owner pushes it. Then, **as the owner** (the assistant too, under the standing OK
+below), merge it into `dev` locally — stamp the
 `pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
-from the `dev` checkout, then push `dev`. No PR: `dev` is note-gated, not PR-only, and the
+from the `dev` checkout; the owner then pushes `dev`. No PR: `dev` is note-gated, not PR-only, and the
 local merge is what exercises the note gate, the authorisation trailer and the back-merge
 exemption — a GitHub-button merge runs none of them. **A contributor** cannot push `dev`
 and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `main` or
@@ -33,6 +39,11 @@ and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `m
 
 An assistant pushes no branch, and runs no `/pr-create` (which pushes), unless the
 owner says so in that session — the owner reviews and pushes (standing instruction).
+The assistant may run the local merge into `dev` without asking, once a real
+`/pre-merge-check` on the branch tip has passed and stamped it: this standing OK (owner,
+2026-10-26) is the user's instruction that `git-worktree-workflow.md` Forbidden 8 and
+`pre-merge-check`'s closing line ask for. `main` still moves only through the reviewed
+promotion PR.
 A branch that has fallen behind `dev` or conflicts with it gets `dev` merged **into**
 it, is tested and stamped there, then merges back. The conflict is never resolved in
 the merge into `dev`, where the note would vouch for a tip that never held the
@@ -59,14 +70,19 @@ nowhere else to put it. Bump `.claude-plugin/plugin.json` and add the CHANGELOG 
 a `chore/release-<v>` branch, merge that to `dev`, then open the promotion PR: run
 `pr-create` step 2a first (every `{TEST_COMMANDS}` entry on the exact commit being
 pushed, reporting the sha), then 2b (`/dg origin/main...<that sha>`, verdict and
-dispositions in the PR body; a critical finding is the owner's call; a finding applied
+dispositions in the PR body, with the release's added and net lines by class — `MISSION.md`
+question 3's count, each file in the first class it matches: tests = `**/*.test.sh`;
+hooks = `hooks/**` minus `*.md`, `*.json`; CI = `.github/**`; session-reaching = `rules/**`, `skills/**` (a body and the files beside it, read on its pointer as `rules/` is),
+`.ai/skills/**`, `.claude/skills/**`, `MISSION.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`; other = the rest, the five summing to `--numstat`'s total —
+and the five questions asked of each subsystem; a critical finding is the owner's call; a finding applied
 arrives through a branch merged to `dev`, then 2a again on the new tip and `/dg` on the
 fix's own diff), and `--base main`. That promotion is the one PR whose head is
 a protected branch, which `pr-create`'s constraint names as its only exception.
 
 ## The skills run here too
 
-`.claude/skills/<name>/SKILL.md` are three-line pointers at `skills/<name>/SKILL.md`,
+`.claude/skills/<name>/SKILL.md` are three-line pointers at `skills/<name>/SKILL.md` — except
+`upstream-check`, which maintains this repo only and lives there whole, unshipped —
 so `/pre-merge-check`, `/pr-create`, `/commit` and the rest work in this repo without
 the plugin (which would register the guard twice). Use them on your own changes.
 
@@ -92,7 +108,8 @@ checked harder than code. Each added or widened item must pass all four, in the 
 
 1. **Names the warrant** — the reason to believe the failure in point 2 is real rather
    than plausible. One of:
-   **(a) an event** — a commit, PR, sha, date, or a probe that showed the hole. It does
+   **(a) an event** — a commit, PR, sha, date, or a probe that showed the hole (for a
+   refusal or a check, one a slip could also reach: `MISSION.md` question 1). It does
    not have to be public: a private-repo sha and date is a citation (`ATTRIBUTIONS.md`
    already carries one).
    **(b) an upstream** this playbook adapts from, with an `UPSTREAMS.md` row pinned at
@@ -105,7 +122,7 @@ checked harder than code. Each added or widened item must pass all four, in the 
    Never sufficient: a benefit with no failure attached, or "best practice".
 2. **Says what goes wrong without it**, concretely. If the honest answer is "nothing
    much", it does not go in.
-3. **Says how it is enforced** — a hook, or a skill with the check number. "Advisory"
+3. **Says how it is enforced** — a hook, a CI check, or a skill with the check number. "Advisory"
    is an answer only with the reason the item cannot be checked. Each release asks
    again whether enforcement has become possible. An item is cut only when its warrant
    is gone or another item covers it — never for being advisory, or for not having
@@ -115,7 +132,8 @@ checked harder than code. Each added or widened item must pass all four, in the 
    different model family than the author (the skill says why), with the verdict in
    the PR body and each finding's disposition, applied or declined with a reason.
 
-`pre-merge-check` item 18 asks for 1–3 on any diff under `rules/`. A deletion or
+`pre-merge-check` item 18 asks for 1–3 on any diff to a rules file (item 18 and
+`.ai/skills/pre-merge-check/EXTENSIONS.md` list them). A deletion or
 tightening skips the four points but still names what it drops and where that is now
 covered — a widening framed as a "fold" is how coverage quietly disappears. The same
 questions are put to every bullet of `engineering-principles.md` at each release: it
@@ -144,5 +162,4 @@ assistant, in projects that know nothing of this repo.
 - macOS ships BSD `grep`, `sed` and bash 3.2. CI runs the suites on both macOS and
   Ubuntu; do not use `grep -P`, `mapfile`, or `sed -i` without a suffix.
 - Hook behaviour changed? Say so in the PR body. The `.claude-plugin/plugin.json` bump
-  happens once per release, on a `chore/release-<v>` branch — see **Releasing, end to
-  end** above — never in a feature PR.
+  happens once per release, on a `chore/release-<v>` branch — see **Releasing** above — never in a feature PR.

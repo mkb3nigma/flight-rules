@@ -27,16 +27,49 @@ done
 
 echo "Pointer files in .claude/skills/ match the shipped set one-to-one:"
 POINTERS=$(find .claude/skills -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sed 's|.claude/skills/||' | sort)
+# A skill that maintains this repo only lives whole in .claude/skills/ and does not ship;
+# it is named here, so a stray or misnamed directory fails rather than passing as one
+# (0.28.0 release review). Anything else there is a pointer at a shipped skill.
+REPO_ONLY_SKILLS="upstream-check"
+# unshipped_verdict <dir> <name>: what is wrong with <dir>/<name>, a directory that is not
+# a shipped skill — nothing for a repo-only skill named above.
+unshipped_verdict() {
+  if grep -q "skills/$2/SKILL.md" "$1/$2/SKILL.md" 2>/dev/null; then
+    echo "$1/$2 points at a skill that does not exist"
+  else
+    case " $REPO_ONLY_SKILLS " in
+      *" $2 "*) ;;
+      *) echo "$1/$2 is neither a pointer at a shipped skill nor a repo-only skill this test names" ;;
+    esac
+  fi
+}
 for p in $POINTERS; do
-  grep -q "^$p\$" <<<"$SKILLS" || bad ".claude/skills/$p points at a skill that does not exist"
-  grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null || bad ".claude/skills/$p/SKILL.md does not reference skills/$p/SKILL.md"
+  if ! grep -q "^$p\$" <<<"$SKILLS"; then
+    v=$(unshipped_verdict .claude/skills "$p"); [ -z "$v" ] || bad "$v"
+    REPO_ONLY="${REPO_ONLY-}$p "
+  else
+    grep -q "skills/$p/SKILL.md" ".claude/skills/$p/SKILL.md" 2>/dev/null || bad ".claude/skills/$p/SKILL.md does not reference skills/$p/SKILL.md"
+  fi
   pn=$(sed -n -E 's/^name: (.*)$/\1/p' ".claude/skills/$p/SKILL.md" | head -1)
   [ "$pn" = "$p" ] || bad ".claude/skills/$p: frontmatter name '$pn' ≠ '$p'"
 done
 for s in $SKILLS; do
   grep -q "^$s\$" <<<"$POINTERS" || bad "skills/$s has no pointer in .claude/skills/ — not runnable in this repo"
 done
-[ "$SKILLS" = "$POINTERS" ] && ok "$(wc -w <<<"$SKILLS" | tr -d ' ') skills, $(wc -w <<<"$POINTERS" | tr -d ' ') pointers, same set"
+ok "$(wc -w <<<"$SKILLS" | tr -d ' ') shipped skills, each with a pointer; this repo's own: ${REPO_ONLY:-none}"
+# The real tree has no stray directory, so the verdict is also run on one that does: a
+# check no input reaches is no check (fix review of 0.28.0's release review).
+T=$(mktemp -d) || { bad "could not make a temp dir for the repo-only fixture"; T=""; }
+if [ -n "$T" ]; then
+  for d in stray upstream upstream-check ghost; do mkdir -p "$T/$d"; printf -- '---\nname: %s\n---\n' "$d" > "$T/$d/SKILL.md"; done
+  echo 'Read and follow `skills/ghost/SKILL.md`.' >> "$T/ghost/SKILL.md"
+  for d in stray upstream; do
+    [ -n "$(unshipped_verdict "$T" "$d")" ] && ok "a stray $d/ is refused" || bad "a stray $d/ passed as repo-only"
+  done
+  [ -z "$(unshipped_verdict "$T" upstream-check)" ] && ok "…the named repo-only skill is not" || bad "the named repo-only skill was refused"
+  case "$(unshipped_verdict "$T" ghost)" in *"points at a skill that does not exist") ok "…and a pointer at a missing skill is named as one" ;; *) bad "a pointer at a missing skill was not named" ;; esac
+  rm -rf "$T"
+fi
 
 echo "README catalogue lists exactly the shipped skills:"
 LISTED=$(sed -n -E 's/^\| \[`\/([a-z-]+)`\]\(skills\/[a-z-]+\/SKILL\.md\).*/\1/p' README.md | sort)
@@ -61,11 +94,14 @@ while IFS= read -r pat; do
 done <<EOF
 $GUARD_PATS
 EOF
-# …and nothing in the skill's list that the guard no longer has.
+# …and nothing in the skill's list that the guard no longer has. An extraction that finds
+# nothing would pass this half on its own, so it is checked first (review, 2026-10-29).
+SKILL_PATS=$(awk '/^   ```$/{n++; next} n==1' "$SKILL" | sed -n -E 's/^   ([^ #][^#]*[^ #])[[:space:]]+#.*/\1/p')
+[ -n "$SKILL_PATS" ] || bad "$SKILL: no fenced pattern list found — this test is reading the wrong thing"
 while IFS= read -r pat; do
   [ -n "$pat" ] || continue
   grep -qF -- "$pat" "$GUARD" || bad "$SKILL lists a pattern the guard does not have: $pat"
-done < <(awk '/^   ```$/{n++; next} n==1' "$SKILL" | sed -n -E 's/^   ([^ #][^#]*[^ #])[[:space:]]+#.*/\1/p')
+done <<<"$SKILL_PATS"
 [ "$FAIL" -eq 0 ] && ok "$N guard patterns, all present in the skill and none extra"
 
 # The git pre-commit hook runs the same six on what the commit records (#71). A key the
@@ -79,6 +115,27 @@ if [ "$(sort <<<"$GUARD_PATS")" = "$(sort <<<"$HOOK_PATS")" ]; then
 else
   bad "$GITHOOK and $GUARD disagree on the secret patterns: $(diff <(sort <<<"$GUARD_PATS") <(sort <<<"$HOOK_PATS") | grep '^[<>]' | tr '\n' ' ')"
 fi
+
+echo "Every file a skill names beside itself is there, and every file there is named:"
+# Steps that only some runs need keep their rule and point at a file beside SKILL.md
+# (#119). A missing file leaves the step pointing at nothing; a file no step names is
+# a contract nothing reads. The convention is the phrase "`<file>` beside this file",
+# in SKILL.md or in a file it names.
+MISS=0; NREF=0
+for s in $SKILLS; do
+  d="skills/$s"
+  # Lines joined first: prose wraps the phrase anywhere.
+  refs=$(cat "$d"/*.md | tr '\n' ' ' | grep -oE '`[A-Za-z0-9._-]+`[[:space:]]+beside[[:space:]]+this[[:space:]]+file' \
+    | sed -E 's/^`([^`]*)`.*/\1/' | sort -u)
+  for r in $refs; do
+    NREF=$((NREF+1))
+    [ -f "$d/$r" ] || { MISS=$((MISS+1)); bad "$d names \`$r\` beside it; there is no $d/$r"; }
+  done
+  for f in $(find "$d" -mindepth 1 -maxdepth 1 -type f ! -name SKILL.md -exec basename {} \; | sort); do
+    grep -qxF -- "$f" <<<"$refs" || { MISS=$((MISS+1)); bad "$d/$f is named nowhere in $d as \`$f\` beside this file"; }
+  done
+done
+[ "$MISS" -eq 0 ] && ok "$NREF named, all present; no file unnamed"
 
 echo "Plugin description names every skill that has a slash command in it:"
 for s in $(grep -oE '/[a-z-]+' .claude-plugin/plugin.json | tr -d / | sort -u); do

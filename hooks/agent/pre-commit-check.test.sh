@@ -110,6 +110,36 @@ check "git clean -fd on dev"             deny  dev  'git clean -fd'
 check "git clean --force on dev"         deny  dev  'git clean --force'
 check "git checkout -- . on dev"         deny  dev  'git checkout -- .'
 check "git restore on staging"           deny  staging 'git restore f.txt'
+# Unstaging and untracking touch no file in the tree (mission review H4, 2026-10-29), so
+# their plain form is allowed; anything not plainly that is judged as before.
+check "restore --staged on dev"          allow dev 'git restore --staged f.txt'
+check "restore -S, two paths"            allow dev 'git restore -S a.txt b.txt'
+check "restore --staged ."               allow dev 'git restore --staged .'
+check "restore --source --staged"        allow dev 'git restore --source=HEAD~1 --staged f.txt'
+check "rm --cached on dev"               allow dev 'git rm --cached f.txt'
+check "rm -r --cached"                   allow dev 'git rm -r --cached build/'
+check "restore --staged --worktree"      deny  dev 'git restore --staged --worktree f.txt'
+check "restore --staged --work (prefix)" deny  dev 'git restore --staged --work f'
+check "restore -SW"                      deny  dev 'git restore -SW f.txt'
+check "restore -s (source: writes the tree)" deny dev 'git restore -s HEAD f.txt'
+check "restore --source <rev> --staged"  allow dev 'git restore --source HEAD~1 --staged f.txt'
+check "restore -s <rev> -S"              allow dev 'git restore -s HEAD -S f.txt'
+check "restore --source --staged (value taken as --staged)" deny dev 'git restore --source --staged f.txt'
+check "restore --staged --source (no value)" deny dev 'git restore --staged f.txt --source'
+check "restore --source <rev>, no --staged" deny dev 'git restore --source HEAD f.txt'
+check "restore --STAGED (not git's)"     deny  dev 'git restore --STAGED f.txt'
+check "restore --no-staged"              deny  dev 'git restore --staged --no-staged f'
+check "rm --cached --no-cached"          deny  dev 'git rm --cached --no-cached f'
+check "rm --end-of-options"              deny  dev 'git rm --cached --end-of-options f'
+check "rm -- --cached (a path)"          deny  dev 'git rm -- --cached'
+check "rm, --cached quoted"              deny  dev "git rm f '--cached'"
+check "rm, --cached in a comment"        deny  dev 'git rm b # --cached'
+check "rm --cached, a rm in backticks"   deny  dev 'git rm --cached a `git rm b`'
+check "rm --cached, a glob"              deny  dev 'git rm --cached *.log'
+check "plain restore, --staged elsewhere" deny dev 'git restore f.txt && echo --staged'
+check "rm --cached then plain rm"        deny  dev 'git rm --cached a && git rm b'
+check "rm --cached under a git prefix"   allow dev 'git --no-pager rm --cached f'   # normalised to the plain form
+check "rm under a git prefix"            deny  dev 'git --no-pager rm f'
 check "git commit on dev (regression)"   deny  dev  'git commit -m "x"'
 
 echo "Shell metacharacters must not smuggle a destructive command past the guard:"
@@ -582,8 +612,9 @@ check "switch -f"                         deny  main 'git switch -f main'
 check "reset --merge"                     deny  main 'git reset --merge'
 check "rebase onto a feature"             deny  main 'git rebase feature/x'
 check "rebase -i"                         deny  main 'git rebase -i HEAD~3'
-check "stash drop"                        deny  main 'git stash drop'
-check "stash clear"                       deny  main 'git stash clear'
+# A stash belongs to the repository, not to the branch you stand on: on main a drop is no
+# riskier than anywhere else, so it is the person's, as on every branch (#118).
+check "stash drop / clear are the person's" allow main 'git stash drop && git stash clear'
 check "rebase --abort is the way out"     allow main 'git rebase --abort'
 check "rebase --continue"                 allow main 'git rebase --continue'
 check "stash list / push are fine"        allow main 'git stash list && git stash push -m wip'
@@ -903,8 +934,7 @@ DANGER_MAIN=( 'git commit -m x'
               'git reset --hard HEAD~1'
               'git clean -fd'
               'git restore f.txt'
-              'git stash drop'
-              'git stash clear'
+              'git restore --staged -W f.txt'
               'git rebase'
               'git switch -f'
               'git checkout --' )
@@ -935,8 +965,9 @@ while [ $j -lt ${#PREFIX_NAME[@]} ]; do
   done
   j=$((j+1))
 done
+_git_safe=0; for core in "${SAFE[@]}"; do case "$core" in git\ *) _git_safe=$((_git_safe+1)) ;; esac; done
 printf '  ✅ %s git-invocation-prefix combinations\n' \
-  "$(( ${#PREFIX_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + 3) ))"
+  "$(( ${#PREFIX_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + _git_safe) ))"
 
 i=0
 while [ $i -lt ${#WRAP_NAME[@]} ]; do

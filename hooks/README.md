@@ -24,7 +24,8 @@ PROTECTED_BRANCHES=off
 ```
 
 `off` is wider than it looks in one direction and narrower in another. It also stops
-`checkout -b`/`switch -c` being denied, and — when `NOTE_GATED_BRANCHES` is unset —
+`checkout -b`/`switch -c` being denied and `pre-rebase` refusing a rebase of a branch
+that is not PR-only, and — when `NOTE_GATED_BRANCHES` is unset —
 silences the note gate, because the gated set is derived as *protected but not PR-only*
 and with no protected branches that set is empty. A project with a `dev` branch loses its
 `pre-merge-check` gate without being told; name `NOTE_GATED_BRANCHES` explicitly to keep
@@ -92,7 +93,7 @@ with all five git hooks installed.
 
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
-| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh`, git hooks, doctor | Branches the guard defends. POSIX ERE, matched case-insensitively, as `PR_ONLY_BRANCHES` and `NOTE_GATED_BRANCHES` are, by every hook — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch until it is fixed, and the guard's block names it — except on a mirror push, which any pattern refuses (#103: it used to protect none). The git hooks do the same: to `commit-msg`, every branch but a PR-only one is note-gated while it is broken (with `NOTE_GATED_BRANCHES` unset), and the refusal names it and prints the way past it. `off` disables four things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
+| Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh`, git hooks, doctor | Branches the guard defends. POSIX ERE, matched case-insensitively, as `PR_ONLY_BRANCHES` and `NOTE_GATED_BRANCHES` are, by every hook — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch until it is fixed, and the guard's block names it — except on a mirror push, which any pattern refuses (#103: it used to protect none). The git hooks do the same: to `commit-msg`, every branch but a PR-only one is note-gated while it is broken (with `NOTE_GATED_BRANCHES` unset), and the refusal names it and prints the way past it. `off` (or `none`) disables five things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, `pre-rebase`'s refusal of a branch that is not PR-only, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
 | PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured by every hook that reads it — the ref gate, the local merge gate, the rebase gate and `commit-msg`'s squash guard stand down, and no merge counts as a back-merge — while `PROTECTED_BRANCHES` still applies. A pattern that does not compile makes every branch PR-only until it is fixed (#103: it used to make none): no local merge commit or rebase, and no pushed branch moves off its upstream. The refusal names the pattern and prints the way past it, for a branch the pattern does not mean: the command that finishes or repeats what it refused, with the pattern meant in `FLIGHT_RULES_PR_ONLY_BRANCHES`. Where a match grants an exemption — a back-merge needs no note, a PR-only branch is outside the derived note-gated set — it takes the pattern's exact case, so `^MAIN$` gates `main` without exempting it, and a refused back-merge says the case is why. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. A pattern that does not compile gates every branch until it is fixed, and the refusal names it and prints the way past it (#103). Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
@@ -209,10 +210,23 @@ that the logic has exactly one home.
   violation, and it needs no `MERGE_HEAD`. It only sees merges git completes in one
   step: a **conflicted** merge stops before the merge commit and never reaches this
   hook, which is why `reference-transaction` below is the actual guarantee and this
-  is the early, specific message. Sync with `git pull --ff-only origin main`.
+  is the early, specific message. Sync with `git pull --ff-only origin main`. A plain
+  `git pull` that only catches up with the branch's own upstream is a merge commit
+  under `merge.ff false`, so it lands here, and in `commit-msg` on a note-gated branch;
+  both refusals name it and print `git pull --ff-only`. `pull.ff` is deliberately left
+  alone: set to `true` or `only`, it lets `git pull origin <any branch>` fast-forward a
+  protected branch past every gate (probed 2026-10-29).
 - **`commit-msg`** — mechanism 2: **note-gated branches** (`NOTE_GATED_BRANCHES`; unset,
   the set is *protected but not PR-only*) require a passing `pre-merge-check` note on the
-  incoming commit. This check used to live in `pre-merge-commit` and was a **silent no-op**:
+  incoming commit. The refusal prints `/pre-merge-check`, and describes a route for a
+  developer working without an assistant: run the project's checks — its tests at the
+  least — then record what ran on the branch's tip and finish the merge the refusal left
+  in progress:
+  `git notes --ref=pre-merge-check add -m 'passed: <what you ran>' <branch>` then
+  `FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit`. The box describes it rather than
+  printing it ready to paste: an assistant reads the box too, and only running the
+  check may write its note (`engineering-principles.md`, Stops). This check used to live in
+  `pre-merge-commit` and was a **silent no-op**:
   modern git (verified on 2.55) writes `MERGE_HEAD` *after* that hook runs, so the
   lookup never found the incoming commit and nothing was ever enforced. `commit-msg`
   runs with `MERGE_HEAD` present. A non-merge commit exits immediately — this gates
@@ -222,6 +236,30 @@ that the logic has exactly one home.
   for. Only local branches and `origin/*` count, the name must match `PR_ONLY_BRANCHES` in
   its exact case, and the commit must be on `origin/<x>` when origin has it — a forced
   local `main`, a `MAIN` or `origin/Main`, or a stale `upstream/main` exempts nothing.
+  A **merge of the branch's own upstream** on a branch that has diverged from it — `git
+  pull --no-rebase` on a `dev` holding local merges not yet pushed, after a pull request
+  merged on the host — passes without a note too: a branch only behind reaches the same
+  content by a fast-forward pull, with no gate at all. Only the exact tip of
+  `origin/<this branch>`, set as its upstream, counts; `git pull . <branch>`, `git pull
+  origin <other>` or an older commit of it is gated as usual, and a branch that is only
+  behind is the catch-up above. Both exemptions, and a passing note, hold only for
+  **git's clean merge**: the hook compares what the merge commits with `git merge-tree
+  --write-tree` of the two sides, so a conflict resolved in the merge, or anything else
+  staged with it, is refused — the note vouches for the branch's tip, which never held
+  that resolution. The conflict is resolved on a branch instead — the feature branch,
+  with `dev` merged into it, or for an exemption a branch cut from `dev` — tested and
+  stamped there, and merged back; the refusal says so. A merge driver merge-tree honours
+  passes, and so does `-X` where it resolved nothing; a conflict `-X` resolved, or a
+  replayed rerere resolution, is refused. Histories with no common commit are compared
+  as `git merge --allow-unrelated-histories` merged them. On git older than 2.38, which
+  has no `--write-tree`, the hook cannot tell: the two exemptions are gated, saying
+  why, and a stamped merge goes on as before, with a warning that nothing checked it. On
+  a newer git, a `merge-tree` that fails — an error git reports while merging the same
+  two commits again, a corrupt or missing object — refuses the merge, quoting git's
+  error and printing both ways on: fix the cause and finish the merge, which checks
+  again, or take the merge to a branch.
+  One thing gets through by design: a commit written by hand into
+  `refs/remotes/origin/<x>` — a forged ref, reached only on purpose (#122).
   The same hook refuses the commit that would complete a **squash merge** into a
   PR-only branch, which creates no merge commit and so never fires `pre-merge-commit`.
   **A passing note is not consent.** The agent writes that note itself, so a stamped
@@ -237,16 +275,20 @@ that the logic has exactly one home.
   `MERGE_NEEDS_INSTRUCTION=off` drops the check; that is recorded in the trailer too,
   so history still distinguishes the two.
   Tests: `merge-gate.test.sh` (no arguments, no network).
-- **`pre-rebase`** — refuses to rebase a PR-only branch: `git rebase feature` on
-  `main` rewrites it with no merge commit, so nothing else fires.
+- **`pre-rebase`** — refuses to rebase a protected branch: `git rebase feature` on
+  `main` rewrites it with no merge commit, so nothing else fires. A PR-only branch is
+  told to rebase the feature branch instead; any other protected branch to merge
+  (`git pull --no-rebase`), which `commit-msg` passes as a merge of the branch's own
+  upstream. A `git pull --rebase` reaches it only when the branch has commits of its
+  own — one that is only behind fast-forwards and runs no hook.
 - **`reference-transaction`** — the backstop for everything that moves a REF, and the
   only hook that sees every one of those. One rule: **a PR-only branch may only move to
   a commit already on `origin/<branch>`.**
   Read the scope precisely: it fires when a ref moves. `git rm`, `git clean -fd`,
   `git restore`, `git checkout -- .` and `git stash drop` destroy work and move no ref,
   so **this hook never sees them** — the agent guard is the only thing between an agent
-  and that class. Verified 2026-09-11 on a repo with the full gate installed: a commit on
-  `main` was blocked and the ref held, while `git rm`, `git clean -fd` and
+  and that class, and it leaves `git stash drop` to the person (#118). Verified
+  2026-09-11 on a repo with the full gate installed: a commit on `main` was blocked and the ref held, while `git rm`, `git clean -fd` and
   `git stash drop` all succeeded and destroyed their target. An earlier wording here
   ("the only hook that sees every write path") read as though it covered them; it does
   not, and a change was built on that misreading before the error was caught. It asks where the ref landed, not which command moved it, so
@@ -261,8 +303,10 @@ that the logic has exactly one home.
   `git pull --ff-only`, all feature work, `fetch`, and branch creation are unaffected.
   Unlike the agent guard it reads its config from the **upstream's** committed state,
   so editing the working-tree conf — the bypass the agent guard's own block message
-  advertises — does not lift it. A repo with no upstream is not gated: there is no
-  reviewed state to compare against, and a fresh `git init` must stay usable.
+  advertises — does not lift it. A branch with no `refs/remotes/origin/<branch>` is not
+  gated: there is no reviewed state to compare against, and a fresh `git init` must stay
+  usable. That includes a repo whose remote is not called `origin` — the gate reads that
+  name only.
   Tests: `ref-gate.test.sh` (no arguments, no network).
 - **`pre-commit`** — the secret scan, on what the commit will actually record: a
   provider key (AWS, `sk-…`, GitHub, Slack, Google), a PEM private-key header, or a
@@ -304,17 +348,17 @@ that the logic has exactly one home.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
   unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
-  (stale worktrees, deletable branches) to `.claude/post-merge-note.md` and, when it has
-  something to do, prints it to whoever merged (at most 40 lines; no flight-rules hook
-  reads the file, #110). Each command is on a line of its own, quoted to be pasted, with
+  (stale worktrees, deletable branches) to `.claude/post-merge-note.md` — excluded in the
+  clone's `.git/info/exclude` unless the project already ignores it, so it never shows as
+  untracked. After a feature merge it prints what *that* merge left — its worktree, what
+  runs from it, its branch — and one line counting what earlier merges left; a pull, a
+  fast-forward or a back-merge prints nothing (at most 40 lines; no flight-rules hook
+  reads the file, #110; re-listing everything on every merge and pull was noise). Each command is on a line of its own, quoted to be pasted, with
   what to know about it — just merged, or refused until a push — on the line below. Under each stale worktree it names what still runs from it — processes
   working there or with its path in their command line, and Docker Compose containers
   from it, stopped ones included — so what a check started is stopped or removed before
   the worktree goes. It lists them and stops nothing; a `ps`, `lsof` or `docker` that
   fails is said so, not read as nothing running (#109).
-  Optionally (`CLEAR_AI_CONTEXT=1`, off by default) also clears Claude Code's stored
-  conversations for the project so the next session starts fresh — read the guarded
-  block in the script before enabling.
 - **`install.sh`** — one-time per clone: `chmod` the hooks, set
   `core.hooksPath`, and set `merge.ff false` so the merge gate always fires
   (a fast-forward merge would silently skip `pre-merge-commit`). It installs into
@@ -370,9 +414,13 @@ Guards that fire on the assistant's own events, before git ever runs:
 
 - **`pre-commit-check.sh`** — PreToolUse guard on the Bash tool. On a protected branch
   it denies `git commit` and everything that rewrites or discards the tree without one:
-  `rm`, `restore`, `reset --hard|--merge`, `clean -f`, `checkout -- .` and
+  `rm` and `restore` (not a plain `rm --cached` or `restore --staged` — only safe options
+  and paths, nothing wrapped around it — which untracks or unstages and touches no file),
+  `reset --hard|--merge`, `clean -f`,
+  `checkout -- .` and
   `checkout <rev> -- <path>`, `switch --discard-changes`, `rebase` (not its
-  `--abort`/`--continue`), `stash drop|clear`. From any branch it denies a push that
+  `--abort`/`--continue`) — not `stash drop|clear`: a stash belongs to the repository,
+  not the branch (#118). From any branch it denies a push that
   force-updates, deletes or mirrors over a protected branch (`-f`, `--force*`,
   `+refspec`, `--delete`, `origin :main`, `--mirror`); a push that names some other
   ref is judged on that ref, not on the branch you happen to stand on, so post-merge

@@ -5,8 +5,6 @@
 #   2. Lists merged branches safe to delete
 #   3. Writes a note file, and prints it when it has something to do (no flight-rules
 #      hook reads the file — a user's own may: #110)
-#   4. (Optional, off by default) clears the AI assistant's stored conversation
-#      context for this project so the next session starts fresh
 #
 # Adapt the parameters below, commit into the repo, install via install.sh.
 
@@ -39,9 +37,6 @@ PROTECTED_RE="${PROTECTED_RE:-^(main|master|dev|develop|development|staging|stag
 case "$PROTECTED_RE" in off|none) PROTECTED_RE='^$' ;; esac
 NOTE_PATH='.claude/post-merge-note.md'  # where the note is written (and printed; no
                                         # flight-rules hook reads the file: #110)
-CLEAR_AI_CONTEXT="${CLEAR_AI_CONTEXT:-0}"  # 1 = also delete Claude Code conversation
-                                           # files for this project (keeps memory/).
-                                           # Read the block below before enabling.
 
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
@@ -65,18 +60,31 @@ CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 REPO_ROOT=$(git rev-parse --show-toplevel)
 NOTE_FILE="$REPO_ROOT/$NOTE_PATH"
 
-# A "feature completed — start fresh" event is only a topic branch actually merged
-# IN: a merge commit whose second parent is NOT main's tip. Skip fast-forwards (no
-# merge commit) and back-merges of main into the integration branch (routine
-# reconcile/maintenance) — those must not clear the assistant's context.
+# A feature merge is only a topic branch actually merged IN: a merge commit whose
+# second parent is NOT main's tip. Skip fast-forwards (no merge commit) and
+# back-merges of main into the integration branch (routine reconcile/maintenance) —
+# those print nothing.
 _merged_in=$(git rev-parse -q --verify 'HEAD^2' 2>/dev/null || echo "")
 is_feature_merge() {
   [[ -z "$_merged_in" ]] && return 1            # fast-forward / not a merge commit
-  local ref ref_sha
+  local ref ref_sha name
   for ref in main origin/main; do
     ref_sha=$(git rev-parse -q --verify "$ref" 2>/dev/null) || continue
     [[ "$_merged_in" == "$ref_sha" ]] && return 1   # merged-in commit IS main's tip → back-merge
   done
+  # …or the tip of any other protected branch, local or origin's: a project whose
+  # released branch is not called main back-merges it too (mission review G2,
+  # 2026-10-29). Case-insensitively, as every layer matches the pattern. Only the refs
+  # at the merged commit: a grep per ref in the repo took seconds a merge with
+  # thousands of remote branches (0.28.0 release review).
+  while read -r ref; do
+    name=${ref#refs/heads/}; name=${name#refs/remotes/origin/}
+    [[ "$name" == "$INTEGRATION_BRANCH" ]] && continue
+    printf '%s' "$name" | grep -qiE -e "$PROTECTED_RE" 2>/dev/null && return 1
+  done < <(git for-each-ref --points-at "$_merged_in" --format='%(refname)' refs/heads refs/remotes/origin 2>/dev/null)
+  # A pull of this branch's own upstream that had to merge is no feature either, and
+  # prints nothing (fix review, 2026-10-29).
+  ref_sha=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) && [[ "$_merged_in" == "$ref_sha" ]] && return 1
   return 0
 }
 
@@ -94,6 +102,11 @@ MERGED_BRANCH=$(printf '%s\n' "$MERGE_MSG" | sed -nE \
   -e "s|^Merge remote-tracking branch '[^/']+/([^']+)'.*|\\1|p" \
   -e 's|^Merge pull request #[0-9]+ from [^/]+/(.*)$|\1|p' \
   -e 's/^Merge ([^ ]+) into .*/\1/p' | head -1)
+# A subject none of those shapes fits — `git merge -m "…" fix/x`, a merge by sha — names
+# no branch, and the merge's own worktree was then counted among earlier merges' (0.28.0
+# release review): the local branch at the merged commit names it instead.
+[[ -z "$MERGED_BRANCH" && -n "$_merged_in" ]] && MERGED_BRANCH=$(git for-each-ref --points-at "$_merged_in" \
+  --format='%(refname:lstrip=2)' refs/heads 2>/dev/null | grep -vxF "$INTEGRATION_BRANCH" | head -1)
 [[ -z "$MERGED_BRANCH" ]] && MERGED_BRANCH="unknown"
 
 # All branches already merged into the integration branch.
@@ -277,34 +290,6 @@ if [[ ${#STALE_WORKTREES[@]} -gt 0 ]]; then
   load_containers
 fi
 
-# --- Optional: clear Claude Code conversation context (keeps memory/) ---
-# Deletes conversation .jsonl files + their artifact dirs for THIS project under
-# ~/.claude/projects/. Guards: skips files touched in the last 5 minutes (active
-# session) and never touches memory/. Useful when your flow is "one branch, one
-# session"; leave off if you keep long-running sessions across merges.
-CLEARED_COUNT=0
-if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
-  # Claude Code encodes the project path by replacing "/" AND "." with "-"
-  # (observed: /x/.ai/worktrees/y → -x--ai-worktrees-y). A root the encoding does
-  # not match simply finds no directory and deletes nothing — it fails safe.
-  ENCODED_PATH=$(printf '%s' "$REPO_ROOT" | tr '/.' '--')
-  CLAUDE_PROJECT_DIR="$HOME/.claude/projects/$ENCODED_PATH"
-  if [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
-    while IFS= read -r f; do
-      rm -f "$f" && (( CLEARED_COUNT++ )) || true
-    done < <(find "$CLAUDE_PROJECT_DIR" -maxdepth 1 -name "*.jsonl" -mmin +5 2>/dev/null)
-    while IFS= read -r d; do
-      basename_d=$(basename "$d")
-      [[ "$basename_d" == "memory" ]] && continue
-      if [[ "$basename_d" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-        if [[ ! -f "$CLAUDE_PROJECT_DIR/$basename_d.jsonl" ]]; then
-          rm -rf "$d" && (( CLEARED_COUNT++ )) || true
-        fi
-      fi
-    done < <(find "$CLAUDE_PROJECT_DIR" -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
-  fi
-fi
-
 # note_branch <branch> [just]: the command on a line of its own, what to know about it on
 # the next. On the same line, "← just merged" was pasted along with the command, and
 # `git branch -d fix/x  ← just merged` deleted merged branches named `just` and
@@ -319,6 +304,21 @@ note_branch() {
 
 # --- Write note file ---
 mkdir -p "$(dirname "$NOTE_FILE")"
+# The note is this hook's file, not the project's: unless the project already ignores
+# it, it goes in this clone's info/exclude, so the first merge does not leave an
+# untracked .claude/ in git status (hooks review H20, 2026-10-28). Not .gitignore:
+# that would be a change to commit. Cosmetic, so a write that fails says nothing. A note
+# the project tracks is ignored by nothing, so it is left alone, and a line already there
+# is not written again: every merge added one (0.28.0 release review).
+if ! git check-ignore -q "$NOTE_PATH" 2>/dev/null \
+    && ! git ls-files --error-unmatch -- "$NOTE_PATH" >/dev/null 2>&1; then
+  # A file whose last line has no newline would have the rule glued onto it (fix review).
+  _ex=$(git rev-parse --git-path info/exclude 2>/dev/null) && [[ -n "$_ex" ]] \
+    && ! grep -qxF "/$NOTE_PATH" "$_ex" 2>/dev/null \
+    && mkdir -p "$(dirname "$_ex")" 2>/dev/null \
+    && { [[ ! -s "$_ex" || -z "$(tail -c1 "$_ex")" ]] || printf '\n' >> "$_ex"; } 2>/dev/null \
+    && printf '/%s\n' "$NOTE_PATH" >> "$_ex" 2>/dev/null || true
+fi
 {
   # Every name from outside the hook — a branch, a path, an upstream, a command line, a
   # container, docker's own words — goes through shq, on every line, not only the
@@ -363,7 +363,11 @@ mkdir -p "$(dirname "$NOTE_FILE")"
   if [[ -n "$ALL_MERGED" ]]; then
     echo "### ⚠ Branches merged into $(shq "$INTEGRATION_BRANCH") (safe to delete):"
     # Merged straight from origin/<x> with no local <x>, there is nothing to delete.
+    # Never a protected branch: the merged-in side of a back-merge is main, and the note
+    # offered `git branch -d main` as safe to delete — ALL_MERGED filters protected names,
+    # this line did not (fix review of 0.28.0's release review).
     if [[ -n "$JUST_MERGED" && "$JUST_MERGED" != "unknown" ]] \
+       && ! printf '%s' "$JUST_MERGED" | grep -qiE -e "$PROTECTED_RE" 2>/dev/null \
        && git show-ref --verify -q "refs/heads/$JUST_MERGED"; then
       note_branch "$JUST_MERGED" just
     fi
@@ -379,18 +383,41 @@ mkdir -p "$(dirname "$NOTE_FILE")"
 } > "$NOTE_FILE"
 
 # Printed as well as written: no flight-rules hook reads the file (#110; a user's own
-# hook may), so the merger — the owner or an assistant — is who sees it. Only when there is something to do: a `git pull`
-# runs this hook too, and a clean one stays one line. At most 40 lines; the file has all.
-echo ""
-if [[ ${#STALE_WORKTREES[@]} -gt 0 || -n "$ALL_MERGED" ]]; then
-  _n=$(wc -l < "$NOTE_FILE" | tr -d ' ')
-  head -40 "$NOTE_FILE"
+# hook may), so the merger — the owner or an assistant — sees it here. Only what this
+# merge left is printed in full — its worktree, what still runs from it, its branch —
+# and what earlier merges left as one count line. Re-listing every earlier worktree and
+# branch on every merge, and the whole note on every pull, was noise that hid the new
+# line (hooks review H21, 2026-10-28; MISSION.md principle 5). A pull, a fast-forward or
+# a back-merge prints nothing; the file has everything. At most 40 lines.
+PRINT=""
+if is_feature_merge; then
+  # Read back from the note, not worked out again: the process list is read once.
+  # ENVIRON, not awk -v, which would read a backslash in a name as an escape.
+  _blk=$(B="  Branch: $(shq "$JUST_MERGED")  →" awk 'index($0, ENVIRON["B"]) == 1 {p=1}
+    p {print} p && /^  git worktree remove / {exit}' "$NOTE_FILE")
+  _brl=$(L="  git branch -d $(shq "$JUST_MERGED")" awk '$0 == ENVIRON["L"] {print; if ((getline n) > 0 && n ~ /^    ↑/) print n; exit}' "$NOTE_FILE")
+  _old_wt=${#STALE_WORKTREES[@]}; [[ -n "$_blk" ]] && _old_wt=$((_old_wt - 1))
+  _old_br=$(printf '%s\n' "$PREVIOUSLY_MERGED" | grep -c . || true)
+  if [[ -n "$_blk" ]]; then
+    PRINT+="### ⚠ Its worktree is still present (remove after confirming work is merged):"$'\n'
+    [[ -n "$RUN_ERR" ]] && PRINT+="  ⚠ $RUN_ERR"$'\n'
+    [[ -n "$DOCKER_ERR" ]] && PRINT+="  ⚠ $DOCKER_ERR"$'\n'
+    PRINT+="$_blk"$'\n'
+  fi
+  [[ -n "$_brl" ]] && PRINT+="### ⚠ Its branch is merged (safe to delete):"$'\n'"$_brl"$'\n'
+  if [[ "$_old_wt" -gt 0 || "$_old_br" -gt 0 ]]; then
+    PRINT+="Earlier merges left $_old_wt worktree(s) and $_old_br branch(es) to clean up — listed in $NOTE_PATH"$'\n'
+  fi
+  [[ -n "$PRINT" ]] && PRINT="## Post-merge to $(shq "$INTEGRATION_BRANCH"): $(shq "$MERGED_BRANCH")"$'\n'"$PRINT"
+fi
+if [[ -n "$PRINT" ]]; then
+  echo ""
+  _n=$(printf '%s' "$PRINT" | wc -l | tr -d ' ')
+  printf '%s' "$PRINT" | head -40
   [[ "$_n" -gt 40 ]] && echo "  … $((_n - 40)) more lines in $NOTE_PATH"
   echo ""
 fi
-if [[ "$CLEAR_AI_CONTEXT" == "1" ]] && is_feature_merge; then
-  echo "✅ post-merge: context cleared ($CLEARED_COUNT items), cleanup note written to $NOTE_PATH."
-else
+if [[ -n "$PRINT" ]]; then
   echo "✅ post-merge: cleanup note written to $NOTE_PATH."
 fi
 exit 0

@@ -18,15 +18,9 @@ natively.
 
 See [CHANGELOG.md](CHANGELOG.md) for what changes between versions.
 
-> **What the hooks are for.** They catch the workflow slip — a fix committed straight to
-> a protected branch instead of on a worktree branch, a merge of work whose checks never
-> ran, a `git rm` with a relative path after a `cd` that silently failed. They are
-> guardrails, not a security boundary: anyone who means to get past them can, and an
-> assistant given full control of a machine is beyond anything a repository of rules can
-> reach. The design goal is to make the accidental path harder than the correct one, not
-> to be unbypassable, and it assumes a competent developer: it catches what is easy to
-> overlook, stops and says why when it cannot go on, and does not babysit. See
-> [hooks/README.md](hooks/README.md#what-these-hooks-are--and-are-not).
+> **What the hooks are for.** They catch the slip, not someone who means to get past
+> them: [What these hooks are — and are not](hooks/README.md#what-these-hooks-are--and-are-not).
+> What flight-rules is for, and what it holds to, is [MISSION.md](MISSION.md).
 
 ## How it flows
 
@@ -38,7 +32,7 @@ reconciled via `/rules-sync`) — so nobody maintains a drifting copy.
 flowchart TB
     subgraph sources["Upstream sources"]
         direction LR
-        S1["dinesh-gilfoyle"] ~~~ S2["karpathy-skills"] ~~~ S3["depshield-mcp"] ~~~ S4["mattpocock-skills"] ~~~ S5["karpathy-llm-wiki"]
+        S1["dinesh-gilfoyle"] ~~~ S2["karpathy-skills"] ~~~ S4["mattpocock-skills"] ~~~ S5["karpathy-llm-wiki"]
     end
     sources -- "/upstream-check" --> FR["flight-rules<br/>(single source of truth)"]
     FR -- "/rules-sync" --> P1["AppliHawk"]
@@ -48,6 +42,7 @@ flowchart TB
 ## Layout
 
 ```
+MISSION.md What flight-rules is for — the questions every change to it answers
 rules/     Always-on principles a project's CLAUDE.md / .cursorrules should point at
 skills/    Invocable workflows — see the catalog below
 hooks/     Enforcement templates — git merge-gate hooks + agent commit/secret guards
@@ -70,7 +65,6 @@ Always-on principles a project's rules entry point points at.
 |---|---|
 | [`engineering-principles`](rules/engineering-principles.md) | How to approach a change — scope discipline, verify before claiming done, suggest better ways, judge ideas on merit not authorship |
 | [`git-worktree-workflow`](rules/git-worktree-workflow.md) | One change per branch via worktrees; never commit to a protected branch |
-| [`dependency-lockfile`](rules/dependency-lockfile.md) | Intent-file + lockfile pinning, deliberate upgrades, and agent-aware pre-install checks |
 | [`multi-ai-setup`](rules/multi-ai-setup.md) | Conventions for running more than one AI assistant in a repo |
 
 ## Skills
@@ -87,7 +81,9 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 | [`/commit`](skills/commit/SKILL.md) | Guarded commit — protected-branch, secret-scan, and test-coverage checks | Every commit |
 | [`/docs-lint`](skills/docs-lint/SKILL.md) | Health-check living docs for drift, contradictions, and stale claims | Docs start to rot |
 | [`/rules-sync`](skills/rules-sync/SKILL.md) | Pull the latest playbook and reconcile a project's local copies | After the playbook updates |
-| [`/upstream-check`](skills/upstream-check/SKILL.md) | Check the sources this playbook adapts from for changes to fold in | Maintaining flight-rules itself |
+
+Maintaining flight-rules itself, `/upstream-check` checks the sources in `UPSTREAMS.md` for
+changes to fold in. It lives in this repo's `.claude/skills/` and does not ship.
 
 ## Consuming from a project
 

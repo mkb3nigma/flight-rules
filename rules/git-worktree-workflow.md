@@ -17,25 +17,25 @@ branch — feature work physically cannot dirty the main checkout.
 
 Each item says how it is enforced — **hook**, **skill**, **advisory**, or **reminded**
 (no gate, but `post-merge` shows it at the merge and `session-start.sh` at the next session).
-Advisory items are re-examined at every plugin release for enforcement that has become
-possible; one is deleted only when its warrant is gone or another item covers it, never
-for having gone unenforced.
 
 ### 🚫 Forbidden
 1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
-2. Multiple features in one branch — one purpose per branch — skill (`pre-merge-check` 9, ⚠️)
-3. Letting open branches pile up: at `OPEN_BRANCH_LIMIT` (default 5, set in the conf)
-   branches open and not yet merged into `{INTEGRATION_BRANCH}`, start another only
-   once the person says it is okay — told how many are open, which wait to merge, and
-   where the limit is set; with no one to ask, the branch is not opened. Nothing else
-   waits on it — skill
-   (`feature-start` 5 asks); reminded (`session-start` warns at the limit)
+2. Multiple features in one branch — one purpose per branch: two changes in one branch
+   are reviewed, reverted and released as one, so a defect in either holds back or takes
+   out both — skill (`pre-merge-check` 9, ⚠️)
+3. Letting open branches pile up — piled up, they come to depend on each other's
+   unmerged work, and what is open stops being visible: at `OPEN_BRANCH_LIMIT` (default
+   5, set in the conf) branches open and not yet merged into `{INTEGRATION_BRANCH}`,
+   start another only once the person says it is okay — told how many are open, which
+   wait to merge, and where the limit is set; with no one to ask, the branch is not
+   opened. Nothing else waits on it — skill (`feature-start` 5 asks); reminded
+   (`session-start` warns at the limit)
 4. Merging without tests passing — skill (`pre-merge-check` 1–3 runs them; on note-gated
    branches `commit-msg` requires its stamp, which proves the skill ran, not that it
    passed honestly); on PR-only branches the host's CI and review are the gate
 5. Force-pushing or rebasing a protected branch, or deleting it — locally or on the
    remote — hook
-   (agent guard; the `pre-rebase` git hook covers PR-only branches only)
+   (agent guard; the `pre-rebase` git hook refuses the rebase)
 6. Creating branches with `git checkout -b` / `git switch -c` while on a protected
    branch — always `git worktree add` — hook (the guard enforces it there, which is where
    a branch made in place strands feature work in the checkout you meant to keep clean;
@@ -43,7 +43,7 @@ for having gone unenforced.
 7. Moving a **PR-only branch (default `main`) onto anything not already on its remote**
    — merging locally, committing directly, cherry-picking, reverting, `branch -f`,
    `update-ref`, `reset --hard`. It moves only through a reviewed pull request. Sync
-   with `git pull --ff-only origin main` — hook (`reference-transaction`, which judges
+   with `git pull --ff-only` from `origin/<that branch>` — hook (`reference-transaction`, which judges
    where the ref landed rather than which command moved it)
 8. Merging into any other protected branch **without the user's instruction** — the
    `pre-merge-check` stamp is the agent's own, so it shows a check ran, not that anyone
@@ -59,12 +59,21 @@ for having gone unenforced.
    (Forbidden 6), enforced while you are on a protected branch, which is when a branch
    made in place puts feature work in the checkout you meant to keep clean; the location
    is advisory
-2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`, `hotfix/` — skill (`feature-start` 3)
+2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`,
+   `hotfix/` — the prefix is what a pull request is routed by (`hotfix/` to `main`, the
+   rest to `{INTEGRATION_BRANCH}`); a branch without one is routed only by asking, every
+   time — skill
+   (`feature-start` 3; `pr-create` routes on it)
 3. Conventional commit messages using the same prefixes (`hotfix/` branches commit as
-   `fix:` — there is no `hotfix:` message prefix) — skill (`commit` 4, `pre-merge-check` 8)
-4. Review the full diff after every commit (`git diff HEAD~1`) — advisory
-5. Commit after every logical unit of work — small commits, easy rollback — advisory
-   (`pre-merge-check` 16 only warns at the other extreme, ~20+)
+   `fix:` — there is no `hotfix:` message prefix) — the prefix says what kind of change
+   each commit is, which a reviewer and whoever writes the release notes read off the
+   log; without it, each commit has to be opened to tell — skill (`commit` 4,
+   `pre-merge-check` 8)
+4. Review the full diff after every commit (`git diff HEAD~1`) — a file staged by
+   accident, a debug line or an unrelated edit otherwise goes unseen until the review at
+   the merge — advisory: whether a diff was read cannot be checked
+5. Commit after every logical unit of work — small commits, easy rollback — advisory:
+   what a logical unit is, is a judgement
 6. Symlink untracked env files from the main checkout into new worktrees
    (copies go stale; symlinks propagate edits): `ln -s "$PWD/.env" {WORKTREE_DIR}/<name>/.env`.
    Not `node_modules` — tools that resolve real paths break through the link — skill (`feature-start` 7)
@@ -73,16 +82,18 @@ for having gone unenforced.
    skill (`pre-merge-check` 21, for what the checks started), reminded (`post-merge`
    prints what still runs from the worktree, containers included, at the merge;
    `session-start`)
-8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main`, first fast-forward any `main`-only commits into it; if that is not a fast-forward, **stop and ask** — skill (`feature-start` 4)
+8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
 
 ## The cwd-drift trap (learned the hard way)
 
-AI shell sessions reset or drift their working directory between commands. Two rules:
+AI shell sessions reset or drift their working directory between commands. Three rules:
 
 - Always `cd <absolute-path>` **in the same shell command** as any git operation.
-- Never run `git merge` from inside a feature worktree — it merges into the feature
-  branch, not the integration branch. Merge from the main checkout, verified with
-  `git branch --show-current` in the same command.
+- Never run the merge **into** the integration branch from inside a feature worktree —
+  there, `git merge` merges into the feature branch. Merge into it from the main
+  checkout, verified with `git branch --show-current` in the same command. Merging the
+  integration branch into a feature branch, to catch up or to resolve a conflict, is the
+  one merge that belongs in the worktree.
 - Run the worktree commit and the integration-branch merge as **separate commands** —
   a compound command that commits in one directory and merges in another is exactly
   how the wrong branch gets merged.
@@ -105,12 +116,14 @@ git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR
 
 - Before requesting a merge: run the project's pre-merge checklist (see the
   `pre-merge-check` skill) and an adversarial review (see `dg`) for code changes.
-- Bad merge on a protected branch: revert it, don't rewrite history — but do it the way
-  the branch allows. On a **PR-only** branch `git revert` is refused by
-  `reference-transaction` (Forbidden 7 lists reverting), so make the revert on a branch
-  and open a PR: `git worktree add {WORKTREE_DIR}/revert-x -b fix/revert-x origin/{INTEGRATION_BRANCH}`,
-  then `git revert -m 1 <merge-sha>` there. On any other protected branch,
-  `git revert -m 1 <merge-sha>` in place is fine.
+- Bad merge on a protected branch: revert it, don't rewrite history. A revert is a
+  commit, so it is made on a branch cut from that protected branch's remote, never in
+  place (Forbidden 1; on a PR-only branch `reference-transaction` refuses it too —
+  Forbidden 7): `git worktree add {WORKTREE_DIR}/revert-x -b fix/revert-x origin/<that branch>`
+  (`hotfix/revert-x` for a PR-only branch, so its PR is routed there), then
+  `git revert -m 1 <merge-sha>` there. It goes back the way the branch allows — a PR to a
+  PR-only branch, the usual merge into any other. A branch cut from
+  `{INTEGRATION_BRANCH}` to revert `main` would carry its unreleased work into `main`.
 
 ## Enforcement (optional but recommended)
 
@@ -128,7 +141,8 @@ Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once
   `commit-msg` requires a passing `pre-merge-check` note to merge into a **note-gated**
   branch (`{NOTE_GATED_BRANCHES}`), exempting back-merges of `main`, refuses squash
   merges into a PR-only branch, and refuses a merge that does not say who asked for it;
-  `pre-rebase` refuses to rebase one; `post-merge` writes the cleanup note.
+  `pre-rebase` refuses to rebase any protected branch; `post-merge` writes the cleanup
+  note.
   They read `.ai/flight-rules.conf` from a state the incoming branch cannot edit —
   `reference-transaction` from the **upstream**, the rest **as committed on the merge
   target** — so a branch cannot relax the rule judging it.

@@ -27,10 +27,10 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 ## Steps
 
 1. **Check current branch** — the main checkout normally rests on `{INTEGRATION_BRANCH}`;
-   that's fine (worktree creation never commits to it). If the working tree is dirty,
-   stop and ask what to do with the changes.
-2. **Check stashes** — `git stash list`; if any exist, list them and ask whether to
-   proceed or resolve first.
+   that's fine (worktree creation never commits to it). If it has uncommitted edits,
+   say in one line that they stay there and do not come into the new worktree, and go
+   on: edits there are usually work begun on the wrong branch.
+2. *Retired (#119); numbered so later steps keep theirs.*
 3. **Validate the branch name** — ask if not provided; verify the prefix.
 4. **Sync the base from origin — non-negotiable.**
    - `git fetch origin` first, **always**. New branches derive from
@@ -59,16 +59,18 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      ```bash
      git log --oneline origin/main..origin/{INTEGRATION_BRANCH}
      ```
-     - Reverse range **empty** → the integration branch is strictly behind; a
-       fast-forward is safe. Print the commits that will move, then update the remote
-       branch without touching any local checkout:
+     - Reverse range **empty** → the integration branch is strictly behind, and a
+       fast-forward brings it up. That moves a protected branch on the remote, so it
+       is the person's to run, not this skill's: print the commits that would move and
+       the command, and stop — a branch cut now would miss them. An assistant runs it
+       only when the person says so.
        ```bash
        git push origin origin/main:refs/heads/{INTEGRATION_BRANCH} && git fetch origin
        ```
-       This is a plain (never forced) push of already-reviewed commits; the guard
-       allows it for that reason. If the push is still rejected, the likely causes are
-       a stale `origin/*` (fetch and re-check), host branch protection, or missing
-       permission — say which you think it is and ask; do not guess "diverged".
+       It is a plain push of already-reviewed commits, never forced. If it is
+       rejected, the likely causes are a stale `origin/*` (fetch and re-check), host
+       branch protection, or missing permission — not "diverged". Once it has landed,
+       start again at step 4.
      - Reverse range **non-empty** → the branches have diverged and reconciling them
        is a real merge into a protected branch, which is the user's call. STOP, show
        both ranges, ask. Never `git merge` here yourself.
@@ -99,7 +101,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    printf '' | grep -E -e "$p" >/dev/null 2>&1 || [ $? -eq 1 ] || echo "COULD NOT COUNT: the protected pattern does not compile"
    l=$(git worktree list --porcelain) || echo "COULD NOT COUNT: git worktree list failed"
    printf '%s\n' "$l" | sed -n 's|^branch refs/heads/||p' \
-     | grep -vxF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \
+     | grep -vixF '{INTEGRATION_BRANCH}' | grep -viE -e "$p" \
      | while IFS= read -r b; do
          n=$(git rev-list --count "refs/heads/$b" --ignore-missing \
                --not refs/heads/{INTEGRATION_BRANCH} refs/remotes/origin/{INTEGRATION_BRANCH}) \
@@ -149,7 +151,8 @@ git worktree remove {WORKTREE_DIR}/<slug>
 git branch -d <branch>
 ```
 
-To find others already merged, **list them and delete by name** — one command per
+Merged by PR, the local `{INTEGRATION_BRANCH}` lacks the merge until it is pulled, so pull it
+first. To find others already merged, **list them and delete by name** — one command per
 branch, never piped into `xargs`:
 
 ```bash

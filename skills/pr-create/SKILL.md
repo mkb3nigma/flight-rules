@@ -29,22 +29,10 @@ Open a GitHub PR for the current feature branch. Project parameters:
 - `/pre-merge-check` must be clean first — no ❌ items may remain. ⚠️ warnings are
   non-blocking but must be listed in the PR body.
 - A release PR (`{INTEGRATION_BRANCH}` → `main`) additionally needs the full
-  `{TEST_COMMANDS}` run on the commit being pushed — step 2a. Warrant: AppliHawk's
-  release PR #191 went red on its first CI run on 2026-09-14 with every merged branch
-  individually green, because five merges landed after the batch run and the integration
-  branch was never tested whole.
-- A release PR also needs `/dg` on the **whole** diff, `origin/main...<sha>` — step 2b —
-  with the verdict and every finding's disposition in the PR body, and the `release
-  review` check fails a PR into `main` whose **Adversarial review** section is missing
-  or empty. Warrant: AppliHawk's
-  0.16.0 was declared release-ready on 2026-10-11 with every branch past
-  `/pre-merge-check` (which runs no AI review) and the suite green on the final
-  integration commit; `/dg` on the 93-commit, 224-file diff the next day found a
-  data-loss bug — editing an action unlinked its contact, because a nested response
-  schema was a hand-copied subset of the full one and the component test's fixture was
-  shaped like the frontend type, not the API payload (fixed in AppliHawk aa4ca42e,
-  2026-10-12; private repo). Nothing had reviewed the release as a whole, and the whole
-  is the one review with every piece in view at once.
+  `{TEST_COMMANDS}` run on the commit being pushed (step 2a) and `/dg` on the **whole**
+  diff, `origin/main...<sha>`, with the verdict and every finding's disposition in the PR
+  body (step 2b). `release-pr.md` beside this file has both steps in full and their
+  warrants.
 - PR title in conventional-commit format — derived from the branch name unless the
   user supplies one as arguments.
 - Never force-push after opening a PR.
@@ -53,56 +41,12 @@ Open a GitHub PR for the current feature branch. Project parameters:
 
 ## Stacked PRs — use the real feature, never hand-roll one
 
-Splitting a large change into an ordered series of PRs, each reviewable on its own diff,
-is genuinely worth doing. There are two ways to get it, and only one of them is safe.
-
-**Use GitHub's native stacked pull requests.** Public preview since 2026-07-30, all
-repositories:
-
-```bash
-gh extension install github/gh-stack
-```
-
-The platform owns the ordering, which is the whole point:
-
-- Stacks merge **bottom-up**, and a mid-stack PR **cannot** be merged in isolation — the
-  PRs below it always merge with it.
-- Merging lands the selected PR *and every unmerged PR below it* as one operation.
-- The remaining PRs are **automatically rebased** onto the stack base afterwards.
-- The merge box shows the status of the **whole stack**, not just the open PR.
-
-Known limits: **auto-merge is not supported** for stacked PRs, and merge-queue support
-arrived separately — check both before relying on them.
-
-**Never hand-roll a stack** by pointing `gh pr create --base` at another open PR's head.
-It looks identical in the UI and has none of the guarantees:
-
-> Merging the parent makes GitHub retarget the child — *asynchronously*. Merge the child
-> before that lands and its commits go into the already-merged parent branch, which is
-> then usually auto-deleted. GitHub reports the child as **MERGED**, truthfully, about the
-> wrong destination. The commits never reached `{INTEGRATION_BRANCH}` and nothing in the
-> UI says so.
-
-This is not hypothetical. It happened in this repo on 2026-08-15 with 22 seconds between
-the two merges, and the work survived only because the commit still existed in a local
-worktree. A body note reading *"Stacked on #N — review #N first"* was already the first
-thing in the child's description and changed nothing, because merging happens from the PR
-list and the merge button, and neither shows the body. Ordering that depends on a human
-reading prose is not ordering.
-
-**If `gh stack` isn't available** (preview not enabled, non-GitHub host), then don't stack
-at all: keep the second branch local and open its PR once the parent merges. Costs a
-delay, removes the failure mode entirely. Do not substitute discipline for the mechanism.
-
-**Either way, verify after merging.** `MERGED` is a claim about the merge, not about the
-destination:
-
-```bash
-git fetch origin && git log --oneline origin/{INTEGRATION_BRANCH} | grep <child-sha>
-```
-
-Empty output means the work is stranded on a deleted branch. Recover by re-pushing the
-branch from a local copy and opening a fresh PR against the correct base.
+To split a change into dependent PRs, use GitHub's native stacks (`gh stack`), or keep
+the second branch local until the first merges. Never point `--base` at another open
+PR's head: GitHub can merge the child into the parent's branch, report it MERGED, and
+the work never reaches `{INTEGRATION_BRANCH}` (this repo, 2026-08-15). Either way,
+verify after merging. `stacked-prs.md` beside this file has the commands, what the
+platform guarantees and the failure in full — read it before stacking.
 
 ## Procedure
 
@@ -112,46 +56,14 @@ branch from a local copy and opening a fresh PR against the correct base.
    (see **Stacked PRs** above) or wait for it to merge.
 2. Run `/pre-merge-check`; STOP on any ❌ failure.
 2a. **Release PR only** — when the head is `{INTEGRATION_BRANCH}` and the base is `main`:
-   before pushing it, run every `{TEST_COMMANDS}` entry on the **exact commit that will
-   be pushed**, and stop on any failure. Report the commit sha you ran them on, not just
-   that you ran them — "I ran the suite" and "I ran the suite on the commit I am pushing"
-   are different claims, and only the second is checkable.
-
-   Per-branch checks prove each change in isolation; the release PR ships the **sum**.
-   Nothing has tested the sum until something runs everything on the merged tree. A red
-   offline run costs the same minutes as a red CI run and none of anyone's attention.
-
-   A local run covers one platform. Where CI runs the suites on more, read CI's result
-   for that same sha (`gh run list --commit <full sha>` — a short sha matches no run,
-   and an empty list has nothing red in it; the final 0.25.0 review). It lists workflow
-   runs, not platforms: a matrix of OSes is one run, its conclusion covering every job
-   (`gh run view <id>` names each). Open the PR only when each workflow CI runs on a
-   push is listed for that sha, completed and green — none listed means not yet. 0.25.0's 2a passed on macOS (bash 3.2) while Ubuntu CI
-   (bash 5) had been red on `{INTEGRATION_BRANCH}` for two pushes (flight-rules
-   4fe21fe, 2026-10-17).
-2b. **Release PR only** — run `/dg origin/main...<sha>` on the commit 2a tested,
-   preferring a pre-reviewer from a different model family (the skill says why; one
-   that is unavailable is a warning in the verdict's header, not a reason to stop), and
-   name both shas in the verdict. `/dg` ends its turn with the verdict; dispositions
-   follow the owner's reply. Put the `> Pre-review:` / `> Dependency scan:` lines, the verdict (it ends at
-   Recommended Actions) and every finding's disposition in the PR body under
-   **Adversarial review**, each of the verdict's headings one level down (`###`, `####`;
-   the review's own `## Review` title too)
-   — a `##` inside the section ends it (outside a code fence), and the check below then finds it empty. No
-   round tables or banter. The comic, banter score included, goes in only as the
-   project's `DG_COMIC_PR` says (`/dg` step 6; default `never`), as `### Comic` at the
-   section's end. The `release review` workflow checks the section is there, holds text
-   other than the template's placeholders, and holds a `### Verdict`, outside a code
-   fence, with text under it that is not a heading — the header lines alone are not a
-   verdict (#83), nor is a bare heading — and re-checks on every body edit. The assistant may decline a minor or important finding with its reason, where the
-   owner reads it; a **critical** finding is the owner's to disposition — stop and
-   ask. A finding applied arrives like any change, through a branch merged into
-   `{INTEGRATION_BRANCH}`; then 2a runs again on the new tip, and `/dg` on the fix's
-   own diff only — the rest was reviewed, and that is the exit.
-
-   The same reasoning as 2a, for review instead of tests (the warrant is in the
-   constraint above): each branch was checked as a piece, and the release diff is the
-   one review with every piece in view at once.
+   run every `{TEST_COMMANDS}` entry on the exact commit that will be pushed, stop on
+   any failure, and report that sha; where CI runs more platforms, open the PR only
+   once CI is green for it. `release-pr.md` beside this file, 2a, has how to read CI.
+2b. **Release PR only** — `/dg origin/main...<sha>` on the commit 2a tested. The
+   verdict and every finding's disposition go in
+   the PR body under **Adversarial review**; a critical finding is the owner's to
+   disposition. `release-pr.md` beside this file, 2b, has the section's format — what
+   the `release review` check reads — and what follows a finding applied.
 3. Summarize `git log <base>..HEAD` (one user-facing bullet per commit) and
    `git diff <base>...HEAD --stat` (files-changed summary), then create the PR:
 

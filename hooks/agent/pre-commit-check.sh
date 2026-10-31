@@ -149,21 +149,59 @@ is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
 # protected branch's tree, and the guard never sees them because no commit
 # follows. `git clean -n` and a bare `git checkout <branch>` are not destructive
 # and stay allowed.
+# plain_unstage <segment>: 0 when it is exactly `git restore --staged …` or `git rm
+# --cached …` — the word git, the verb, then only options from a short list that touch no
+# file in the tree, and plain paths. Anything else — another option (`--no-cached`,
+# `--worktree` or a prefix of it, `--end-of-options`), a quote, `$`, a backtick, `#`, a
+# redirection or a glob, a shell wrapper — is not plainly that, and is judged as before.
+# Global options git knows (`--no-pager`, `-C <dir>`) are normalised away before this
+# runs, as for every matcher. An allowlist, not a list of what to refuse: each
+# refuse-list fix opened the next shape (two commit security reviews, 2026-10-29).
+# A subshell with nocasematch off: the caller matches branch names case-insensitively, and
+# with it on here `-s` (restore's --source, which writes the tree) passed as `-S`.
+plain_unstage() (
+  shopt -u nocasematch
+  local w i verb have=0
+  case "$1" in *[\'\"\`\$\\\#\;\&\|\<\>\(\)\{\}\*\?\[]*) return 1 ;; esac
+  read -r -a w <<<"$1"
+  [ "${#w[@]}" -ge 3 ] && [ "${w[0]}" = git ] || return 1
+  verb=${w[1]}
+  for (( i = 2; i < ${#w[@]}; i++ )); do
+    case "$verb:${w[$i]}" in
+      rm:--cached|restore:--staged|restore:-S) have=1 ;;
+      rm:-r|rm:-q|rm:--quiet|restore:-q|restore:--quiet|restore:--source=?*) ;;
+      # The value as its own word: the next one, and never an option, or `--source
+      # --staged` would pass with git reading --staged as the source (0.28.0 release
+      # review: the spaced form was refused as discarding work).
+      restore:--source|restore:-s)
+        i=$((i+1))
+        [ "$i" -lt "${#w[@]}" ] && [ "${w[$i]#-}" = "${w[$i]}" ] || return 1 ;;
+      *:-*) return 1 ;;
+    esac
+  done
+  [ "$have" -eq 1 ]
+)
+
 is_destructive() {
-  [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)${E} ]] && return 0
+  # `restore --staged` only unstages and `rm --cached` only untracks: neither touches a
+  # file in the tree, and both are everyday on the main checkout (mission review H4,
+  # 2026-10-29) — in their plain form only (plain_unstage).
+  if [[ "$1" =~ ${B}git[[:space:]]+(rm|restore)${E} ]]; then
+    plain_unstage "$1" || return 0
+  fi
   [[ "$1" =~ ${B}git[[:space:]]+reset[[:space:]]+.*--(hard|merge) ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+clean[[:space:]]+.*-[a-zA-Z]*f ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+(--|\.)${E} ]] && return 0
   # `git checkout <rev> -- <path>` overwrites the path from <rev>; `git switch
   # --discard-changes`/`-f` throws local edits away; `git rebase` rewrites the
   # branch in place (its --abort/--quit/--continue are the way OUT of one and stay
-  # allowed); `git stash drop|clear` deletes the only copy of stashed work.
+  # allowed). Not `git stash drop|clear`: a stash belongs to the repository, not to the
+  # branch, so standing on a protected one makes a drop no riskier (#118).
   [[ "$1" =~ ${B}git[[:space:]]+checkout[[:space:]]+[^[:space:]-][^[:space:]]*[[:space:]]+--${E} ]] && return 0
   [[ "$1" =~ ${B}git[[:space:]]+switch[[:space:]]+.*(--discard-changes|--force|-[a-zA-Z]*f[a-zA-Z]*)${E} ]] && return 0
   if [[ "$1" =~ ${B}git[[:space:]]+rebase${E} ]]; then
     [[ "$1" =~ ${B}git[[:space:]]+rebase[[:space:]]+.*--(abort|quit|continue|skip)${E} ]] || return 0
   fi
-  [[ "$1" =~ ${B}git[[:space:]]+stash[[:space:]]+(drop|clear)${E} ]] && return 0
   return 1
 }
 
