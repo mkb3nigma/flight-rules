@@ -113,7 +113,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    and ask, as at the limit (an error sent to `/dev/null` once read as zero open — fix
    review, 2026-10-24). At or over the limit, show the person how many are open and
    which, which of them have a passing note (`git notes --ref=pre-merge-check show
-   <branch>` begins `passed:`) and only wait to merge, and say where the limit is set:
+   <branch>`: `passed:` with the tip's `tree:`, and a `ran:` line) and only wait to merge, and say where the limit is set:
    *"OPEN_BRANCH_LIMIT is <n> in .ai/flight-rules.conf — raise it, or set it to off,
    there"* (or that `FLIGHT_RULES_OPEN_BRANCH_LIMIT` set it). Create the branch only once
    they say it is okay. Under the limit, say nothing. With no one to ask, create

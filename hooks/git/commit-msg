@@ -370,8 +370,29 @@ NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
 # failed to check — the error is shown and the person picks the way on (owner, 0.28.0
 # fix review). Where git is too old to tell, the merge goes on as before 0.28.0, said
 # aloud — refusing it would shut the note gate on every git older than 2.38.
-NOTE_PASSED=""
-echo "$NOTE" | grep -q "^passed:" && NOTE_PASSED=1
+#
+# A bare `passed:` proves nothing: an assistant wrote one by hand 12 times, mostly into
+# merge commands handed over to paste (#107). So a note counts only with its evidence —
+# the tree the check ran on, which must be this commit's, and a `ran:` line for what
+# ran. Anyone can still type both; what this stops is the bare shortcut, and a note
+# carried onto a commit it never checked.
+NOTE_PASSED=""; NOTE_BAD=""
+if printf '%s\n' "$NOTE" | grep -q "^passed:"; then
+    _nt=$(printf '%s\n' "$NOTE" | sed -n 's/^passed:.* tree:\([0-9a-f]\{40,64\}\).*$/\1/p' | head -1)
+    if [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -q '^passed:.*tree:'; then
+        # Typed by hand, a tree comes short, in capitals or after a space: name that,
+        # not "no tree" (fix review of #107, N-G1).
+        NOTE_BAD="its tree: is not a full, lowercase tree hash"
+    elif [ -z "$_nt" ]; then
+        NOTE_BAD="its passed: line has no tree:<hash>"
+    elif [ "$_nt" != "$(git rev-parse -q --verify "$MERGE_SHA^{tree}" 2>/dev/null)" ]; then
+        NOTE_BAD="its tree: is ${_nt:0:12}, not this commit's"
+    elif ! printf '%s\n' "$NOTE" | grep -q '^ran:[[:space:]]*[^[:space:]]'; then
+        NOTE_BAD="it has no ran: line saying what ran"
+    else
+        NOTE_PASSED=1
+    fi
+fi
 if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then
     if [ "$CLEAN" -eq 2 ]; then
         echo "⚠️  git merge-tree --write-tree failed here (it needs git 2.38 or later), so"
@@ -477,6 +498,8 @@ elif [ -n "$NOTE_PASSED" ]; then
     box_row "❌  THE NOTE DID NOT CHECK THIS MERGE" 1
 elif [ -n "$CATCHUP" ]; then
     box_row "❌  A CATCH-UP PULL MADE A MERGE COMMIT" 1
+elif [ -n "$NOTE_BAD" ] && [ -z "$NOT_CLEAN" ]; then
+    box_row "❌  THE NOTE DOES NOT SHOW THE CHECK" 1
 else
     box_row "❌  PRE-MERGE CHECK REQUIRED" 1
 fi
@@ -587,6 +610,14 @@ elif [ -n "$CATCHUP" ]; then
     box_row "$CATCHUP; merge.ff=false made it a merge commit."
     box_row "Undo it (below), and catch up without one:"
     box_row "  git pull --ff-only"
+elif [ -n "$NOTE_BAD" ]; then
+    box_row "The pre-merge-check note says passed, but"
+    box_row "$NOTE_BAD."
+    box_row "A note counts when its passed: line names tree:<hash>,"
+    box_row "the full hash of the tree the check ran on"
+    box_row "(git rev-parse '<branch>^{tree}'), and a ran: line says"
+    box_row "what ran. Run /pre-merge-check again on the branch's"
+    box_row "tip: it writes both."
 else
     box_row "Run /pre-merge-check in the feature worktree first. When"
     box_row "every check passes it stamps a note on the commit, and"
@@ -605,8 +636,9 @@ if [ -n "$NOTE_PASSED" ] || [ -n "$NOT_CLEAN" ] || [ -z "$CATCHUP" ]; then
     # flight-rules' README, by name: install.sh copies the hooks into a project, not the
     # README (0.28.0 release review).
     box_row "Working without an assistant: run the project's checks"
-    box_row "yourself — its tests at the least — then record what ran"
-    box_row "as a note on the tip of the branch being merged"
+    box_row "yourself — its tests at the least — then record what ran,"
+    box_row "and the tree it ran on, as a note on the tip of the"
+    box_row "branch being merged"
     box_row "(flight-rules' hooks/README.md → commit-msg has the"
     box_row "command). An assistant runs /pre-merge-check instead:"
     box_row "only running it may write the note."

@@ -439,7 +439,11 @@ OPEN_MSG=$(
     _ahead=$(git rev-list --count "refs/heads/$_b" --not $_base 2>/dev/null) || { _fail="$_fail $_b"; continue; }
     [ "$_ahead" -gt 0 ] || continue
     _n=$((_n+1))
-    if git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null | grep -q '^passed:'; then
+    # Waiting only if the gate would take its note: the tip's tree, and a ran: line (#107).
+    _nt=$(git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null)
+    _tr=$(printf '%s\n' "$_nt" | sed -n 's/^passed:.* tree:\([0-9a-f]\{40,64\}\).*$/\1/p' | head -1)
+    if [ -n "$_tr" ] && [ "$_tr" = "$(git rev-parse -q --verify "refs/heads/$_b^{tree}" 2>/dev/null)" ] \
+       && printf '%s\n' "$_nt" | grep -q '^ran:[[:space:]]*[^[:space:]]'; then
       _wait="$_wait $_b"
     else
       _work="$_work $_b"
