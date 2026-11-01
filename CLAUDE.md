@@ -27,11 +27,12 @@ principles; the rest you read once.
 
 Every change: `/feature-start <prefix>/<slug>` — `git fetch origin`, the open-branch
 count (`OPEN_BRANCH_LIMIT`, asked at the limit), then `git worktree add .ai/worktrees/<slug>
--b <prefix>/<slug> origin/dev`; a raw `worktree add` skips the count — and commit there;
-the owner pushes it. Then, **as the owner** (the assistant too, under the standing OK
-below), merge it into `dev` locally — stamp the
+-b <prefix>/<slug> origin/dev` (local `dev` while it holds merges not yet pushed); a raw
+`worktree add` skips the count — and commit there; the owner pushes it. Then, **as the owner** (the assistant
+too, under the standing OK below), merge it into `dev` locally — stamp the
 `pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
-from the `dev` checkout; the owner then pushes `dev`. No PR: `dev` is note-gated, not PR-only, and the
+from the `dev` checkout; the owner pushes `dev` when ready, at the latest for the
+release. No PR: `dev` is note-gated, not PR-only, and the
 local merge is what exercises the note gate, the authorisation trailer and the back-merge
 exemption — a GitHub-button merge runs none of them. **A contributor** cannot push `dev`
 and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `main` or

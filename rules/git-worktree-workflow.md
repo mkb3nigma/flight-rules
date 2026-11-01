@@ -82,7 +82,7 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    skill (`pre-merge-check` 21, for what the checks started), reminded (`post-merge`
    prints what still runs from the worktree, containers included, at the merge;
    `session-start`)
-8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
+8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base; a local one strictly ahead (merges not yet pushed) is the base instead. When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
 
 ## The cwd-drift trap (learned the hard way)
 

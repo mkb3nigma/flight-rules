@@ -33,10 +33,12 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 2. *Retired (#119); numbered so later steps keep theirs.*
 3. **Validate the branch name** — ask if not provided; verify the prefix.
 4. **Sync the base from origin — non-negotiable.**
-   - `git fetch origin` first, **always**. New branches derive from
-     **`origin/{INTEGRATION_BRANCH}`** (the true remote state) — never a local copy
-     that may be behind. Branching off a stale local base is the exact way work gets
-     built on the wrong foundation.
+   - `git fetch origin` first, **always**. The base is
+     **`origin/{INTEGRATION_BRANCH}`** — never a local copy that may be behind, the
+     exact way work gets built on the wrong foundation — unless the local one is
+     strictly ahead (`git log {INTEGRATION_BRANCH}..origin/{INTEGRATION_BRANCH}` empty,
+     the reverse not): merges not yet pushed, which origin's would miss (#125). Then the
+     local one is the base; say so. Diverged: STOP, show both ranges, ask.
    - **Reconcile `main` into the integration branch** — only when
      `{INTEGRATION_BRANCH}` differs from `main`. A hotfix or change applied straight
      to `main` is not on the integration branch, so a branch built off it silently
@@ -121,9 +123,9 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    a yes. A pile of open branches is
    how this repo's own work came to depend on itself: more than ten sat unmerged
    (2026-10-20 to 10-23), and the owner saw it only once they did (#108).
-6. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
+6. **Create the worktree** from step 4's base (repo root, absolute paths):
    ```bash
-   git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> origin/{INTEGRATION_BRANCH}
+   git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> <base>
    ```
 7. **Symlink untracked env files** from the main checkout (symlinks, not copies —
    copies go stale):
