@@ -33,33 +33,40 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 2. *Retired (#119); numbered so later steps keep theirs.*
 3. **Validate the branch name** — ask if not provided; verify the prefix.
 4. **Sync the base from origin — non-negotiable.**
-   - `git fetch origin` first, **always**. The base is
-     **`origin/{INTEGRATION_BRANCH}`** — never a local copy that may be behind, the
-     exact way work gets built on the wrong foundation — unless the local one is
-     strictly ahead (`git log {INTEGRATION_BRANCH}..origin/{INTEGRATION_BRANCH}` empty,
-     the reverse not): merges not yet pushed, which origin's would miss (#125). Then the
-     local one is the base; say so. Diverged: STOP, show both ranges, ask.
+   - `git fetch origin` first, **always**, then pull origin into the local
+     `{INTEGRATION_BRANCH}`, in the checkout that has it. The base is the local one: it
+     holds origin's work and any merges not yet pushed, which a branch from origin's
+     would miss (owner, 2026-11-01, #125); a local copy left behind is the exact way work
+     gets built on the wrong foundation.
+     ```bash
+     git pull --ff --no-rebase origin {INTEGRATION_BRANCH}
+     ```
+     Behind, it fast-forwards; ahead, nothing moves; diverged, it merges its own
+     upstream, which `commit-msg` lets through when clean. A conflict: `git merge
+     --abort`, STOP, and say so — it is resolved on a branch, never in
+     `{INTEGRATION_BRANCH}`. No checkout has it: `git fetch origin
+     {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`, and if that is refused, STOP and ask.
    - **Reconcile `main` into the integration branch** — only when
      `{INTEGRATION_BRANCH}` differs from `main`. A hotfix or change applied straight
      to `main` is not on the integration branch, so a branch built off it silently
      misses it. Check:
      ```bash
-     git log --oneline origin/{INTEGRATION_BRANCH}..origin/main
+     git log --oneline {INTEGRATION_BRANCH}..origin/main
      ```
      If non-empty, first check whether `main` brings anything the integration branch
      lacks. A PR merged into `main` leaves a merge commit there and nowhere else, so in
      a project that promotes by PR this range is never empty, and the reverse range
      below read every such repo as diverged (0.27.0 release review):
      ```bash
-     t=$(git merge-tree --write-tree origin/{INTEGRATION_BRANCH} origin/main) \
-       && [ "$t" = "$(git rev-parse 'origin/{INTEGRATION_BRANCH}^{tree}')" ] \
+     t=$(git merge-tree --write-tree {INTEGRATION_BRANCH} origin/main) \
+       && [ "$t" = "$(git rev-parse '{INTEGRATION_BRANCH}^{tree}')" ] \
        && echo "NOTHING TO RECONCILE"
      ```
      `NOTHING TO RECONCILE` → merging `main` in would change no file: say so in one
      line and go on to step 5. Anything else — a conflict, or git older than 2.38, which
      has no `--write-tree` — check the reverse range too:
      ```bash
-     git log --oneline origin/main..origin/{INTEGRATION_BRANCH}
+     git log --oneline origin/main..{INTEGRATION_BRANCH}
      ```
      - Reverse range **empty** → the integration branch is strictly behind, and a
        fast-forward brings it up. That moves a protected branch on the remote, so it
@@ -83,8 +90,8 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    `.ai/flight-rules.conf` (unset or not a positive whole number: 5; `off`: skip this
    step) — as `session-start` reads it. Open means a branch checked out in a worktree
    with commits in neither the local `{INTEGRATION_BRANCH}` nor
-   `origin/{INTEGRATION_BRANCH}` — step 4 fetches origin and never moves the local one,
-   so against it alone every branch merged by PR stayed open (0.27.0 release review) —
+   `origin/{INTEGRATION_BRANCH}` — against the local one alone, every branch merged by PR
+   stayed open until it was pulled (0.27.0 release review) —
    leaving out `{INTEGRATION_BRANCH}` itself and any
    branch the protected pattern matches: `FLIGHT_RULES_PROTECTED_BRANCHES` if set, else
    `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it — unset, the
@@ -123,9 +130,9 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    a yes. A pile of open branches is
    how this repo's own work came to depend on itself: more than ten sat unmerged
    (2026-10-20 to 10-23), and the owner saw it only once they did (#108).
-6. **Create the worktree** from step 4's base (repo root, absolute paths):
+6. **Create the worktree** from the local `{INTEGRATION_BRANCH}` (step 4; repo root, absolute paths):
    ```bash
-   git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> <base>
+   git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> {INTEGRATION_BRANCH}
    ```
 7. **Symlink untracked env files** from the main checkout (symlinks, not copies —
    copies go stale):

@@ -26,9 +26,9 @@ principles; the rest you read once.
 | `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/git/secret-scan.test.sh`, `hooks/git/install.test.sh`, `hooks/flight-rules-doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
 Every change: `/feature-start <prefix>/<slug>` — `git fetch origin`, the open-branch
-count (`OPEN_BRANCH_LIMIT`, asked at the limit), then `git worktree add .ai/worktrees/<slug>
--b <prefix>/<slug> origin/dev` (local `dev` while it holds merges not yet pushed); a raw
-`worktree add` skips the count — and commit there; the owner pushes it. Then, **as the owner** (the assistant
+count (`OPEN_BRANCH_LIMIT`, asked at the limit), origin pulled into local `dev`, then `git
+worktree add .ai/worktrees/<slug> -b <prefix>/<slug> dev`; a raw `worktree add` skips the
+count — and commit there; the owner pushes it. Then, **as the owner** (the assistant
 too, under the standing OK below), merge it into `dev` locally — stamp the
 `pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
 from the `dev` checkout; the owner pushes `dev` when ready, at the latest for the
@@ -36,7 +36,7 @@ release. No PR: `dev` is note-gated, not PR-only, and the
 local merge is what exercises the note gate, the authorisation trailer and the back-merge
 exemption — a GitHub-button merge runs none of them. **A contributor** cannot push `dev`
 and opens a PR to it instead. `main` is PR-only for everyone. Never commit on `main` or
-`dev`; sync with `git pull --ff-only origin dev`.
+`dev`; sync with `git pull --ff --no-rebase origin dev`.
 
 An assistant pushes no branch, and runs no `/pr-create` (which pushes), unless the
 owner says so in that session — the owner reviews and pushes (standing instruction).
