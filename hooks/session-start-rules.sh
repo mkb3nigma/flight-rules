@@ -43,8 +43,10 @@ VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
   "$RULES_ROOT/.claude-plugin/plugin.json" 2>/dev/null | head -1 || true)
 # The file opens with a front-matter header (`trigger: always_on`) that Antigravity reads to
 # load it into every session (2026-11-01). It means nothing to the model, so it is not
-# injected here. Only a block that opens on line 1 is stripped.
-BODY=$(awk 'NR==1 && $0=="---" {fm=1; next} fm && $0=="---" {fm=0; next} !fm' "$RULES")
+# injected here. Only a block that opens on line 1 is stripped, CRLF or not; one that never
+# closes would strip everything, so then the file goes in whole (fix review, 2026-11-01).
+BODY=$(awk '{ l = $0; sub(/\r$/, "", l) } NR==1 && l=="---" {fm=1; next} fm && l=="---" {fm=0; next} !fm' "$RULES")
+[ -n "$BODY" ] || BODY=$(cat "$RULES")
 HEADER="The flight-rules plugin${VERSION:+ $VERSION} is active. These engineering principles govern how you work in this session — follow them. They were injected when this session started: if the plugin has been updated since, a new session is what picks the change up."
 
 if command -v jq >/dev/null 2>&1; then
@@ -53,15 +55,16 @@ if command -v jq >/dev/null 2>&1; then
 elif command -v python3 >/dev/null 2>&1; then
   # -I: the hook runs in the project, and a json.py there was imported and run in
   # place of the standard library's (security review, 2026-10-13 — reproduced).
-  python3 -I - "$BODY" "$HEADER" <<'PY'
+  # The text arrives on stdin as UTF-8 bytes, not as an argument a non-UTF-8 locale could
+  # mis-decode (fix review, 2026-11-01).
+  printf '%s\n' "$BODY" | python3 -I -c '
 import json, sys
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "SessionStart",
-        "additionalContext": sys.argv[2] + "\n\n" + sys.argv[1] + "\n",
+        "additionalContext": sys.argv[1] + "\n\n" + sys.stdin.buffer.read().decode("utf-8"),
     }
-}))
-PY
+}))' "$HEADER"
 else
   # No JSON tool available — skip injection rather than emit malformed output.
   exit 0

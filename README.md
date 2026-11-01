@@ -125,7 +125,8 @@ plugin hooks, so add the rules pointer below to the project's `AGENTS.md`. Neith
 flight-rules' agent hooks, so no doctor reminds you to wire the git hooks — the merge
 gate and the secret scan. Do it yourself: the first time in a project,
 `bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git` and commit `.ai/hooks/`;
-in every other clone, `bash .ai/hooks/install.sh`. `<plugin>` is
+in every other clone, `bash .ai/hooks/install.sh`; after a plugin update, the first command again
+(not `--stale-only`, which knows only Claude Code's plugin cache), and commit. `<plugin>` is
 `~/.codex/plugins/cache/flight-rules/flight-rules/<version>` or
 `~/.gemini/config/plugins/flight-rules`.
 
