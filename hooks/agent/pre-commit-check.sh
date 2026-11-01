@@ -75,11 +75,14 @@ DEFAULT_WORKTREE_DIR='.ai/worktrees'
 # guard off without a word. A guard that fails silent is the worst kind. Now: a
 # payload that does not even mention git has nothing to guard and passes; anything
 # else is refused with a message that says what to install.
+# python3 -I: the hook runs in the project, and without it a json.py there is imported
+# and run in place of the standard library's (as session-start's was: security review,
+# 2026-10-13).
 json_command() {
   if command -v jq >/dev/null 2>&1; then
     jq -r '.tool_input.command // ""'
   elif command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("tool_input") or {}).get("command") or "")'
+    python3 -I -c 'import json,sys; d=json.load(sys.stdin); print((d.get("tool_input") or {}).get("command") or "")'
   else
     return 1
   fi
@@ -90,7 +93,7 @@ deny() {  # deny <reason> — emit the PreToolUse deny decision
     jq -n --arg r "$reason" \
       '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
   else
-    python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":sys.argv[1]}}))' "$reason"
+    python3 -I -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":sys.argv[1]}}))' "$reason"
   fi
 }
 

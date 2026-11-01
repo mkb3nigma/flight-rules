@@ -1381,6 +1381,20 @@ if command -v python3 >/dev/null 2>&1; then
   else
     FAIL=$((FAIL+1)); printf '  ❌ python3 fallback did not produce a normal deny\n'
   fi
+  # -I: the hook runs in the project, and without it a json.py there was imported and
+  # run in place of the standard library's, by both the parse and the deny (as
+  # session-start's was: security review, 2026-10-13). The planted module records that
+  # it ran; the deny beside it shows the hook decided rather than died.
+  printf 'open(%s, "w").close()\nraise ImportError("planted json.py")\n' "'$D/.planted-ran'" > "$D/json.py"
+  OUT=$(cd "$D" && PATH="$P" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
+  if [ -e "$D/.planted-ran" ]; then
+    FAIL=$((FAIL+1)); printf '  ❌ python3 fallback imported a json.py from the project\n'
+  elif grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q 'protected branch' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ python3 fallback ignores a json.py in the project and denies normally\n'
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ python3 fallback with a json.py in the project did not produce a normal deny\n'
+  fi
   rm -rf "$P"
 fi
 rm -rf "$D"

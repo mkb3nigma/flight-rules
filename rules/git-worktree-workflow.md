@@ -56,9 +56,7 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
 
 ### ✅ Required
 1. All branches created as worktrees under `{WORKTREE_DIR}` — hook for "as worktrees"
-   (Forbidden 6), enforced while you are on a protected branch, which is when a branch
-   made in place puts feature work in the checkout you meant to keep clean; the location
-   is advisory
+   (Forbidden 6); the location is advisory
 2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`,
    `hotfix/` — the prefix is what a pull request is routed by (`hotfix/` to `main`, the
    rest to `{INTEGRATION_BRANCH}`); a branch without one is routed only by asking, every
@@ -130,22 +128,11 @@ git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
 Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
 
-- The merge gate, **five git hooks** (`install.sh` refuses to install unless all five
-  are present, then runs `git config core.hooksPath <dir>` and
-  `git config merge.ff false` — the second matters: a fast-forward creates no merge
-  commit, so without it no gate hook ever fires):
-  `reference-transaction` is the backstop and the one Forbidden 7 rests on — a PR-only
-  branch may only move to a commit already on its upstream, whatever command moved it;
-  `pre-merge-commit` blocks a local merge into a **PR-only** branch
-  (`{PR_ONLY_BRANCHES}`, default `main`) and gives the early, specific message;
-  `commit-msg` requires a passing `pre-merge-check` note to merge into a **note-gated**
-  branch (`{NOTE_GATED_BRANCHES}`), exempting back-merges of `main`, refuses squash
-  merges into a PR-only branch, and refuses a merge that does not say who asked for it;
-  `pre-rebase` refuses to rebase any protected branch; `post-merge` writes the cleanup
-  note.
-  They read `.ai/flight-rules.conf` from a state the incoming branch cannot edit —
-  `reference-transaction` from the **upstream**, the rest **as committed on the merge
-  target** — so a branch cannot relax the rule judging it.
+- The git hooks in `hooks/git/` — install all of them: `install.sh` refuses an incomplete
+  set, then sets `core.hooksPath` and `merge.ff false` (a fast-forward creates no merge
+  commit, so without it no gate hook fires). They read `.ai/flight-rules.conf` from a
+  state the incoming branch cannot edit, so a branch cannot relax the rule judging it.
+  One entry per hook: `hooks/README.md` → *Git hooks*.
 - `hooks/agent/pre-commit-check.sh`, the assistant-side guard — commits, tree
   destroyers, rebases and force-pushes on a protected branch; staged secrets anywhere.
   Ships with the Claude Code plugin. Details: `hooks/README.md`.
