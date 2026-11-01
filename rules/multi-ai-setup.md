@@ -44,9 +44,7 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    ```
 
    `name:` is not optional — it is what the assistant matches on, and this playbook's
-   own `skills/catalogue.test.sh` rejects a pointer without it. The template used to
-   omit it, so the rule telling projects how to write a pointer prescribed a shape the
-   playbook's own consistency check fails.
+   own `skills/catalogue.test.sh` rejects a pointer without it.
 
    The pointer may also pin a model (`model: opus`) for expensive skills. Logic never
    goes in the pointer — same rule as the root pointer files.
@@ -65,9 +63,8 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    scripts. Caveat: the scripts consume each tool's hook I/O protocol (Claude Code:
    JSON on stdin, structured deny output), so a second tool needs a small adapter —
    but the guard logic stays in one place.
-   Where the scripts physically live depends on how the playbook was installed, and
-   this is worth stating because an earlier version of this rule mandated
-   `.ai/hooks/agent/` unconditionally: **with the plugin the agent hooks are already
+   Where the scripts physically live depends on how the playbook was installed:
+   **with the plugin the agent hooks are already
    live from the plugin directory, and a local copy makes the guard run twice.** The
    git hooks are still copy-in — no plugin can set `core.hooksPath`. A project that
    hand-wires everything does use `.ai/hooks/`; one that uses the plugin copies only
