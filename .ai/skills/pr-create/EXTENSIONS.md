@@ -8,3 +8,10 @@ closes is the owner's call, made with the CHANGELOG entry beside the number. 0.2
 added 4,554 lines, 4,071 of them hook and test code, and no gate recorded the number.
 The shipped step leaves it out: its classes are this repo's, and an app has no hook and
 guard code to count.
+
+Before step 2a, in this repo: run `/upstream-check` and put its report in the release PR
+body under `## Upstream check` — each `UPSTREAMS.md` source up to date, or what changed
+and whether this release takes it (folded in on a branch merged to `dev` first) or
+leaves it (an issue). The `release review` check fails a PR into `main` without that
+section filled. Owner's instruction, 2026-11-01: the release is the moment a change
+upstream can still reach the batch.
