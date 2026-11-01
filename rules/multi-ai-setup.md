@@ -1,7 +1,7 @@
 # Multi-AI Rules Architecture
 
-One rules system that works across AI coding assistants (Claude Code, Cursor,
-Windsurf, Copilot, Codex, …). Rules are maintained in exactly one place per project;
+One rules system that works across AI coding assistants (Claude Code, Codex,
+Copilot, …). Rules are maintained in exactly one place per project;
 every assistant reaches them through a small pointer file.
 
 ## Layout
@@ -17,8 +17,7 @@ every assistant reaches them through a small pointer file.
 
 Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 ├── CLAUDE.md                        # Claude Code
-├── .cursorrules                     # Cursor
-├── .windsurfrules                   # Windsurf
+├── AGENTS.md                        # Codex, and any assistant that reads AGENTS.md
 └── .github/copilot-instructions.md  # GitHub Copilot
 ```
 
