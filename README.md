@@ -102,9 +102,10 @@ itself: the hooks are the project's own committed files, and Claude Code has no 
 event for a plugin to act on. Every other clone needs them wired once, because git config is
 per clone: its first session's doctor message prints the command (the plugin's
 `install.sh`, which wires the committed hooks without replacing them). (The message needs `jq` or
-`python3`; without either, doctor's findings reach only the assistant.) Hooks the project
-already has are never overwritten, and the install names any that git would stop
-running (`hooks/README.md` → `install.sh`). Running them alongside flight-rules' is
+`python3`; without either, doctor's findings reach only the assistant.) A hook in the
+install folder that isn't flight-rules' (no marker, no release's exact copy) is refused,
+not overwritten, and the install says how to set it aside; flight-rules' own copies are
+updated. It also names any hook git would stop running (`hooks/README.md` → `install.sh`). Running them alongside flight-rules' is
 [#111](https://github.com/mkb3nigma/flight-rules/issues/111).
 
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run
