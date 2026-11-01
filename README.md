@@ -12,7 +12,7 @@ procedures for every situation a mission has already encountered, so nobody impr
 a known problem twice.
 
 Everything here is **plain Markdown and tool-agnostic**: the same files work with
-Claude Code, Cursor, Codex, Copilot, Antigravity, or any assistant that reads Markdown
+Claude Code, Codex, Copilot, Antigravity, or any assistant that reads Markdown
 context. A thin Claude Code plugin wrapper is included so Claude installs the skills
 natively.
 
@@ -43,7 +43,7 @@ flowchart TB
 
 ```
 MISSION.md What flight-rules is for — the questions every change to it answers
-rules/     Always-on principles a project's CLAUDE.md / .cursorrules should point at
+rules/     Always-on principles a project's CLAUDE.md / AGENTS.md should point at
 skills/    Invocable workflows — see the catalog below
 hooks/     Enforcement templates — git merge-gate hooks + agent commit/secret guards
 .claude-plugin/   Claude Code marketplace + plugin manifests
@@ -118,7 +118,7 @@ release's
 [CHANGELOG](CHANGELOG.md) entry starts with anything the update needs from you.
 
 **Any AI tool (rules, by pointer):** add one line to the project's rules entry point
-(CLAUDE.md, .cursorrules, `.ai/master-rules.md`, …):
+(CLAUDE.md, AGENTS.md, `.ai/master-rules.md`, …):
 
 > Generic engineering rules: read `~/Projects/flight-rules/rules/` (or the repo URL).
 > Project rules extend and override them.
@@ -126,7 +126,7 @@ release's
 **Or just point your assistant at it.** No clone, plugin, or marketplace required — give
 your assistant the repo link and ask it to incorporate the rules, or point your project's
 rules file at the URL. The Claude Code plugin is a convenience wrapper, not a dependency;
-a native plugin for other assistants (Cursor, Copilot, Antigravity, …) can follow if there's demand.
+a native plugin for other assistants (Copilot, Antigravity, …) can follow if there's demand.
 However you adopt it, keep the attribution — the MIT licence simply asks that the
 copyright and licence notice travel with the content ([LICENSE](LICENSE),
 [ATTRIBUTIONS.md](ATTRIBUTIONS.md)).
