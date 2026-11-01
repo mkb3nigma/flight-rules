@@ -42,7 +42,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      git pull --ff --no-rebase origin {INTEGRATION_BRANCH}
      ```
      Before it: a merge already in progress there, STOP and say so — it is the
-     person's. Tracking nothing: `git branch -u origin/{INTEGRATION_BRANCH}
+     person's to finish or abort, then run this again. Tracking nothing: `git branch -u origin/{INTEGRATION_BRANCH}
      {INTEGRATION_BRANCH}`. Behind, the pull fast-forwards; ahead, nothing moves;
      diverged, it merges its own upstream, which `commit-msg` lets through when clean.
      It fails: abort the merge it started, if any, then STOP and show git's output —
