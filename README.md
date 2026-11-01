@@ -55,7 +55,9 @@ gates merges into protected branches and refuses a commit that stages a key,
 `hooks/agent/` stops the assistant committing,
 destroying or force-pushing a protected branch, or committing secrets. The agent guard
 ships with the plugin; the git hooks are copied in once per clone. Both read
-`.ai/flight-rules.conf` — see `hooks/README.md`.
+`.ai/flight-rules.conf` — see `hooks/README.md`. This repo runs those hooks on itself,
+straight from `hooks/` with no copy in between, so the rules repo obeys its own rules
+and cannot drift from them (CI runs the hook suites on macOS and Linux).
 
 ## Rules
 
@@ -100,21 +102,17 @@ itself: the hooks are the project's own committed files, and Claude Code has no 
 event for a plugin to act on. Every other clone needs them wired once, because git config is
 per clone: its first session's doctor message prints the command (the plugin's
 `install.sh`, which wires the committed hooks without replacing them). (The message needs `jq` or
-`python3`; without either, doctor's findings reach only the assistant.) If the project already has
-hooks of its own, the install leaves them in place: one in the folder it installs into
-that it cannot recognise as flight-rules' (it carries no flight-rules marker and is no
-release's exact copy) is refused rather than overwritten, and the install says how to
-set it aside; and when git would stop reading hooks from `.git/hooks/` or a global
-hooks folder, the install names the ones that stop running. Running them alongside
-flight-rules' is [#111](https://github.com/mkb3nigma/flight-rules/issues/111).
+`python3`; without either, doctor's findings reach only the assistant.) A hook in the
+install folder that isn't flight-rules' (no marker, no release's exact copy) is refused,
+not overwritten, and the install says how to set it aside; flight-rules' own copies are
+updated. It also names any hook git would stop running (`hooks/README.md` → `install.sh`). Running them alongside flight-rules' is
+[#111](https://github.com/mkb3nigma/flight-rules/issues/111).
 
 **Updating:** `/plugin` → update, then start a new session — the session-start checks run
 only when one starts. After `/reload-plugins` instead, your next prompt says the session
 is on the new version and that a new session is what loads its rules and runs the checks. If a git hook is behind the new release, that session's doctor
 message prints the sync command with `--stale-only`: it replaces only copies identical
-to an older release, and leaves a hook you changed alone and names it. A project copy of
-`install.sh` that is behind, differs while carrying flight-rules' marker, or cannot be read
-is reported to the assistant only, not on screen: it guards nothing. To have the sync run on its own,
+to an older release, and leaves a hook you changed alone and names it. To have the sync run on its own,
 set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each
 release's
 [CHANGELOG](CHANGELOG.md) entry starts with anything the update needs from you.
@@ -136,20 +134,8 @@ copyright and licence notice travel with the content ([LICENSE](LICENSE),
 ## Project-specific extensions
 
 Never edit these files with project details. **Generic changes flow here; project
-flavor stays in the project.** Two ways to consume, in order of preference:
-
-1. **Plugin + `EXTENSIONS.md` (recommended).** Install the plugin and keep the
-   playbook's skills as the single registered copy. A project extends a skill by
-   creating `.ai/skills/<name>/EXTENSIONS.md` carrying only its delta: additional or
-   replacement steps, project-specific rules, and `{PLACEHOLDER}` values other than
-   the branch/path ones (those live in `.ai/flight-rules.conf`, below). Every skill
-   checks for that file before executing and gives it precedence — projects get
-   playbook updates automatically while their flavor stays local, and nothing is
-   registered twice.
-2. **Copy-in (legacy).** A project keeps a full local copy of a skill with a clearly
-   marked `## <Project> Extensions` section at the bottom, or overrides a rule in its
-   own rules file. Copies drift; reconcile with `/rules-sync`, which still understands
-   this layout.
+flavor stays in the project** — a skill's deltas in `.ai/skills/<name>/EXTENSIONS.md`,
+the pattern [`multi-ai-setup`](rules/multi-ai-setup.md) principle 4 describes.
 
 ## Parameters
 
@@ -157,11 +143,8 @@ Skills refer to placeholders rather than hardcoding a project's setup. The branc
 policy has **one home, `.ai/flight-rules.conf`**, the file the hooks read —
 `PROTECTED_BRANCHES`, `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`,
 `WORKTREE_DIR`, `MERGE_NEEDS_INSTRUCTION` — so the skills and the enforcement never disagree about which
-branches are protected. The rest lives in the skill's `EXTENSIONS.md`. The conf also
-holds three `/dg` settings: `DG_COMIC` for the review's comic, `DG_COMIC_PR`, unset
-by default, so no comic reaches a PR unless you set it, and `DG_WAIT_MINUTES`, how long
-round 2 waits for each pre-review run and the dependency scan before treating it as
-failed — see the
+branches are protected. The rest lives in the skill's `EXTENSIONS.md`. The conf's other
+settings — the hook sync, the open-branch limit, `/dg`'s — are in the
 [Configuration table](hooks/README.md#configuration).
 
 | Placeholder | Meaning | Example | Home |
@@ -173,21 +156,6 @@ failed — see the
 | `{WORKTREE_DIR}` | where feature worktrees live | `.ai/worktrees` | conf |
 | `{TEST_COMMANDS}` | the project's suites | `pytest` / `npm run test:run` | `EXTENSIONS.md` |
 | `{PLAYBOOK_PATH}`, `{LOCAL_RULES_DIRS}` | where `/rules-sync` finds the playbook and the project's local copies | `~/Projects/flight-rules`, `.ai/rules/` | `EXTENSIONS.md` |
-
-
-## Design notes
-
-- **Tool-agnostic by default.** Plain Markdown, so the same rules work in Claude Code,
-  Cursor, Codex, or Copilot — no lock-in to one assistant.
-- **Enforcement, not etiquette.** The workflows ship with git hooks that *block* the
-  mistake — merging without a passing check, committing on a protected branch or with
-  secrets staged — instead of trusting everyone to remember. This repo runs those hooks
-  on itself, straight from `hooks/` with no copy in between, so the rules repo obeys
-  its own rules and cannot drift from them (CI runs the hook suites on macOS and Linux).
-- **One source of truth.** Projects consume the playbook and reconcile with `/rules-sync`
-  rather than copy-pasting rules that silently drift apart.
-- **Provenance as a system.** Each adaptation is pinned to an upstream ref and re-checked
-  with `/upstream-check`, so credited work stays current and honestly attributed.
 
 ## Credits & license
 
