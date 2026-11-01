@@ -379,7 +379,7 @@ fi
 # and what earlier merges left as one count line. Re-listing every earlier worktree and
 # branch on every merge, and the whole note on every pull, was noise that hid the new
 # line (hooks review H21, 2026-10-28; MISSION.md principle 5). A pull, a fast-forward or
-# a back-merge prints nothing; the file has everything. At most 40 lines.
+# a back-merge of a protected branch prints nothing; the file has everything. At most 40 lines.
 PRINT=""
 if is_feature_merge; then
   # Read back from the note, not worked out again: the process list is read once.

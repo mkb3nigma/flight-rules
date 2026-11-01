@@ -363,7 +363,7 @@ that the logic has exactly one home.
   clone's `.git/info/exclude` unless the project already ignores it, so it never shows as
   untracked. After a feature merge it prints what *that* merge left — its worktree, what
   runs from it, its branch — and one line counting what earlier merges left; a pull, a
-  fast-forward or a back-merge prints nothing (at most 40 lines; no flight-rules hook
+  fast-forward or a back-merge of a protected branch prints nothing (at most 40 lines; no flight-rules hook
   reads the file, #110; re-listing everything on every merge and pull was noise). Each command is on a line of its own, quoted to be pasted, with
   what to know about it — just merged, or refused until a push — on the line below. Under each stale worktree it names what still runs from it — processes
   working there or with its path in their command line, and Docker Compose containers
