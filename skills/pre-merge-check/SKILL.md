@@ -113,14 +113,14 @@ locally with no PR, its commit messages.
     makes a sentence untrue leaves every grep empty. Run narrowly it has missed four
     times in this repo, the last on 2026-09-14 — a rule's **Required** entry was updated
     and its **Forbidden** entry, three lines away, still described the old behaviour.
-    Search `README*`, `docs/`, `rules/`, `skills/`, `CLAUDE.md` and code comments —
+    Search `README*`, `docs/`, `rules/`, `skills/`, `CLAUDE.md`, `AGENTS.md` and code comments —
     header and inline — for the BEHAVIOUR, including the places that state it as a rule
     rather than naming the code. ❌ if a doc still describes the old behaviour; ⚠️ if a
     behaviour change touched no doc and the PR does not say why. A deleted comment line
     that carries an anchor (issue, PR, sha, date) is ⚠️ unless the PR names the reason
     that went — age is not a reason.
 18. **Rules earn their place** — for every item the diff adds to or widens in a rules
-    file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
+    file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`, `AGENTS.md`): the PR names the
     warrant, what goes wrong without it, and how it is enforced. The warrant is an
     event (commit/PR/sha/date/probe — a private-repo sha and date counts; a probe for a
     refusal or a check, one a slip could also reach), an

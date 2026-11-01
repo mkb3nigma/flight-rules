@@ -215,7 +215,7 @@ MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 # failed to work it out. Both exemptions below,
 # and a passing note, vouch for the incoming commit, not for a conflict resolved here or
 # anything else staged: either landed, untested, as "no note needed" or as "verified"
-# (fix reviews of 0.28.0's release review — CLAUDE.md: a conflict is never resolved in
+# (fix reviews of 0.28.0's release review — AGENTS.md: a conflict is never resolved in
 # the merge into a protected branch). A merge driver merge-tree honours passes, and so
 # does -X where it resolved nothing; a conflict -X resolved, or a replayed rerere
 # resolution, reads as not clean. `git write-tree` reads the index git hands this hook,
@@ -498,7 +498,7 @@ if [ -n "$OFF_REFS" ]; then
     box_row ""
 fi
 # A conflict is resolved on a branch, tested and stamped there, then merged back: the
-# note then vouches for a tip that holds the resolution (CLAUDE.md). Where git failed to
+# note then vouches for a tip that holds the resolution (AGENTS.md). Where git failed to
 # check, both ways on are printed and neither is chosen: the hook does not guess past
 # an error.
 if [ "$CLEAN" -eq 3 ] && { [ -n "$NOTE_PASSED" ] || [ -n "$NOT_CLEAN" ]; }; then

@@ -168,7 +168,7 @@ rm -rf "$D"
 
 # 1. The hooks are present, executable, and empty. doctor already content-checks the
 #    AGENT guard for a pre-conf copy; the five git hooks had no equivalent, and
-#    CLAUDE.md calls a drifted hook copy the failure this repo cannot afford.
+#    AGENTS.md calls a drifted hook copy the failure this repo cannot afford.
 D=$(mkrepo)
 for f in "$D"/.ai/hooks/*; do printf '#!/bin/sh\nexit 0\n' > "$f"; done
 chmod +x "$D"/.ai/hooks/*

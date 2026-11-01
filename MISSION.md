@@ -30,7 +30,7 @@ stop (#109).
    can, by the command, its exit status and its output where one cannot. A rule is here
    because a named failure, a pinned upstream or declared testimony says so, never
    because it is best practice; a pre-existing item with no warrant is given one, or
-   declined by the owner at the release review (`CLAUDE.md` → *How a rule gets in*),
+   declined by the owner at the release review (`AGENTS.md` → *How a rule gets in*),
    and the decision recorded. What the hooks do *not* catch is measured and written down
    (`hooks/README.md`'s tables), not implied away. Adapted work is credited and pinned
    to the ref reviewed.
@@ -38,7 +38,7 @@ stop (#109).
 3. **Generic, and tool-agnostic.** Everything that ships would belong in any project
    that adopts it, with any assistant — a thin adapter for one tool included. A
    project's own flavour lives in that project's `.ai/` (README → Layout); this repo's
-   own `CLAUDE.md` and conf are its extension. Logic in a shipped script that a tool's
+   own `AGENTS.md`, `CLAUDE.md` and conf are its extension. Logic in a shipped script that a tool's
    config merely wires is the playbook's; a capability that exists for one tool only is
    one-tool, and question 2 weighs it.
 
@@ -46,7 +46,7 @@ stop (#109).
    adopting project; the rest of `rules/` is read on the pointer; a skill loads its
    description always and its body when invoked; hooks cost context only when they
    speak, and maintenance always. A `rules/` line goes when its warrant is gone or
-   another line covers it (`CLAUDE.md` → *How a rule gets in*, point 3); a refusal goes
+   another line covers it (`AGENTS.md` → *How a rule gets in*, point 3); a refusal goes
    when what it costs outweighs what it catches (question 1).
 
 5. **Stop and say.** Where it cannot go on, it stops, names what it saw and why that is
@@ -85,12 +85,12 @@ locally, the commit message of the change itself.
    developer — a crafted command, a forged byte — is recorded as an issue with its
    disposition and no fix scheduled, and is **not a warrant** for a refusal or a check;
    a probe counts when the path it shows is one a slip could also take. For a `rules/`
-   or `MISSION.md` line, or a skill step, the warrant `CLAUDE.md` → *How a rule gets in*
+   or `MISSION.md` line, or a skill step, the warrant `AGENTS.md` → *How a rule gets in*
    names is the answer; the accident test is asked of a refusal or a check. A removal
    answers with what the refusal cost — false positives, turns, the route-around it
    taught — or why its warrant no longer holds.
 2. **Would every adopting project want it, with any assistant?** Asked of what ships:
-   this repo's own `CLAUDE.md`, `MISSION.md`, conf and CI do not, and answer it so. If
+   this repo's own `AGENTS.md`, `CLAUDE.md`, `MISSION.md`, conf and CI do not, and answer it so. If
    the honest answer names one project, it belongs in that project's extension; one
    tool, it ships only as the thin adapter principle 3 allows. A change that ships also
    says, under its CHANGELOG entry's *Upgrading*, what an adopter already on the
@@ -98,13 +98,13 @@ locally, the commit message of the change itself.
    undoes what an adopter set — a hook copy newer than its own, a conf value they chose:
    a change that must replace one says so there.
 3. **What does it cost — every reader, and whoever maintains it?** Lines added and net,
-   by class (the *Releasing* paragraph of `CLAUDE.md` names the classes), stated with
+   by class (the *Releasing* paragraph of `AGENTS.md` names the classes), stated with
    the change — advisory, no check reads it — and summed at the release, where
    `pr-create` 2b reports them with the CHANGELOG entry beside the number. This makes
    the cost visible; nothing in flight-rules refuses a release for its size — the
    owner's decision, with the number in view, is the gate. Size is not the failure;
    what hides in it is: a large diff is read for these questions subsystem by
-   subsystem, as `/dg` reads it for defects. `CLAUDE.md`'s test mandate decides how a
+   subsystem, as `/dg` reads it for defects. `AGENTS.md`'s test mandate decides how a
    gap is closed, not whether; the tests a closed gap needs are part of its cost.
 4. **Does it stop and say, or act for the developer?** When it refuses: does the refusal
    name its cause and print the legitimate route, where one exists that is not the skip
