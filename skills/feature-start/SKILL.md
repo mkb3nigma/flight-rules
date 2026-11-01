@@ -41,16 +41,13 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      ```bash
      git pull --ff --no-rebase origin {INTEGRATION_BRANCH}
      ```
-     Behind, it fast-forwards; ahead, nothing moves; diverged, it merges its own
-     upstream, which `commit-msg` lets through when clean and the branch tracks
-     `origin/{INTEGRATION_BRANCH}` — tracking nothing, `git branch -u
-     origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH}` first. Any failure (a conflict,
-     edits in the way): `git merge --abort` if a merge is in progress, then STOP and show
-     git's output — never stash or touch the person's edits; a conflict is resolved on a
-     branch, never in `{INTEGRATION_BRANCH}`. No checkout has it: missing, `git branch
-     --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`; behind (`git merge-base
-     --is-ancestor {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`), `git fetch origin
-     {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`; ahead, nothing; diverged, STOP and ask.
+     Before it: a merge already in progress there, STOP and say so — it is the
+     person's. Tracking nothing: `git branch -u origin/{INTEGRATION_BRANCH}
+     {INTEGRATION_BRANCH}`. Behind, the pull fast-forwards; ahead, nothing moves;
+     diverged, it merges its own upstream, which `commit-msg` lets through when clean.
+     It fails: abort the merge it started, if any, then STOP and show git's output —
+     never stash or touch the person's edits. No checkout has it: missing, `git branch
+     --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`; otherwise STOP and ask.
    - **Reconcile `main` into the integration branch** — only when
      `{INTEGRATION_BRANCH}` differs from `main`. A hotfix or change applied straight
      to `main` is not on the integration branch, so a branch built off it silently
