@@ -381,6 +381,14 @@ while read -r sk n; do
   else bad "rules/ cites \`$sk\` $n for \"$want\"; step $n is now: $(printf '%s' "$title" | cut -c1-60)"; fi
 done <<<"$REFS"
 
+echo "CLAUDE.md and GEMINI.md import MISSION.md and AGENTS.md:"
+# AGENTS.md holds how work is done here; the other two only import it (2026-11-01).
+# Drop an import and that assistant's sessions lose the rules with nothing else noticing.
+for f in "CLAUDE.md @MISSION.md" "CLAUDE.md @AGENTS.md" "GEMINI.md @./MISSION.md" "GEMINI.md @./AGENTS.md"; do
+  set -- $f
+  if grep -qxF "$2" "$1"; then ok "$1 imports ${2#@}"; else bad "$1 has no line '$2'"; fi
+done
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
