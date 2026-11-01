@@ -1945,6 +1945,13 @@ for t in "tree:abc123def456" "tree:$(printf 'A%.0s' $(seq 40))" "tree: $(printf 
   say "$(grep -c 'its tree: is not a full, lowercase tree hash' <<<"$OUT")" "1" "…named as not a full tree hash"
   say "$(grep -c "git rev-parse '<branch>^{tree}'" <<<"$OUT")" "1" "…and where the full one comes from"
 done
+# A full hash with no space before tree: is named as that, not as a short hash (#124,
+# O-G1).
+for p in "passed:tree:" "passed: 2026-10-31T00:00:00Z subtree:"; do
+  ev -m "$p$(printf 'a%.0s' $(seq 40))" -m "ran: ./test.sh → exit 0, 3 passed"
+  say "$RC" "1" "$p<full hash>: refused"
+  say "$(grep -c 'its tree: has no space before it' <<<"$OUT")" "1" "…named as no space before tree:"
+done
 ev -m "passed: 2026-10-31T00:00:00Z branch:feature/e tree:$(printf '%040d' 0)" -m "ran: ./test.sh → exit 0, 3 passed"
 say "$RC" "1" "a note naming another tree: refused"
 say "$(grep -c "its tree: is 000000000000, not this commit's" <<<"$OUT")" "1" "…saying whose tree it names"

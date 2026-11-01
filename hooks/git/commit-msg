@@ -379,7 +379,11 @@ NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
 NOTE_PASSED=""; NOTE_BAD=""
 if printf '%s\n' "$NOTE" | grep -q "^passed:"; then
     _nt=$(printf '%s\n' "$NOTE" | sed -n 's/^passed:.* tree:\([0-9a-f]\{40,64\}\).*$/\1/p' | head -1)
-    if [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -q '^passed:.*tree:'; then
+    if [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -Eq '^passed:(.*[^ ])?tree:[0-9a-f]{40,64}([^0-9a-f]|$)'; then
+        # A full hash with no space before tree: (passed:tree:…, subtree:…) is not a
+        # short one: name the space (#124, O-G1).
+        NOTE_BAD="its tree: has no space before it"
+    elif [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -q '^passed:.*tree:'; then
         # Typed by hand, a tree comes short, in capitals or after a space: name that,
         # not "no tree" (fix review of #107, N-G1).
         NOTE_BAD="its tree: is not a full, lowercase tree hash"
