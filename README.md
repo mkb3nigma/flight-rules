@@ -126,7 +126,8 @@ flight-rules' agent hooks, so no doctor reminds you to wire the git hooks — th
 gate and the secret scan. Do it yourself: the first time in a project,
 `bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git` and commit `.ai/hooks/`;
 in every other clone, `bash .ai/hooks/install.sh`; after a plugin update, the first command again
-(not `--stale-only`, which knows only Claude Code's plugin cache), and commit. `<plugin>` is
+(not `--stale-only`, which knows only Claude Code's plugin cache), then review the diff before
+committing: this form also replaces a hook you marked `# flight-rules: adapted`. `<plugin>` is
 `~/.codex/plugins/cache/flight-rules/flight-rules/<version>` or
 `~/.gemini/config/plugins/flight-rules`.
 
