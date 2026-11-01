@@ -1397,6 +1397,25 @@ say "$RC" "0" "a back-merge of production into trunk lands"
 say "$(grep -c -e '^## ' -e '^### ' -e '^Earlier merges' -e 'post-merge:' <<<"$OUT")" "0" "…and post-merge prints nothing for it, as for main"
 rm -rf "$PQ"
 
+echo "A main the project does not protect is a branch like any other (hook sweep, 2026-11-01):"
+# A back-merge is the tip of a protected branch. post-merge also took main's tip for one
+# by name, so a project whose PROTECTED_BRANCHES leaves main out was told nothing after
+# merging it; the protected-branch check alone decides now.
+PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+git init -q -b trunk "$QQ" || die "git init failed in $QQ"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+git -C "$QQ" checkout -qb main trunk && echo m > "$QQ/m" && git -C "$QQ" add -A \
+  && git -C "$QQ" commit -qm "feature: on main" && git -C "$QQ" checkout -q trunk || die "could not build main"
+OUT=$(cd "$QQ" && git merge --no-edit main 2>&1); RC=$?
+say "$RC" "0" "PROTECTED_BRANCHES=^trunk\$: merging main into trunk lands"
+# The hook ran, either way: its note lists main.
+say "$(grep -cxF '  git branch -d main' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "1" "…post-merge ran and its note lists main"
+say "$(grep -cxF '## Post-merge to trunk: main' <<<"$OUT")$(grep -cxF '  git branch -d main' <<<"$OUT")" "11" "…and it prints the cleanup lines, as for any merge"
+rm -rf "$PQ"
+
 echo "A pull of the integration branch's own upstream that had to merge prints nothing (fix review):"
 PQ=$(cd "$(mktemp -d)" && pwd -P); U="$PQ/up"
 git init -q -b trunk "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one || die "could not build the upstream"
