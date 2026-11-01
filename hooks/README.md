@@ -9,11 +9,7 @@ installed. Two kinds, deliberately separated:
 | `agent/` | assistant-event hook scripts | the AI assistant's hook events | Logic is generic; the I/O protocol is per-tool (currently Claude Code) |
 
 **`agent/pre-commit-check.sh` is plugin-activated.** Installing or updating the
-flight-rules plugin registers it as a `PreToolUse` hook — no copying, no wiring. It was
-a copy-in template only while its branch list had to be edited into the script; now
-that the list has safe defaults and reads `.ai/flight-rules.conf`, the plugin ships it
-live. A project consuming it this way should **delete any local fork**, or the guard
-runs twice.
+flight-rules plugin registers it as a `PreToolUse` hook — no copying, no wiring.
 
 ⚠️ That means **installing the plugin starts blocking commits on `main`**. If a project
 does not want that, opt out rather than uninstalling:
@@ -23,18 +19,9 @@ does not want that, opt out rather than uninstalling:
 PROTECTED_BRANCHES=off
 ```
 
-`off` is wider than it looks in one direction and narrower in another. It also stops
-`checkout -b`/`switch -c` being denied and `pre-rebase` refusing a rebase of a branch
-that is not PR-only, and — when `NOTE_GATED_BRANCHES` is unset —
-silences the note gate, because the gated set is derived as *protected but not PR-only*
-and with no protected branches that set is empty. A project with a `dev` branch loses its
-`pre-merge-check` gate without being told; name `NOTE_GATED_BRANCHES` explicitly to keep
-it. What it does **not** touch is the PR-only side: `pre-merge-commit`, `pre-rebase` and
-the squash guard read `PR_ONLY_BRANCHES` directly, so local merges and rebases into a
-PR-only branch stay refused.
-
-What `off` does **not** turn off is the secret scan — leaking a key is not a workflow
-preference.
+`off` turns off more than the guard — with `NOTE_GATED_BRANCHES` unset, the note gate
+too — and never the secret scan: the *Protected branches* row of the
+[Configuration table](#configuration) lists exactly what it stands down.
 
 The **git hooks in `git/`** are still **files to copy**: git finds them through
 `core.hooksPath`, which no plugin can set for you. Copy them to `.ai/hooks/` and run
@@ -59,7 +46,6 @@ one channel git hooks, agent hooks and skills all share.
 - [What these hooks are — and are not](#what-these-hooks-are--and-are-not)
   - [With the plugin alone, a protected branch is only half guarded](#with-the-plugin-alone-a-protected-branch-is-only-half-guarded)
   - [The agent guard over-blocks prose. That is the accepted trade.](#the-agent-guard-over-blocks-prose-that-is-the-accepted-trade)
-- [Layered defence](#layered-defence)
 
 Installing is above. The first three sections configure and wire the hooks; the next
 two are the reference, one entry per hook. **What these hooks are — and are not** is
@@ -84,13 +70,6 @@ repository cannot execute code through it. `#` comments, blank lines, spaces aro
 (`PROTECTED_BRANCHES=^main$   # trunk-based`). An inline comment must be preceded by
 whitespace, so a `#` inside a value (`^feature#1$`) is kept.
 
-That last part was a documented claim before it was a true one. Until 2026-09-11 the
-three hook parsers captured to end-of-line, so a trailing comment became part of the
-regex, the value matched nothing, and the layer reading it stopped enforcing in silence
-— while `flight-rules-doctor.sh`, which *did* strip comments, printed ✅ for the same line. One
-trailing comment on `PR_ONLY_BRANCHES` let a direct commit land on a PR-only `main`
-with all five git hooks installed.
-
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
 | Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh`, git hooks, doctor | Branches the guard defends. POSIX ERE, matched case-insensitively, as `PR_ONLY_BRANCHES` and `NOTE_GATED_BRANCHES` are, by every hook — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch until it is fixed, and the guard's block names it — except on a mirror push, which any pattern refuses (#103: it used to protect none). The git hooks do the same: to `commit-msg`, every branch but a PR-only one is note-gated while it is broken (with `NOTE_GATED_BRANCHES` unset), and the refusal names it and prints the way past it. `off` (or `none`) disables five things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, `pre-rebase`'s refusal of a branch that is not PR-only, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
@@ -99,7 +78,7 @@ with all five git hooks installed.
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills; the routes `pre-merge-commit` and the ref gate print (the conf at `HEAD`) | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, ref gate's message, skills (the conf only) | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
-| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones (not a missing `install.sh`: nothing needs it to run the hooks, so doctor names it with the `cp` that restores it), then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the checkout the session runs in is touched — from a linked worktree, hooks in the main checkout are not synced (the write would land in that checkout's working tree); when one there is stale or missing the session says so and prints the command that updates this worktree's own copy instead (`--this-checkout`), to commit on its branch and merge, and when all are current it says nothing — never during a merge, rebase, `git am`, cherry-pick, revert or bisect — that skip is said, with the command to run once it is finished — nor on a protected branch, where the diff could not be committed — protected as the agent guard decides it, `FLIGHT_RULES_PROTECTED_BRANCHES` first and case-insensitively, and a `PROTECTED_BRANCHES` pattern that does not compile counts as protected, said as such: there it only compares, names what is behind or missing, lists apart what the command leaves alone, and prints the command to run in a worktree on a branch (silent when all are current); with `--this-checkout` it updates that worktree's copy even when git runs the hooks from the main checkout (without `--stale-only`, replacing what differs there too), and the merge brings it there — and the config is never rewritten. A headless session (`CLAUDE_CODE_SESSION_ATTENDED=0`) syncs until an attended session has run that day, spending no flag, and its notice reaches no screen — so an attended session says on screen when the hook directory has uncommitted changes, whoever made them, and when git cannot fully tell (it shows what git said). A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted; one the sync cannot read is said to be unreadable and left alone, on screen even when nothing else was synced. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. It also warns, to the assistant only, about a project `install.sh` that is behind, differs while carrying flight-rules' marker, or cannot be read; a missing one is noted on the full report with the `cp` that restores it. |
+| Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones (not a missing `install.sh`: nothing needs it to run the hooks, so doctor names it with the `cp` that restores it), then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the checkout the session runs in is touched — from a linked worktree, hooks in the main checkout are not synced (the write would land in that checkout's working tree); when one there is stale or missing the session says so and prints the command that updates this worktree's own copy instead (`--this-checkout`), to commit on its branch and merge, and when all are current it says nothing — never during a merge, rebase, `git am`, cherry-pick, revert or bisect — that skip is said, with the command to run once it is finished — nor on a protected branch, where the diff could not be committed — protected as the agent guard decides it, `FLIGHT_RULES_PROTECTED_BRANCHES` first and case-insensitively, and a `PROTECTED_BRANCHES` pattern that does not compile counts as protected, said as such: there it only compares, names what is behind or missing, lists apart what the command leaves alone, and prints the command to run in a worktree on a branch (silent when all are current); with `--this-checkout` it updates that worktree's copy even when git runs the hooks from the main checkout (without `--stale-only`, replacing what differs there too), and the merge brings it there — and the config is never rewritten. A headless session (`CLAUDE_CODE_SESSION_ATTENDED=0`) syncs until an attended session has run that day, spending no flag, and its notice reaches no screen — so an attended session says on screen when the hook directory has uncommitted changes, whoever made them, and when git cannot fully tell (it shows what git said). A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted; one the sync cannot read is said to be unreadable and left alone, on screen even when nothing else was synced. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
 | Open-branch limit | `OPEN_BRANCH_LIMIT` | `FLIGHT_RULES_OPEN_BRANCH_LIMIT` | `session-start.sh`, `feature-start` | When this many branches are open at once — checked out in a worktree, with commits not yet in `INTEGRATION_BRANCH`, a protected one aside — the session's first run each day warns, on screen and to the assistant, naming which have passed `pre-merge-check` and wait to merge and which have not, and where the limit is set; when it cannot count (no integration branch, local or `origin/`; a git failure) it tells the assistant so. `session-start` only warns and never blocks; `/feature-start` asks before opening another (step 5) and opens it only once you say it is okay — with no one to ask, it reports the count and creates nothing. Merged means in the local `INTEGRATION_BRANCH` or in `origin/`'s as last fetched — so a branch merged by PR stops counting once fetched, while a squash-merged one counts until its worktree goes. Default `5`; `off` stands it down; any other value is taken as 5 (doctor says so). Only in a project with `.ai/flight-rules.conf`. |
 | `/dg` comic | `DG_COMIC` | — | `/dg` (an instruction, not a hook) | `always` (default): every verdict carries an ASCII comic of the best banter, with the banter score, right after its header — the decisions close the reply. `never`: no comic and no score. |
 | `/dg` comic in PRs | `DG_COMIC_PR` | — | `/dg`, `pr-create` (instructions, not hooks) | Whether a review that is for a PR puts the comic, banter score included, in it. Strictly opt-in: `never` (default) keeps it out without asking, `ask` asks at the end of the verdict, `always` adds it. Ignored with `DG_COMIC=never`. |
@@ -160,24 +139,18 @@ The hook does **not** read a `.env` file. If your project keeps settings there, 
 branch policy in `.ai/flight-rules.conf` instead — `.env` is for secrets and
 per-machine values, and this policy is neither.
 
-The conf file is read as data and never `source`d: a sourced config file would let any
-cloned repo execute code inside the hook.
-
 ## Wiring (Claude Code)
 
 `hooks/wiring.test.sh` checks both paths by RUNNING every registered hook in each
 environment — with `CLAUDE_PLUGIN_ROOT` set and with it unset — rather than by matching
-filenames. It used to match, and passed 15/15 while the snippet below injected nothing.
+filenames.
 
 **With the plugin, nothing to wire** — `hooks/hooks.json` registers all three agent
 hooks; pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep
 the scripts in `.ai/hooks/` and point `.claude/settings.json` at them:
 
-There are **three**, and each path used to ship a different two. Until 2026-09-10 the
-plugin registered the principles injector and the guard but not `session-start.sh`, so
-plugin users got no install health check; the snippet below registered
-`session-start.sh` and the guard but not the injector, so hand-wired users got **no
-rules injected at all** — half of what this playbook does. Register all three.
+Register all **three**: without `session-start-rules.sh` **no rules are injected at
+all**, and without `session-start.sh` there is no install health check.
 
 ```json
 {
@@ -300,9 +273,7 @@ that the logic has exactly one home.
   so **this hook never sees them** — the agent guard is the only thing between an agent
   and that class, and it leaves `git stash drop` to the person (#118). Verified
   2026-09-11 on a repo with the full gate installed: a commit on `main` was blocked and the ref held, while `git rm`, `git clean -fd` and
-  `git stash drop` all succeeded and destroyed their target. An earlier wording here
-  ("the only hook that sees every write path") read as though it covered them; it does
-  not, and a change was built on that misreading before the error was caught. It asks where the ref landed, not which command moved it, so
+  `git stash drop` all succeeded and destroyed their target. It asks where the ref landed, not which command moved it, so
   the enumeration cannot fall behind. It exists because the command-shaped guards kept
   losing (all verified on git 2.55, 2026-09-10):
   `git cherry-pick` and `git revert` run **neither** `pre-commit` nor `commit-msg` —
@@ -352,10 +323,7 @@ that the logic has exactly one home.
   `commit-msg` as well, so the merge lands with no note check and no
   `Merge-authorisation` trailer. **Already have a `pre-commit`** (a linter,
   lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
-  scan and its exit status decides the commit. **Upgrading from 0.22.x:** a plugin
-  update cannot copy git hooks, so this one arrives only when you sync them in —
-  `install.sh --from`, below; `flight-rules-doctor.sh` — run at session start — reports
-  it missing and prints that command. Tests: `secret-scan.test.sh`.
+  scan and its exit status decides the commit. Tests: `secret-scan.test.sh`.
   **Install all of `hooks/git/`**, or the gate is half built; `install.sh` refuses
   unless all six bare-named hooks are present.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
@@ -392,13 +360,8 @@ that the logic has exactly one home.
   any checkout; the refusal says so and prints the install to run in the main checkout. `--stale-only` replaces only a copy byte-identical to some release in
   the plugin cache no newer than the one installing — a newer release's copy, which a
   session on a later version wrote, is left alone and named, so an older session's sync
-  does not downgrade it — from 0.27.0 on: a session still on 0.26.x or earlier runs an
-  installer without that check and, left open, writes its copies over newer ones again
-  on its first session start (startup, resume, clear or compact) each day until it is
-  closed. A current session's doctor names them behind, and its sync restores them, at
-  its next daily check (a later day's first session start, or after a version change);
-  one that already ran today says nothing until then;
-  doctor itself names a newer release's copy as a ⚠️, not as behind — and a project's own adaptation is left alone and named — mark it
+  does not downgrade it (a session on 0.26.x or earlier lacks that check: `CHANGELOG.md`
+  0.27.0 → *Upgrading*); doctor itself names a newer release's copy as a ⚠️, not as behind — and a project's own adaptation is left alone and named — mark it
   with a line `# flight-rules: adapted` and doctor accepts it too. Two exceptions are
   left alone without a word: an `install.sh` that is the project's own script, not
   flight-rules' (it lacks the installer's header phrase), and a missing `install.sh`,
@@ -438,30 +401,18 @@ Guards that fire on the assistant's own events, before git ever runs:
   cleanup from the protected branch is not blocked. It also denies `git branch -d`/`-D`
   of a protected branch — local deletion, which `post-merge` was found recommending.
   A matcher's trailing boundary is an **end-of-token**, not a space: a subshell closes
-  with `)`, a brace group or loop body with `;`. Until 2026-09-10 it was `[[:space:]]`
-  alone, so `git rebase`, `git push --mirror`, `git switch -f`, `git stash drop|clear`,
-  `git checkout --` and `git restore` were each denied bare and **allowed** inside
-  `( … )` or `{ …; }` on a protected branch.
-  **Targets are read per simple command**, not per command string: a greedy match found
-  only the last `git push`/`git branch` in a compound, so a protected target in an
-  earlier one escaped (`git branch -d main && git branch -d feature/x` was allowed), and reading
-  past the end of that command turned a later word into a target (a following
-  `echo main` refused the deletion of a feature branch). Both fixed 2026-09-10. On a **protected** branch of the project
+  with `)`, a brace group or loop body with `;`.
+  **Targets are read per simple command**, not per command string. On a **protected** branch of the project
   it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
   created as worktrees (workflow rule 6), and the block shows the command. That applies
   while you stand on a **protected** branch, which is when a branch made in place puts
-  feature work in the main checkout. It was nominally every branch until 2026-09-14,
-  though never actually enforced as such: a `git commit` in the same command elected
-  `commit` and branch creation was never judged at all. "The
+  feature work in the main checkout. "The
   project" is its main checkout *and every worktree of it* — they share one
   `--git-common-dir`, which is how a worktree is told from an unrelated repo whose
   branches are none of this project's business.
   The target repo is resolved **per segment**: a `cd` sets it for the segments after
   it, a `git -C <dir>` sets it for its own segment only, and `-c`/other global options
-  are normalised away so every matcher sees `git <verb>`. Until #61 it was resolved
-  once per command — the last `cd` anywhere, else the first `-C` anywhere — so
-  `git -C /other status && git commit -m x` on a protected branch was allowed and the
-  secret scan read `/other`. A `cd` inside `( … )` or `$( … )` ends at the `)`, as in
+  are normalised away so every matcher sees `git <verb>`. A `cd` inside `( … )` or `$( … )` ends at the `)`, as in
   the shell (#70) — for branch policy, a best guess: a paren inside quotes, a heredoc
   or a `case` pattern is not told from a real one, so the scope can be wrong either
   way, and the ref gate is the backstop. The secret scan does not depend on it: it
@@ -539,9 +490,7 @@ Guards that fire on the assistant's own events, before git ever runs:
   keeps the text it was given — reported 2026-09-15 by a session that had just read the
   new version's SKILL.md from disk and was still following the previous version's
   principles. Nothing in this repo can re-inject into a live session; **a new session is
-  what picks up a rules change.** The plugin's `session-start.sh --prompt --plugin` says
-  so on the first prompt after a reload changes the session's version; hand-wired,
-  nothing does. And the header names the plugin version, which turns
+  what picks up a rules change.** The header names the plugin version, which turns
   invisible staleness into something a reader can check against the plugin directory.
   Tests: `wiring.test.sh` — the rules arriving is asserted before the version in every
   install shape, because reading the version must never cost the rules.
@@ -631,13 +580,6 @@ It matches a git verb anywhere in a command SEGMENT, so writing *about* a git co
 can read as running one — `echo "never git rm on main" >> notes.md` is refused. In a
 repo whose product is documentation about git, that is not rare.
 
-A segment, not the whole string: until 2026-09-13 the classifiers looked at everything
-between the first character and the last, so a flag from one command was read as
-another's. `git push origin dev && … | tr -d ' '` was refused as a remote branch
-deletion because of `tr -d`, `git clean -n && rm -f x` as `git clean -f`. The target
-parsers had run per segment since 2026-09-10; the classifiers that pick which parser to
-use had not.
-
 Measured 2026-09-11 against 405 commands taken from real sessions:
 
 | Standing on | Denied | False positives |
@@ -669,11 +611,3 @@ outcome, rewriting the hook script itself, was left open: it is conspicuous, it 
 stand out in review, and closing it would mean moving the hooks out of the repo. Same
 outcome, very different odds of being reached by accident, and only one of them worth
 engineering against.
-
-## Layered defence
-
-The agent guard and the git gate overlap on purpose: `pre-commit-check.sh` stops the
-assistant *before* it runs a bad commit, and `pre-merge-commit` stops *anyone* (human
-or tool that bypassed the agent layer) at merge time. The secret scan is layered the
-same way: the agent guard denies early with the reason, and git's `pre-commit` scans
-what the commit really records. Keep both.
