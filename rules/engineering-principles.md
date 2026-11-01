@@ -1,3 +1,6 @@
+---
+trigger: always_on
+---
 # Engineering Principles for AI Assistants
 
 > Adapted from [andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills).

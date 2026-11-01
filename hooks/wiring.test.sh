@@ -156,6 +156,22 @@ else
   FAIL=$((FAIL+1)); printf '  ❌ the header does not name the version — staleness stays invisible\n'
 fi
 
+# The principles file opens with `trigger: always_on`: Antigravity loads a plugin rule into
+# every session only with that header (its validator: "no valid trigger in the
+# frontmatter, so the rule never applies"; shown in a live session, 2026-11-01). Claude
+# Code and Codex get the file through this hook instead, which strips the header.
+say "$([ "$(head -3 "$ROOT/rules/engineering-principles.md" | tr '\n' '|')" = '---|trigger: always_on|---|' ]; echo $?)" "rules/engineering-principles.md opens with Antigravity's always_on header"
+! grep -q 'trigger: always_on' <<<"$OUT"; say "$?" "…and the hook does not inject that header"
+sed -n '3p' <<<"$OUT" | grep -q '^# Engineering Principles'; say "$?" "…the injected text starts at the title"
+
+# A header saved with CRLF is still stripped; one that never closes would strip the whole
+# file, so the rules go in whole instead (fix review, 2026-11-01).
+HV="$LAB/hdr"; mkdir -p "$HV/hooks" "$HV/rules"; cp "$ROOT/hooks/session-start-rules.sh" "$HV/hooks/"
+{ printf -- '---\r\ntrigger: always_on\r\n---\r\n'; sed '1,3d' "$ROOT/rules/engineering-principles.md"; } > "$HV/rules/engineering-principles.md"
+HOUT=$(inject "$HV"); ! grep -q 'trigger: always_on' <<<"$HOUT" && grep -q 'Engineering Principles' <<<"$HOUT"; say "$?" "a CRLF header is stripped, the rules kept"
+{ printf -- '---\ntrigger: always_on\n'; sed '1,3d' "$ROOT/rules/engineering-principles.md"; } > "$HV/rules/engineering-principles.md"
+grep -q 'Engineering Principles' <<<"$(inject "$HV")"; say "$?" "a header that never closes: the rules still go in"
+
 # No plugin.json at all: the hand-wired shape, and where the regression lived.
 NP="$LAB/noplugin"; mkdir -p "$NP/hooks" "$NP/rules"
 cp "$ROOT/hooks/session-start-rules.sh" "$NP/hooks/"

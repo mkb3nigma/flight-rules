@@ -840,6 +840,7 @@ say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "session-start.sh: the python3 fal
 say "$([ -e "$D/PWNED" ] && echo ran || echo not)" "not" "…and the project's json.py did not run"
 J=$( (cd "$D" && bash "$NJ/hooks/session-start-rules.sh" 2>/dev/null) )
 say "$(jq -r '.hookSpecificOutput.additionalContext' <<<"$J" 2>/dev/null | grep -c 'Engineering Principles')" "1" "session-start-rules.sh: the fallback still injects the rules"
+say "$(jq -r '.hookSpecificOutput.additionalContext' <<<"$J" 2>/dev/null | grep -c 'trigger: always_on')" "0" "…without the front-matter header Antigravity reads"
 say "$([ -e "$D/PWNED" ] && echo ran || echo not)" "not" "…and the project's json.py did not run"
 rm -rf "$D" "$NJ"
 

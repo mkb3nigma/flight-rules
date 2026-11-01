@@ -117,6 +117,20 @@ set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)).
 release's
 [CHANGELOG](CHANGELOG.md) entry starts with anything the update needs from you.
 
+**Codex and Antigravity (skills and principles, by plugin):** both install this plugin as
+it is, from a clone: `codex plugin marketplace add <clone>` then `codex plugin add
+flight-rules@flight-rules`, or `agy plugin install <clone>`. Both get the skills.
+Antigravity also loads `engineering-principles.md` into every session; Codex runs no
+plugin hooks, so add the rules pointer below to the project's `AGENTS.md`. Neither runs
+flight-rules' agent hooks, so no doctor reminds you to wire the git hooks — the merge
+gate and the secret scan. Do it yourself: the first time in a project,
+`bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git` and commit `.ai/hooks/`;
+in every other clone, `bash .ai/hooks/install.sh`; after a plugin update, the first command again
+(not `--stale-only`, which knows only Claude Code's plugin cache), then review the diff before
+committing: this form also replaces a hook you marked `# flight-rules: adapted`. `<plugin>` is
+`~/.codex/plugins/cache/flight-rules/flight-rules/<version>` or
+`~/.gemini/config/plugins/flight-rules`.
+
 **Any AI tool (rules, by pointer):** add one line to the project's rules entry point
 (CLAUDE.md, AGENTS.md, `.ai/master-rules.md`, …):
 
@@ -126,7 +140,7 @@ release's
 **Or just point your assistant at it.** No clone, plugin, or marketplace required — give
 your assistant the repo link and ask it to incorporate the rules, or point your project's
 rules file at the URL. The Claude Code plugin is a convenience wrapper, not a dependency;
-a native plugin for other assistants (Copilot, Antigravity, …) can follow if there's demand.
+a native plugin for other assistants (Copilot, …) can follow if there's demand.
 However you adopt it, keep the attribution — the MIT licence simply asks that the
 copyright and licence notice travel with the content ([LICENSE](LICENSE),
 [ATTRIBUTIONS.md](ATTRIBUTIONS.md)).
