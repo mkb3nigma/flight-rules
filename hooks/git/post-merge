@@ -61,20 +61,17 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 NOTE_FILE="$REPO_ROOT/$NOTE_PATH"
 
 # A feature merge is only a topic branch actually merged IN: a merge commit whose
-# second parent is NOT main's tip. Skip fast-forwards (no merge commit) and
-# back-merges of main into the integration branch (routine reconcile/maintenance) —
-# those print nothing.
+# second parent is NOT the tip of a protected branch. Skip fast-forwards (no merge
+# commit) and back-merges of a protected branch into the integration branch (routine
+# reconcile/maintenance) — those print nothing.
 _merged_in=$(git rev-parse -q --verify 'HEAD^2' 2>/dev/null || echo "")
 is_feature_merge() {
   [[ -z "$_merged_in" ]] && return 1            # fast-forward / not a merge commit
   local ref ref_sha name
-  for ref in main origin/main; do
-    ref_sha=$(git rev-parse -q --verify "$ref" 2>/dev/null) || continue
-    [[ "$_merged_in" == "$ref_sha" ]] && return 1   # merged-in commit IS main's tip → back-merge
-  done
-  # …or the tip of any other protected branch, local or origin's: a project whose
-  # released branch is not called main back-merges it too (mission review G2,
-  # 2026-10-29). Case-insensitively, as every layer matches the pattern. Only the refs
+  # The tip of a protected branch, local or origin's, is a back-merge — main by default,
+  # and a project whose released branch is not called main back-merges it too (mission
+  # review G2, 2026-10-29; a main checked by name beside this was cut by the hook sweep,
+  # 2026-11-01). Case-insensitively, as every layer matches the pattern. Only the refs
   # at the merged commit: a grep per ref in the repo took seconds a merge with
   # thousands of remote branches (0.28.0 release review).
   while read -r ref; do
@@ -229,6 +226,14 @@ load_containers() {
   fi
   rm -f "$out" "$err"
 }
+# AWK_Q: q, shq in awk — the same rule, for the same reason: a whole note gets pasted.
+# Split on the quote, not gsub: the backslashes in a gsub replacement differ between
+# awks (macOS awk doubled one and left the quote unmatched). Character by character,
+# with index(), not a bracket regex: macOS awk under a UTF-8 locale dies on a byte
+# that is not UTF-8 in a bracket ("towc: multibyte conversion failure"), and every
+# process after it fell out of the note (fifth review, 2026-10-24).
+AWK_Q='function q(s,   t, n, i, part, ok) { ok = (s != "" && substr(s, 1, 1) != "=" && substr(s, 1, 1) != "~"); for (i = 1; ok && i <= length(s); i++) if (!index("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-", substr(s, i, 1))) ok = 0; if (ok) return s; n = split(s, part, "\047"); t = "\047" part[1]; for (i = 2; i <= n; i++) t = t "\047\\\047\047" part[i]; return t "\047" }
+'
 # running_from <worktree>: the lines for it. A path in a command line counts only at
 # the start of a word (after a space, =, or a quote), so /mnt/x/wt does not name /x/wt.
 # A command line holding a byte that is not UTF-8 is found by its cwd only: macOS ps
@@ -238,14 +243,7 @@ load_containers() {
 running_from() {
   local d="$1" p
   d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
-  printf '%s\n--\n%s\n' "$CWDS" "$PROCS" | D="$d" P="$p" SELF="$$" NOPS="${PROCS:+0}" awk '
-    # q: shq in awk — the same rule, for the same reason: a whole note gets pasted.
-    # Split on the quote, not gsub: the backslashes in a gsub replacement differ between
-    # awks (macOS awk doubled one and left the quote unmatched). Character by character,
-    # with index(), not a bracket regex: macOS awk under a UTF-8 locale dies on a byte
-    # that is not UTF-8 in a bracket ("towc: multibyte conversion failure"), and every
-    # process after it fell out of the note (fifth review, 2026-10-24).
-    function q(s,   t, n, i, part, ok) { ok = (s != "" && substr(s, 1, 1) != "=" && substr(s, 1, 1) != "~"); for (i = 1; ok && i <= length(s); i++) if (!index("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-", substr(s, i, 1))) ok = 0; if (ok) return s; n = split(s, part, "\047"); t = "\047" part[1]; for (i = 2; i <= n; i++) t = t "\047\\\047\047" part[i]; return t "\047" }
+  printf '%s\n--\n%s\n' "$CWDS" "$PROCS" | D="$d" P="$p" SELF="$$" NOPS="${PROCS:+0}" awk "$AWK_Q"'
     function under(s) { return s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1 }
     function at(s, x,   i, j, c) {
       j = 0
@@ -274,14 +272,7 @@ containers_from() {
   local d="$1" p
   d="${d%/}"; p=$(cd "$d" 2>/dev/null && pwd -P) || p="$d"
   [[ -n "$CONTAINERS" ]] || return 0
-  printf '%s\n' "$CONTAINERS" | D="$d" P="$p" awk -F '\t' '
-    # q: shq in awk — the same rule, for the same reason: a whole note gets pasted.
-    # Split on the quote, not gsub: the backslashes in a gsub replacement differ between
-    # awks (macOS awk doubled one and left the quote unmatched). Character by character,
-    # with index(), not a bracket regex: macOS awk under a UTF-8 locale dies on a byte
-    # that is not UTF-8 in a bracket ("towc: multibyte conversion failure"), and every
-    # process after it fell out of the note (fifth review, 2026-10-24).
-    function q(s,   t, n, i, part, ok) { ok = (s != "" && substr(s, 1, 1) != "=" && substr(s, 1, 1) != "~"); for (i = 1; ok && i <= length(s); i++) if (!index("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/@+,:-", substr(s, i, 1))) ok = 0; if (ok) return s; n = split(s, part, "\047"); t = "\047" part[1]; for (i = 2; i <= n; i++) t = t "\047\\\047\047" part[i]; return t "\047" }
+  printf '%s\n' "$CONTAINERS" | D="$d" P="$p" awk -F '\t' "$AWK_Q"'
     function under(s) { return s != "" && (s == ENVIRON["D"] || s == ENVIRON["P"] || index(s, ENVIRON["D"] "/") == 1 || index(s, ENVIRON["P"] "/") == 1) }
     under($2) { printf "    container %s (%s), %s — from %s\n", q($1), q($3), q($4), q($2) }'
 }
@@ -388,7 +379,7 @@ fi
 # and what earlier merges left as one count line. Re-listing every earlier worktree and
 # branch on every merge, and the whole note on every pull, was noise that hid the new
 # line (hooks review H21, 2026-10-28; MISSION.md principle 5). A pull, a fast-forward or
-# a back-merge prints nothing; the file has everything. At most 40 lines.
+# a back-merge of a protected branch prints nothing; the file has everything. At most 40 lines.
 PRINT=""
 if is_feature_merge; then
   # Read back from the note, not worked out again: the process list is read once.

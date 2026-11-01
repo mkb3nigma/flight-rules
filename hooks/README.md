@@ -73,7 +73,7 @@ whitespace, so a `#` inside a value (`^feature#1$`) is kept.
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
 | Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh`, git hooks, doctor | Branches the guard defends. POSIX ERE, matched case-insensitively, as `PR_ONLY_BRANCHES` and `NOTE_GATED_BRANCHES` are, by every hook — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch until it is fixed, and the guard's block names it — except on a mirror push, which any pattern refuses (#103: it used to protect none). The git hooks do the same: to `commit-msg`, every branch but a PR-only one is note-gated while it is broken (with `NOTE_GATED_BRANCHES` unset), and the refusal names it and prints the way past it. `off` (or `none`) disables five things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, `pre-rebase`'s refusal of a branch that is not PR-only, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
-| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured by every hook that reads it — the ref gate, the local merge gate, the rebase gate and `commit-msg`'s squash guard stand down, and no merge counts as a back-merge — while `PROTECTED_BRANCHES` still applies. A pattern that does not compile makes every branch PR-only until it is fixed (#103: it used to make none): no local merge commit or rebase, and no pushed branch moves off its upstream. The refusal names the pattern and prints the way past it, for a branch the pattern does not mean: the command that finishes or repeats what it refused, with the pattern meant in `FLIGHT_RULES_PR_ONLY_BRANCHES`. Where a match grants an exemption — a back-merge needs no note, a PR-only branch is outside the derived note-gated set — it takes the pattern's exact case, so `^MAIN$` gates `main` without exempting it, and a refused back-merge says the case is why. |
+| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured by every hook that reads it — the ref gate, the local merge gate, the rebase gate and `commit-msg`'s squash guard stand down, and no merge counts as a back-merge — while `PROTECTED_BRANCHES` still applies. A pattern that does not compile makes every branch PR-only until it is fixed (#103: it used to make none): no local merge commit or rebase, and no pushed branch moves off its upstream. The refusal names the pattern and prints the way past it, for a branch the pattern does not mean: the command that finishes or repeats what it refused, with the pattern meant in `FLIGHT_RULES_PR_ONLY_BRANCHES`. Where a match grants an exemption — a back-merge needs no note, a PR-only branch is outside the derived note-gated set — it takes the pattern's exact case, so `^MAIN$` gates `main` without exempting it. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. A pattern that does not compile gates every branch until it is fixed, and the refusal names it and prints the way past it (#103). Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills; the routes `pre-merge-commit` and the ref gate print (the conf at `HEAD`) | Where features merge. Default `main` everywhere. |
@@ -212,7 +212,10 @@ that the logic has exactly one home.
   reconciling `main` into the integration branch is what `feature-start` step 4 asks
   for. Only local branches and `origin/*` count, the name must match `PR_ONLY_BRANCHES` in
   its exact case, and the commit must be on `origin/<x>` when origin has it — a forced
-  local `main`, a `MAIN` or `origin/Main`, or a stale `upstream/main` exempts nothing.
+  local `main`, a `MAIN` or `origin/Main` under `^main$`, or a stale `upstream/main`
+  exempts nothing.
+  Only `origin/<x>` spelled as the branch is compared: a ref a case apart (`origin/Main`
+  beside `origin/main`) is neither required nor read.
   A **merge of the branch's own upstream** on a branch that has diverged from it — `git
   pull --no-rebase` on a `dev` holding local merges not yet pushed, after a pull request
   merged on the host — passes without a note too: a branch only behind reaches the same
@@ -234,9 +237,13 @@ that the logic has exactly one home.
   a newer git, a `merge-tree` that fails — an error git reports while merging the same
   two commits again, a corrupt or missing object — refuses the merge, quoting git's
   error and printing both ways on: fix the cause and finish the merge, which checks
-  again, or take the merge to a branch.
-  One thing gets through by design: a commit written by hand into
-  `refs/remotes/origin/<x>` — a forged ref, reached only on purpose (#122).
+  again, or take the merge to a branch. It quotes git's first line, which under a
+  `GIT_TRACE*` variable can be a trace line; the merge is refused either way.
+  Two things get through by design, each reached only on purpose: a commit written by
+  hand into `refs/remotes/origin/<x>` — a forged ref (#122); and, under a `PR_ONLY_BRANCHES`
+  typed in another case (`^MAIN$`), a branch made in that case (`MAIN`) passes as a
+  back-merge when origin has no ref so spelled, or has one holding the commit — origin's
+  `main` is not consulted (hook sweep, 2026-11-01).
   The same hook refuses the commit that would complete a **squash merge** into a
   PR-only branch, which creates no merge commit and so never fires `pre-merge-commit`.
   **A passing note is not consent.** The agent writes that note itself, so a stamped
@@ -324,7 +331,7 @@ that the logic has exactly one home.
   clone's `.git/info/exclude` unless the project already ignores it, so it never shows as
   untracked. After a feature merge it prints what *that* merge left — its worktree, what
   runs from it, its branch — and one line counting what earlier merges left; a pull, a
-  fast-forward or a back-merge prints nothing (at most 40 lines; no flight-rules hook
+  fast-forward or a back-merge of a protected branch prints nothing (at most 40 lines; no flight-rules hook
   reads the file, #110; re-listing everything on every merge and pull was noise). Each command is on a line of its own, quoted to be pasted, with
   what to know about it — just merged, or refused until a push — on the line below. Under each stale worktree it names what still runs from it — processes
   working there or with its path in their command line, and Docker Compose containers
