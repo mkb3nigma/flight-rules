@@ -108,3 +108,18 @@ jobs:
             exit 1
           fi
           echo "ok  Adversarial review section present, filled, with a verdict"
+      # A release is also when the upstreams this playbook adapts get read for changes
+      # worth folding in (owner, 2026-11-01): /upstream-check's report goes in the body.
+      # Presence and a line of text, nothing more: this catches the skipped step.
+      - name: The release PR body carries the upstream check
+        run: |
+          n=$(printf '%s\n' "$BODY" | tr -d '\r' | awk '
+            /^## Upstream check/ { in_s = 1; next }
+            in_s && /^##?([[:space:]]|$)/ { in_s = 0 }
+            in_s && /[^[:space:]]/ && !/^#/ { n++ }
+            END { print n + 0 }') || { echo "::error::could not read the PR body (awk exited $?)"; exit 1; }
+          if [ "$n" -eq 0 ]; then
+            echo "::error::PR into main has no filled '## Upstream check' section — run /upstream-check and put its report there: each source up to date, or what changed and whether this release takes it"
+            exit 1
+          fi
+          echo "ok  Upstream check section present and filled"

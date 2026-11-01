@@ -147,7 +147,8 @@ else
   # The check's own awk, run on pr-create's template: an untouched template, or a
   # section holding only the comic, must count as empty (final release /dg,
   # 2026-10-17: the comic slot's placeholder lines passed an untouched template).
-  PROG=$(sed -n "/| awk '\$/,/END {/p" "$RR" | sed -e '1d' -e "\$s/').*\$//")
+  # The first awk program only: the upstream-check step that follows has one too.
+  PROG=$(sed -n "/| awk '\$/,/END {/{p;/END {/q;}" "$RR" | sed -e '1d' -e "\$s/').*\$//")
   TPL=$(sed -n "/--body \"\$(cat <<'EOF'/,/^EOF\$/p" skills/pr-create/SKILL.md)
   # The awk prints three numbers: the section's filled lines, its verdict headings, and
   # the lines of text under a verdict heading.
@@ -247,7 +248,7 @@ else
   # a dead awk left both numbers empty, every test errored inside its `if`, and the step
   # printed ok (0.26.0 release review, V1). The awk test above runs the program, never
   # the shell around it.
-  RUN=$(sed -n '/run: |/,$p' "$RR" | sed -e '1d' -e 's/^          //')
+  RUN=$(awk '/run: \|/ { f = 1; next } f && /^      - name:/ { exit } f' "$RR" | sed -e 's/^          //')
   FX=$(mktemp -d "${TMPDIR:-/tmp}/rr.XXXXXX"); printf '#!/bin/sh\nexit 2\n' > "$FX/awk"; chmod +x "$FX/awk"
   step() { BODY="$1" PATH="${2:+$2:}$PATH" bash -e -c "$RUN" 2>&1; }
   OUT=$(step "$FULL"); RC=$?
@@ -264,6 +265,19 @@ else
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare verdict followed by an H1 (exit $RC)" || bad "the step passes a bare verdict followed by '# Testing' (exit $RC: $OUT)"
   OUT=$(step "$FULL" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the step passes when its awk dies (exit $RC: $OUT)"
+  # The upstream-check step (owner, 2026-11-01): no section, or a heading with nothing
+  # under it, fails; a filled one passes; a dead awk fails.
+  URUN=$(awk '/run: \|/ { n++; f = (n == 2); next } f && /^      - name:/ { exit } f' "$RR" | sed -e 's/^          //')
+  ustep() { BODY="$1" PATH="${2:+$2:}$PATH" bash -e -c "$URUN" 2>&1; }
+  UP=$(printf '## Upstream check\nAll three sources up to date.\n## Testing\n')
+  OUT=$(ustep "$FULL"); RC=$?
+  [ "$RC" -ne 0 ] && ok "the upstream step fails a body with no Upstream check section" || bad "the upstream step passes a body with no section (exit $RC: $OUT)"
+  OUT=$(ustep "$(printf '## Upstream check\n## Testing\nx\n')"); RC=$?
+  [ "$RC" -ne 0 ] && ok "…fails an empty section" || bad "the upstream step passes an empty section (exit $RC: $OUT)"
+  OUT=$(ustep "$UP"); RC=$?
+  [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes a filled one" || bad "the upstream step fails a filled section (exit $RC: $OUT)"
+  OUT=$(ustep "$UP" "$FX"); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the upstream step passes when its awk dies (exit $RC: $OUT)"
   rm -rf "$FX"
 fi
 
