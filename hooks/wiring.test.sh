@@ -195,16 +195,20 @@ fi
 # Without jq the hook builds its JSON with python3, which adopters without jq rely on, and
 # runs it with -I, so a json.py in the project is not imported in place of the standard
 # library's (security review, 2026-10-13). A PATH without jq, and a planted json.py.
-NJ="$LAB/nojq"; mkdir -p "$NJ"
-for t in awk sed head cat dirname; do ln -s "$(command -v "$t")" "$NJ/$t" || die "could not link $t"; done
-ln -s "$(python3 -I -c 'import sys; print(sys.executable)')" "$NJ/python3" || die "could not link python3"
-printf 'raise SystemExit("planted json.py ran")\n' > "$LAB/proj/json.py"
-POUT=$( (cd "$LAB/proj" && PATH="$NJ" CLAUDE_PLUGIN_ROOT="$ROOT" "$BASH" "$ROOT/hooks/session-start-rules.sh" </dev/null) 2>/dev/null \
-  | python3 -I -c 'import json,sys
+if command -v python3 >/dev/null 2>&1; then
+  NJ="$LAB/nojq"; mkdir -p "$NJ"
+  for t in awk sed head cat dirname; do ln -s "$(command -v "$t")" "$NJ/$t" || die "could not link $t"; done
+  ln -s "$(python3 -I -c 'import sys; print(sys.executable)')" "$NJ/python3" || die "could not link python3"
+  printf 'raise SystemExit("planted json.py ran")\n' > "$LAB/proj/json.py"
+  POUT=$( (cd "$LAB/proj" && PATH="$NJ" CLAUDE_PLUGIN_ROOT="$ROOT" "$BASH" "$ROOT/hooks/session-start-rules.sh" </dev/null) 2>/dev/null \
+    | python3 -I -c 'import json,sys
 try: print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])
 except Exception: pass')
-rm -f "$LAB/proj/json.py"
-grep -q 'Engineering Principles' <<<"$POUT"; say "$?" "without jq, the python3 fallback injects the rules, past a planted json.py"
+  rm -f "$LAB/proj/json.py"
+  grep -q 'Engineering Principles' <<<"$POUT"; say "$?" "without jq, the python3 fallback injects the rules, past a planted json.py"
+else
+  echo "  ⚠️  python3 absent — skipping the python3-fallback assertion"
+fi
 
 # The guard is a decision function; exercise it rather than checking it exists.
 for shape in plugin handwired; do

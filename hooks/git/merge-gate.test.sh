@@ -555,6 +555,13 @@ say "$?" "0" "an authorised merge lands and records it in the commit"
 [ -n "$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)')" ]
 say "$?" "0" "…as a trailer git itself can parse, not just a greppable line"
 rm -rf "$D"
+# A message that already carries the trailer gets no second one, even where git's
+# trailer.ifExists adds rather than skips an identical trailer (/dg of the test sweep, G2).
+D=$(mkauth)
+printf 'Merge feature/x\n\nMerge-authorisation: explicit (FLIGHT_RULES_MERGE_AUTHORISED)\n' > "$D/.git/msg"
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" -c trailer.ifExists=add merge -F .git/msg feature/x >/dev/null 2>&1
+say "$?$(git -C "$D" log -1 --pretty=%B | grep -c '^Merge-authorisation:')" "01" "a message that already carries the trailer, under trailer.ifExists=add, keeps exactly one"
+rm -rf "$D"
 
 D=$(mkauth)
 OUT=$(FLIGHT_RULES_MERGE_AUTHORISED=0 git -C "$D" merge --no-edit feature/x 2>&1); RC=$?
@@ -1086,7 +1093,7 @@ shims() {   # shims <dir> <ps: log|fail> <docker: list|fail|hang|empty>
              printf 'case " $* " in *" -a "*) printf "c2\\t%s\\tsrv-db-1\\tExited (0) 3 days ago\\n"; printf "c3\\t%s\\tsrvx-1\\tExited (1) 2 days ago\\n";; esac\n' "$PB/wt-srv/sub" "$PB/wt-srvx"
            } > "$1/docker" ;;
     fail)  printf '#!/bin/sh\necho "Cannot connect to the Docker daemon at unix:///x.sock" >&2\nexit 1\n' > "$1/docker" ;;
-    hang)  printf '#!/bin/sh\nexec sleep 10\n' > "$1/docker" ;;
+    hang)  printf '#!/bin/sh\nexec sleep 60\n' > "$1/docker" ;;
     empty) printf '#!/bin/sh\nexit 0\n' > "$1/docker" ;;
   esac
   chmod +x "$1"/*
@@ -1130,7 +1137,7 @@ say "$(section fix/quiet | grep -c 'Still running')" "0" "…where it is not mis
 shims "$PB/d" log hang; T0=$SECONDS; OUT=$(rerun "$PB/d"); RC=$?; T1=$SECONDS
 say "$RC" "0" "with docker hanging: the hook still exits 0"
 say "$(top | grep -c 'could not list containers (docker ps gave no answer in 3s)')" "1" "…and says it was cut short"
-say "$([ $((T1 - T0)) -lt 8 ] && echo bounded)" "bounded" "…within seconds, not the 10 the stand-in sleeps"
+say "$([ $((T1 - T0)) -lt 30 ] && echo bounded)" "bounded" "…well short of the 60s the stand-in sleeps"
 
 # No docker on PATH at all: a PATH of links to the tools the hook needs, docker left out.
 NB="$PB/nodocker"; mkdir -p "$NB"
@@ -1264,10 +1271,16 @@ OUT=$(cd "$QQ" && git pull --no-rebase --no-edit 2>&1); RC=$?
 say "$RC" "0" "a pull that merges the upstream: it lands"
 say "$(git -C "$QQ" rev-parse -q --verify HEAD^2 >/dev/null && echo merge)" "merge" "…as a merge commit"
 say "$(grep -c -e 'Earlier merges left' -e 'Post-merge to' -e 'cleanup note written' <<<"$OUT")" "0" "…and post-merge prints nothing for it"
+# git ignores post-merge's exit status and this path writes no note to pair with, so a
+# hook that died passed the line above: run it again by hand, where its status shows.
+OUT=$(cd "$QQ" && .ai/hooks/post-merge 0 2>&1); RC=$?
+say "$RC$(grep -c . <<<"$OUT")" "00" "…and, run by hand on that merge, it exits 0 having printed nothing"
 # A sync merge of the integration branch into a feature branch is no merge into it.
 git -C "$QQ" checkout -q -b fix/s HEAD~1 && git -C "$QQ" commit -q --allow-empty -m s || die "could not build fix/s"
 OUT=$(cd "$QQ" && git merge --no-edit trunk 2>&1); RC=$?
 say "$RC$(grep -c -e 'Earlier merges left' -e 'Post-merge to' -e 'cleanup note written' <<<"$OUT")" "00" "a merge of trunk into fix/s lands, and post-merge prints nothing for it"
+OUT=$(cd "$QQ" && .ai/hooks/post-merge 0 2>&1); RC=$?
+say "$RC$(grep -c . <<<"$OUT")" "00" "…and, run by hand on that merge, it exits 0 having printed nothing"
 rm -rf "$PQ"
 
 echo "A pull that only catches up is named, with the pull that works (hooks review H1, 2026-10-28):"

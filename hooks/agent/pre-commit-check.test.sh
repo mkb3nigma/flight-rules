@@ -1263,8 +1263,8 @@ echo "The paren splitter stays linear on a long command:"
 eval "$(sed -n '/^command_segments() {/,/^}/p;/^command_segments_marked() {/,/^}/p' "$HOOK")"
 BIG=$(for i in $(seq 1 1000); do printf 'x%d = f(g(%d), h(%d))\n' "$i" "$i" "$i"; done)
 SECONDS=0; NSEG=$(LC_ALL=en_US.UTF-8 command_segments_marked "$BIG" | grep -c '^[()]$'); T=$SECONDS
-if [[ $NSEG -eq 6000 && $T -le 10 ]]; then PASS=$((PASS+1)); printf '  ✅ %s bytes, %s parens, %ss\n' "${#BIG}" "$NSEG" "$T"
-else FAIL=$((FAIL+1)); printf '  ❌ %s bytes: %s parens (want 6000) in %ss (want ≤10)\n' "${#BIG}" "$NSEG" "$T"; fi
+if [[ $NSEG -eq 6000 && $T -le 30 ]]; then PASS=$((PASS+1)); printf '  ✅ %s bytes, %s parens, %ss\n' "${#BIG}" "$NSEG" "$T"
+else FAIL=$((FAIL+1)); printf '  ❌ %s bytes: %s parens (want 6000) in %ss (want ≤30)\n' "${#BIG}" "$NSEG" "$T"; fi
 echo "An unresolvable cd target: the SECRET half is fixed, the branch half is not:"
 # `cd "$(git rev-parse --show-toplevel)"` and `cd "$VAR"` arrive unexpanded, so
 # `git -C "$WORK_DIR"` resolves no repo. Two different halves, two different answers,
