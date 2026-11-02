@@ -400,8 +400,8 @@ Guards that fire on the assistant's own events, before git ever runs:
   ref is judged on that ref, not on the branch you happen to stand on, so post-merge
   cleanup from the protected branch is not blocked. It also denies `git branch -d`/`-D`
   of a protected branch — local deletion, which `post-merge` was found recommending.
-  A matcher's trailing boundary is an **end-of-token**, not a space: a subshell closes
-  with `)`, a brace group or loop body with `;`.
+  A command string is split at `;`, `&`, `|`, `(`, `)` and newlines before any matcher
+  reads it, so a subshell, brace group or loop body hides nothing.
   **Targets are read per simple command**, not per command string. On a **protected** branch of the project
   it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
   created as worktrees (workflow rule 6), and the block shows the command. That applies
