@@ -444,7 +444,7 @@ secret_check "indented password (control)"    deny  src/config.py '    password 
 secret_check "PASSWORD (case-insensitive)"    deny  src/config.py 'PASSWORD = "hunter2hunter2"'
 secret_check "API_KEY"                        deny  src/config.py 'API_KEY = "abcdefghijklmnop"'
 secret_check "token"                          deny  src/config.py 'token = "abcdefghijklmnop"'
-secret_check "client_secret"                  deny  src/config.py 'client_secret = "abcdefghijklmnop"'
+secret_check "client_secret"                  deny  src/config.py 'client_secret = "abcdefghijklmnop"' # flight-rules: allow — a fixture the guard must deny
 secret_check "YAML password:"                 deny  config.yml   'password: "hunter2hunter2"'
 secret_check "JSON \"password\":"             deny  config.json  '{"password": "hunter2hunter2"}'
 secret_check "sk-ant-… key"                   deny  src/a.py 'k = "sk-ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123-AA"'
