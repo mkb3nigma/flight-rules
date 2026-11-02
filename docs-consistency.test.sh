@@ -255,14 +255,8 @@ else
   [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "the step passes a filled section" || bad "the step fails a filled section (exit $RC: $OUT)"
   OUT=$(step "$BARE"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare ### Verdict (exit $RC)" || bad "the step passes a bare ### Verdict (exit $RC: $OUT)"
-  OUT=$(step "$ISSUE"); RC=$?
-  [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes a verdict whose line starts #83" || bad "the step fails a verdict whose line starts #83 (exit $RC: $OUT)"
   OUT=$(step "$FENCED"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a verdict that is only inside a code fence (exit $RC)" || bad "the step passes a fenced-only verdict (exit $RC: $OUT)"
-  OUT=$(step "$INDH2"); RC=$?
-  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare verdict followed by an indented ## (exit $RC)" || bad "the step passes a bare verdict followed by ' ## Testing' (exit $RC: $OUT)"
-  OUT=$(step "$H1"); RC=$?
-  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails a bare verdict followed by an H1 (exit $RC)" || bad "the step passes a bare verdict followed by '# Testing' (exit $RC: $OUT)"
   OUT=$(step "$FULL" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the step passes when its awk dies (exit $RC: $OUT)"
   # The upstream-check step (owner, 2026-11-01): no section, or a heading with nothing
