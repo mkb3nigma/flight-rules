@@ -134,15 +134,15 @@ NORM=$(printf '%s' "$COMMAND" | sed -E "$NORM_SED")
 # so anything that cannot continue a command word counts as a boundary. Excluding
 # alnum/_/-/. keeps `mygit`, `legit` and `git-foo` from matching.
 B='(^|[^[:alnum:]_.-])'
-# The token that ENDS a git command is not always whitespace. A subshell closes with
-# `)`, a brace group / `if` body / loop body ends with `;`, a background job with `&`,
-# and a pipeline with `|`. Every matcher below used `${E}` as its trailing
-# boundary, so each one silently stopped matching in those shapes: on 2026-09-10,
+# The token that ENDS a git command: whitespace or the end of the segment. On
+# 2026-09-10 E was whitespace only, and the matchers then read the whole command, so
 # `git rebase`, `git push --mirror`, `git switch -f`, `git stash drop|clear`,
-# `git checkout --` and `git restore` were all denied bare and ALLOWED inside `( … )`
-# or `{ …; }` on a protected branch. Found by crossing every wrapper with every core
-# rather than testing each once.
-E='([[:space:];)&|]|$)'
+# `git checkout --` and `git restore` were denied bare and ALLOWED inside `( … )` or
+# `{ …; }` on a protected branch; `;)&|` were added to E for it (6c88a27). Since 926f884
+# (2026-09-14) every matcher reads one segment of command_segments, which has split on
+# all four first, so they could never reach E and were dropped (test sweep, 2026-11-02). The wrapper × core product
+# in pre-commit-check.test.sh is what proves the split still covers those shapes.
+E='([[:space:]]|$)'
 
 is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
 

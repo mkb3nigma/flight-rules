@@ -866,10 +866,9 @@ gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
 # The budget went to PREFIX_FMT below, an axis that had no coverage at all and where two
 # criticals were living.
 # `brace-group` went too (test sweep, 2026-11-02). Since every segment is judged on its
-# own, the splitter has removed every `;`, `)`, `&` and `|` before a matcher sees it, so
-# those characters in `E` can no longer decide anything: a hook with `;`, `)` or all four
-# deleted from E passes this whole suite. A `{ … ; }` segment reads like `echo start && …`,
-# and the brace-group cases failed only beside every other wrapper's.
+# own, the splitter has removed every `;`, `)`, `&` and `|` before a matcher sees it, and
+# `E` no longer lists them. A `{ … ; }` segment reads like `echo start && …`, and the
+# brace-group cases failed only beside every other wrapper's.
 # The three RETARGETING wrappers (#61, probed 2026-09-17 on dev at c3a708e): a `git -C
 # <other-repo>` on a harmless segment, before or after the core, and a `cd <other-repo>`
 # AFTER it. The target used to be resolved once per command — the last `cd` anywhere,
