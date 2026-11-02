@@ -120,8 +120,19 @@ release's
 **Codex and Antigravity (skills and principles, by plugin):** both install this plugin as
 it is, from a clone: `codex plugin marketplace add <clone>` then `codex plugin add
 flight-rules@flight-rules`, or `agy plugin install <clone>`. Both get the skills.
-Antigravity also loads `engineering-principles.md` into every session; Codex runs no
-plugin hooks, so add the rules pointer below to the project's `AGENTS.md`. Neither runs
+Antigravity also loads `engineering-principles.md` into every session. Codex runs no
+plugin hooks; for the same session-start injection Claude Code gets, add this to
+`~/.codex/hooks.json` and trust it once (`/hooks`). Codex skips a hook it hasn't trusted
+without saying so, and an edit to the file drops the trust:
+
+```json
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command",
+  "command": "bash -c 'd=$(ls -d ~/.codex/plugins/cache/flight-rules/flight-rules/*/ | sort -V | tail -1) && bash \"${d}hooks/session-start-rules.sh\"'"
+} ] } ] } }
+```
+
+It picks the newest installed version, so a plugin update needs no edit. Or add the
+rules pointer below to the project's `AGENTS.md`. Neither tool runs
 flight-rules' agent hooks, so no doctor reminds you to wire the git hooks — the merge
 gate and the secret scan. Do it yourself: the first time in a project,
 `bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git` and commit `.ai/hooks/`;
