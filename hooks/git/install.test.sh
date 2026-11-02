@@ -759,6 +759,25 @@ say "$(head -1 <<<"$OUT")" "0" "from a linked worktree: exit 0"
 say "$(grep -c "^⚠️ git runs these hooks from $(cd "$D/.git/hooks" && pwd -P) today" <<<"$OUT")" "1" "…warned, naming the shared .git/hooks, not the worktree's .git file"
 rm -rf "$D"
 
+echo "install.sh lists hooks, not directories or dotted files:"
+# A consuming project may keep its own agent/ scripts under .ai/hooks/; git only runs
+# bare file names at the top level, so a directory is not an active hook and must not
+# be listed as one. The positive assertion on the same run keeps the negatives honest.
+# Without pre-commit nothing scans `git add f && git commit` for a key (#71), so a
+# copy that left it out must be refused, not installed half built.
+D=$(mkrepo); git -C "$D" config --unset core.hooksPath; rm "$D/.ai/hooks/pre-commit"
+OUT=$(run "$D" .ai/hooks/install.sh)
+say "$(head -1 <<<"$OUT")" "1" "install.sh refuses when pre-commit is missing"
+say "$(grep -c 'pre-commit is missing' <<<"$OUT")" "1" "…and names it"
+cp "$H/pre-commit" "$D/.ai/hooks/" || die "could not copy pre-commit"
+mkdir -p "$D/.ai/hooks/agent"; touch "$D/.ai/hooks/README.md"
+OUT=$(run "$D" .ai/hooks/install.sh)
+say "$(head -1 <<<"$OUT")" "0" "install.sh exits 0 with an agent/ subdirectory and a README beside the hooks"
+say "$(grep -cE '^ +pre-merge-commit$' <<<"$OUT")" "1" "install.sh lists pre-merge-commit as an active hook"
+say "$(grep -cE '^ +agent$' <<<"$OUT")" "0" "install.sh does not list the agent/ directory as an active hook"
+say "$(grep -c 'README' <<<"$OUT")" "0" "install.sh still skips dotted files"
+rm -rf "$D"
+
 echo "Bad arguments fail loudly:"
 D=$(mkrepo); P=$(mkplugin)
 say "$(rc "$D" .ai/hooks/install.sh --from "$D/nowhere")" "1" "--from a missing directory"
