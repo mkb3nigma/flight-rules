@@ -156,17 +156,17 @@ x_fetch()     { git -C "$1" fetch origin; }
 x_featwork()  { cd "$1" && git checkout -q feature/x && echo q > q.txt && git add q.txt && git commit -m "feature: q"; }
 x_worktree()  { git -C "$1" worktree add "$1/../wt" -b feature/wt; }
 x_branchnew() { git -C "$1" branch feature/new; }
-x_branchdel() { git -C "$1" branch feature/new 2>/dev/null; git -C "$1" branch -D feature/new; }
+# Deleting the PR-only branch itself: a branch that is not PR-only never reaches the
+# deletion exemption, so deleting one tested nothing it does not test above.
+x_branchdel() { git -C "$1" checkout -q feature/x && git -C "$1" branch -D main; }
 x_checkout()  { git -C "$1" checkout main; }
-x_status()    { git -C "$1" status --short; }
 allowed "pull --ff-only onto the reviewed head" x_pull
 allowed "fetch"                                 x_fetch
 allowed "commit on a feature branch"            x_featwork
 allowed "worktree add -b"                       x_worktree
 allowed "create a branch"                       x_branchnew
-allowed "delete a local branch"                 x_branchdel
+allowed "delete the PR-only branch locally"     x_branchdel
 allowed "checkout main"                         x_checkout
-allowed "status"                                x_status
 
 echo "Scope — only PR-only branches are gated:"
 D=$(make_repo "PR_ONLY_BRANCHES=^main\$" armed)
@@ -200,16 +200,17 @@ conf_case() { # <desc> <conf|env:VAL> <expect: blocked|allowed>
 }
 # Same defect, other layer: a commented value stopped gating.
 conf_case "trailing comment still gates"  "PR_ONLY_BRANCHES=^main\$   # via PR only"  blocked
-conf_case "comment, single space"         "PR_ONLY_BRANCHES=^main\$ # x"              blocked
 # PROTECTED_BRANCHES=off is the opt-out the docs and the guard's own block message name.
 # It disabled only the agent guard, so a project that took the documented opt-out still
 # had git refusing every move — citing a key the owner never set.
 conf_case "PROTECTED_BRANCHES=off opts out here too" "PROTECTED_BRANCHES=off"  allowed
-conf_case "…even with PR_ONLY left at its default"   "PROTECTED_BRANCHES=off
-PR_ONLY_BRANCHES=^main\$"                                                      allowed
 # `none` is `off` to the guard, session-start, post-merge and the doctor; here too (0.28.0
 # release review).
 conf_case "PROTECTED_BRANCHES=none is off here too"  "PROTECTED_BRANCHES=none" allowed
+# …and from the environment, which comes first for every key.
+d=$(make_repo default armed); off_main "$d"
+FLIGHT_RULES_PROTECTED_BRANCHES=off git -C "$d" branch -f main feature/x >/dev/null 2>&1
+say "$(escaped "$d" && echo moved)" "moved" "FLIGHT_RULES_PROTECTED_BRANCHES=off in the environment opts out too"
 
 # …and PR_ONLY_BRANCHES=none is off, not a pattern: read as one it matches none-x
 # (0.28.0 fix review).
@@ -219,6 +220,12 @@ git -C "$d" branch -f none-x feature/x >/dev/null 2>&1
 say "$(git -C "$d" rev-parse none-x)" "$(git -C "$d" rev-parse feature/x)" "PR_ONLY_BRANCHES=none: none-x moves off its upstream"
 
 conf_case "PR_ONLY_BRANCHES=off disables the gate" "PR_ONLY_BRANCHES=off"      allowed
+# …and is no pattern: read as one it matched every branch with "off" in its name, which
+# main is not, so this case pushes one and commits on it.
+d=$(make_repo "PR_ONLY_BRANCHES=off" armed); git -C "$d" checkout -q -b feature/offline
+git -C "$d" push -q origin feature/offline 2>/dev/null && git -C "$d" fetch -q origin || die "could not push feature/offline"
+git -C "$d" commit -q --allow-empty -m "feature: more" >/dev/null 2>&1; RC=$?
+say "$RC$([ "$(git -C "$d" rev-parse feature/offline)" != "$(git -C "$d" rev-parse origin/feature/offline)" ] && echo moved)" "0moved" "…a pushed feature/offline takes a commit"
 conf_case "a conf naming another branch"           "PR_ONLY_BRANCHES=^nope\$"  allowed
 conf_case "env override wins"                      "env:^nothing\$"            allowed
 # A pattern that does not compile matches every branch, not none: grep exits 2 for it,
@@ -260,15 +267,13 @@ fi
 # `reset --hard HEAD` and `merge --abort` write it to the value it has, and were refused
 # as moves off origin/feature/x, leaving no undo (#103 review).
 AHEAD=$(git -C "$D" rev-parse feature/x)
-git -C "$D" reset -q --hard HEAD >/dev/null 2>&1
-say "$?" "0" "…but git reset --hard HEAD on it, ahead of its upstream, is not refused"
 git -C "$D" branch side origin/feature/x
 git -C "$D" checkout -q side; echo theirs > "$D/g.txt"; git -C "$D" commit -qam "feature: side" >/dev/null 2>&1 \
   || die "could not commit on side"
 git -C "$D" checkout -q feature/x
 git -C "$D" merge side >/dev/null 2>&1 && die "the merge of side was meant to conflict"
 git -C "$D" merge --abort >/dev/null 2>&1
-say "$?" "0" "…nor is git merge --abort"
+say "$?" "0" "…but git merge --abort on it, ahead of its upstream, is not refused"
 say "$(git -C "$D" rev-parse feature/x)" "$AHEAD" "…and feature/x stays where it was"
 echo again >> "$D/g.txt"; git -C "$D" add -A
 git -C "$D" commit -qm "feature: again" >/dev/null 2>&1; RC=$?

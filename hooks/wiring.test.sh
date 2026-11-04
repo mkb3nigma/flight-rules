@@ -16,6 +16,9 @@ H="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$H/.." && pwd)"
 PASS=0; FAIL=0
 say() { if [ "$1" = "0" ]; then PASS=$((PASS+1)); echo "  ✅ $2"; else FAIL=$((FAIL+1)); echo "  ❌ $2"; fi; }
+# inject() below decodes the hook's JSON with python3; without it every injection case
+# failed as "nothing injected", which names the wrong cause.
+command -v python3 >/dev/null 2>&1 || { echo "  ❌ harness: python3 is required — this suite decodes the hooks' JSON with it" >&2; exit 2; }
 
 # The agent-facing hooks this repo ships. Git hooks live in hooks/git/ and are wired by
 # core.hooksPath (install.sh), not by either of these files, so they are not listed.
@@ -59,6 +62,10 @@ if command -v jq >/dev/null 2>&1; then
   W='[.. | objects | select(has("command")) | .command | select(test("agent/session-start\\.sh") and (test("--plugin") or test("--prompt")))] | length'
   [ "$(jq "$W" "$ROOT/.claude/settings.json")" = 0 ]; say "$?" ".claude/settings.json, hand-wired, wires neither --plugin nor --prompt"
   [ "$(sed -n '/^```json$/,/^```$/p' <<<"$SNIPPET" | sed '1d;$d' | jq "$W" 2>/dev/null)" = 0 ]; say "$?" "…nor does the README snippet"
+  # Under any matcher but Bash the guard never sees a git command, and was counted wired.
+  G='[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]? | select(.command | test("pre-commit-check"))] | length'
+  [ "$(jq "$G" "$H/hooks.json")" = 1 ]; say "$?" "hooks.json wires the guard under the Bash matcher"
+  [ "$(jq "$G" "$ROOT/.claude/settings.json")" = 1 ]; say "$?" "…and so does .claude/settings.json"
 else
   echo "  ⚠️  jq absent — skipping the JSON assertions"
 fi
@@ -188,6 +195,19 @@ if grep -q 'Engineering Principles' <<<"$(inject "$NP")"; then
 else
   FAIL=$((FAIL+1)); printf '  ❌ malformed plugin.json → nothing injected\n'
 fi
+# Without jq the hook builds its JSON with python3, which adopters without jq rely on, and
+# runs it with -I, so a json.py in the project is not imported in place of the standard
+# library's (security review, 2026-10-13). A PATH without jq, and a planted json.py.
+NJ="$LAB/nojq"; mkdir -p "$NJ"
+for t in awk sed head cat dirname; do ln -s "$(command -v "$t")" "$NJ/$t" || die "could not link $t"; done
+ln -s "$(python3 -I -c 'import sys; print(sys.executable)')" "$NJ/python3" || die "could not link python3"
+printf 'raise SystemExit("planted json.py ran")\n' > "$LAB/proj/json.py"
+POUT=$( (cd "$LAB/proj" && PATH="$NJ" CLAUDE_PLUGIN_ROOT="$ROOT" "$BASH" "$ROOT/hooks/session-start-rules.sh" </dev/null) 2>/dev/null \
+  | python3 -I -c 'import json,sys
+try: print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])
+except Exception: pass')
+rm -f "$LAB/proj/json.py"
+grep -q 'Engineering Principles' <<<"$POUT"; say "$?" "without jq, the python3 fallback injects the rules, past a planted json.py"
 
 # The guard is a decision function; exercise it rather than checking it exists.
 for shape in plugin handwired; do

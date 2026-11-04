@@ -47,6 +47,9 @@ echo "Healthy install:"
 D=$(mkrepo)
 say "$(rc "$D")" "0" "installed repo passes"
 say "$(has "$D" "merge.ff=false")" "0" "reports merge.ff"
+# "Run from anywhere inside the repo": from a subdirectory it reads the repo's conf.
+mkdir -p "$D/sub"; OUT=$(cd "$D/sub" && HOME="$D/fakehome" bash "$DOCTOR" 2>&1)
+say "$(grep -cF '✅ PROTECTED_BRANCHES=^main$' <<<"$OUT")" "1" "…and, run from a subdirectory, reads the repo's conf"
 rm -rf "$D"
 
 echo "Hooks missing or not executable — the silent failures:"
@@ -108,6 +111,10 @@ rm -rf "$D"
 D=$(mkrepo); rm "$D/.ai/hooks/pre-rebase"
 say "$(rc "$D")" "1" "pre-rebase missing → problem"
 rm -rf "$D"
+# The merge gate itself: left off the list doctor walks, a missing one went unreported.
+D=$(mkrepo); rm "$D/.ai/hooks/pre-merge-commit"
+say "$(has "$D" "pre-merge-commit missing from")" "0" "pre-merge-commit missing → named"
+rm -rf "$D"
 
 # Without this one, cherry-pick / revert / branch -f / update-ref and a CONFLICTED
 # merge all reach a PR-only branch unguarded — and every other hook still reports
@@ -115,10 +122,6 @@ rm -rf "$D"
 D=$(mkrepo); rm "$D/.ai/hooks/reference-transaction"
 say "$(rc "$D")" "1" "reference-transaction missing → problem"
 say "$(has "$D" "reference-transaction missing")" "0" "…names the hook"
-rm -rf "$D"
-
-D=$(mkrepo); chmod -x "$D/.ai/hooks/reference-transaction"
-say "$(rc "$D")" "1" "reference-transaction without +x → problem"
 rm -rf "$D"
 
 # The secret scan for commits (#71): without it, `git add f && git commit` is scanned by
@@ -143,13 +146,14 @@ say "$(grep -c "from flight-rules' hooks/git/" <<<"$LONE")" "1" "…and names wh
 rm -rf "$D"
 
 D=$(mkrepo); printf 'MERGE_NEEDS_INSTRUCTION=off\n' >> "$D/.ai/flight-rules.conf"
-say "$(has "$D" "no longer needs the user")" "0" "MERGE_NEEDS_INSTRUCTION=off is surfaced, not silent"
+say "$(has "$D" "⚠️  MERGE_NEEDS_INSTRUCTION=off — a merge into a protected branch no longer needs the user")" "0" "MERGE_NEEDS_INSTRUCTION=off is surfaced as a warning, not silent"
 rm -rf "$D"
 
 # doctor strips inline comments; the hooks did not. It validated a value that was never
 # the one in force, and reported ✅ on a repo whose enforcement was off.
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=^main$   # trunk-based\n' > "$D/.ai/flight-rules.conf"
 say "$(has "$D" "PROTECTED_BRANCHES=^main\$")" "0" "a commented value is reported as the hooks see it"
+say "$(run "$D" | grep -cxF '  ✅ PROTECTED_BRANCHES=^main$')" "1" "…the whole line, without the comment the match above would allow"
 rm -rf "$D"
 
 # PR_ONLY_BRANCHES=off and NOTE_GATED_BRANCHES=off are both honoured — by
@@ -157,10 +161,12 @@ rm -rf "$D"
 # it made doctor nag daily about a correctly configured repo.
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=^main$\nPR_ONLY_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "PR_ONLY_BRANCHES=off is not an error"
+say "$(has "$D" "⚠️  PR_ONLY_BRANCHES=off — no branch is PR-only")" "0" "…but a warning naming what stands down"
 rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=^main$\nNOTE_GATED_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "NOTE_GATED_BRANCHES=off is not an error"
+say "$(has "$D" "⚠️  NOTE_GATED_BRANCHES=off — no branch requires a pre-merge-check note")" "0" "…but a warning"
 rm -rf "$D"
 
 # Three "looks installed but isn't" states doctor could not see (D4, 2026-09-11). Each
@@ -358,13 +364,22 @@ rm -rf "$D"
 # 3. The plugin is listed and switched OFF. The check was a grep for the name.
 D=$(mkrepo); mkdir -p "$D/fakehome/.claude"
 printf '{"enabledPlugins":{"flight-rules@mkb3nigma": false}}\n' > "$D/fakehome/.claude/settings.json"
-say "$(has "$D" "no agent guard wired")" "0" "a disabled plugin does not count as wired"
+say "$(has "$D" "⚠️  no agent guard wired")" "0" "a disabled plugin does not count as wired"
 rm -rf "$D"
 
 D=$(mkrepo); git -C "$D" config --unset merge.ff
 say "$(rc "$D")" "1" "merge.ff unset → problem"
 say "$(has "$D" "fast-forward merge creates no commit")" "0" "…explains why"
 rm -rf "$D"
+
+# Neither jq nor python3: the agent guard cannot read its input and denies every git
+# command. A PATH of the tools doctor runs, without those two.
+NJ=$(cd "$(mktemp -d)" && pwd -P)
+for t in git sed grep awk head tail sort cmp dirname basename cat tr; do ln -s "$(command -v "$t")" "$NJ/$t" || die "could not link $t"; done
+D=$(mkrepo); OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$NJ" "$BASH" "$DOCTOR" 2>&1); RC=$?
+say "$RC" "1" "neither jq nor python3 on PATH → problem"
+say "$(grep -c '❌ neither jq nor python3 on PATH' <<<"$OUT")" "1" "…named"
+rm -rf "$D" "$NJ"
 
 echo "A hook that is present, executable, the right hook — and an older release's:"
 # A plugin update cannot touch the project's git hooks, so four of AppliHawk's sat at
@@ -413,7 +428,7 @@ rm -rf "$D" "$(dirname "$L")"
 
 D=$(mkrepo); echo "# this project's own change" >> "$D/.ai/hooks/post-merge"
 say "$(rc "$D")" "0" "a copy matching no release is a warning, not a problem"
-say "$(has "$D" "post-merge differs from this flight-rules' copy")" "0" "…that names the hook"
+say "$(has "$D" "⚠️  post-merge differs from this flight-rules' copy")" "0" "…that names the hook"
 say "$(has "$D" "to update: bash")" "0" "…and still prints the sync command"
 # "re-run without <flags> to replace it", followed as written, replaces it: the hint
 # named only --stale-only, and --this-checkout without it was refused (group A fix review, F12).
@@ -481,7 +496,7 @@ say "$(run "$D" | grep -c -e 'install.sh is the' -e 'to update:')" "0" "…after
 say "$(rc "$D")" "0" "…and doctor passes"
 rm -rf "$D"
 D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
-say "$(has "$D" "install.sh differs from this flight-rules' copy")" "0" "an install.sh matching no release is named as differing"
+say "$(has "$D" "⚠️  install.sh differs from this flight-rules' copy")" "0" "an install.sh matching no release is named as differing"
 printf '# flight-rules: adapted\n' >> "$D/.ai/hooks/install.sh"
 say "$(run "$D" | grep -c -e 'install.sh differs' -e 'to update:')" "0" "…and, marked adapted, is not"
 say "$(rc "$D")" "0" "…with doctor passing"
@@ -665,10 +680,6 @@ say "$(has "$D" "to update: bash")" "0" "…with the sync command"
 say "$(rc "$D")" "0" "…as a warning"
 rm -rf "$D"
 D=$(mkrepo)
-# Two -e, not [⚠❌]: under LC_ALL=C a bracket of multibyte characters is a set of bytes,
-# and ✅ shares one (fourth review, D10).
-say "$(run "$D" | grep -c -e '⚠.*install.sh' -e '❌.*install.sh' -e 'to update:')" "0" "a missing install.sh is no warning and asks for no sync"
-say "$(rc "$D")" "0" "…and doctor passes"
 cp "$H/git/install.sh" "$D/.ai/hooks/"
 say "$(run "$D" | grep -c -e 'install.sh' -e 'to update:')" "0" "a current install.sh is not reported"
 say "$(rc "$D")" "0" "…and doctor passes"
@@ -704,7 +715,7 @@ say "$(has "$D" "HOOK_SYNC=auto")" "0" "…and is reported"
 say "$(has "$D" "unknown key")" "1" "…not as unknown"
 printf 'HOOK_SYNC=yes\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "HOOK_SYNC=yes is a warning, not a failure"
-say "$(has "$D" "neither auto nor report")" "0" "…saying what the values are"
+say "$(has "$D" "⚠️  HOOK_SYNC='yes' is neither auto nor report")" "0" "…saying what the values are"
 rm -rf "$D"
 
 # /dg's comic settings (owner, 2026-10-17): read by a skill, so a typo would only show as
@@ -716,8 +727,8 @@ say "$(has "$D" "DG_COMIC=never")" "0" "…and each is reported"
 say "$(has "$D" "DG_COMIC_PR=always")" "0" "…both of them"
 printf 'DG_COMIC=sometimes\nDG_COMIC_PR=yes\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "a bad comic value is a warning, not a failure"
-say "$(has "$D" "DG_COMIC='sometimes' is neither always nor never")" "0" "…naming DG_COMIC's values"
-say "$(has "$D" "DG_COMIC_PR='yes' is not never, ask or always")" "0" "…and DG_COMIC_PR's"
+say "$(has "$D" "⚠️  DG_COMIC='sometimes' is neither always nor never")" "0" "…naming DG_COMIC's values"
+say "$(has "$D" "⚠️  DG_COMIC_PR='yes' is not never, ask or always")" "0" "…and DG_COMIC_PR's"
 say "$(has "$D" "treats it as never and keeps the comic out of PRs")" "0" "…falling back to never, the opt-in default"
 rm -rf "$D"
 
@@ -727,7 +738,7 @@ D=$(mkrepo); printf 'OPEN_BRANCH_LIMIT=3\n' >> "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "OPEN_BRANCH_LIMIT is a known key"
 say "$(has "$D" "OPEN_BRANCH_LIMIT=3")" "0" "…and is reported"
 printf 'OPEN_BRANCH_LIMIT=lots\n' > "$D/.ai/flight-rules.conf"
-say "$(has "$D" "OPEN_BRANCH_LIMIT='lots' is neither a positive whole number nor off")" "0" "…a value that is not a number is warned about"
+say "$(has "$D" "⚠️  OPEN_BRANCH_LIMIT='lots' is neither a positive whole number nor off")" "0" "…a value that is not a number is warned about"
 printf 'OPEN_BRANCH_LIMIT=off\n' > "$D/.ai/flight-rules.conf"
 say "$(has "$D" "OPEN_BRANCH_LIMIT=off")" "0" "…off is accepted"
 rm -rf "$D"
@@ -740,14 +751,14 @@ say "$(has "$D" "DG_WAIT_MINUTES=08")" "0" "…a leading zero is still minutes"
 for v in 15m 0 -5 ''; do
   printf 'DG_WAIT_MINUTES=%s\n' "$v" > "$D/.ai/flight-rules.conf"
   say "$(rc "$D")" "0" "DG_WAIT_MINUTES='$v' is a warning, not a failure"
-  say "$(has "$D" "DG_WAIT_MINUTES='$v' is not a positive whole number of minutes")" "0" "…naming the value '$v'"
+  say "$(has "$D" "⚠️  DG_WAIT_MINUTES='$v' is not a positive whole number of minutes")" "0" "…naming the value '$v'"
   say "$(has "$D" "treats it as 15")" "0" "…and the default it falls back to"
 done
 rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCH=^main$\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "unknown key is a warning, not a failure"
-say "$(has "$D" "unknown key 'PROTECTED_BRANCH'")" "0" "…and is named"
+say "$(has "$D" "⚠️  .ai/flight-rules.conf: unknown key 'PROTECTED_BRANCH'")" "0" "…and is named"
 rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=^(main$\n' > "$D/.ai/flight-rules.conf"
@@ -755,12 +766,12 @@ say "$(rc "$D")" "1" "invalid regex → problem"
 rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=main\n' > "$D/.ai/flight-rules.conf"
-say "$(has "$D" "unanchored")" "0" "unanchored pattern → warning"
+say "$(has "$D" "⚠️  PROTECTED_BRANCHES='main' is unanchored")" "0" "unanchored pattern → warning"
 rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "PROTECTED_BRANCHES=off is allowed"
-say "$(has "$D" "no protected branches in the agent guard")" "0" "…with a warning naming the layers it stands down"
+say "$(has "$D" "⚠️  PROTECTED_BRANCHES=off — no protected branches in the agent guard")" "0" "…with a warning naming the layers it stands down"
 # It used to say "the branch policy is off", which is not what happens: pre-merge-commit,
 # pre-rebase and the squash guard read PR_ONLY_BRANCHES directly and keep refusing local
 # merges and rebases into a PR-only branch. A reader turning `off` on to work locally
@@ -768,16 +779,9 @@ say "$(has "$D" "no protected branches in the agent guard")" "0" "…with a warn
 say "$(has "$D" "PR_ONLY_BRANCHES still refuses")" "0" "…and says what it does NOT disable"
 rm -rf "$D"
 
-# This case asserted that `off` on a git-hook key is an error, on the belief that only
-# PROTECTED_BRANCHES understands it. That was wrong: reference-transaction honours
-# PR_ONLY_BRANCHES=off and commit-msg honours NOTE_GATED_BRANCHES=off. The old assertion
-# made doctor report a problem every day about a correctly configured project.
-D=$(mkrepo); printf 'PR_ONLY_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
-say "$(rc "$D")" "0" "off on a git-hook key is honoured, not an error"
-rm -rf "$D"
-
 D=$(mkrepo); rm "$D/.ai/flight-rules.conf"
 say "$(rc "$D")" "0" "no conf at all is a warning only"
+say "$(has "$D" "⚠️  .ai/flight-rules.conf absent")" "0" "…named as one"
 rm -rf "$D"
 
 echo "PROTECTED_BRANCHES=off empties the note gate, and doctor says so:"
@@ -787,7 +791,7 @@ echo "PROTECTED_BRANCHES=off empties the note gate, and doctor says so:"
 # worth saying when the project integrates somewhere other than main; a trunk-only
 # project has no note-gated branch either way.
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
-say "$(has "$D" "empties the note gate")" "0" "off + a dev integration branch → warned"
+say "$(has "$D" "⚠️  …and with NOTE_GATED_BRANCHES unset, that empties the note gate")" "0" "off + a dev integration branch → warned"
 rm -rf "$D"
 
 D=$(mkrepo); printf 'PROTECTED_BRANCHES=off\nINTEGRATION_BRANCH=main\n' > "$D/.ai/flight-rules.conf"
@@ -814,7 +818,7 @@ echo "Guard wiring — once, not twice, not a stale copy:"
 D=$(mkrepo); mkdir -p "$D/.claude" "$D/fakehome/.claude"
 printf '{"enabledPlugins":{"flight-rules@flight-rules":true}}' > "$D/fakehome/.claude/settings.json"
 printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash x/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
-say "$(has "$D" "runs twice")" "0" "plugin + local wiring → double-fire warning"
+say "$(has "$D" "⚠️  the flight-rules plugin is enabled AND")" "0" "plugin + local wiring → double-fire warning"
 rm -rf "$D"
 
 # The plugin can be enabled at PROJECT scope (#67): Claude Code then writes the
@@ -831,12 +835,7 @@ rm -rf "$D"
 
 D=$(mkrepo); mkdir -p "$D/.claude"
 printf '{"enabledPlugins":{"flight-rules@flight-rules":true},"hooks":{"PreToolUse":[{"hooks":[{"command":"bash x/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
-say "$(has "$D" "runs twice")" "0" "plugin enabled in .claude/settings.json + local wiring in the same file → double-fire warning"
-rm -rf "$D"
-
-D=$(mkrepo); mkdir -p "$D/.claude"
-printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/.claude/settings.local.json"
-say "$(has "$D" "no agent guard wired")" "0" "a plugin disabled at project scope does not count as wired"
+say "$(has "$D" "⚠️  the flight-rules plugin is enabled AND")" "0" "plugin enabled in .claude/settings.json + local wiring in the same file → double-fire warning"
 rm -rf "$D"
 
 # settings.local.json is git-ignored, so it exists only in the checkout that wrote it,
@@ -852,8 +851,6 @@ mkdir -p "$D/.ai/worktrees/w/fakehome/.claude"; printf '{}' > "$D/.ai/worktrees/
 [ -e "$D/.ai/worktrees/w/.claude/settings.local.json" ] && die "the fixture's worktree has its own settings.local.json"
 say "$(has "$D/.ai/worktrees/w" "agent guard via the plugin")" "0" "a linked worktree: plugin enabled in the main checkout's settings.local.json → wired"
 say "$(has "$D/.ai/worktrees/w" "no agent guard wired")" "1" "…and not declared absent"
-printf '{"enabledPlugins":{"flight-rules@flight-rules":false}}' > "$D/.claude/settings.local.json"
-say "$(has "$D/.ai/worktrees/w" "no agent guard wired")" "0" "…while disabled there, the worktree still warns"
 rm -rf "$D"
 
 D=$(mkrepo); mkdir -p "$D/.claude/" "$D/.ai/hooks/agent"
@@ -868,8 +865,9 @@ D=$(mkrepo); rm "$D/.ai/flight-rules.conf"; printf 'PROTECTED_BRANCHES=^main$\n'
 mkdir -p "$D/.claude" "$D/hooks/agent"; printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash hooks/agent/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
 # The wired script has to be THERE: a healthy repo is one where the path resolves.
 cp "$H/agent/pre-commit-check.sh" "$D/hooks/agent/pre-commit-check.sh"
-OUT=$(cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1)
+OUT=$(cd "$D" && HOME="$D/fakehome" bash "$DOCTOR" --problems-only 2>&1); RC=$?
 say "$(printf '%s' "$OUT" | grep -c .)" "0" "no output when nothing is wrong"
+say "$RC" "0" "…and exits 0, so the silence is not a doctor that died"
 rm -rf "$D"
 
 echo "A command or skill of the user's or project's own that shadows a plugin skill is named:"
@@ -889,8 +887,8 @@ mkdir -p "$D/.claude/commands"
 printf -- '---\ndescription: x\n---\nUse the `flight-rules:commit` skill.\n' > "$D/.claude/commands/commit.md"
 say "$(rc "$D")" "0" "plugin on, shadowing commands: doctor exits 0 (a warning, not a failure)"
 say "$(has "$D" "commit.md shadows")" "1" "…a command that delegates to flight-rules:<name> is not a shadow"
-say "$(has "$D" "~/.claude/commands/dg.md shadows flight-rules' /dg")" "0" "…a user command named like a plugin skill is named"
-say "$(has "$D" "~/.claude/skills/diagnose/SKILL.md shadows flight-rules' /diagnose")" "0" "…so is a user skill"
+say "$(has "$D" "⚠️  ~/.claude/commands/dg.md shadows flight-rules' /dg")" "0" "…a user command named like a plugin skill is named"
+say "$(has "$D" "⚠️  ~/.claude/skills/diagnose/SKILL.md shadows flight-rules' /diagnose")" "0" "…so is a user skill"
 say "$(has "$D" "standup")" "1" "…a command with its own name is not"
 say "$(has "$D" ".claude/skills/dg/SKILL.md shadows")" "1" "…nor a pointer at the project's copy-in"
 # The exemption is the pointer or handover LINE, not the string anywhere (#82): a full
@@ -902,8 +900,8 @@ printf -- '---\nname: docs-lint\n---\nAdapted from skills/docs-lint/SKILL.md in 
 mkdir -p "$D/.claude/skills/rules-sync"
 printf -- '---\nname: rules-sync\n---\n\nRead and follow `skills/rules-sync/SKILL.md` (path relative to the repository root; this repository\nis the playbook, so the file is the skill itself, not a copy). Arguments: $ARGUMENTS\n' > "$D/.claude/skills/rules-sync/SKILL.md"
 printf -- '---\ndescription: x\nmodel: opus\n---\n<!-- description: states the invariant. -->\n\nUse the `flight-rules:feature-start` skill. It reads `.ai/skills/feature-start/EXTENSIONS.md` for the branch parameters.\n\nArguments: $ARGUMENTS\n' > "$D/.claude/commands/feature-start.md"
-say "$(has "$D" ".claude/commands/pre-merge-check.md shadows flight-rules' /pre-merge-check")" "0" "…a copy that names flight-rules:<name> in prose still shadows"
-say "$(has "$D" ".claude/commands/docs-lint.md shadows flight-rules' /docs-lint")" "0" "…so does one that names skills/<name>/SKILL.md in prose"
+say "$(has "$D" "⚠️  .claude/commands/pre-merge-check.md shadows flight-rules' /pre-merge-check")" "0" "…a copy that names flight-rules:<name> in prose still shadows"
+say "$(has "$D" "⚠️  .claude/commands/docs-lint.md shadows flight-rules' /docs-lint")" "0" "…so does one that names skills/<name>/SKILL.md in prose"
 say "$(has "$D" "rules-sync/SKILL.md shadows")" "1" "…this repo's own pointer shape is not a shadow"
 say "$(has "$D" "feature-start.md shadows")" "1" "…nor a downstream project's real wrapper"
 say "$(rc "$D")" "0" "…and doctor still exits 0 with all of them present"

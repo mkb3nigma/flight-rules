@@ -108,6 +108,8 @@ blocks "Google key"        'echo "k=$GOOG" > f && git add f && git commit -qm x'
 blocks "PEM private key"   'echo "$PEM" > f && git add f && git commit -qm x'
 blocks ".env staged"       'echo X=1 > .env && git add .env && git commit -qm x'
 blocks "nested .env.local" 'mkdir -p a && echo X=1 > a/.env.local && git add a && git commit -qm x'
+# core.quotePath=false: quoted, a non-ASCII path ends in `"` and the .env went unseen.
+blocks ".env in a non-ASCII-named directory" 'mkdir -p cönf && echo X=1 > cönf/.env && git add . && git commit -qm x'
 blocks "key in a test file" 'mkdir tests && echo "k=$AWS" > tests/x_test.py && git add tests && git commit -qm x'
 blocks "key in a non-ASCII-named file" 'echo "k=$AWS" > cönfig.py && git add . && git commit -qm x'
 
@@ -251,7 +253,7 @@ else
   h=$(git -C "$R" rev-parse HEAD)
   OUT=$(git -C "$R" commit -qm merge 2>&1)
   say "$(landed "$R" "$h")" yes "reftable: a conflicted merge whose incoming side holds a key concludes"
-  say "$(grep -c 'scanning the conflict resolution' <<<"$OUT")" 1 "…scanning the resolution, not everything"
+  say "$(grep -c "beyond git's own merge" <<<"$OUT")" 1 "…scanning the resolution against git's own merge, not merge-tree's or everything"
   R=$(make_repo armed reftable); cmerge "$R" "resolved, token=$GHP"
   h=$(git -C "$R" rev-parse HEAD)
   OUT=$(git -C "$R" commit -qm merge 2>&1)

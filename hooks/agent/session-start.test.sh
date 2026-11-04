@@ -155,7 +155,8 @@ branch "$D" fix/merged merge
 # the tag has to shadow the branch being MATCHED for `short` to mangle it, and one on
 # the integration branch for the `--merged` argument to resolve to the wrong object.
 git -C "$D" tag fix/merged
-git -C "$D" tag trunk
+# trunk~1, before the merge: a `--merged` that resolved to the tag would then not see it.
+git -C "$D" tag trunk trunk~1
 git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
 OUT=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "a merged worktree is still reported when tags shadow the branch names"
@@ -163,18 +164,21 @@ say "$(grep -c 'heads/' <<<"$OUT")" "0" "no \`heads/\` prefix appears in the rem
 rm -rf "$D"
 
 echo "Nothing to say, nothing said:"
+# The raw output, not the decoded context: an empty JSON object every session decodes to
+# nothing too. Any line but `rc=0` — output, or a hook that died — is counted.
+quiet() { { raw "$1"; echo "rc=$?"; } | grep -vc '^rc=0$'; }
 D=$(mkrepo)
 branch "$D" fix/open
 git -C "$D" worktree add -q "$D/.ai/worktrees/open" fix/open
-say "$(run "$D" | grep -c .)" "0" "no merged worktrees → no output at all"
+say "$(quiet "$D")" "0" "no merged worktrees → no output at all"
 rm -rf "$D"
 
 D=$(mkrepo)
-say "$(run "$D" | grep -c .)" "0" "an empty worktree directory → no output"
+say "$(quiet "$D")" "0" "an empty worktree directory → no output"
 rm -rf "$D"
 
 D=$(mkrepo); rmdir "$D/.ai/worktrees"
-say "$(run "$D" | grep -c .)" "0" "no worktree directory at all → no output"
+say "$(quiet "$D")" "0" "no worktree directory at all → no output"
 rm -rf "$D"
 
 echo "Once a day, per project:"
@@ -288,7 +292,9 @@ say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…and 
 say "$(usr <<<"$J" | grep -c 'M .ai/hooks/commit-msg')" "1" "…naming the file"
 git -C "$D" add .ai/hooks && git -C "$D" commit -qm "chore: synced" --no-verify
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
-say "$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) | usr | grep -c 'git hooks have uncommitted changes')" "0" "…and once committed, says nothing"
+J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "…and once committed, says nothing"
+say "$(grep -c '^rc=0$' <<<"$J")" "1" "…exiting 0"
 rm -rf "$D"
 # Without the key: reported, not written.
 D=$(mkrepo); stale "$D" commit-msg
@@ -339,12 +345,13 @@ D=$(mkrepo); cp "$H/../git/install.sh" "$D/.ai/hooks/"; printf 'HOOK_SYNC=auto\n
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
 git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"
-WT() { (cd "$D/.ai/worktrees/wt" && rm -f "$D"/fakehome/.claude/hooks/.worktree-check-* && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); }
+WT() { (cd "$D/.ai/worktrees/wt" && rm -f "$D"/fakehome/.claude/hooks/.worktree-check-* && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; }
 J=$(WT)
 say "$(grep -c 'could not update the git hooks\|main checkout' <<<"$J")" "0" "auto, in a worktree, current hooks in the main checkout: says nothing about the sync"
-# The silence is a decision, not a path never reached (session-start always exits 0, so
-# its exit status could not tell — #93 batch review, B4): the same fixture with one
-# stale copy gets the main-checkout command on screen.
+say "$(grep -c '^rc=0$' <<<"$J")" "1" "…exiting 0"
+# The silence is a decision, not a path never reached (#93 batch review, B4; the exit
+# status above says only that the hook did not die): the same fixture with one stale copy
+# gets the main-checkout command on screen.
 stale "$D" commit-msg; git -C "$D" commit -qam "chore: stale" --no-verify
 say "$(WT | usr | grep -c 'is in the main checkout')" "1" "…while one stale copy there, same fixture, gets the main-checkout command on screen"
 # A worktree session asked `git status` about a path in the main checkout, which git
@@ -371,7 +378,9 @@ D=$(mkrepo); rm -f "$D/.ai/hooks/install.sh"; printf 'HOOK_SYNC=auto\nPROTECTED_
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
 git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"
-say "$(WT | grep -c 'could not update the git hooks\|main checkout\|install.sh: missing')" "0" "auto, in a worktree, no install.sh in the main checkout, hooks current: says nothing about the sync"
+J=$(WT)
+say "$(grep -c 'could not update the git hooks\|main checkout\|install.sh: missing' <<<"$J")" "0" "auto, in a worktree, no install.sh in the main checkout, hooks current: says nothing about the sync"
+say "$(grep -c '^rc=0$' <<<"$J")" "1" "…exiting 0"
 stale "$D" commit-msg; git -C "$D" commit -qam "chore: stale" --no-verify
 J=$(WT)
 say "$(usr <<<"$J" | grep -c 'is in the main checkout')" "1" "…while a stale hook there, same fixture, still gets the main-checkout command"
@@ -539,7 +548,6 @@ say "$(grep -c 'A leftover never finishes: `git status`' <<<"$OUT")" "1" "…and
 # path holding `$(…)` or `"` ran or broke when pasted (0.26.0 release review, P2).
 say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only" <<<"$OUT")" "1" "…with the command to run once it is finished, its paths shell-quoted"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
-say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 # On a protected branch, the command for afterwards is the worktree form: the plain one,
 # run as printed once the merge was done, wrote on the protected branch — the #99 state
 # (full release review, S5).
@@ -597,7 +605,17 @@ say "$(grep -cE '^  bash .*--stale-only$' <<<"$OUT")" "1" "a plugin path with ß
 # jq's output always is (fourth review, D6b).
 say "$(grep -c "$(printf '\357\277\275')" <<<"$CMD")" "0" "…with no byte replaced on the way"
 say "$(bash() { printf '%s|' "$@"; }; eval "$CMD")" "$U/hooks/git/install.sh|--from|$U/hooks/git|--stale-only|" "…and, pasted, hands bash the exact paths"
-rm -rf "$D" "$(dirname "$U")"
+# …and so do the two worktree forms: mid-merge on a protected branch, and on a protected
+# branch with a stale hook.
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+OUT=$( { (cd "$D" && LC_ALL=$U8 FLIGHT_RULES_PROTECTED_BRANCHES='^(main|trunk)$' HOME="$D/fakehome" bash "$U/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
+CMD=$(grep -E '^  bash .*--stale-only --this-checkout$' <<<"$OUT" | head -1)
+say "$(bash() { printf '%s|' "$@"; }; eval "$CMD")" "$U/hooks/git/install.sh|--from|$U/hooks/git|--stale-only|--this-checkout|" "…the mid-merge worktree form, pasted, too"
+P2=$(mkrepo); stale "$P2" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$P2/.ai/flight-rules.conf"
+git -C "$P2" add -A >/dev/null; git -C "$P2" commit -qm "chore: stale" --no-verify
+CMD=$( (cd "$P2" && LC_ALL=$U8 HOME="$P2/fakehome" bash "$U/hooks/agent/session-start.sh" 2>&1) | usr | grep -E '^  bash .*--stale-only --this-checkout$' | head -1)
+say "$(bash() { printf '%s|' "$@"; }; eval "$CMD")" "$U/hooks/git/install.sh|--from|$U/hooks/git|--stale-only|--this-checkout|" "…and the protected-branch form"
+rm -rf "$D" "$P2" "$(dirname "$U")"
 # Mid-cherry-pick too, not only merge and rebase (release review, 2026-10-12).
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
@@ -609,7 +627,6 @@ OUT=$(PRUN)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, mid-cherry-pick: the hook exits 0"
 say "$(grep -c 'skipped the git hooks: a cherry-pick is in progress' <<<"$OUT")" "1" "…says the sync was skipped and why"
 say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
-say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
 rm -rf "$D"
 # The other three in-progress states, each alone (fix review, 2026-10-12): a revert
 # stopped on a conflict, and the rebase directories git leaves — rebase-merge is the
@@ -650,7 +667,6 @@ for state in revert rebase-merge rebase-apply am sequencer bisect; do
   case "$state" in am) op="git am session" ;; sequencer) op="cherry-pick or revert" ;; *) op="${state%%-*}" ;; esac
   say "$(grep -c "skipped the git hooks: a $op is in progress" <<<"$OUT")" "1" "…says the sync was skipped and why"
   say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "…and syncs nothing"
-  say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…while doctor still reports the stale hook"
   rm -rf "$D"
 done
 # A REBASE_HEAD with no rebase directory is not a rebase: git leaves the file behind,
@@ -739,6 +755,12 @@ say "$(raw "$D" | usr | grep -c 'merge.ff')" "1" "a project using flight-rules: 
 # From a subdirectory too: adoption is judged at the repo root, not the cwd.
 mkdir -p "$D/sub"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$( (cd "$D/sub" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) | usr | grep -c 'merge.ff')" "1" "…and from a subdirectory of it"
+rm -rf "$D"
+# The conf alone is adoption: with the git hooks not installed yet, that ❌ is on screen
+# every day, not once as the hint is. Every fixture above also has the gate installed.
+D=$(mkrepo); git -C "$D" config --unset core.hooksPath
+raw "$D" >/dev/null; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+say "$(raw "$D" | usr | grep -c 'core.hooksPath is not set')" "1" "a conf and no git hooks installed: the ❌ is on screen again the next day"
 rm -rf "$D"
 # Another tool's hooks (husky): any core.hooksPath counted as adoption, and the repo
 # got eight ❌ a day plus a command that wrote the gates into .husky/ (fix review,
@@ -1025,6 +1047,15 @@ say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk 
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=2 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
 say "$(usr <<<"$J" | grep -c '(OPEN_BRANCH_LIMIT is 2, from FLIGHT_RULES_OPEN_BRANCH_LIMIT)')" "1" "…set by FLIGHT_RULES_OPEN_BRANCH_LIMIT, the warning names it, not the conf"
+rm -rf "$D"
+# Waiting needs both halves of what the gate takes (#107): a note on the tip's tree with no
+# ran: line, and a ran: line on a note for an older tree, are each not yet passed.
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/a tree:$(git -C "$D" rev-parse 'fix/a^{tree}')" fix/a || die "could not stamp fix/a"
+git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/b tree:$(git -C "$D" rev-parse 'trunk^{tree}')" \
+  -m "ran: ./test.sh → exit 0, 3 passed" fix/b || die "could not stamp fix/b"
+J=$(OB)
+say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/a fix/b$')" "1" "no ran: line, or a note on an older tree: neither is waiting to merge"
 rm -rf "$D"
 # Below the limit, nothing — paired with the exit status and with the same run's
 # reminder, so a hook that died cannot pass it. A merged branch is not open.
