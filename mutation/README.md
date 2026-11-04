@@ -13,8 +13,12 @@ decision.
 
 ## When it runs
 
-Before every `dev` → `main` promotion (#132), on the commit being promoted. It takes
-hours, so it is not a per-branch check, and it is not one of `{TEST_COMMANDS}`.
+Before every `dev` → `main` promotion, on the clean commit being promoted, its summary
+line in the promotion PR (`AGENTS.md` → *Releasing*); and before a major change merges
+into `dev`, when the owner calls for it (owner, 2026-11-04). It takes hours, so it is
+not a per-branch check, and it is not one of `{TEST_COMMANDS}`. The gaps the suites are
+known to leave — the `survives: not held` mutants — are #133: a release run passes with
+them, and fails on any new one.
 
 ## How to run it
 
@@ -27,8 +31,8 @@ Every mutant runs in its own copy of the tree, made once at the start without `.
 or `.ai/worktrees`; the checkout is only read. Before any mutant, each suite in use runs
 unmutated and must pass. A suite run is cut off after `MUTATION_TIMEOUT` seconds
 (default 1200) and counted as a kill. The run ends with a summary — killed by suite,
-the survivors, what did not apply — and the work directory, whose `logs/` hold every
-suite's output.
+each abort and timeout by id with the line it failed on, the survivors, what did not
+apply — and the work directory, whose `logs/` hold every suite's output.
 
 Exit 0: every mutant expected killed was killed, and every mutant applied. Exit 1: one
 survived that should not have, or one's `old` text did not occur exactly once — an
@@ -36,8 +40,10 @@ error, never a skip. Exit 2: usage, or a suite failing with no mutant applied.
 
 More than about six suites at once and `merge-gate.test.sh` fails cases that have
 nothing to do with the mutant, which reads as a kill: the sweep recorded eight such on
-commit-msg, post-merge and pre-commit mutants, and each survives run alone. Keep `-j` at 4 or so; a surprise in
-either direction is run again alone before it is believed.
+commit-msg, post-merge and pre-commit mutants, and each survives run alone. So with
+`-j` above 1, every kill by an abort, a timeout or merge-gate is run again alone, and
+counts only if it repeats; one that does not is named in the summary. That adds about
+two hours at `-j 4`. Keep `-j` at 4 or so.
 
 ## Upkeep
 

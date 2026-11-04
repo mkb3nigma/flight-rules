@@ -16,12 +16,15 @@ TIMEOUT=${MUTATION_TIMEOUT:-1200}   # seconds per suite run; a hang counts as ki
 # Run one command under the timeout; its exit status, or 124 when the timeout fired.
 # set -m gives the job its own process group, so the kill reaches git and the rest. Where
 # the job has gone before bash can move it, bash says so on stderr: the callers log that.
+# TERM first, so the suites' harness can say it was stopped; KILL ten seconds on, for a
+# process that ignores TERM — a mutant can make one, and the timeout must still end it.
 bounded() {   # <log> <dir> <cmd…>
     local log=$1 dir=$2 pid wd rc; shift 2
     set -m
     ( cd "$dir" && exec "$@" ) >"$log" 2>&1 &
     pid=$!
-    ( sleep "$TIMEOUT"; echo timeout >"$log.timeout"; kill -TERM -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    ( sleep "$TIMEOUT"; echo timeout >"$log.timeout"; kill -TERM -- "-$pid" 2>/dev/null
+      sleep 10; kill -KILL -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
     wd=$!
     wait "$pid"; rc=$?
     kill -TERM -- "-$wd" 2>/dev/null; wait "$wd" 2>/dev/null
@@ -42,18 +45,21 @@ if [ "${1:-}" = --mutant ]; then
         printf '%s\tapply-failed\t-\t%s\n' "$id" "$(tr '\n' ' ' <"$L/apply")" >"$R"
         rm -rf "${D:?}"; exit 0
     fi
-    verdict=survived; by=""
+    # A kill records the first line its suite failed on, so the summary can show why.
+    verdict=survived; by=""; why=-
     for s in $suites; do
         mkdir -p "$D/tmp"
         b=$(basename "$s" .test.sh)
         TMPDIR="$D/tmp" bounded "$L/$b.log" "$D/tree" bash "$s" 2>>"$L/runner.err"; rc=$?
         if [ "$rc" -ne 0 ]; then
             case "$rc" in 2) verdict=killed-abort ;; 124) verdict=killed-timeout ;; *) verdict=killed ;; esac
+            why=$(grep -m1 -E '❌|ABORTED' "$L/$b.log" | tr '\t' ' ' | cut -c1-200)
+            [ "$rc" -eq 124 ] && why="timed out after ${TIMEOUT}s"
             by=$b; break
         fi
         by="$by${by:+,}$b"
     done
-    printf '%s\t%s\t%s\t%s\n' "$id" "$verdict" "${by:--}" "$file" >"$R"
+    printf '%s\t%s\t%s\t%s\n' "$id" "$verdict" "${by:--}" "${why:-exit $rc, no failing line}" >"$R"
     rm -rf "${D:?}"
     exit 0
 fi
@@ -81,8 +87,11 @@ N=$(wc -l <"$W/list" | tr -d ' ')
 G=(git -C "$W/base" -c core.hooksPath=/dev/null -c user.name=mutation -c user.email=mutation@invalid -c commit.gpgsign=false)
 { "${G[@]}" init -q && "${G[@]}" add -A && "${G[@]}" commit -qm base; } >"$W/logs/git-init" 2>&1 \
     || { echo "❌ could not make the copy a repository: $W/logs/git-init" >&2; exit 2; }
-FROM=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null) || FROM="$ROOT (not a repository)"
-git -C "$ROOT" diff --quiet HEAD -- 2>/dev/null || FROM="$FROM + uncommitted changes"
+if FROM=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null); then
+    git -C "$ROOT" diff --quiet HEAD -- 2>/dev/null || FROM="$FROM + uncommitted changes"
+else
+    FROM="$ROOT (not a repository)"
+fi
 echo "mutation: $N mutant(s) from $FROM, -j $J, work in $W"
 
 # Baseline: every suite the selection uses must pass on the unmutated copy.
@@ -99,6 +108,23 @@ rm -rf "${W:?}/m/base"
 echo "baseline: $(wc -l <"$W/suites" | tr -d ' ') suite(s) pass unmutated"
 
 cut -f1 "$W/list" | xargs -P "$J" -n 1 bash "$W/base/mutation/run.sh" --mutant "$W"
+
+# A kill under load is believed only if it repeats alone: an abort or a timeout can be
+# the machine's, and merge-gate fails unrelated cases with several suites running (the
+# sweep's eight false kills). Run alone, its result replaces the first; first/ keeps that.
+if [ "$J" -gt 1 ]; then
+    mkdir -p "$W/first"
+    for r in "$W"/res/*; do
+        [ -e "$r" ] || continue
+        IFS=$'\t' read -r id v by _ <"$r"
+        case "$v:$by" in killed-abort:*|killed-timeout:*|killed:merge-gate) cp "$r" "$W/first/$id" ;; esac
+    done
+    n=$(find "$W/first" -type f | wc -l | tr -d ' ')
+    if [ "$n" -gt 0 ]; then
+        echo "re-running alone $n kill(s) made under load (aborts, timeouts, merge-gate)"
+        (cd "$W/first" && ls) | xargs -n 1 bash "$W/base/mutation/run.sh" --mutant "$W"
+    fi
+fi
 
 # --- summary ---------------------------------------------------------------------------
 python3 -I - "$W" <<'PY'
@@ -119,12 +145,22 @@ sv = [i for i in exp if res[i][1] == 'survived']
 fa = [i for i in exp if res[i][1] not in ('survived',) and not res[i][1].startswith('killed')]
 unexpected = [i for i in sv if exp[i] == 'killed']
 stale = [i for i in k if exp[i] != 'killed']
+first = {}
+fd = os.path.join(W, 'first')
+if os.path.isdir(fd):
+    for i in os.listdir(fd):
+        first[i] = open(os.path.join(fd, i), encoding='utf-8').read().rstrip('\n').split('\t')
+gone = [i for i in first if not res[i][1].startswith('killed')]
 by = {}
 for i in k:
     by.setdefault(res[i][2], 0); by[res[i][2]] += 1
 print()
 print('killed, by the suite that killed it:')
 for s in sorted(by): print('  %-22s %d' % (s, by[s]))
+for i in ab + to: print('  %s %s by %s: %s' % (res[i][1], i, res[i][2], res[i][3]))
+if first:
+    print('re-run alone: %d kill(s) made under load, %d of them repeated' % (len(first), len(first) - len(gone)))
+for i in gone: print('⚠️  killed under load (%s by %s: %s), %s alone: %s' % (first[i][1], first[i][2], first[i][3], res[i][1], i))
 for i in fa: print('❌ %s: %s %s %s' % (res[i][1], i, files[i], res[i][3]))
 for i in unexpected: print('❌ survived, expected killed: %s (%s; ran %s) — logs in %s' % (i, files[i], res[i][2], os.path.join(W, 'logs', i)))
 for i in stale: print('⚠️  killed, expected to survive (%s): %s — update its expect' % (exp[i], i))
