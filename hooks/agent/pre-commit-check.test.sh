@@ -549,17 +549,16 @@ scan_case "a leftover MERGE_HEAD naming HEAD is an ordinary commit" deny "git re
 MD=$(make_repo feature/x)
 (cd "$MD" && eval "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt") >/dev/null 2>&1 || die "could not build the merge in $MD"
 OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit --no-edit"}}' 2>/dev/null)
-say_n() { if [[ "$1" == "$2" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$3"; else FAIL=$((FAIL+1)); printf '  ❌ %s (got %s, want %s)\n' "$3" "$1" "$2"; fi; }
-say_n "$(grep -c 'do not unstage' <<<"$OUT")" 1 "mid-merge, the refusal says not to unstage"
-say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 0 "…and drops the advice to"
+say "$(grep -c 'do not unstage' <<<"$OUT")" 1 "mid-merge, the refusal says not to unstage"
+say "$(grep -c 'unstage and re-check' <<<"$OUT")" 0 "…and drops the advice to"
 rm -rf "$MD"; MD=$(make_repo feature/x)
 (cd "$MD" && eval "$STAGE_KEY") >/dev/null 2>&1 || die "could not stage a key in $MD"
 OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "outside a merge, it still says to unstage"
+say "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "outside a merge, it still says to unstage"
 rm -rf "$MD"; MD=$(make_repo feature/x)
 (cd "$MD" && eval "git rev-parse HEAD > .git/MERGE_HEAD && $STAGE_KEY") >/dev/null 2>&1 || die "could not leave a MERGE_HEAD in $MD"
 OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "a leftover MERGE_HEAD naming HEAD: the ordinary advice, not the merge's"
+say "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "a leftover MERGE_HEAD naming HEAD: the ordinary advice, not the merge's"
 rm -rf "$MD"
 
 echo "More ways to rewrite or discard a protected branch (post-merge review):"
