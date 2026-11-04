@@ -10,20 +10,10 @@
 
 set -uo pipefail
 HOOK_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/reference-transaction"
-PASS=0; FAIL=0
-TMPROOT=$(cd "$(mktemp -d)" && pwd -P)
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
+TMPROOT=$(tmpd)
 trap 'rm -rf "$TMPROOT"' EXIT
 
-# A broken fixture is not a test failure, it is an aborted run — so it stops the suite
-# rather than being counted. make_repo runs inside a command substitution, so a FAIL
-# increment there would be discarded with the subshell (and seven of these assertions
-# pass against a repo that was never built: measured 2026-09-12 by pointing the clone
-# at a path that does not exist). `$$` is the parent's pid even inside $( ), so the
-# signal reaches the trap below.
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: the fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
-say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
 # A clone of a bare upstream: two commits on main, plus feature/x off-upstream.
 # $1: conf body, "default", or "none". $2: "armed" (default) or "bare" (no hook).
@@ -363,6 +353,4 @@ say "$(route "$OUT")" "git worktree add .ai/worktrees/<name> \\ -b <prefix>/<nam
 # row above them. On one row the default route ran 4 columns past the frame.
 say "$(grep -A2 'Do this instead:' <<<"$OUT" | awk '{ print length($0) }' | sort -u | wc -l | tr -d ' ')" "1" "…and its rows stay inside the box"
 
-echo ""
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish

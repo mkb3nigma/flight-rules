@@ -11,14 +11,10 @@
 
 set -uo pipefail
 HOOK_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pre-commit"
-PASS=0; FAIL=0
-TMPROOT=$(cd "$(mktemp -d)" && pwd -P)
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
+TMPROOT=$(tmpd)
 trap 'rm -rf "$TMPROOT"' EXIT
 
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: the fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
-say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
 AWS=$(printf 'AKIA%s' IOSFODNN7EXAMPLE)
 SK=$(printf 'sk-%s' ant-api03-abcdefghijklmnopqrstuvwx)
@@ -404,6 +400,4 @@ say "$(landed "$R" "$h")" yes "a 1 MB binary commits"
 [ "$TOOK" -le 8 ] && say yes yes "…in ${TOOK}s (bound 8s)" || say no yes "…took ${TOOK}s (bound 8s)"
 rm -rf "$R"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish

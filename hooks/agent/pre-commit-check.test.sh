@@ -9,25 +9,16 @@
 
 set -uo pipefail
 HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pre-commit-check.sh"
-PASS=0; FAIL=0
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
 # Assembled at run time so this file never carries a literal key for a scanner to flag.
 AKIA=$(printf 'AKIA%s' IOSFODNN7EXAMPLE)
-
-# A fixture that cannot be built is not a test failure, it is an aborted run — so it
-# stops the suite rather than being counted. make_repo runs inside a command
-# substitution, where a FAIL increment would be discarded with the subshell; `$$` is the
-# parent's pid even there, so the signal reaches the trap. Measured 2026-09-12: with the
-# fixture's `git init` broken this suite still scored 267 of 574.
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
 
 # A repo on $1, with the hook scoped to it via CLAUDE_PROJECT_DIR.
 make_repo() {
   local branch="$1" dir
   # Resolve symlinks: on macOS mktemp hands back /var/... while git reports the
   # real /private/var/..., and the hook's project-scoping compares the two.
-  dir=$(cd "$(mktemp -d)" && pwd -P)
+  dir=$(tmpd)
   git -C "$dir" init -q || die "git init failed in $dir"
   git -C "$dir" config user.email t@t.t
   git -C "$dir" config user.name t
@@ -53,24 +44,31 @@ make_repo() {
 #   - if the guard ever moves to exit-status signalling (non-zero = block), these
 #     guards would read a legitimate block as a crash. They are pinned to the current
 #     JSON contract deliberately; change both together.
+# guard_run <dir> <command> [env…] — the hook's stdout in $GUARD_OUT, its status in $GUARD_RC.
+# It runs from <dir>, scoped to <dir>; an env CLAUDE_PROJECT_DIR=… scopes it elsewhere.
+guard_run() {
+  local d="$1" c="$2"; shift 2
+  GUARD_OUT=$(cd "$d" && CLAUDE_PROJECT_DIR="$d" env "$@" bash "$HOOK" \
+              <<<"$(jq -n --arg c "$c" '{tool_input:{command:$c}}')" 2>/dev/null); GUARD_RC=$?
+}
+# verdict <description> <expect deny|allow> [<text the output must hold>…]
+verdict() {
+  local desc="$1" expect="$2" got t; shift 2
+  if [[ $GUARD_RC -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$GUARD_RC"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$GUARD_OUT"; then got=deny; else got=allow; fi
+  for t in "$@"; do grep -qF -- "$t" <<<"$GUARD_OUT" || got="$got, without \"$t\""; done
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+
 # check <description> <expect: deny|allow> <branch> <command> [env assignments...]
 check() {
-  local desc="$1" expect="$2" branch="$3" cmd="$4"; shift 4
-  local dir out got rc
+  local desc="$1" expect="$2" branch="$3" cmd="$4" dir; shift 4
   dir=$(make_repo "$branch")
   # Run from inside the repo so a command with no `cd`/`-C` resolves there.
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" env "$@" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  guard_run "$dir" "$cmd" "$@"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
 
@@ -79,25 +77,13 @@ check() {
 # workflow says all work happens, and where the branch policy used to switch
 # itself off because a worktree's toplevel is never CLAUDE_PROJECT_DIR.
 check_wt() {
-  local desc="$1" expect="$2" branch="$3" wt_branch="$4" cmd="$5"
-  local dir out got rc
+  local desc="$1" expect="$2" branch="$3" wt_branch="$4" cmd="$5" dir
   dir=$(make_repo "$branch")
   if ! git -C "$dir" worktree add -q "$dir/.ai/worktrees/x" -b "$wt_branch" >/dev/null 2>&1; then
     FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: worktree add failed — nothing was tested\n' "$desc"
     rm -rf "$dir"; return
   fi
-  out=$(cd "$dir/.ai/worktrees/x" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  guard_run "$dir/.ai/worktrees/x" "$cmd" CLAUDE_PROJECT_DIR="$dir"; verdict "$desc" "$expect"
   git -C "$dir" worktree remove --force "$dir/.ai/worktrees/x" >/dev/null 2>&1
   rm -rf "$dir"
 }
@@ -256,22 +242,10 @@ rm -rf "$D"
 echo "Config file (.ai/flight-rules.conf) — the tool-agnostic home:"
 # conf_check <desc> <expect> <branch> <command> <conf-contents>
 conf_check() {
-  local desc="$1" expect="$2" branch="$3" cmd="$4" conf="$5"
-  local dir out got rc
+  local desc="$1" expect="$2" branch="$3" cmd="$4" conf="$5" dir
   dir=$(make_repo "$branch")
   mkdir -p "$dir/.ai"; printf '%s\n' "$conf" > "$dir/.ai/flight-rules.conf"
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  guard_run "$dir" "$cmd"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
 
@@ -314,7 +288,7 @@ conf_check "absent key falls back to default" deny main 'git rm f' \
 # Expect ALLOW: read as data, the value is the literal string "$(touch ...)^main$",
 # which is a regex that simply does not match the branch "main". That inertness is
 # the point — the real assertion is the marker check below.
-MARKER=$(cd "$(mktemp -d)" && pwd -P)/pwned
+MARKER=$(tmpd)/pwned
 conf_check "substitution in conf stays inert" allow main 'git rm f' \
   "PROTECTED_BRANCHES=\$(touch $MARKER)^main\$"
 if [[ -e "$MARKER" ]]; then
@@ -413,8 +387,7 @@ check "single-quoted cd path"            deny  main "cd '.' && git rm f.txt"
 echo "Secret scan — staged content on a feature branch:"
 # secret_check <desc> <expect> <file path> <content>
 secret_check() {
-  local desc="$1" expect="$2" path="$3" content="$4"
-  local dir out got rc
+  local desc="$1" expect="$2" path="$3" content="$4" dir
   dir=$(make_repo feature/x)
   mkdir -p "$dir/$(dirname "$path")"
   printf '%s\n' "$content" > "$dir/$path"
@@ -422,18 +395,7 @@ secret_check() {
     FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: git add failed — nothing was staged to scan\n' "$desc"
     rm -rf "$dir"; return
   fi
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  guard_run "$dir" "git commit -m x"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
 # Regression: every pattern was anchored `^\+[^+].*`, demanding a character between
@@ -510,22 +472,11 @@ echo "The repo's own diff settings do not hide a staged key, and a .env leaving 
 # --no-textconv and --text: color.ui=always prefixed every added line with an escape
 # code, so no pattern anchored on "+" matched (probed 2026-10-05 on dev at adbabc5).
 scan_case() {
-  local desc="$1" expect="$2" setup="$3" cmd="${4:-git commit -m x}" dir out got rc
+  local desc="$1" expect="$2" setup="$3" cmd="${4:-git commit -m x}" dir
   dir=$(make_repo feature/x)
   (cd "$dir" && eval "$setup") >/dev/null 2>&1 || die "setup failed for: $desc"
   [ -n "$(git -C "$dir" diff --cached --name-only)" ] || die "setup staged nothing for: $desc"
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  guard_run "$dir" "$cmd"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
 STAGE_KEY='printf "%s\n" "$AKIA" > k.txt && git add k.txt'
@@ -839,18 +790,17 @@ GEN_FEAT=$(make_repo feature/x)
 GEN_OTHER=$(make_repo feature/elsewhere)
 
 gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
-  local expect="$1" where="$2" wname="$3" cmd="$4" dir out got rc
+  local expect="$1" where="$2" wname="$3" cmd="$4" dir got
   [ "$where" = main ] && dir="$GEN_MAIN" || dir="$GEN_FEAT"
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  guard_run "$dir" "$cmd"
   # "allow" is the absence of a deny, and a hook that never ran produces exactly that.
   # These loops print one ✅ for hundreds of cases, so a silent vacuous pass is invisible.
-  if [ $rc -ne 0 ]; then
+  if [ $GUARD_RC -ne 0 ]; then
     FAIL=$((FAIL+1))
-    printf '  ❌ [%s] %s\n     %s\n     harness: the hook exited %s — no verdict\n' "$where" "$wname" "$cmd" "$rc"
+    printf '  ❌ [%s] %s\n     %s\n     harness: the hook exited %s — no verdict\n' "$where" "$wname" "$cmd" "$GUARD_RC"
     return
   fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$GUARD_OUT"; then got=deny; else got=allow; fi
   if [ "$got" = "$expect" ]; then
     PASS=$((PASS+1))
   else
@@ -988,17 +938,7 @@ echo "A merge in progress waives the commit, and nothing else in the same comman
 # than run. Each case pairs the waived thing with a thing that must stay refused.
 MG=$(make_repo main)
 printf '%s' "$(git -C "$MG" rev-parse HEAD)" > "$MG/.git/MERGE_HEAD"
-mg() {   # mg <expect> <desc> <command>
-  local expect="$1" desc="$2" cmd="$3" out rc got
-  out=$(cd "$MG" && CLAUDE_PROJECT_DIR="$MG" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
-}
+mg() { guard_run "$MG" "$3"; verdict "$2" "$1"; }   # mg <expect> <desc> <command>
 mg allow "mid-merge: the merge commit itself is waived"        'git commit -m "merge feature/x"'
 mg allow "mid-merge: git rm, resolving a conflict, is waived"  'git rm f.txt'
 mg deny  "mid-merge: branch creation is not waivable"          'git checkout -b feature/y'
@@ -1015,17 +955,7 @@ echo "…and the merge is the one in the -C target, not in the hook's own cwd (#
 # it from the cwd: from a linked worktree (where .git is a file) a merge being finished
 # in the main checkout was refused, and from a repo mid-merge a direct commit to another
 # repo's protected branch was waived. Each case runs with cwd ≠ the target.
-mgc() {   # mgc <expect> <desc> <cwd> <project dir> <command>
-  local expect="$1" desc="$2" cwd="$3" proj="$4" cmd="$5" out rc got
-  out=$(cd "$cwd" && CLAUDE_PROJECT_DIR="$proj" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
-}
+mgc() { guard_run "$3" "$5" CLAUDE_PROJECT_DIR="$4"; verdict "$2" "$1"; }   # mgc <expect> <desc> <cwd> <project dir> <command>
 MR=$(make_repo main)
 git -C "$MR" worktree add -q "$MR/.ai/worktrees/x" -b feature/x >/dev/null 2>&1 \
   || die "could not add a worktree to $MR"
@@ -1134,17 +1064,7 @@ echo "The target is resolved per segment, not per command (#61):"
 # secret scan reads the repo the COMMIT is aimed at — which the same bug also retargeted:
 # `git -C other status && git commit` from a repo with a staged key scanned `other`.
 D=$(make_repo dev); O=$(make_repo feature/elsewhere)
-seg() {   # seg <expect> <desc> <command>   — run from $D with the project scoped to $D
-  local expect="$1" desc="$2" cmd="$3" out rc got
-  out=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
-}
+seg() { guard_run "$D" "$3"; verdict "$2" "$1"; }   # seg <expect> <desc> <command> — from $D, scoped to $D
 seg deny  "the #61 shape: -C elsewhere on a status, then a bare commit"   "git -C $O status && git commit -m x"
 seg deny  "cd elsewhere AFTER the commit does not retarget it"            "git commit -m x && cd $O"
 seg deny  "-C on the commit segment beats an earlier cd elsewhere"        "cd $O && git -C $D commit -m x"
@@ -1467,23 +1387,6 @@ SH
 chmod +x "$SHIM/git" || die "could not build the failing git"
 echo clean > "$D/a.py" && printf '\000\001bin' > "$D/b.bin" && git -C "$D" add a.py b.bin >/dev/null 2>&1 \
   || die "could not stage the clean files"
-# guard_run <dir> <command> [env…] — the hook's stdout; rc in $GUARD_RC.
-guard_run() {
-  local d="$1" c="$2"; shift 2
-  GUARD_OUT=$(cd "$d" && CLAUDE_PROJECT_DIR="$d" env "$@" bash "$HOOK" \
-              <<<"$(jq -n --arg c "$c" '{tool_input:{command:$c}}')" 2>/dev/null); GUARD_RC=$?
-}
-# verdict <description> <expect deny|allow> [<text the output must hold>…]
-verdict() {
-  local desc="$1" expect="$2" got t; shift 2
-  if [[ $GUARD_RC -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$GUARD_RC"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$GUARD_OUT"; then got=deny; else got=allow; fi
-  for t in "$@"; do grep -qF -- "$t" <<<"$GUARD_OUT" || got="$got, without \"$t\""; done
-  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
-}
 guard_run "$D" "git commit -m x" PATH="$SHIM:$PATH"
 verdict "the stand-in git, failing nothing, allows a clean commit" allow
 for f in --raw --text --name-only --name-status; do
@@ -1625,7 +1528,7 @@ echo "A ~ or \$HOME commit target, from outside every repo (2026-10-12):"
 # resolved nowhere and nothing was scanned. They are expanded now. Any other `$VAR` the
 # guard cannot expand stays unscanned here, by the owner's call: it is allowed, and the
 # repo's own git hook scans it if it runs one.
-H=$(cd "$(mktemp -d)" && pwd -P); R=$(make_repo feature/x); mv "$R" "$H/r"
+H=$(tmpd); R=$(make_repo feature/x); mv "$R" "$H/r"
 printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$H/r/k.txt" && git -C "$H/r" add k.txt || die "could not stage in \$HOME/r"
 for c in 'cd ~/r && git commit -m x' 'cd $HOME/r && git commit -m x' 'cd "$HOME/r" && git commit -m x' \
          'cd ${HOME}/r && git commit -m x' 'git -C ~/r commit -m x'; do
@@ -1638,11 +1541,9 @@ rm -rf "$H"
 
 # No repo at all is not a failed read: nothing is staged anywhere yet, and what the
 # command itself stages is the git pre-commit hook's to scan (#71).
-N=$(cd "$(mktemp -d)" && pwd -P)
+N=$(tmpd)
 guard_run "$N" "git init -q r && cd r && git commit --allow-empty -m x"
 verdict "a commit in a repo the command creates, from outside any repo, is allowed" allow
 rm -rf "$N" "$SHIM"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[[ "$FAIL" -eq 0 ]]
+finish

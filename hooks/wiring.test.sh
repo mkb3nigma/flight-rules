@@ -14,8 +14,7 @@
 set -uo pipefail
 H="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$H/.." && pwd)"
-PASS=0; FAIL=0
-say() { if [ "$1" = "0" ]; then PASS=$((PASS+1)); echo "  ✅ $2"; else FAIL=$((FAIL+1)); echo "  ❌ $2"; fi; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-lib.sh" || exit 2
 # inject() below decodes the hook's JSON with python3; without it every injection case
 # failed as "nothing injected", which names the wrong cause.
 command -v python3 >/dev/null 2>&1 || { echo "  ❌ harness: python3 is required — this suite decodes the hooks' JSON with it" >&2; exit 2; }
@@ -27,45 +26,45 @@ AGENT_HOOKS="session-start-rules.sh agent/session-start.sh agent/pre-commit-chec
 echo "Every agent hook that exists is registered by the plugin:"
 for h in $AGENT_HOOKS; do
   [ -f "$ROOT/hooks/$h" ] || { FAIL=$((FAIL+1)); echo "  ❌ hooks/$h does not exist"; continue; }
-  grep -qF "$h" "$H/hooks.json"; say "$?" "hooks.json registers $h"
+  grep -qF "$h" "$H/hooks.json"; say "$?" 0 "hooks.json registers $h"
 done
 
 echo "…and by the without-plugin snippet in the README:"
 SNIPPET=$(sed -n '/^## Wiring (Claude Code)$/,/^## /p' "$H/README.md")
 for h in $AGENT_HOOKS; do
-  grep -qF "$h" <<<"$SNIPPET"; say "$?" "README snippet registers $h"
+  grep -qF "$h" <<<"$SNIPPET"; say "$?" 0 "README snippet registers $h"
 done
 
 echo "The registered paths point at files that exist:"
 # ${CLAUDE_PLUGIN_ROOT}/hooks/x → hooks/x relative to the repo root.
 while IFS= read -r p; do
   [ -z "$p" ] && continue
-  [ -f "$ROOT/$p" ]; say "$?" "hooks.json path exists: $p"
+  [ -f "$ROOT/$p" ]; say "$?" 0 "hooks.json path exists: $p"
 done < <(grep -o '${CLAUDE_PLUGIN_ROOT}/[^"\\]*' "$H/hooks.json" | sed 's|${CLAUDE_PLUGIN_ROOT}/||')
 
 echo "hooks.json is valid JSON and wires the guard exactly once:"
 if command -v jq >/dev/null 2>&1; then
-  jq -e . "$H/hooks.json" >/dev/null 2>&1; say "$?" "hooks.json parses"
+  jq -e . "$H/hooks.json" >/dev/null 2>&1; say "$?" 0 "hooks.json parses"
   N=$(jq '[.hooks.PreToolUse[]?.hooks[]? | select(.command | test("pre-commit-check"))] | length' "$H/hooks.json")
-  [ "$N" = "1" ]; say "$?" "the guard is registered once (got $N)"
+  [ "$N" = "1" ]; say "$?" 0 "the guard is registered once (got $N)"
   M=$(jq '[.hooks.SessionStart[]?.hooks[]?] | length' "$H/hooks.json")
-  [ "$M" = "2" ]; say "$?" "both SessionStart hooks are registered (got $M)"
+  [ "$M" = "2" ]; say "$?" 0 "both SessionStart hooks are registered (got $M)"
   # No event fires on /reload-plugins, so the next prompt says when it changed the
   # session's version (#94) — the plugin's copy only, which says so with --plugin: a
   # hand-wired copy beside it recorded its own version and flipped the notice (fix
   # review, 2026-10-24). The flag, not CLAUDE_PLUGIN_ROOT in the hook's environment,
   # which no test here can show the loader exports.
   P='[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | test("agent/session-start\\.sh\" --prompt --plugin$"))] | length'
-  [ "$(jq "$P" "$H/hooks.json")" = 1 ]; say "$?" "hooks.json wires session-start.sh --prompt --plugin to UserPromptSubmit once"
+  [ "$(jq "$P" "$H/hooks.json")" = 1 ]; say "$?" 0 "hooks.json wires session-start.sh --prompt --plugin to UserPromptSubmit once"
   S='[.hooks.SessionStart[]?.hooks[]? | select(.command | test("agent/session-start\\.sh\" --plugin$"))] | length'
-  [ "$(jq "$S" "$H/hooks.json")" = 1 ]; say "$?" "…and session-start.sh --plugin to SessionStart"
+  [ "$(jq "$S" "$H/hooks.json")" = 1 ]; say "$?" 0 "…and session-start.sh --plugin to SessionStart"
   W='[.. | objects | select(has("command")) | .command | select(test("agent/session-start\\.sh") and (test("--plugin") or test("--prompt")))] | length'
-  [ "$(jq "$W" "$ROOT/.claude/settings.json")" = 0 ]; say "$?" ".claude/settings.json, hand-wired, wires neither --plugin nor --prompt"
-  [ "$(sed -n '/^```json$/,/^```$/p' <<<"$SNIPPET" | sed '1d;$d' | jq "$W" 2>/dev/null)" = 0 ]; say "$?" "…nor does the README snippet"
+  [ "$(jq "$W" "$ROOT/.claude/settings.json")" = 0 ]; say "$?" 0 ".claude/settings.json, hand-wired, wires neither --plugin nor --prompt"
+  [ "$(sed -n '/^```json$/,/^```$/p' <<<"$SNIPPET" | sed '1d;$d' | jq "$W" 2>/dev/null)" = 0 ]; say "$?" 0 "…nor does the README snippet"
   # Under any matcher but Bash the guard never sees a git command, and was counted wired.
   G='[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[]? | select(.command | test("pre-commit-check"))] | length'
-  [ "$(jq "$G" "$H/hooks.json")" = 1 ]; say "$?" "hooks.json wires the guard under the Bash matcher"
-  [ "$(jq "$G" "$ROOT/.claude/settings.json")" = 1 ]; say "$?" "…and so does .claude/settings.json"
+  [ "$(jq "$G" "$H/hooks.json")" = 1 ]; say "$?" 0 "hooks.json wires the guard under the Bash matcher"
+  [ "$(jq "$G" "$ROOT/.claude/settings.json")" = 1 ]; say "$?" 0 "…and so does .claude/settings.json"
 else
   echo "  ⚠️  jq absent — skipping the JSON assertions"
 fi
@@ -80,16 +79,8 @@ echo "Every registered hook actually RUNS, in the environment each path provides
 # So each path is now EXERCISED, not matched. The distinction matters because the two
 # paths differ in more than their text: the plugin sets CLAUDE_PLUGIN_ROOT, and the
 # hand-wired snippet does not.
-# A fixture that cannot be built is not a test failure, it is an aborted run — so it
-# stops the suite rather than being counted. make_repo runs inside a command
-# substitution, where a FAIL increment would be discarded with the subshell; `$$` is the
-# parent's pid even there, so the signal reaches the trap. Measured 2026-09-12: with the
-# fixture's `git init` broken this suite still scored 15 of 24.
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
 
-LAB=$(cd "$(mktemp -d)" && pwd -P)
+LAB=$(tmpd)
 trap 'rm -rf "$LAB"' EXIT
 git init -q "$LAB/proj" || die "git init failed in $LAB/proj"
 ( cd "$LAB/proj" && git config user.email t@t.t && git config user.name t \
@@ -167,17 +158,17 @@ fi
 # every session only with that header (its validator: "no valid trigger in the
 # frontmatter, so the rule never applies"; shown in a live session, 2026-11-01). Claude
 # Code and Codex get the file through this hook instead, which strips the header.
-say "$([ "$(head -3 "$ROOT/rules/engineering-principles.md" | tr '\n' '|')" = '---|trigger: always_on|---|' ]; echo $?)" "rules/engineering-principles.md opens with Antigravity's always_on header"
-! grep -q 'trigger: always_on' <<<"$OUT"; say "$?" "…and the hook does not inject that header"
-sed -n '3p' <<<"$OUT" | grep -q '^# Engineering Principles'; say "$?" "…the injected text starts at the title"
+say "$([ "$(head -3 "$ROOT/rules/engineering-principles.md" | tr '\n' '|')" = '---|trigger: always_on|---|' ]; echo $?)" 0 "rules/engineering-principles.md opens with Antigravity's always_on header"
+! grep -q 'trigger: always_on' <<<"$OUT"; say "$?" 0 "…and the hook does not inject that header"
+sed -n '3p' <<<"$OUT" | grep -q '^# Engineering Principles'; say "$?" 0 "…the injected text starts at the title"
 
 # A header saved with CRLF is still stripped; one that never closes would strip the whole
 # file, so the rules go in whole instead (fix review, 2026-11-01).
 HV="$LAB/hdr"; mkdir -p "$HV/hooks" "$HV/rules"; cp "$ROOT/hooks/session-start-rules.sh" "$HV/hooks/"
 { printf -- '---\r\ntrigger: always_on\r\n---\r\n'; sed '1,3d' "$ROOT/rules/engineering-principles.md"; } > "$HV/rules/engineering-principles.md"
-HOUT=$(inject "$HV"); ! grep -q 'trigger: always_on' <<<"$HOUT" && grep -q 'Engineering Principles' <<<"$HOUT"; say "$?" "a CRLF header is stripped, the rules kept"
+HOUT=$(inject "$HV"); ! grep -q 'trigger: always_on' <<<"$HOUT" && grep -q 'Engineering Principles' <<<"$HOUT"; say "$?" 0 "a CRLF header is stripped, the rules kept"
 { printf -- '---\ntrigger: always_on\n'; sed '1,3d' "$ROOT/rules/engineering-principles.md"; } > "$HV/rules/engineering-principles.md"
-grep -q 'Engineering Principles' <<<"$(inject "$HV")"; say "$?" "a header that never closes: the rules still go in"
+grep -q 'Engineering Principles' <<<"$(inject "$HV")"; say "$?" 0 "a header that never closes: the rules still go in"
 
 # No plugin.json at all: the hand-wired shape, and where the regression lived.
 NP="$LAB/noplugin"; mkdir -p "$NP/hooks" "$NP/rules"
@@ -207,7 +198,7 @@ POUT=$( (cd "$LAB/proj" && PATH="$NJ" CLAUDE_PLUGIN_ROOT="$ROOT" "$BASH" "$ROOT/
 try: print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])
 except Exception: pass')
 rm -f "$LAB/proj/json.py"
-grep -q 'Engineering Principles' <<<"$POUT"; say "$?" "without jq, the python3 fallback injects the rules, past a planted json.py"
+grep -q 'Engineering Principles' <<<"$POUT"; say "$?" 0 "without jq, the python3 fallback injects the rules, past a planted json.py"
 
 # The guard is a decision function; exercise it rather than checking it exists.
 for shape in plugin handwired; do
@@ -231,14 +222,12 @@ echo "The path this repo itself runs is wired too:"
 # hooks.json and the README snippet were both checked; .claude/settings.json — the file
 # this repo actually runs on — was not, and is where a drop would hurt most here.
 for h in $AGENT_HOOKS; do
-  grep -qF "$h" "$ROOT/.claude/settings.json"; say "$?" ".claude/settings.json wires $h"
+  grep -qF "$h" "$ROOT/.claude/settings.json"; say "$?" 0 ".claude/settings.json wires $h"
 done
 
 echo "Every agent hook is executable (git records the mode; a non-exec hook is silent):"
 for h in $AGENT_HOOKS; do
-  [ -x "$ROOT/hooks/$h" ]; say "$?" "hooks/$h is executable"
+  [ -x "$ROOT/hooks/$h" ]; say "$?" 0 "hooks/$h is executable"
 done
 
-echo ""
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish
