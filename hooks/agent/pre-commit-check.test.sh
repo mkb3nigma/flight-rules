@@ -1394,50 +1394,36 @@ if command -v python3 >/dev/null 2>&1; then
 fi
 rm -rf "$D"
 
-echo "A large staged binary is not read as text (/dg, 2026-10-05):"
+echo "A real binary over 1 MB is not read as text (/dg, 2026-10-05):"
 # Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s; past the hook's timeout the
-# commit runs unchecked. Loose bound, as below. A key staged beside it is still found: an
-# "allowed" alone was also what a scan that gave up at the large binary printed.
-D=$(make_repo feature/x)
-head -c 41943040 /dev/urandom > "$D/big.bin" && printf '%s\n' "$AKIA" > "$D/k.txt" \
-  && git -C "$D" add big.bin k.txt || die "could not stage the large binary"
-START=$SECONDS
-OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
-TOOK=$((SECONDS - START))
-if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && grep -q 'AWS access key' <<<"$OUT"; then
-  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary: skipped in %ss (bound 8s), the key beside it found\n' "$TOOK"
-else
-  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary: rc=%s, %ss (bound 8s), or the key beside it missed\n' "$rc" "$TOOK"
-fi
-rm -rf "$D"
-# The same binary with a `diff` attribute, which tells git it is text: the size limit
-# followed git's word, so it was read whole, and could outrun the timeout. "Binary" is now
-# the content's call, not the repo's attributes (security review, 2026-10-12).
-D=$(make_repo feature/x)
-echo '*.bin diff' > "$D/.gitattributes" && head -c 41943040 /dev/urandom > "$D/big.bin" \
-  && git -C "$D" add .gitattributes big.bin || die "could not stage the attributed binary"
-START=$SECONDS
-OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
-TOOK=$((SECONDS - START))
-if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
-  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary marked diff (text): skipped in %ss (bound 8s)\n' "$TOOK"
-else
-  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary marked diff (text): rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
-fi
-rm -rf "$D"
+# commit runs unchecked (the git pre-commit hook reads these). Not read is checked, not
+# timed: an AWS key at the end of a 2 MB binary goes unreported, while a GitHub token in a
+# text file beside it is found — an "allowed" alone was also what a scan that gave up at
+# the binary printed. These were 40 MB files under an 8s bound until 2026-11-04.
+GHP=$(printf 'ghp_%s' Abc123Abc123Abc123Abc123Abc123Abc123)
+big_binary() {  # <label> <file name> [<.gitattributes line>]
+  local D OUT rc
+  D=$(make_repo feature/x)
+  { printf '\0'; head -c 2097152 /dev/urandom; printf '\n%s\n' "$AKIA"; } > "$D/$2" \
+    && printf '%s\n' "$GHP" > "$D/t.txt" || die "could not write $2"
+  if [ -n "${3:-}" ]; then echo "$3" > "$D/.gitattributes" || die "could not write .gitattributes"; fi
+  git -C "$D" add -A || die "could not stage $2"
+  OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+  if [[ $rc -eq 0 ]] && grep -q 'GitHub token' <<<"$OUT" && ! grep -q 'AWS access key' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: not read, the token beside it found\n' "$1"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s: rc=%s, read whole or the token beside it missed\n' "$1" "$rc"
+  fi
+  rm -rf "$D"
+}
+big_binary "a 2 MB binary" big.bin
+# A `diff` attribute tells git it is text: the size limit followed git's word, so it was
+# read whole. "Binary" is now the content's call, not the repo's attributes (security
+# review, 2026-10-12).
+big_binary "a 2 MB binary marked diff (text)" big.bin '*.bin diff'
 # A name starting with `:` looked like git's status line in the listing, so the file was
 # never sized and was read whole (security review of 77fa561, 2026-10-12).
-D=$(make_repo feature/x)
-head -c 41943040 /dev/urandom > "$D/:big.bin" && git -C "$D" add ":(literal):big.bin" || die "could not stage :big.bin"
-START=$SECONDS
-OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
-TOOK=$((SECONDS - START))
-if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
-  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary named :big.bin: skipped in %ss (bound 8s)\n' "$TOOK"
-else
-  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary named :big.bin: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
-fi
-rm -rf "$D"
+big_binary "a 2 MB binary named :big.bin" :big.bin
 
 echo "A long heredoc and a commit are judged well inside the hook's timeout (#73):"
 # A hook killed by its timeout lets the command run unchecked. A heredoc splits into a

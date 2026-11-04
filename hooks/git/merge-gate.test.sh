@@ -1137,7 +1137,7 @@ say "$(section fix/quiet | grep -c 'Still running')" "0" "…where it is not mis
 shims "$PB/d" log hang; T0=$SECONDS; OUT=$(rerun "$PB/d"); RC=$?; T1=$SECONDS
 say "$RC" "0" "with docker hanging: the hook still exits 0"
 say "$(top | grep -c 'could not list containers (docker ps gave no answer in 3s)')" "1" "…and says it was cut short"
-say "$([ $((T1 - T0)) -lt 30 ] && echo bounded)" "bounded" "…well short of the 60s the stand-in sleeps"
+say "$([ $((T1 - T0)) -lt 15 ] && echo bounded)" "bounded" "…well short of the 60s the stand-in sleeps"
 
 # No docker on PATH at all: a PATH of links to the tools the hook needs, docker left out.
 NB="$PB/nodocker"; mkdir -p "$NB"
