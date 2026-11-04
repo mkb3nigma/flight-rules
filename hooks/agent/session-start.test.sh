@@ -12,17 +12,8 @@ exec </dev/null
 # The hook's own shq, for the commands it prints: built with printf %q, the expected
 # lines matched only while TMPDIR held nothing to quote (fourth review, G6).
 eval "$(sed -n '/^shq() {/,/^}/p' "$HOOK")"
-PASS=0; FAIL=0
-say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
 
-# A fixture that cannot be built is not a test failure, it is an aborted run — so it
-# stops the suite rather than being counted. The builders below run inside command
-# substitutions, where a FAIL increment would be discarded with the subshell; `$$` is
-# the parent's pid even there, so the signal reaches the trap. Measured 2026-09-12:
-# with every fixture repo broken this suite still scored 6 of 16.
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "  ❌ harness: jq is required to read the hook's JSON" >&2; exit 2; }
 
 # The hook prints one JSON object: systemMessage for the person, additionalContext for
@@ -47,7 +38,7 @@ usr() { decode '.systemMessage'; }
 # far enough to keep doctor quiet — session-start runs doctor first, and its findings
 # are flight-rules-doctor.test.sh's business, not this suite's. They would drown every assertion here.
 mkrepo() {
-  local d; d=$(cd "$(mktemp -d)" && pwd -P)
+  local d; d=$(tmpd)
   git -C "$d" init -q -b trunk || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   git -C "$d" config merge.ff false
@@ -204,7 +195,7 @@ echo "A plugin update is checked the same day, not the next:"
 # The once-a-day flag carried no version, so a session started after an update that day
 # found it touched and skipped doctor — the one place an upgrade's missing git hook is
 # reported (/dg, 2026-10-08). The flag now names the plugin version.
-T=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$T/.claude-plugin" "$T/hooks/agent"
+T=$(tmpd); mkdir -p "$T/.claude-plugin" "$T/hooks/agent"
 cp "$HOOK" "$T/hooks/agent/" && cp "$H/../flight-rules-doctor.sh" "$T/hooks/" || die "could not lay out the fake plugin"
 printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"
 D=$(mkrepo); git -C "$D" config --unset merge.ff   # a problem for doctor to report
@@ -241,7 +232,7 @@ echo "HOOK_SYNC=auto brings a provably stale git hook up to date; anything else 
 # doctor to name. The fake plugin is laid out as the cache has it, so session-start can
 # find hooks/git/ and the version beside itself.
 mkplugin() {
-  local t; t=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$t/.claude-plugin" "$t/hooks/agent" "$t/hooks/git"
+  local t; t=$(tmpd); mkdir -p "$t/.claude-plugin" "$t/hooks/agent" "$t/hooks/git"
   cp "$HOOK" "$t/hooks/agent/" && cp "$H/../flight-rules-doctor.sh" "$t/hooks/" \
     && cp "$H"/../git/pre-merge-commit "$H"/../git/commit-msg "$H"/../git/pre-rebase "$H"/../git/post-merge \
           "$H"/../git/reference-transaction "$H"/../git/pre-commit "$H"/../git/install.sh "$t/hooks/git/" \
@@ -593,7 +584,7 @@ rm -rf "$D"; D=$MD
 # A plugin under a path with a multibyte character and a space (a home directory named
 # so): printf %q under macOS bash 3.2 split the ß and left a raw byte, so the pasted
 # command named a path that does not exist (fix review, 2026-10-24). shq quotes it whole.
-U=$(cd "$(mktemp -d)" && pwd -P)/"Stra ße"; mkdir -p "$U" && cp -R "$T/." "$U/" || die "could not lay out the ß plugin"
+U=$(tmpd)/"Stra ße"; mkdir -p "$U" && cp -R "$T/." "$U/" || die "could not lay out the ß plugin"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*   # the day's run was spent above
 # A UTF-8 locale, as the install and doctor cases pin: under C, %q left the ß alone and
 # the case passed against the bug (fourth review, G1).
@@ -693,7 +684,7 @@ for ref in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
   rm -rf "$D"
 done
 # A session-start.sh copied in by hand has no git/ beside it: silent on sync, still runs doctor.
-L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/hooks/agent"; cp "$HOOK" "$L/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/hooks/"
+L=$(tmpd); mkdir -p "$L/hooks/agent"; cp "$HOOK" "$L/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/hooks/"
 D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"; git -C "$D" config --unset merge.ff
 OUT=$( { (cd "$D" && HOME="$D/fakehome" bash "$L/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "hand-wired, auto: the hook exits 0"
@@ -736,12 +727,12 @@ rm -rf "$D"
 echo "The screen is for projects that use flight-rules:"
 # A plugin enabled for the whole account opens every repo; a daily ❌ there, or in a
 # directory that is no repo, is the nag that gets it switched off (fix review, 2026-10-13).
-N=$(cd "$(mktemp -d)" && pwd -P)
+N=$(tmpd)
 J=$( (cd "$N" && HOME="$N/fakehome" bash "$HOOK" 2>/dev/null) )
 say "$(ctx <<<"$J" | grep -c 'not inside a git repository')" "1" "outside a repo: the assistant is told"
 say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on screen"
 rm -rf "$N"
-F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q || die "git init failed in $F"
+F=$(tmpd); git -C "$F" init -q || die "git init failed in $F"
 J=$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) )
 say "$(usr <<<"$J" | grep -c 'core.hooksPath is not set')" "1" "a repo without flight-rules: the install hint is shown once"
 rm -f "$F"/fakehome/.claude/hooks/.worktree-check-*    # the next day
@@ -766,7 +757,7 @@ rm -rf "$D"
 # got eight ❌ a day plus a command that wrote the gates into .husky/ (fix review,
 # 2026-10-13). The assistant is told; the screen never is.
 for scope in local global; do
-  F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q || die "git init failed in $F"
+  F=$(tmpd); git -C "$F" init -q || die "git init failed in $F"
   mkdir -p "$F/.husky" "$F/fakehome"; printf '#!/bin/sh\nnpx lint-staged\n' > "$F/.husky/pre-commit"
   if [ "$scope" = local ]; then git -C "$F" config core.hooksPath .husky
   else printf '[core]\n\thooksPath = %s\n' "$F/.husky" > "$F/fakehome/.gitconfig"; fi
@@ -795,7 +786,7 @@ say "$(ctx <<<"$J" | grep -c 'missing from')" "6" "committed hooks + a foreign g
 say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on screen"
 rm -rf "$F"
 # The hint is once per repository, not per worktree.
-F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q -b trunk && git -C "$F" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m base || die "repo in $F"
+F=$(tmpd); git -C "$F" init -q -b trunk && git -C "$F" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m base || die "repo in $F"
 git -C "$F" worktree add -q "$F/wt" -b other || die "worktree in $F"
 say "$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | usr | grep -c 'core.hooksPath is not set')" "1" "the hint is shown in the main checkout"
 say "$( (cd "$F/wt" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | jq -r 'has("systemMessage")')" "false" "…and not again in a worktree of it"
@@ -822,7 +813,7 @@ say "$(usr <<<"$J" | grep -c 'to update: .*--stale-only')" "1" "…with the sync
 rm -rf "$D"
 
 echo "Without jq or python3, plain text for the assistant, and no claim the user saw it:"
-NJ=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$NJ/hooks/agent"; cp "$H/../flight-rules-doctor.sh" "$NJ/hooks/"
+NJ=$(tmpd); mkdir -p "$NJ/hooks/agent"; cp "$H/../flight-rules-doctor.sh" "$NJ/hooks/"
 sed 's/command -v jq >/command -v no-such-jq >/; s/command -v python3 >/command -v no-such-py >/' "$HOOK" > "$NJ/hooks/agent/session-start.sh" || die "no-tools copy"
 D=$(mkrepo); git -C "$D" config --unset merge.ff
 OUT=$( { (cd "$D" && HOME="$D/fakehome" bash "$NJ/hooks/agent/session-start.sh" 2>/dev/null); echo "rc=$?"; } )
@@ -831,7 +822,7 @@ say "$(grep -cE "Already on the user's screen|user was shown" <<<"$OUT")" "0" "�
 say "$(grep -c '^rc=0$' <<<"$OUT")" "1" "…and the hook exits 0"
 rm -rf "$D"
 # The once-ever hint is not spent by output that never reached the screen.
-F=$(cd "$(mktemp -d)" && pwd -P); git -C "$F" init -q || die "git init failed in $F"
+F=$(tmpd); git -C "$F" init -q || die "git init failed in $F"
 FIRST=$( { (cd "$F" && HOME="$F/fakehome" bash "$NJ/hooks/agent/session-start.sh" 2>/dev/null); echo "rc=$?"; } )
 say "$(grep -c 'core.hooksPath is not set' <<<"$FIRST")" "1" "the plain-text run carried the hint"
 say "$(grep -c '^rc=0$' <<<"$FIRST")" "1" "…and exited 0"
@@ -850,7 +841,7 @@ echo "Without jq, the python3 fallback does not run the project's own json.py:"
 # python3 puts the working directory — the project — first on its import path, so a
 # json.py there ran at session start (security review, 2026-10-13). Both SessionStart
 # hooks, each with the jq branch disabled in a copy so the fallback is what runs.
-NJ=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$NJ/hooks/agent" "$NJ/rules"
+NJ=$(tmpd); mkdir -p "$NJ/hooks/agent" "$NJ/rules"
 sed 's/command -v jq >/command -v no-such-jq >/' "$HOOK" > "$NJ/hooks/agent/session-start.sh" \
   && sed 's/command -v jq >/command -v no-such-jq >/' "$H/../session-start-rules.sh" > "$NJ/hooks/session-start-rules.sh" \
   && cp "$H/../flight-rules-doctor.sh" "$NJ/hooks/" && cp "$H/../../rules/engineering-principles.md" "$NJ/rules/" \
@@ -1000,7 +991,7 @@ say "$(ls -a "$D/fakehome/.claude/hooks" | grep -c 'session-version-envonly')" "
 rm -rf "$D" "$T2" "$V"
 # Hand-wired, with no plugin.json beside the hook: no version, so no record and no
 # notice — the hook copied where ../../.claude-plugin does not exist.
-L=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$L/x/hooks/agent"; cp "$HOOK" "$L/x/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/x/hooks/"
+L=$(tmpd); mkdir -p "$L/x/hooks/agent"; cp "$HOOK" "$L/x/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/x/hooks/"
 [ ! -e "$L/x/.claude-plugin" ] || die "hand-wired copy has a plugin.json"
 D=$(mkrepo); git -C "$D" config --unset merge.ff
 J=$(SS hw "$D" "$L/x")
@@ -1201,5 +1192,4 @@ else
   echo "  (skipped: git merge-tree --write-tree needs git 2.38)"
 fi
 
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish

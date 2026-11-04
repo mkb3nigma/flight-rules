@@ -6,18 +6,14 @@
 # Run: ./install.test.sh [<hooks/git dir under test>]   (no args, no network; throwaway repos)
 set -uo pipefail
 H="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-PASS=0; FAIL=0
-say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
 
 HOOKS='pre-merge-commit post-merge commit-msg pre-rebase reference-transaction pre-commit'
 
 # A "plugin" directory laid out as the cache has it: <root>/hooks/git/* and
 # <root>/.claude-plugin/plugin.json, so install.sh can name the version it syncs from.
 mkplugin() {
-  local t; t=$(cd "$(mktemp -d)" && pwd -P)
+  local t; t=$(tmpd)
   mkdir -p "$t/hooks/git" "$t/.claude-plugin"
   for h in $HOOKS install.sh; do cp "$H/$h" "$t/hooks/git/$h" || die "could not copy $h into the fake plugin"; done
   printf '{ "name": "flight-rules", "version": "9.9.9" }\n' > "$t/.claude-plugin/plugin.json"
@@ -27,7 +23,7 @@ mkplugin() {
 # release, 0.0.1, so a copy can be provably stale. The older release is the current
 # file plus a trailing comment: differs from current, identical to nothing else.
 mkrepo() {
-  local d; d=$(cd "$(mktemp -d)" && pwd -P)
+  local d; d=$(tmpd)
   git -C "$d" init -q -b main || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.ai/hooks" "$d/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git"
@@ -137,12 +133,12 @@ rm -rf "$D" "$P"
 # fix review, W1) — the class the --stale-only command was fixed for one screen away.
 # Each hostile name sits in a directory of its own: under the shared temp directory, two
 # runs at once moved one fixture inside the other and failed for no fault (test sweep).
-D0=$(mkrepo); P=$(mkplugin); D="$(cd "$(mktemp -d)" && pwd -P)/p '\$(touch pwned)' q"; mv "$D0" "$D" || die "could not rename the fixture"
+D0=$(mkrepo); P=$(mkplugin); D="$(tmpd)/p '\$(touch pwned)' q"; mv "$D0" "$D" || die "could not rename the fixture"
 printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 CMD=$(grep -E '^[[:space:]]+mv -n ' <<<"$OUT" | sed 's/^[[:space:]]*//')
 say "$(printf '%s\n' "$CMD" | grep -c .)" "1" "a linter's pre-commit, in a path holding a quote and \$(…): the rename is a line of its own"
-S=$(cd "$(mktemp -d)" && pwd -P)
+S=$(tmpd)
 (cd "$S" && bash -c "$CMD") >/dev/null 2>&1; PRC=$?
 say "$PRC" "0" "…which, pasted, exits 0"
 say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "…moves the project's pre-commit to pre-commit.local"
@@ -152,13 +148,13 @@ rm -rf "$(dirname "$D")" "$P" "$S"
 # macOS bash 3.2 split the ß and left a raw byte: the line on screen was not UTF-8 and
 # named another path (fix review, 2026-10-24). shq keeps the bytes, in '…'.
 U8=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -1); U8=${U8:-en_US.UTF-8}
-D0=$(mkrepo); P=$(mkplugin); D="$(cd "$(mktemp -d)" && pwd -P)/Straße it's"; mv "$D0" "$D" || die "could not rename the fixture"
+D0=$(mkrepo); P=$(mkplugin); D="$(tmpd)/Straße it's"; mv "$D0" "$D" || die "could not rename the fixture"
 printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
 OUT=$(LC_ALL=$U8 run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 CMD=$(grep -E '^[[:space:]]+mv -n ' <<<"$OUT" | sed 's/^[[:space:]]*//')
 say "$(printf '%s\n' "$CMD" | grep -c .)" "1" "a path with ß and a quote: the rename is a line of its own"
 say "$(printf '%s' "$CMD" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 && echo utf8)" "utf8" "…in valid UTF-8"
-S=$(cd "$(mktemp -d)" && pwd -P)
+S=$(tmpd)
 (cd "$S" && LC_ALL=$U8 bash -c "$CMD") >/dev/null 2>&1; PRC=$?
 say "$PRC" "0" "…which, pasted, exits 0"
 say "$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit.local" 2>/dev/null)" "1" "…and moves the file at that exact path"
@@ -259,7 +255,7 @@ say "$(grep -c 'no local core.hooksPath' <<<"$OUT")" "1" "…saying nothing is i
 say "$(ls "$D/fakehome/githooks" | wc -l | tr -d ' ')" "0" "…and writes nothing into the global directory"
 say "$(git -C "$D" config --local core.hooksPath 2>/dev/null)" "" "…nor a local core.hooksPath"
 rm -rf "$D" "$P"
-D=$(mkrepo); P=$(mkplugin); OUT_DIR=$(cd "$(mktemp -d)" && pwd -P); cp "$D"/.ai/hooks/* "$OUT_DIR/"; git -C "$D" config core.hooksPath "$OUT_DIR"
+D=$(mkrepo); P=$(mkplugin); OUT_DIR=$(tmpd); cp "$D"/.ai/hooks/* "$OUT_DIR/"; git -C "$D" config core.hooksPath "$OUT_DIR"
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "a local hooksPath outside the repo: --stale-only refuses"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…and says so"
@@ -422,7 +418,7 @@ say "$RC" "0" "…which, run as printed, exits 0"
 say "$([ -d "$D/.ai/worktrees/wt/.ai/hooks" ] && [ ! -L "$D/.ai/worktrees/wt/.ai/hooks" ] && echo dir)" "dir" "…leaving the committed directory in place of the link"
 say "$(sums "$D/.ai/hooks")" "$BEFORE" "…and the main checkout's copy as it was"
 # A path truly outside the repository, from the same worktree, keeps the old refusal.
-O=$(cd "$(mktemp -d)" && pwd -P); cp "$D"/.ai/hooks/* "$O/"; git -C "$D" config core.hooksPath "$O"
+O=$(tmpd); cp "$D"/.ai/hooks/* "$O/"; git -C "$D" config core.hooksPath "$O"
 OUT=$(run "$D/.ai/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")" "1" "from a worktree, a hooksPath outside the repository: refused"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "1" "…as outside the repository"
@@ -513,7 +509,7 @@ rm -rf "$D" "$P"
 # "differs… mark it adapted" (fix review, F14). Reachable only by a race or an I/O
 # error, so a grep on PATH fails it here.
 D=$(mkrepo); P=$(mkplugin); make_adapted "$D" post-merge
-SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+SHIM=$(tmpd); REAL_GREP=$(command -v grep)
 printf '#!/bin/sh\ncase "$*" in *"flight-rules: adapted"*) exit 2 ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
 chmod +x "$SHIM/grep"
 OUT=$(PATH="$SHIM:$PATH" run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
@@ -566,7 +562,7 @@ rm -rf "$D" "$P"
 # main checkout named with `$(…)` ran that command when pasted, and one with a `"`
 # broke it (0.26.0 release review, P2). The command now names only the plugin's paths
 # (#99 review), so the hostile name is the plugin directory's.
-D=$(mkrepo); P0=$(mkplugin); P="$(cd "$(mktemp -d)" && pwd -P)/p \$(touch pwned) q"; mv "$P0" "$P" || die "could not rename the plugin fixture"
+D=$(mkrepo); P0=$(mkplugin); P="$(tmpd)/p \$(touch pwned) q"; mv "$P0" "$P" || die "could not rename the plugin fixture"
 echo base > "$D/f"; git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: base" --no-verify || die "could not commit the hostile-path fixture"
 git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b feature/wt || die "could not add the worktree"
 git -C "$D" config core.hooksPath "$D/.ai/hooks"; make_stale "$D" commit-msg
@@ -727,7 +723,7 @@ say "$(head -1 <<<"$OUT")" "0" "only *.sample in .git/hooks: exit 0"
 say "$(grep -c 'git hooks installed' <<<"$OUT")" "1" "…installed"
 say "$(grep -c '^⚠️ git runs these hooks' <<<"$OUT")" "0" "…and no warning"
 rm -rf "$D"
-D=$(fresh); G=$(cd "$(mktemp -d)" && pwd -P); own "$G/commit-msg"; printf '[core]\n\thooksPath = %s\n' "$G" >> "$D/gcfg"; own "$D/.git/hooks/pre-push"
+D=$(fresh); G=$(tmpd); own "$G/commit-msg"; printf '[core]\n\thooksPath = %s\n' "$G" >> "$D/gcfg"; own "$D/.git/hooks/pre-push"
 OUT=$(grun "$D" .ai/hooks/install.sh)
 W=$(grep '^⚠️ git runs these hooks from' <<<"$OUT")
 say "$(head -1 <<<"$OUT")" "0" "a global core.hooksPath with a commit-msg: exit 0"
@@ -735,7 +731,7 @@ say "$(grep -c "from $G today" <<<"$W")" "1" "…warned, naming the global folde
 say "$(grep -c ' commit-msg' <<<"$W")$(grep -c 'pre-push' <<<"$W")" "10" "…its commit-msg, not .git/hooks' pre-push, which git was not reading"
 # A git older than 2.26 refuses --show-scope (129); read as "no global value", the
 # warning named .git/hooks (fix review, D7). A git that refuses the option, else real.
-GS=$(cd "$(mktemp -d)" && pwd -P); REALGIT=$(command -v git)
+GS=$(tmpd); REALGIT=$(command -v git)
 printf '#!/bin/sh
 for a in "$@"; do [ "$a" = --show-scope ] && { echo "error: unknown option show-scope" >&2; exit 129; }; done
 exec "%s" "$@"
@@ -825,7 +821,7 @@ echo "Every cd that judges a path walks it as the kernel does: lnk/.. through th
 # else — somewhere that exists, since bash's cd falls back to the kernel's walk when the
 # logical one names nothing; reverting that one line to plain cd fails its case.
 # --from: plain cd took T/lnk/.. for T, found no T/git, and refused a complete source.
-D=$(mkrepo); P=$(mkplugin); T=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$P/hooks/sub"
+D=$(mkrepo); P=$(mkplugin); T=$(tmpd); mkdir -p "$P/hooks/sub"
 ln -s "$P/hooks/sub" "$T/lnk" || die "could not link $T/lnk"; mkdir "$T/git"
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$T/lnk/../git")
 say "$(head -1 <<<"$OUT")" "0" "--from through a link and ..: the source is found where the kernel finds it"
@@ -860,6 +856,4 @@ say "$(head -1 <<<"$OUT")" "0" "a global hooks path that is .ai/hooks through a 
 say "$(grep -c '^⚠️ git runs these hooks from' <<<"$OUT")" "0" "…and no warning that those hooks stop running"
 rm -rf "$D"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish

@@ -16,9 +16,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT" || exit 1
-PASS=0; FAIL=0
-ok()  { PASS=$((PASS+1)); printf '  ✅ %s\n' "$1"; }
-bad() { FAIL=$((FAIL+1)); printf '  ❌ %s\n' "$1"; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hooks/test-lib.sh" || exit 2
 
 CONF=.ai/flight-rules.conf
 [ -r "$CONF" ] || { printf '  ❌ harness: %s is not readable — nothing below was tested\n' "$CONF" >&2; exit 2; }
@@ -397,6 +395,4 @@ for f in "CLAUDE.md @MISSION.md" "CLAUDE.md @AGENTS.md" "GEMINI.md @./MISSION.md
   if grep -qxF "$2" "$1"; then ok "$1 imports ${2#@}"; else bad "$1 has no line '$2'"; fi
 done
 
-echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish

@@ -6,20 +6,11 @@
 # so this must be proven end-to-end against real git, not asserted.
 set -uo pipefail
 H="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"   # hooks/git dir under test
-PASS=0; FAIL=0
-say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
 
-# A fixture that cannot be built is not a test failure, it is an aborted run — so it
-# stops the suite rather than being counted. mkrepo and friends run inside command
-# substitutions, where a FAIL increment would be discarded with the subshell; `$$` is
-# the parent's pid even there, so the signal reaches the trap. Measured 2026-09-12:
-# with every fixture repo broken this suite still scored 18 of 44.
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
 
 mkrepo() {
-  local d; d=$(cd "$(mktemp -d)" && pwd -P)
+  local d; d=$(tmpd)
   git -C "$d" init -q -b main || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.ai/hooks"
@@ -350,7 +341,7 @@ rm -rf "$QB"
 # so `x';touch${IFS}PWNED;'` closed it and the pasted line ran touch (fix review,
 # 2026-10-24, Q2). A worktree path may hold one too. Each printed command must parse,
 # run nothing but git, and hand git the name exactly.
-HB=$(cd "$(mktemp -d)" && pwd -P); HR="$HB/repo"; SB="$HB/sandbox"; mkdir -p "$SB"
+HB=$(tmpd); HR="$HB/repo"; SB="$HB/sandbox"; mkdir -p "$SB"
 EVIL="x';touch\${IFS}PWNED;'"
 git check-ref-format --branch "$EVIL" >/dev/null 2>&1 || die "git no longer allows the hostile branch name"
 git init -q -b trunk "$HR" || die "git init failed in $HR"
@@ -811,7 +802,7 @@ rm -rf "$D"
 echo "End to end, with an origin and every hook: landing the fix to a broken pattern (#103 review):"
 # Each gate was tested alone, so nothing ran the printed way out from the state a
 # refusal leaves, or met the ref gate on a branch ahead of its upstream.
-E=$(cd "$(mktemp -d)" && pwd -P); D="$E/w"
+E=$(tmpd); D="$E/w"
 git init -q --bare -b main "$E/up.git" || die "git init --bare failed in $E"
 git clone -q "$E/up.git" "$D" 2>/dev/null || die "git clone failed in $E"
 git -C "$D" config user.email t@t.t; git -C "$D" config user.name t; git -C "$D" config merge.ff false
@@ -1031,7 +1022,7 @@ echo "post-merge names what still runs from a worktree it lists for removal (#10
 # one naming a worktree after `=`. The EXIT trap stops them if the run is cut short.
 S1=""; S2=""; S3=""; S4=""; S5=""
 trap 'kill ${S1:-} ${S2:-} ${S3:-} ${S4:-} ${S5:-} 2>/dev/null' EXIT
-PB=$(cd "$(mktemp -d)" && pwd -P); PR="$PB/repo"
+PB=$(tmpd); PR="$PB/repo"
 git init -q -b trunk "$PR" || die "git init failed in $PR"
 git -C "$PR" config user.email t@t.t; git -C "$PR" config user.name t; git -C "$PR" config merge.ff false
 mkdir -p "$PR/.ai"; printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$PR/.ai/flight-rules.conf"
@@ -1156,7 +1147,7 @@ rm -rf "$PB"
 echo "post-merge prints its note only when there is something to do, and at most 40 lines (#109):"
 # A `git pull` runs post-merge too; with nothing stale and nothing to delete it stays
 # one line, and reads no process list.
-PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
 mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
@@ -1179,7 +1170,7 @@ say "$(grep -c "Earlier merges left 0 worktree(s) and 50 branch(es) to clean up 
 rm -rf "$PQ"
 
 echo "The note is not left as an untracked file (hooks review H20):"
-PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
 mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
@@ -1194,7 +1185,7 @@ say "$(git -C "$QQ" status --porcelain | grep -c '\.claude')" "0" "…and git st
 say "$(grep -cxF '/.claude/post-merge-note.md' "$QQ/.git/info/exclude")" "1" "…excluded in this clone, once, after two merges"
 say "$(git -C "$QQ" status --porcelain | grep -c .)" "0" "…and nothing else is changed in the tree"
 rm -rf "$PQ"
-PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
 mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
@@ -1206,7 +1197,7 @@ git -C "$QQ" checkout -qb fix/a trunk && echo a > "$QQ/a" && git -C "$QQ" add -A
 say "$(cksum < "$QQ/.git/info/exclude")" "$EXB" "a project that already ignores it: info/exclude is not touched"
 rm -rf "$PQ"
 # An info/exclude whose last line has no newline: the rule goes on a line of its own.
-PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
 mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
@@ -1220,7 +1211,7 @@ say "$(git -C "$QQ" status --porcelain | grep -c '\.claude')" "0" "…and the no
 rm -rf "$PQ"
 
 echo "A back-merge of a released branch not called main prints nothing (mission review G2):"
-PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
 mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^(trunk|production)$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
@@ -1238,7 +1229,7 @@ echo "A main the project does not protect is a branch like any other (hook sweep
 # A back-merge is the tip of a protected branch. post-merge also took main's tip for one
 # by name, so a project whose PROTECTED_BRANCHES leaves main out was told nothing after
 # merging it; the protected-branch check alone decides now.
-PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
 mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
@@ -1254,7 +1245,7 @@ say "$(grep -cxF '## Post-merge to trunk: main' <<<"$OUT")$(grep -cxF '  git bra
 rm -rf "$PQ"
 
 echo "A pull of the integration branch's own upstream prints nothing, fast-forward or merge (fix review):"
-PQ=$(cd "$(mktemp -d)" && pwd -P); U="$PQ/up"
+PQ=$(tmpd); U="$PQ/up"
 git init -q -b trunk "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one || die "could not build the upstream"
 git clone -q "$U" "$PQ/r" 2>/dev/null || die "could not clone"; QQ="$PQ/r"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
@@ -1288,7 +1279,7 @@ echo "A pull that only catches up is named, with the pull that works (hooks revi
 # gate refused it with a route for a merge. pull.ff is not the fix: it lets `git pull
 # origin <any branch>` fast-forward past the gate (probed 2026-10-29) — so the gate still
 # refuses, and says what happened. A pull of any other branch keeps the normal box.
-PU=$(cd "$(mktemp -d)" && pwd -P); U="$PU/up"
+PU=$(tmpd); U="$PU/up"
 git init -q -b main "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one \
   && git -C "$U" branch dev || die "could not build the upstream"
 git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone the upstream"
@@ -1390,7 +1381,7 @@ rb 'PROTECTED_BRANCHES=^(dev' feature/r;             say "$RC" "1" "a PROTECTED_
 say "$(grep -c 'PROTECTED_BRANCHES DOES NOT COMPILE — REBASE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
 
 echo "pull.rebase=true: a dev that is only behind still pulls; one with commits of its own is refused (#118):"
-PQ=$(cd "$(mktemp -d)" && pwd -P); U="$PQ/up"
+PQ=$(tmpd); U="$PQ/up"
 git init -q -b dev "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one || die "could not build the upstream"
 git clone -q "$U" "$PQ/r" 2>/dev/null || die "could not clone"; R="$PQ/r"
 git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
@@ -1411,7 +1402,7 @@ echo "A diverged dev merges its own upstream without a note; nothing else does (
 # Local merges not pushed yet, and origin/dev moved on: pre-rebase refuses the rebasing
 # pull and prints `git pull --no-rebase`, which the note gate then refused with a route
 # that did not fit. What it brings is already on the shared branch.
-PU=$(cd "$(mktemp -d)" && pwd -P); U="$PU/up"
+PU=$(tmpd); U="$PU/up"
 git init -q -b main "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one \
   && git -C "$U" branch dev && git -C "$U" branch other || die "could not build the upstream"
 git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone the upstream"
@@ -1444,7 +1435,7 @@ git -C "$R" merge --abort 2>/dev/null
 rm -rf "$PU"
 
 echo "A merge whose subject names no branch is named by the branch at the merged commit (0.28.0 release review):"
-PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
 mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
@@ -1459,7 +1450,7 @@ say "$(grep -c -e 'unknown' -e 'Earlier merges left' <<<"$OUT")" "0" "…not unk
 rm -rf "$PQ"
 
 echo "A note file the project tracks: info/exclude is not written (0.28.0 release review):"
-PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
 mkdir -p "$QQ/.ai/hooks" "$QQ/.claude"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
@@ -1477,7 +1468,7 @@ echo "Both exemptions hold only for git's clean merge (fix review of 0.28.0's re
 # changed x, and origin/dev moved on — changing x too (conflict), or y (clean); union
 # gives x a union merge driver, so the conflict merges cleanly. Sets PU and R.
 own_up() {
-  PU=$(cd "$(mktemp -d)" && pwd -P); U="$PU/up"
+  PU=$(tmpd); U="$PU/up"
   git init -q -b main "$U" || die "could not build the upstream"
   echo base > "$U/x"; [ "$1" = union ] && echo 'x merge=union' > "$U/.gitattributes"
   git -C "$U" add -A && git -C "$U" -c user.email=t@t.t -c user.name=t commit -qm one && git -C "$U" branch dev || die "could not commit the upstream"
@@ -1588,7 +1579,7 @@ standin() {
     echo "exec \"$REALGIT\" \"\$@\""; } > "$1/git"
   chmod +x "$1/git"
 }
-OLDGIT=$(cd "$(mktemp -d)" && pwd -P); standin "$OLDGIT" 2.37.1
+OLDGIT=$(tmpd); standin "$OLDGIT" 2.37.1
 stamped_conflict
 (cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$OLDGIT" git merge -q --no-edit fix/s >/dev/null 2>&1)
 echo resolved > "$d/f"; git -C "$d" add f
@@ -1606,7 +1597,7 @@ say "$(grep -c 'a conflict was resolved here' <<<"$OUT")" "0" "…blaming no one
 git -C "$d" merge --abort 2>/dev/null; rm -rf "$d" "$OLDGIT"
 
 echo "A git 2.38 or later that fails to work it out: refused, with git's error (0.28.0 fix review):"
-ERRGIT=$(cd "$(mktemp -d)" && pwd -P); standin "$ERRGIT" real
+ERRGIT=$(tmpd); standin "$ERRGIT" real
 d=$(mkrepo); feature "$d" fix/e dev; git -C "$d" checkout -q dev
 OUT=$(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 GIT_EXEC_PATH="$ERRGIT" git merge --no-edit fix/e 2>&1); RC=$?
 say "$RC$(grep -c 'THIS MERGE COULD NOT BE CHECKED' <<<"$OUT")" "11" "a stamped clean merge git failed to check: refused"
@@ -1669,7 +1660,7 @@ done
 
 echo "The post-merge note never offers to delete a protected branch (fix review of 0.28.0's release review):"
 for how in "-m sync" "--no-edit"; do
-  PQ=$(cd "$(mktemp -d)" && pwd -P); QQ="$PQ/repo"
+  PQ=$(tmpd); QQ="$PQ/repo"
   git init -q -b main "$QQ" || die "git init failed"
   git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
   mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$QQ/.ai/flight-rules.conf"
@@ -1750,6 +1741,4 @@ say "$RC" "1" "the note copied onto a later commit: refused"
 say "$(grep -c "not this commit's" <<<"$OUT")" "1" "…its tree is the earlier commit's"
 rm -rf "$d"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish

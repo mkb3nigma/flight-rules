@@ -7,9 +7,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
-PASS=0; FAIL=0
-ok()  { PASS=$((PASS+1)); echo "  ✅ $1"; }
-bad() { FAIL=$((FAIL+1)); echo "  ❌ $1"; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../hooks/test-lib.sh" || exit 2
 
 SKILLS=$(find skills -mindepth 1 -maxdepth 1 -type d | sed 's|skills/||' | sort)
 
@@ -143,6 +141,4 @@ for s in $(grep -oE '/[a-z-]+' .claude-plugin/plugin.json | tr -d / | sort -u); 
 done
 ok "plugin.json mentions only shipped skills"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish

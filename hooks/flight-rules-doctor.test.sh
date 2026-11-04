@@ -4,21 +4,12 @@
 set -uo pipefail
 H="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCTOR="$H/flight-rules-doctor.sh"
-PASS=0; FAIL=0
-say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-lib.sh" || exit 2
 
-# A fixture that cannot be built is not a test failure, it is an aborted run — so it
-# stops the suite rather than being counted. The builders below run inside command
-# substitutions, where a FAIL increment would be discarded with the subshell; `$$` is
-# the parent's pid even there, so the signal reaches the trap. Measured 2026-09-12:
-# with every fixture repo broken this suite still scored 11 of 36.
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
 
 # A repo with the hooks copied in and installed the documented way.
 mkrepo() {
-  local d; d=$(cd "$(mktemp -d)" && pwd -P)
+  local d; d=$(tmpd)
   git -C "$d" init -q -b main || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   mkdir -p "$d/.ai/hooks"
@@ -61,7 +52,7 @@ rm -rf "$D"
 echo "A fresh repo is given a command that installs, not a path inside the plugin:"
 # The bare "hooks/git/install.sh" named nothing a fresh plugin user could run (2026-10-13).
 # The printed command is run as printed, and doctor afterwards is the proof it works.
-D=$(cd "$(mktemp -d)" && pwd -P); git -C "$D" init -q -b main || die "git init failed in $D"
+D=$(tmpd); git -C "$D" init -q -b main || die "git init failed in $D"
 OUT=$(run "$D")
 # A clone of a project that committed its hooks: wired by the PLUGIN's install.sh
 # without --from, which would replace hooks the project adapted (pre-review), and never
@@ -89,7 +80,7 @@ say "$(git -C "$C" config --local core.hooksPath)" ".ai/hooks" "…and wires the
 rm -rf "$C"
 
 # From a plugin directory with a space in its path — what %q quoting is for.
-P="$(cd "$(mktemp -d)" && pwd -P)/my plugin"; mkdir -p "$P/hooks" && cp "$DOCTOR" "$P/hooks/" && cp -R "$H/git" "$P/hooks/git" || die "could not lay out the spaced plugin"
+P="$(tmpd)/my plugin"; mkdir -p "$P/hooks" && cp "$DOCTOR" "$P/hooks/" && cp -R "$H/git" "$P/hooks/git" || die "could not lay out the spaced plugin"
 OUT=$(cd "$D" && HOME="$D/fakehome" bash "$P/hooks/flight-rules-doctor.sh" 2>&1)
 CMD=$(printf '%s\n' "$OUT" | sed -n 's/.*To install them into \.ai\/hooks\/: \(bash .*\)   (it also sets.*/\1/p')
 say "$([ -n "$CMD" ] && echo printed)" "printed" "no core.hooksPath → the full install command is printed"
@@ -374,7 +365,7 @@ rm -rf "$D"
 
 # Neither jq nor python3: the agent guard cannot read its input and denies every git
 # command. A PATH of the tools doctor runs, without those two.
-NJ=$(cd "$(mktemp -d)" && pwd -P)
+NJ=$(tmpd)
 for t in git sed grep awk head tail sort cmp dirname basename cat tr; do ln -s "$(command -v "$t")" "$NJ/$t" || die "could not link $t"; done
 D=$(mkrepo); OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$NJ" "$BASH" "$DOCTOR" 2>&1); RC=$?
 say "$RC" "1" "neither jq nor python3 on PATH → problem"
@@ -405,7 +396,7 @@ rm -rf "$D"
 # bash 3.2 split the ß and left a raw byte, so the command on screen was not UTF-8 and
 # named a path that does not exist (fix review, 2026-10-24). shq keeps the bytes.
 U8=$(locale -a 2>/dev/null | grep -iE '^(en_US|C)\.utf-?8$' | head -1); U8=${U8:-en_US.UTF-8}
-L="$(cd "$(mktemp -d)" && pwd -P)/Straße it's"; mkdir -p "$L/hooks" && cp -R "$H/git" "$L/hooks/" && cp "$DOCTOR" "$L/hooks/" || die "could not lay out the ß plugin"
+L="$(tmpd)/Straße it's"; mkdir -p "$L/hooks" && cp -R "$H/git" "$L/hooks/" && cp "$DOCTOR" "$L/hooks/" || die "could not lay out the ß plugin"
 D=$(mkrepo); mkcache "$D" commit-msg
 cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" "$D/.ai/hooks/commit-msg"
 OUT=$(cd "$D" && LC_ALL=$U8 HOME="$D/fakehome" bash "$L/hooks/flight-rules-doctor.sh" 2>&1)
@@ -533,7 +524,7 @@ rm -rf "$D"
 # marker", which left the file unmentioned (third review, E12). It is reachable only by
 # a race or an I/O error after the readability test, so a grep on PATH fails it here.
 D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
-SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+SHIM=$(tmpd); REAL_GREP=$(command -v grep)
 printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/install.sh) case "$*" in *-qF*) exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
 chmod +x "$SHIM/grep"
 OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
@@ -636,7 +627,7 @@ fi
 chmod 755 "$D/.ai/hooks/post-merge"; rm -rf "$D"
 # A marker grep that errors on a readable hook: could not check it, not a stub.
 D=$(mkrepo)
-SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+SHIM=$(tmpd); REAL_GREP=$(command -v grep)
 printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/post-merge) case "$1" in -q) exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
 chmod +x "$SHIM/grep"
 OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
@@ -648,7 +639,7 @@ rm -rf "$D" "$SHIM"
 # The adapted-mark grep that errors: could not check it either, not "not adapted" with
 # grep's error on screen (group A fix review, F13).
 D=$(mkrepo)
-SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+SHIM=$(tmpd); REAL_GREP=$(command -v grep)
 printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/post-merge) case "$1" in -qE) echo "grep: shim I/O error" >&2; exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
 chmod +x "$SHIM/grep"
 OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
@@ -660,7 +651,7 @@ rm -rf "$D" "$SHIM"
 # The same for install.sh's adapted-mark grep, which F13 missed (group A fix review
 # round 2, F1): an error read as "not marked", with grep's error on screen.
 D=$(mkrepo); { cat "$H/git/install.sh"; echo "# own change"; } > "$D/.ai/hooks/install.sh"
-SHIM=$(cd "$(mktemp -d)" && pwd -P); REAL_GREP=$(command -v grep)
+SHIM=$(tmpd); REAL_GREP=$(command -v grep)
 printf '#!/bin/sh\nfor a; do last=$a; done\ncase "$last" in */.ai/hooks/install.sh) case "$1" in -qE) echo "grep: shim I/O error" >&2; exit 2 ;; esac ;; esac\nexec %s "$@"\n' "$REAL_GREP" > "$SHIM/grep"
 chmod +x "$SHIM/grep"
 OUT=$(cd "$D" && HOME="$D/fakehome" PATH="$SHIM:$PATH" bash "$DOCTOR" 2>&1); RC=$?
@@ -690,7 +681,7 @@ echo "A later release's copy is not behind (fix review, 2026-10-24):"
 # ❌, and its sync hint led to a full install that downgraded it. Here the doctor is
 # 0.0.5's, the project holds 0.0.9's commit-msg and install.sh.
 say "$(sed -n '/^newer_than() {/,/^}/p' "$DOCTOR")" "$(sed -n '/^newer_than() {/,/^}/p' "$H/git/install.sh")" "newer_than is install.sh's, verbatim"
-P=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$P/.claude-plugin" "$P/hooks"; cp -R "$H/git" "$P/hooks/git"; cp "$DOCTOR" "$P/hooks/"
+P=$(tmpd); mkdir -p "$P/.claude-plugin" "$P/hooks"; cp -R "$H/git" "$P/hooks/git"; cp "$DOCTOR" "$P/hooks/"
 printf '{ "name": "flight-rules", "version": "0.0.5" }\n' > "$P/.claude-plugin/plugin.json"
 D=$(mkrepo); N="$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.9/hooks/git"; mkdir -p "$N"
 for h in commit-msg install.sh; do { cat "$H/git/$h"; echo "# flight-rules 0.0.9"; } > "$N/$h"; cp "$N/$h" "$D/.ai/hooks/$h"; done
@@ -920,6 +911,4 @@ say "$(grep -c 'shadows flight-rules' <<<"$OUT")" "0" "plugin off: nothing repor
 say "$(grep -c 'warning(s)' <<<"$OUT")" "1" "…and doctor ran to its summary"
 rm -rf "$D"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish
