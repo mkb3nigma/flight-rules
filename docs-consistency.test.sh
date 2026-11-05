@@ -270,39 +270,63 @@ else
   [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes a filled one" || bad "the upstream step fails a filled section (exit $RC: $OUT)"
   OUT=$(ustep "$UP" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the upstream step passes when its awk dies (exit $RC: $OUT)"
-  # The mutation-run step (owner, 2026-11-04 and -05): mutation/run.sh's summary line,
-  # of the whole kit, clean and of the PR's head commit — a selection, an older commit, a
-  # dirty tree, a survivor or a mutant that did not apply each fail, and so does a dead
-  # awk. The line is read as a person pastes it: plain, in backticks, as a list item or a
-  # quote, with a trailing blank — each refused once, with a cause that was not true.
-  MRUN=$(awk '/run: \|/ { n++; f = (n == 3); next } f && /^      - name:/ { exit } f' "$RR" | sed -e 's/^          //')
+  # The mutation stamp (owner, 2026-11-04 and -05): the release's head commit carries the
+  # git note mutation/run.sh writes after a clean run of the whole kit, and it holds row
+  # by row against the kit at that commit. First the verifier, on the kit as this tree
+  # has it: a stamp built from the list passes; each way a stamp can be short of a clean
+  # whole-kit run of this commit fails, naming what.
   H=0123456789abcdef0123456789abcdef01234567
-  mstep() { BODY="$1" HEAD_SHA=$H PATH="${2:+$2:}$PATH" bash -e -c "$MRUN" 2>&1; }
-  # mline <how many> <from> <survived> <failed to apply> <unexpected> [<before> [<after>]]
-  mline() { printf '## Mutation run\n%smutation: %s run from %s — 635 killed (16 aborts, 0 timeouts), %s survived (97 expected), %s failed to apply; %s unexpected survivor(s)%s\n## Testing\n' "${6:-}" "$1" "$2" "$3" "$4" "$5" "${7:-}"; }
-  mpasses() {   # <what> <body>
-    OUT=$(mstep "$2"); RC=$?
-    [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes $1" || bad "the mutation step fails $1 (exit $RC: $OUT)"
+  MK=mutation/mutants.py
+  NM=$(python3 -I "$MK" list | wc -l | tr -d ' ')
+  # stamp <summary> [<sed applied to the rows>]
+  stamp() {
+    printf 'flight-rules mutation stamp\n%s\n' "$1"
+    python3 -I "$MK" list | awk -F '\t' '{ print $1 "\t" ($4 == "killed" ? "killed" : "survived") "\tsuite" }' | sed -e "${2:-}"
   }
-  mfails() {    # <what> <body> [<text the refusal must name>]
-    OUT=$(mstep "$2"); RC=$?
-    [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q -- "${3:-}" <<<"$OUT" && ok "…fails $1" || bad "the mutation step passes $1, or not naming '${3:-}' (exit $RC: $OUT)"
-  }
-  mfails "a body with no Mutation run section" "$UP" "worktree add --detach"
-  mpasses "a clean run of the whole kit on the head commit" "$(mline 'all 736' "$H" 97 0 0)"
-  mpasses "the same line in backticks"            "$(mline 'all 736' "$H" 97 0 0 '`' '`')"
-  mpasses "as a list item"                        "$(mline 'all 736' "$H" 97 0 0 '- ')"
-  mpasses "as a quote"                            "$(mline 'all 736' "$H" 97 0 0 '> ')"
-  mpasses "with a trailing space"                 "$(mline 'all 736' "$H" 97 0 0 '' ' ')"
-  mpasses "in backticks, a space after"           "$(mline 'all 736' "$H" 97 0 0 '* `' '` ')"
-  mfails "a selection of the mutants"  "$(mline '5 of 736' "$H" 0 0 0)" "a selection"
-  mfails "an older commit"             "$(mline 'all 736' "${H%7}8" 97 0 0)" "not of this PR's head"
-  mfails "a dirty tree"                "$(mline 'all 736' "$H + uncommitted changes" 97 0 0)" "tracked file changed"
-  mfails "an unexpected survivor"      "$(mline 'all 736' "$H" 98 0 1)" "0 failed to apply; 1 unexpected"
-  mfails "a mutant that did not apply" "$(mline 'all 736' "$H" 97 1 0)" "1 failed to apply"
-  mfails "a line under the next section" "$(printf '## Mutation run\n## Testing\n'; mline 'all 736' "$H" 97 0 0 | sed 1d)"
-  OUT=$(mstep "$(mline 'all 736' "$H" 97 0 0)" "$FX"); RC=$?
-  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the mutation step passes when its awk dies (exit $RC: $OUT)"
+  clean() { printf 'mutation: all %s run from %s — 1 killed (0 aborts, 0 timeouts), 1 survived (1 expected), 0 failed to apply; 0 unexpected survivor(s)' "$NM" "$1"; }
+  SD=$(mktemp -d "${TMPDIR:-/tmp}/stamp.XXXXXX")
+  vpasses() { stamp "$2" "${3:-}" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+    [ "$RC" -eq 0 ] && ok "mutants.py verify passes $1" || bad "mutants.py verify fails $1 (exit $RC: $OUT)"; }
+  vfails() { stamp "$2" "${3:-}" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+    [ "$RC" -ne 0 ] && grep -q -- "$4" <<<"$OUT" && ok "…fails $1" || bad "mutants.py verify passes $1, or not naming '$4' (exit $RC: $OUT)"; }
+  FIRST=$(python3 -I "$MK" list | awk -F '\t' '$4 == "killed" { print $1; exit }')
+  SURV=$(python3 -I "$MK" list | awk -F '\t' '$4 != "killed" { print $1; exit }')
+  vpasses "a clean stamp of the whole kit on the commit" "$(clean "$H")"
+  vfails "a stamp missing a mutant's row"     "$(clean "$H")" "/^$FIRST	/d"        "$FIRST: no row"
+  vfails "one with a row for no such mutant" "$(clean "$H")" "\$a\\
+NOPE	killed	suite"                                                                  "NOPE is not a mutant"
+  vfails "a row twice"                       "$(clean "$H")" "/^$FIRST	/p"        "$FIRST: 2 rows"
+  vfails "a mutant expected killed that survived" "$(clean "$H")" "s/^$FIRST	killed/$FIRST	survived/" "$FIRST: survived, expected killed"
+  vfails "a known gap that was killed"       "$(clean "$H")" "s/^$SURV	survived/$SURV	killed/" "$SURV: killed, expected survived"
+  vfails "another commit's run"              "$(clean "${H%7}8")" ""                "not of $H"
+  vfails "a dirty tree's run"                "$(clean "$H + uncommitted changes")" "" "not of $H"
+  vfails "a selection"                       "mutation: 5 of $NM run from $H — 5 killed (0 aborts, 0 timeouts), 0 survived (0 expected), 0 failed to apply; 0 unexpected survivor(s)" "" "not of the whole kit"
+  vfails "a run that did not pass"           "$(clean "$H" | sed 's/0 unexpected/1 unexpected/')" "" "not clean"
+  printf '%s\n' "$(clean "$H")" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+  [ "$RC" -ne 0 ] && grep -q 'not a stamp run.sh wrote' <<<"$OUT" && ok "…and a summary line alone, typed" || bad "mutants.py verify passes a typed summary line (exit $RC: $OUT)"
+  # Then the step, as GitHub runs it in a checkout of the head: the note is fetched from
+  # origin, so one not pushed, one on another commit, and one that does not hold each
+  # fail and print the push and run commands; a pushed clean stamp passes.
+  MRUN=$(awk '/run: \|/ { n++; f = (n == 3); next } f && /^      - name:/ { exit } f' "$RR" | sed -e 's/^          //')
+  G=(git -c user.name=t -c user.email=t@invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null)
+  ORG="$SD/origin"; CO="$SD/co"
+  mkdir -p "$ORG/mutation" && cp "$MK" "$ORG/mutation/" && "${G[@]}" -C "$ORG" init -q && "${G[@]}" -C "$ORG" add -A && "${G[@]}" -C "$ORG" commit -qm head \
+    && "${G[@]}" clone -q "$ORG" "$CO" || die "could not build the stamp step's repositories"
+  HS=$(git -C "$CO" rev-parse HEAD)
+  mstep() { (cd "$CO" && HEAD_SHA=$HS bash -e -c "$MRUN" 2>&1); }
+  OUT=$(mstep); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q 'git push origin refs/notes/mutation' <<<"$OUT" && ok "the stamp step fails when no stamp was pushed, printing the push" || bad "the stamp step passes, or prints no push, with no stamp pushed (exit $RC: $OUT)"
+  H=$HS; stamp "$(clean "$HS")" >"$SD/good"; stamp "$(clean "$HS")" "/^$FIRST	/d" >"$SD/short"
+  "${G[@]}" -C "$ORG" commit -q --allow-empty -m later && "${G[@]}" -C "$ORG" notes --ref=mutation add -F "$SD/good" HEAD || die "could not stamp the later commit"
+  OUT=$(mstep); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q "worktree add --detach .ai/worktrees/mutation $HS" <<<"$OUT" && ok "…fails when only another commit is stamped, printing the run" || bad "the stamp step passes another commit's stamp (exit $RC: $OUT)"
+  "${G[@]}" -C "$ORG" notes --ref=mutation add -f -F "$SD/short" "$HS" || die "could not stamp the head"
+  OUT=$(mstep); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q "$FIRST: no row" <<<"$OUT" && ok "…fails a stamp that does not hold, naming why" || bad "the stamp step passes a short stamp (exit $RC: $OUT)"
+  "${G[@]}" -C "$ORG" notes --ref=mutation add -f -F "$SD/good" "$HS" 2>/dev/null || die "could not stamp the head"
+  OUT=$(mstep); RC=$?
+  [ "$RC" -eq 0 ] && grep -q "^ok  Mutation stamp on $HS: mutation: all $NM run from $HS" <<<"$OUT" && ok "…and passes a pushed clean stamp of the head, printing its summary" || bad "the stamp step fails a clean stamp (exit $RC: $OUT)"
+  rm -rf "$SD"
   rm -rf "$FX"
 fi
 

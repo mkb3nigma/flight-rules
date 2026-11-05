@@ -205,11 +205,36 @@ for i in fa: print('❌ %s: %s %s %s' % (res[i][1], i, files[i], res[i][3]))
 for i in unexpected: print('❌ survived, expected killed: %s (%s; ran %s) — logs in %s' % (i, files[i], res[i][2], os.path.join(W, 'logs', i)))
 for i in stale: print('⚠️  killed, expected to survive (%s): %s — update its expect' % (exp[i], i))
 print()
-print('mutation: %s run from %s — %d killed (%d aborts, %d timeouts), %d survived (%d expected), %d failed to apply; %d unexpected survivor(s)'
+summary = ('mutation: %s run from %s — %d killed (%d aborts, %d timeouts), %d survived (%d expected), %d failed to apply; %d unexpected survivor(s)'
       % ('all %d' % len(exp) if SCOPE == 'all' else '%d %s' % (len(exp), SCOPE), FROM, len(k), len(ab), len(to), len(sv), len(sv) - len(unexpected), len(fa), len(unexpected)))
+print(summary)
 print('logs: ' + os.path.join(W, 'logs'))
+# The stamp the release review check reads (mutants.py verify): written only for a clean
+# run of the whole kit on a commit with no tracked file changed. Anything less is said.
+why = ('it was a selection, not the whole kit' if SCOPE != 'all'
+       else 'the tree is not a commit with no tracked file changed' if len(FROM) != 40 or not all(c in '0123456789abcdef' for c in FROM)
+       else 'the run did not pass' if unexpected or fa else '')
+if why:
+    open(os.path.join(W, 'unstamped'), 'w', encoding='utf-8').write(why)
+else:
+    with open(os.path.join(W, 'stamp'), 'w', encoding='utf-8') as f:
+        f.write('flight-rules mutation stamp\n' + summary + '\n')
+        for i in sorted(exp): f.write('%s\t%s\t%s\n' % (i, res[i][1], res[i][2]))
 sys.exit(1 if unexpected or fa else 0)
 PY
 rc=$?
+# The stamp goes on the commit as a git note, and the push it needs is printed every
+# time: the release review check refuses the PR without it (owner, 2026-11-05: the
+# instruction is shown, never left to memory).
+if [ -s "$W/stamp" ]; then
+    git -C "$ROOT" notes --ref=mutation add -f -F "$W/stamp" "$FROM" \
+        || { echo "❌ could not write the mutation stamp on $FROM" >&2; exit 2; }
+    echo
+    echo "✅ stamped $FROM (refs/notes/mutation). Before the release PR, push the stamp:"
+    echo "   git push origin refs/notes/mutation"
+else
+    echo
+    echo "not stamped: $(cat "$W/unstamped") — a release needs a clean run of the whole kit from a clean worktree of its commit (mutation/README.md)"
+fi
 rm -rf "${W:?}/m" "${W:?}/base"
 exit "$rc"

@@ -18,17 +18,23 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 (owner, 2026-11-04). It takes hours, so it is not a per-branch check, and it is not one
 of `{TEST_COMMANDS}`.
 
-For a release, its summary line goes under `## Mutation run` in the promotion PR, and
-the `release review` check refuses the PR unless that line is of the whole kit
-(`mutation: all <n> run from …`; a selection prints `<n> of <total>`), is clean — no
-unexpected survivor, nothing that failed to apply — and names the PR's head commit with
-no tracked file changed (owner, 2026-11-05). Pasted plain, in backticks, as a list item
-or a quote, it reads the same. A commit pushed after the run means running it again.
-Run it from a worktree of that commit, so nothing else in a checkout is in the way:
+For a release, the run stamps the commit. After a clean run of the whole kit on a
+commit with no tracked file changed, `run.sh` writes a git note on it
+(`refs/notes/mutation`): its summary line and one row per mutant. It prints the push
+the note needs, and the owner makes it with `dev`'s. The `release review` check fetches
+the note and holds it to the kit as the PR's head commit has it (`mutants.py verify`):
+every mutant once, each with the result its `expect` says, the run clean, of the whole
+kit and of that commit (owner, 2026-11-05: a pasted line could be typed; the stamp is
+written only by the run). A commit pushed after the run has no stamp, so the run is made
+again. A selection, a dirty tree or a failed run is not stamped, and the run says why.
+An assistant never writes this note by hand, as with the `pre-merge-check` note: the
+note says the run happened. Run it from a worktree of the commit, so nothing else in a
+checkout is in the way:
 
 ```bash
 git worktree add --detach .ai/worktrees/mutation <sha>
 cd .ai/worktrees/mutation && mutation/run.sh -j 4
+git push origin refs/notes/mutation      # printed at the end of a stamped run
 ```
 
 The gaps the suites are known to leave — the `survives: not held` mutants — are #133: a
@@ -43,7 +49,8 @@ mutation/run.sh P01 C49 S010   # some of them, by id
 
 Every mutant runs in its own copy of the tree, made once at the start from the files
 git tracks, as they stand — an untracked file is neither copied nor counted, and a new
-one is in once `git add`ed; the checkout is only read. A tracked file that differs from
+one is in once `git add`ed; the checkout is only read, but for the stamp a clean
+whole-kit run writes. A tracked file that differs from
 the commit is named at the start, with the route above, and marks the summary line
 "+ uncommitted changes". Before any mutant, each suite in use runs unmutated and must
 pass. A suite run is cut off after `MUTATION_TIMEOUT` seconds (default 1200) and

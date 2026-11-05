@@ -11,6 +11,13 @@ change, and one whose `old` no longer occurs once is an error, not a skip.
     python3 -I mutation/mutants.py list [id ...]   # id, file, suite paths, expect (TSV)
     python3 -I mutation/mutants.py apply <id> <tree>
     python3 -I mutation/mutants.py check <tree>     # every anchor occurs exactly once
+    python3 -I mutation/mutants.py verify <sha> <stamp-file>   # the release check's test
+
+The stamp is the git note run.sh writes on the commit after a clean run of the whole
+kit (refs/notes/mutation): its summary line, then one row per mutant — id, result, the
+suite that killed it. `verify` holds it to this list as the commit has it: every mutant
+once, none extra, each with the result its `expect` says, and the line clean and of
+<sha>. So a typed summary line, a selection, a stale kit or another commit's run fails.
 """
 import os, sys
 
@@ -806,12 +813,20 @@ mut('misc-R08', RR, '            echo "::error::the Adversarial review section h
 mut('misc-R04', RR, 'if [ "$under" -eq 0 ]; then', 'if false; then', 'docs-consistency')
 mut('misc-R11', RR, '/^## Upstream check/ { in_s = 1; next }\n            in_s && /^##?([[:space:]]|$)/ { in_s = 0 }', '/^## Upstream check/ { in_s = 1; next }', 'docs-consistency')
 mut('misc-R10', RR, '!/^#/', '1', 'docs-consistency', expect='survives: not held — a heading alone fills the upstream-check section')
-mut('misc-R13', RR, '            *" run from $HEAD_SHA — "*) ;;', '            *) ;;', 'docs-consistency', what='mutation run: any commit, dirty or not, passes')
-mut('misc-R14', RR, '            *", 0 failed to apply; 0 unexpected survivor(s)") ;;', '            *) ;;', 'docs-consistency', what='mutation run: a survivor or a failed apply passes')
-mut('misc-R16', RR, "              sub(/^`/, \"\", l); sub(/`$/, \"\", l)", '              :', 'docs-consistency', what='mutation run: a line in backticks is not read')
-mut('misc-R18', RR, '              sub(/^[[:space:]]*([-*>][[:space:]]*)*/, "", l); sub(/[[:space:]]+$/, "", l)', '              :', 'docs-consistency', what='mutation run: a bullet, quote or trailing blank is not taken off')
-mut('misc-R19', RR, '            "mutation: all "[0-9]*) ;;', '            *) ;;', 'docs-consistency', what='mutation run: a selection passes as the release run')
-mut('misc-R17', RR, '/^## Mutation run/ { in_s = 1; next }\n            in_s && /^##?([[:space:]]|$)/ { in_s = 0 }', '/^## Mutation run/ { in_s = 1; next }', 'docs-consistency', what='mutation run: a line after the section counts')
+mut('misc-R20', RR, '          if ! out=$(python3 -I mutation/mutants.py ' 'verify "$HEAD_SHA" "$stamp"); then', '          if ! out=$(echo ok); then', 'docs-consistency', what='stamp step: the stamp is not verified')
+mut('misc-R21', RR, '          if ! git fetch -q origin ' 'refs/notes/mutation:refs/notes/mutation; then', '          if false; then', 'docs-consistency', what='stamp step: the stamps are not fetched from origin')
+
+# ---- mutation/mutants.py verify: the release review check's test of the stamp. Each
+# anchor is two literals, so it does not also occur in its own entry here.
+MP = 'mutation/mutants.py'
+mut('misc-V1', MP, 'if not lines or lines[0] ' '!= STAMP_HEAD:', 'if False:', 'docs-consistency', what='verify: a typed summary line is a stamp')
+mut('misc-V2', MP, "if not summary.startswith(" "'mutation: all '):", 'if False:', 'docs-consistency', what='verify: a selection passes')
+mut('misc-V3', MP, "if (' run from %s — ' % sha) " "not in summary:", 'if False:', 'docs-consistency', what="verify: another commit's run passes")
+mut('misc-V4', MP, "if not summary.endswith(" "', 0 failed to apply; 0 unexpected survivor(s)'):", 'if False:', 'docs-consistency', what='verify: a run that did not pass passes')
+mut('misc-V5', MP, 'if not f[1].' 'startswith(want):', 'if False:', 'docs-consistency', what='verify: a result against its expect passes')
+mut('misc-V6', MP, "bad += ['%s: %d rows' % (i, n) " "for i, n in seen.items() if n > 1]", 'pass', 'docs-consistency', what='verify: a row twice passes')
+mut('misc-V7', MP, "bad += ['%s: no row — the run did not cover it' % i " "for i in by_id if i not in seen]", 'pass', 'docs-consistency', what='verify: a mutant with no row passes')
+mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "continue", 'continue', 'docs-consistency', what='verify: a row for no such mutant passes')
 
 
 def _check_data():
@@ -827,6 +842,45 @@ def _check_data():
 def _read(p):
     with open(p, encoding='utf-8', newline='') as f:
         return f.read()
+
+
+STAMP_HEAD = 'flight-rules mutation stamp'
+
+
+def verify(sha, path, by_id):
+    """The release review check: the stamp at <path> is a clean whole-kit run of <sha>."""
+    lines = _read(path).splitlines()
+    bad = []
+    if not lines or lines[0] != STAMP_HEAD:
+        bad.append("its first line is not '%s': not a stamp run.sh wrote" % STAMP_HEAD)
+    summary = lines[1] if len(lines) > 1 else ''
+    if not summary.startswith('mutation: all '):
+        bad.append('its summary is not of the whole kit: %r' % summary)
+    if (' run from %s — ' % sha) not in summary:
+        bad.append('its summary is not of %s with no tracked file changed: %r' % (sha, summary))
+    if not summary.endswith(', 0 failed to apply; 0 unexpected survivor(s)'):
+        bad.append('its summary is not clean: %r' % summary)
+    seen = {}
+    for row in lines[2:]:
+        f = row.split('\t')
+        if len(f) != 3:
+            bad.append('a row is not <id> <result> <suite>: %r' % row); continue
+        seen[f[0]] = seen.get(f[0], 0) + 1
+        m = by_id.get(f[0])
+        if m is None:
+            bad.append('%s is not a mutant at this commit' % f[0]); continue
+        want = 'killed' if m['expect'] == 'killed' else 'survived'
+        if not f[1].startswith(want):
+            bad.append('%s: %s, expected %s' % (f[0], f[1], want))
+    bad += ['%s: %d rows' % (i, n) for i, n in seen.items() if n > 1]
+    bad += ['%s: no row — the run did not cover it' % i for i in by_id if i not in seen]
+    if bad:
+        print('the mutation stamp on %s does not hold (%d problem(s)):' % (sha, len(bad)))
+        for b in bad[:20]: print('  ' + b)
+        if len(bad) > 20: print('  … and %d more' % (len(bad) - 20))
+        return 1
+    print(summary)
+    return 0
 
 
 def main(argv):
@@ -854,6 +908,8 @@ def main(argv):
         with open(p, 'w', encoding='utf-8', newline='') as f:
             f.write(t.replace(m['old'], m['new'], 1))
         return 0
+    if cmd == 'verify' and len(argv) == 4:
+        return verify(argv[2], argv[3], by_id)
     if cmd == 'check' and len(argv) == 3:
         bad = 0
         for m in M:
