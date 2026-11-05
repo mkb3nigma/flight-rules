@@ -16,8 +16,10 @@ change, and one whose `old` no longer occurs once is an error, not a skip.
 The stamp is the git note run.sh writes on the commit after a clean run of the whole
 kit (refs/notes/mutation): its summary line, then one row per mutant — id, result, the
 suite that killed it. `verify` holds it to this list as the commit has it: every mutant
-once, none extra, each with the result its `expect` says, and the line clean and of
-<sha>. So a typed summary line, a selection, a stale kit or another commit's run fails.
+once, none extra, each expected killed killed, and the line clean and of <sha>. So a
+typed summary line, a selection, a stale kit or another commit's run fails. A known gap
+now killed passes, named in the line it prints: the kit got stronger, and its expect is
+to update (owner, 2026-11-05).
 """
 import os, sys
 
@@ -823,7 +825,8 @@ mut('misc-V1', MP, 'if not lines or lines[0] ' '!= STAMP_HEAD:', 'if False:', 'd
 mut('misc-V2', MP, "if not summary.startswith(" "'mutation: all '):", 'if False:', 'docs-consistency', what='verify: a selection passes')
 mut('misc-V3', MP, "if (' run from %s — ' % sha) " "not in summary:", 'if False:', 'docs-consistency', what="verify: another commit's run passes")
 mut('misc-V4', MP, "if not summary.endswith(" "', 0 failed to apply; 0 unexpected survivor(s)'):", 'if False:', 'docs-consistency', what='verify: a run that did not pass passes')
-mut('misc-V5', MP, 'if not f[1].' 'startswith(want):', 'if False:', 'docs-consistency', what='verify: a result against its expect passes')
+mut('misc-V5', MP, "if not f[1]." "startswith('killed'):", 'if False:', 'docs-consistency', what='verify: an expected kill that survived passes')
+mut('misc-V9', MP, 'stale.' 'append(f[0])', "bad.append(f[0])", 'docs-consistency', what='verify: a known gap now killed is refused')
 mut('misc-V6', MP, "bad += ['%s: %d rows' % (i, n) " "for i, n in seen.items() if n > 1]", 'pass', 'docs-consistency', what='verify: a row twice passes')
 mut('misc-V7', MP, "bad += ['%s: no row — the run did not cover it' % i " "for i in by_id if i not in seen]", 'pass', 'docs-consistency', what='verify: a mutant with no row passes')
 mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "continue", 'continue', 'docs-consistency', what='verify: a row for no such mutant passes')
@@ -860,7 +863,7 @@ def verify(sha, path, by_id):
         bad.append('its summary is not of %s with no tracked file changed: %r' % (sha, summary))
     if not summary.endswith(', 0 failed to apply; 0 unexpected survivor(s)'):
         bad.append('its summary is not clean: %r' % summary)
-    seen = {}
+    seen, stale = {}, []
     for row in lines[2:]:
         f = row.split('\t')
         if len(f) != 3:
@@ -869,9 +872,13 @@ def verify(sha, path, by_id):
         m = by_id.get(f[0])
         if m is None:
             bad.append('%s is not a mutant at this commit' % f[0]); continue
-        want = 'killed' if m['expect'] == 'killed' else 'survived'
-        if not f[1].startswith(want):
-            bad.append('%s: %s, expected %s' % (f[0], f[1], want))
+        if m['expect'] == 'killed':
+            if not f[1].startswith('killed'):
+                bad.append('%s: %s, expected killed' % (f[0], f[1]))
+        elif f[1].startswith('killed'):
+            stale.append(f[0])
+        elif f[1] != 'survived':
+            bad.append('%s: %s, expected survived' % (f[0], f[1]))
     bad += ['%s: %d rows' % (i, n) for i, n in seen.items() if n > 1]
     bad += ['%s: no row — the run did not cover it' % i for i in by_id if i not in seen]
     if bad:
@@ -879,7 +886,11 @@ def verify(sha, path, by_id):
         for b in bad[:20]: print('  ' + b)
         if len(bad) > 20: print('  … and %d more' % (len(bad) - 20))
         return 1
-    print(summary)
+    if stale:
+        print('%s — %d expected survivor(s) now killed (%s): update their expect (#133)'
+              % (summary, len(stale), ', '.join(sorted(stale))))
+    else:
+        print(summary)
     return 0
 
 

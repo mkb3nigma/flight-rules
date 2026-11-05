@@ -297,7 +297,10 @@ else
 NOPE	killed	suite"                                                                  "NOPE is not a mutant"
   vfails "a row twice"                       "$(clean "$H")" "/^$FIRST	/p"        "$FIRST: 2 rows"
   vfails "a mutant expected killed that survived" "$(clean "$H")" "s/^$FIRST	killed/$FIRST	survived/" "$FIRST: survived, expected killed"
-  vfails "a known gap that was killed"       "$(clean "$H")" "s/^$SURV	survived/$SURV	killed/" "$SURV: killed, expected survived"
+  # A known gap now killed is the kit grown stronger, not a regression: it passes, and
+  # the line the check prints names it, to have its expect updated (owner, 2026-11-05).
+  stamp "$(clean "$H")" "s/^$SURV	survived/$SURV	killed/" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+  [ "$RC" -eq 0 ] && grep -q "1 expected survivor(s) now killed ($SURV): update their expect" <<<"$OUT" && ok "…passes a known gap now killed, naming it" || bad "mutants.py verify refuses, or does not name, a known gap now killed (exit $RC: $OUT)"
   vfails "another commit's run"              "$(clean "${H%7}8")" ""                "not of $H"
   vfails "a dirty tree's run"                "$(clean "$H + uncommitted changes")" "" "not of $H"
   vfails "a selection"                       "mutation: 5 of $NM run from $H — 5 killed (0 aborts, 0 timeouts), 0 survived (0 expected), 0 failed to apply; 0 unexpected survivor(s)" "" "not of the whole kit"
@@ -315,7 +318,7 @@ NOPE	killed	suite"                                                              
   HS=$(git -C "$CO" rev-parse HEAD)
   mstep() { (cd "$CO" && HEAD_SHA=$HS bash -e -c "$MRUN" 2>&1); }
   OUT=$(mstep); RC=$?
-  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q 'git push origin refs/notes/mutation' <<<"$OUT" && ok "the stamp step fails when no stamp was pushed, printing the push" || bad "the stamp step passes, or prints no push, with no stamp pushed (exit $RC: $OUT)"
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q 'git push origin refs/notes/mutation' <<<"$OUT" && grep -q 're-run this one' <<<"$OUT" && ok "the stamp step fails when no stamp was pushed, printing the push and the re-run" || bad "the stamp step passes, or prints no push, with no stamp pushed (exit $RC: $OUT)"
   H=$HS; stamp "$(clean "$HS")" >"$SD/good"; stamp "$(clean "$HS")" "/^$FIRST	/d" >"$SD/short"
   "${G[@]}" -C "$ORG" commit -q --allow-empty -m later && "${G[@]}" -C "$ORG" notes --ref=mutation add -F "$SD/good" HEAD || die "could not stamp the later commit"
   OUT=$(mstep); RC=$?

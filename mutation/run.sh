@@ -2,9 +2,10 @@
 # Mutation run: break one line of a hook (mutants.py), run the suites that should
 # notice, and record whether one did. Usage: mutation/run.sh [-j N] [id …]
 #
-# Every mutant runs in its own copy of the tree, taken once at the start (no .git, no
-# .ai/worktrees; a fresh index, so docs-consistency.test.sh's `git ls-files` reads it).
-# The checkout this runs from is only read. Exit 0: every mutant expected killed was
+# Every mutant runs in its own copy of the tree, taken once at the start — the files git
+# tracks, as they stand — with a fresh index, so docs-consistency.test.sh's `git ls-files`
+# reads it. The checkout this runs from is only read, but for the stamp: after a clean
+# run of the whole kit, a git note on refs/notes/mutation, origin's merged in first. Exit 0: every mutant expected killed was
 # killed and every mutant applied. Exit 1: one survived that should not have, or one
 # did not apply. Exit 2: usage, or a suite failing with no mutant applied — then no
 # result would mean anything.
