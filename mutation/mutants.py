@@ -808,7 +808,9 @@ mut('misc-R11', RR, '/^## Upstream check/ { in_s = 1; next }\n            in_s &
 mut('misc-R10', RR, '!/^#/', '1', 'docs-consistency', expect='survives: not held — a heading alone fills the upstream-check section')
 mut('misc-R13', RR, '            *" run from $HEAD_SHA — "*) ;;', '            *) ;;', 'docs-consistency', what='mutation run: any commit, dirty or not, passes')
 mut('misc-R14', RR, '            *", 0 failed to apply; 0 unexpected survivor(s)") ;;', '            *) ;;', 'docs-consistency', what='mutation run: a survivor or a failed apply passes')
-mut('misc-R16', RR, "          line=${line#\\`}; line=${line%\\`}", '          :', 'docs-consistency', what='mutation run: a line in backticks is not read')
+mut('misc-R16', RR, "              sub(/^`/, \"\", l); sub(/`$/, \"\", l)", '              :', 'docs-consistency', what='mutation run: a line in backticks is not read')
+mut('misc-R18', RR, '              sub(/^[[:space:]]*([-*>][[:space:]]*)*/, "", l); sub(/[[:space:]]+$/, "", l)', '              :', 'docs-consistency', what='mutation run: a bullet, quote or trailing blank is not taken off')
+mut('misc-R19', RR, '            "mutation: all "[0-9]*) ;;', '            *) ;;', 'docs-consistency', what='mutation run: a selection passes as the release run')
 mut('misc-R17', RR, '/^## Mutation run/ { in_s = 1; next }\n            in_s && /^##?([[:space:]]|$)/ { in_s = 0 }', '/^## Mutation run/ { in_s = 1; next }', 'docs-consistency', what='mutation run: a line after the section counts')
 
 

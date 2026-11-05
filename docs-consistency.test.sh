@@ -271,28 +271,37 @@ else
   OUT=$(ustep "$UP" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the upstream step passes when its awk dies (exit $RC: $OUT)"
   # The mutation-run step (owner, 2026-11-04 and -05): mutation/run.sh's summary line,
-  # clean and of the PR's head commit — an older commit, a dirty tree, a survivor or a
-  # mutant that did not apply each fail, and so does a dead awk.
+  # of the whole kit, clean and of the PR's head commit — a selection, an older commit, a
+  # dirty tree, a survivor or a mutant that did not apply each fail, and so does a dead
+  # awk. The line is read as a person pastes it: plain, in backticks, as a list item or a
+  # quote, with a trailing blank — each refused once, with a cause that was not true.
   MRUN=$(awk '/run: \|/ { n++; f = (n == 3); next } f && /^      - name:/ { exit } f' "$RR" | sed -e 's/^          //')
   H=0123456789abcdef0123456789abcdef01234567
   mstep() { BODY="$1" HEAD_SHA=$H PATH="${2:+$2:}$PATH" bash -e -c "$MRUN" 2>&1; }
-  mline() { printf '## Mutation run\n%smutation: 732 run from %s — 635 killed (16 aborts, 0 timeouts), %s survived (97 expected), %s failed to apply; %s unexpected survivor(s)%s\n## Testing\n' "${5:-}" "$1" "$2" "$3" "$4" "${5:-}"; }
-  OUT=$(mstep "$UP"); RC=$?
-  [ "$RC" -ne 0 ] && ok "the mutation step fails a body with no Mutation run section" || bad "the mutation step passes a body with no section (exit $RC: $OUT)"
-  OUT=$(mstep "$(mline "$H" 97 0 0)"); RC=$?
-  [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes a clean run of the head commit" || bad "the mutation step fails a clean run of the head (exit $RC: $OUT)"
-  OUT=$(mstep "$(mline "$H" 97 0 0 '`')"); RC=$?
-  [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…and the same line in backticks" || bad "the mutation step fails a backticked line (exit $RC: $OUT)"
-  mfails() {   # <what> <body>
+  # mline <how many> <from> <survived> <failed to apply> <unexpected> [<before> [<after>]]
+  mline() { printf '## Mutation run\n%smutation: %s run from %s — 635 killed (16 aborts, 0 timeouts), %s survived (97 expected), %s failed to apply; %s unexpected survivor(s)%s\n## Testing\n' "${6:-}" "$1" "$2" "$3" "$4" "$5" "${7:-}"; }
+  mpasses() {   # <what> <body>
     OUT=$(mstep "$2"); RC=$?
-    [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…fails $1" || bad "the mutation step passes $1 (exit $RC: $OUT)"
+    [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes $1" || bad "the mutation step fails $1 (exit $RC: $OUT)"
   }
-  mfails "an older commit"             "$(mline "${H%7}8" 97 0 0)"
-  mfails "a dirty tree"                "$(mline "$H + uncommitted changes" 97 0 0)"
-  mfails "an unexpected survivor"      "$(mline "$H" 98 0 1)"
-  mfails "a mutant that did not apply" "$(mline "$H" 97 1 0)"
-  mfails "a line under the next section" "$(printf '## Mutation run\n## Testing\n'; mline "$H" 97 0 0 | sed 1d)"
-  OUT=$(mstep "$(mline "$H" 97 0 0)" "$FX"); RC=$?
+  mfails() {    # <what> <body> [<text the refusal must name>]
+    OUT=$(mstep "$2"); RC=$?
+    [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q -- "${3:-}" <<<"$OUT" && ok "…fails $1" || bad "the mutation step passes $1, or not naming '${3:-}' (exit $RC: $OUT)"
+  }
+  mfails "a body with no Mutation run section" "$UP" "worktree add --detach"
+  mpasses "a clean run of the whole kit on the head commit" "$(mline 'all 736' "$H" 97 0 0)"
+  mpasses "the same line in backticks"            "$(mline 'all 736' "$H" 97 0 0 '`' '`')"
+  mpasses "as a list item"                        "$(mline 'all 736' "$H" 97 0 0 '- ')"
+  mpasses "as a quote"                            "$(mline 'all 736' "$H" 97 0 0 '> ')"
+  mpasses "with a trailing space"                 "$(mline 'all 736' "$H" 97 0 0 '' ' ')"
+  mpasses "in backticks, a space after"           "$(mline 'all 736' "$H" 97 0 0 '* `' '` ')"
+  mfails "a selection of the mutants"  "$(mline '5 of 736' "$H" 0 0 0)" "a selection"
+  mfails "an older commit"             "$(mline 'all 736' "${H%7}8" 97 0 0)" "not of this PR's head"
+  mfails "a dirty tree"                "$(mline 'all 736' "$H + uncommitted changes" 97 0 0)" "tracked file changed"
+  mfails "an unexpected survivor"      "$(mline 'all 736' "$H" 98 0 1)" "0 failed to apply; 1 unexpected"
+  mfails "a mutant that did not apply" "$(mline 'all 736' "$H" 97 1 0)" "1 failed to apply"
+  mfails "a line under the next section" "$(printf '## Mutation run\n## Testing\n'; mline 'all 736' "$H" 97 0 0 | sed 1d)"
+  OUT=$(mstep "$(mline 'all 736' "$H" 97 0 0)" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the mutation step passes when its awk dies (exit $RC: $OUT)"
   rm -rf "$FX"
 fi

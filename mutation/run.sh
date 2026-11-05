@@ -88,14 +88,26 @@ mkdir -p "$W/base" "$W/res" "$W/logs" "$W/m"
 # repository it is the files git tracks, as they stand: an untracked file is not the
 # commit — a local package-lock.json would have marked a release run dirty, unseen until
 # hours later — so it is neither copied nor counted. A new file is in once `git add`ed.
+# The list is made here, not in the pipe below, whose subshell an exit would not leave.
+REPO=0
 if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    (cd "$ROOT" && git ls-files -z | python3 -I -c 'import os, sys
-sys.stdout.write("".join(f + "\0" for f in sys.stdin.read().split("\0") if f and os.path.lexists(f)))' | tar --null -T - -cf -)
+    REPO=1
+    git -C "$ROOT" ls-files -z >"$W/tracked" \
+        || { echo "❌ git ls-files failed in $ROOT — cannot tell which files are the commit's" >&2; exit 2; }
+fi
+if [ "$REPO" -eq 1 ]; then
+    (cd "$ROOT" && python3 -I -c 'import os, sys
+sys.stdout.write("".join(f + "\0" for f in sys.stdin.read().split("\0") if f and os.path.lexists(f)))' <"$W/tracked" | tar --null -T - -cf -)
 else
     (cd "$ROOT" && tar -cf - --exclude ./.git --exclude ./.ai/worktrees .)
 fi | (cd "$W/base" && tar -xf -) || { echo "❌ could not copy $ROOT" >&2; exit 2; }
 python3 -I "$W/base/mutation/mutants.py" list "$@" >"$W/list" || { echo "❌ mutants.py list failed" >&2; exit 2; }
 N=$(wc -l <"$W/list" | tr -d ' ')
+# A run of the whole kit says "all <n>"; a selection says "<n> of <total>", which the
+# release review check refuses: a few ids re-run to confirm a fix are not the release run.
+if [ "$#" -eq 0 ]; then SCOPE=all
+else SCOPE="of $(python3 -I "$W/base/mutation/mutants.py" list | wc -l | tr -d ' ')"
+fi
 [ "$N" -gt 0 ] || { echo "❌ no mutants selected" >&2; exit 2; }
 G=(git -C "$W/base" -c core.hooksPath=/dev/null -c user.name=mutation -c user.email=mutation@invalid -c commit.gpgsign=false)
 { "${G[@]}" init -q && "${G[@]}" add -A && "${G[@]}" commit -qm base; } >"$W/logs/git-init" 2>&1 \
@@ -104,7 +116,8 @@ G=(git -C "$W/base" -c core.hooksPath=/dev/null -c user.name=mutation -c user.em
 # compares with the PR's head, and whether a tracked file differs from it. Said here, at
 # the start, with the files and the route, not only in a summary hours away.
 if FROM=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null); then
-    DIRTY=$(git -C "$ROOT" status --short --untracked-files=no 2>/dev/null)
+    DIRTY=$(git -C "$ROOT" status --short --untracked-files=no) \
+        || { echo "❌ git status failed in $ROOT — cannot tell whether the tree is the commit" >&2; exit 2; }
     [ -z "$DIRTY" ] || FROM="$FROM + uncommitted changes"
 else
     DIRTY=""; FROM="$ROOT (not a repository)"
@@ -152,9 +165,9 @@ if [ "$J" -gt 1 ]; then
 fi
 
 # --- summary ---------------------------------------------------------------------------
-python3 -I - "$W" "$FROM" <<'PY'
+python3 -I - "$W" "$FROM" "$SCOPE" <<'PY'
 import os, sys
-W, FROM = sys.argv[1], sys.argv[2]
+W, FROM, SCOPE = sys.argv[1], sys.argv[2], sys.argv[3]
 # A failing line cut by bytes can end mid-character: read it, never crash on it.
 def rd(p): return open(p, encoding='utf-8', errors='replace')
 exp, files = {}, {}
@@ -192,8 +205,8 @@ for i in fa: print('❌ %s: %s %s %s' % (res[i][1], i, files[i], res[i][3]))
 for i in unexpected: print('❌ survived, expected killed: %s (%s; ran %s) — logs in %s' % (i, files[i], res[i][2], os.path.join(W, 'logs', i)))
 for i in stale: print('⚠️  killed, expected to survive (%s): %s — update its expect' % (exp[i], i))
 print()
-print('mutation: %d run from %s — %d killed (%d aborts, %d timeouts), %d survived (%d expected), %d failed to apply; %d unexpected survivor(s)'
-      % (len(exp), FROM, len(k), len(ab), len(to), len(sv), len(sv) - len(unexpected), len(fa), len(unexpected)))
+print('mutation: %s run from %s — %d killed (%d aborts, %d timeouts), %d survived (%d expected), %d failed to apply; %d unexpected survivor(s)'
+      % ('all %d' % len(exp) if SCOPE == 'all' else '%d %s' % (len(exp), SCOPE), FROM, len(k), len(ab), len(to), len(sv), len(sv) - len(unexpected), len(fa), len(unexpected)))
 print('logs: ' + os.path.join(W, 'logs'))
 sys.exit(1 if unexpected or fa else 0)
 PY

@@ -19,9 +19,11 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 of `{TEST_COMMANDS}`.
 
 For a release, its summary line goes under `## Mutation run` in the promotion PR, and
-the `release review` check refuses the PR unless that line is clean — no unexpected
-survivor, nothing that failed to apply — and names the PR's head commit with no tracked
-file changed (owner, 2026-11-05). A commit pushed after the run means running it again.
+the `release review` check refuses the PR unless that line is of the whole kit
+(`mutation: all <n> run from …`; a selection prints `<n> of <total>`), is clean — no
+unexpected survivor, nothing that failed to apply — and names the PR's head commit with
+no tracked file changed (owner, 2026-11-05). Pasted plain, in backticks, as a list item
+or a quote, it reads the same. A commit pushed after the run means running it again.
 Run it from a worktree of that commit, so nothing else in a checkout is in the way:
 
 ```bash
