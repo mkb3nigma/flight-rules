@@ -68,8 +68,9 @@ branch and a PR — `dev` is protected and the promotion PR's head *is* `dev`, s
 nowhere else to put it. Bump `.claude-plugin/plugin.json` and add the CHANGELOG entry on
 a `chore/release-<v>` branch, merge that to `dev`, then open the promotion PR: run
 `/upstream-check` (its report under `## Upstream check` in the PR body), and
-`mutation/run.sh -j 4` from a clean checkout of the commit being promoted (its summary
-line and that sha in the PR body; exit 1 is a release blocker — `mutation/README.md`), then
+`mutation/run.sh -j 4` from a worktree of the commit being promoted (its summary line
+under `## Mutation run`, which the `release review` check requires clean and of the PR's
+head — `mutation/README.md`), then
 `pr-create` step 2a (every `{TEST_COMMANDS}` entry on the exact commit being
 pushed, reporting the sha), then 2b (`/dg origin/main...<that sha>`, verdict and
 dispositions in the PR body, with the release's added and net lines by class — `MISSION.md`

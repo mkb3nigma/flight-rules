@@ -804,8 +804,12 @@ mut('misc-R06', RR, '            || { echo "::error::could not read the PR body\
 mut('misc-R07', RR, 'if [ "$filled" -eq 0 ]; then', 'if false; then', 'docs-consistency', expect='survives: not held — an empty section is reported by the verdict check, not its own message')
 mut('misc-R08', RR, '            echo "::error::the Adversarial review section has no \'### Verdict\' — put the /dg verdict there with its headings one level down (pr-create step 2b), not only its header lines"\n            exit 1\n          fi', '            echo "::error::the Adversarial review section has no \'### Verdict\' — put the /dg verdict there with its headings one level down (pr-create step 2b), not only its header lines"\n            exit 0\n          fi', 'docs-consistency')
 mut('misc-R04', RR, 'if [ "$under" -eq 0 ]; then', 'if false; then', 'docs-consistency')
-mut('misc-R11', RR, 'in_s && /^##?([[:space:]]|$)/ { in_s = 0 }', '', 'docs-consistency')
+mut('misc-R11', RR, '/^## Upstream check/ { in_s = 1; next }\n            in_s && /^##?([[:space:]]|$)/ { in_s = 0 }', '/^## Upstream check/ { in_s = 1; next }', 'docs-consistency')
 mut('misc-R10', RR, '!/^#/', '1', 'docs-consistency', expect='survives: not held — a heading alone fills the upstream-check section')
+mut('misc-R13', RR, '            *" run from $HEAD_SHA — "*) ;;', '            *) ;;', 'docs-consistency', what='mutation run: any commit, dirty or not, passes')
+mut('misc-R14', RR, '            *", 0 failed to apply; 0 unexpected survivor(s)") ;;', '            *) ;;', 'docs-consistency', what='mutation run: a survivor or a failed apply passes')
+mut('misc-R16', RR, "          line=${line#\\`}; line=${line%\\`}", '          :', 'docs-consistency', what='mutation run: a line in backticks is not read')
+mut('misc-R17', RR, '/^## Mutation run/ { in_s = 1; next }\n            in_s && /^##?([[:space:]]|$)/ { in_s = 0 }', '/^## Mutation run/ { in_s = 1; next }', 'docs-consistency', what='mutation run: a line after the section counts')
 
 
 def _check_data():

@@ -18,8 +18,13 @@ TIMEOUT=${MUTATION_TIMEOUT:-1200}   # seconds per suite run; a hang counts as ki
 # the job has gone before bash can move it, bash says so on stderr: the callers log that.
 # TERM first, so the suites' harness can say it was stopped; KILL ten seconds on, for a
 # process that ignores TERM — a mutant can make one, and the timeout must still end it.
+# The suite itself exits on TERM, so the KILL is sent here too, once it has: stopping the
+# watchdog then would cancel its KILL, and a child ignoring TERM outlived the run. A
+# marker left by an earlier run on this log is removed first, or a re-run alone that
+# passes read as a timeout again.
 bounded() {   # <log> <dir> <cmd…>
     local log=$1 dir=$2 pid wd rc; shift 2
+    rm -f "$log.timeout"
     set -m
     ( cd "$dir" && exec "$@" ) >"$log" 2>&1 &
     pid=$!
@@ -27,6 +32,7 @@ bounded() {   # <log> <dir> <cmd…>
       sleep 10; kill -KILL -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
     wd=$!
     wait "$pid"; rc=$?
+    [ -e "$log.timeout" ] && { sleep 10; kill -KILL -- "-$pid" 2>/dev/null; }
     kill -TERM -- "-$wd" 2>/dev/null; wait "$wd" 2>/dev/null
     set +m
     [ -e "$log.timeout" ] && rc=124
@@ -78,21 +84,37 @@ W=$(mktemp -d "${TMPDIR:-/tmp}/mutation.XXXXXX") && W=$(cd -P "$W" && pwd -P) ||
 mkdir -p "$W/base" "$W/res" "$W/logs" "$W/m"
 
 # The tree, once: what every mutant starts from. The mutants and this script are read
-# from it too, so an edit to the checkout during a run changes nothing in it.
-(cd "$ROOT" && tar -cf - --exclude ./.git --exclude ./.ai/worktrees .) | (cd "$W/base" && tar -xf -) \
-    || { echo "❌ could not copy $ROOT" >&2; exit 2; }
+# from it too, so an edit to the checkout during a run changes nothing in it. In a
+# repository it is the files git tracks, as they stand: an untracked file is not the
+# commit — a local package-lock.json would have marked a release run dirty, unseen until
+# hours later — so it is neither copied nor counted. A new file is in once `git add`ed.
+if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    (cd "$ROOT" && git ls-files -z | python3 -I -c 'import os, sys
+sys.stdout.write("".join(f + "\0" for f in sys.stdin.read().split("\0") if f and os.path.lexists(f)))' | tar --null -T - -cf -)
+else
+    (cd "$ROOT" && tar -cf - --exclude ./.git --exclude ./.ai/worktrees .)
+fi | (cd "$W/base" && tar -xf -) || { echo "❌ could not copy $ROOT" >&2; exit 2; }
 python3 -I "$W/base/mutation/mutants.py" list "$@" >"$W/list" || { echo "❌ mutants.py list failed" >&2; exit 2; }
 N=$(wc -l <"$W/list" | tr -d ' ')
 [ "$N" -gt 0 ] || { echo "❌ no mutants selected" >&2; exit 2; }
 G=(git -C "$W/base" -c core.hooksPath=/dev/null -c user.name=mutation -c user.email=mutation@invalid -c commit.gpgsign=false)
 { "${G[@]}" init -q && "${G[@]}" add -A && "${G[@]}" commit -qm base; } >"$W/logs/git-init" 2>&1 \
     || { echo "❌ could not make the copy a repository: $W/logs/git-init" >&2; exit 2; }
-if FROM=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null); then
-    git -C "$ROOT" diff --quiet HEAD -- 2>/dev/null || FROM="$FROM + uncommitted changes"
+# What the summary line says it ran from: the full sha, which the release review check
+# compares with the PR's head, and whether a tracked file differs from it. Said here, at
+# the start, with the files and the route, not only in a summary hours away.
+if FROM=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null); then
+    DIRTY=$(git -C "$ROOT" status --short --untracked-files=no 2>/dev/null)
+    [ -z "$DIRTY" ] || FROM="$FROM + uncommitted changes"
 else
-    FROM="$ROOT (not a repository)"
+    DIRTY=""; FROM="$ROOT (not a repository)"
 fi
 echo "mutation: $N mutant(s) from $FROM, -j $J, work in $W"
+if [ -n "$DIRTY" ]; then
+    printf '%s\n' "⚠️  these differ from the commit, so the release review check will not take this run:" "$DIRTY" \
+        "   for a release, run it from a clean worktree of the commit (mutation/README.md):" \
+        "   git worktree add --detach .ai/worktrees/mutation $(git -C "$ROOT" rev-parse HEAD)"
+fi
 
 # Baseline: every suite the selection uses must pass on the unmutated copy.
 cut -f3 "$W/list" | tr ' ' '\n' | sort -u | grep . >"$W/suites"
@@ -110,34 +132,39 @@ echo "baseline: $(wc -l <"$W/suites" | tr -d ' ') suite(s) pass unmutated"
 cut -f1 "$W/list" | xargs -P "$J" -n 1 bash "$W/base/mutation/run.sh" --mutant "$W"
 
 # A kill under load is believed only if it repeats alone: an abort or a timeout can be
-# the machine's, and merge-gate fails unrelated cases with several suites running (the
-# sweep's eight false kills). Run alone, its result replaces the first; first/ keeps that.
+# the machine's, merge-gate fails unrelated cases with several suites running (the
+# sweep's eight false kills), and so can a case with a time bound — "(bound 8s)", "(want
+# ≤30)", "want 'bounded'" — when that is the first case to fail. Run alone, its result
+# replaces the first; first/ keeps that.
 if [ "$J" -gt 1 ]; then
     mkdir -p "$W/first"
     for r in "$W"/res/*; do
         [ -e "$r" ] || continue
-        IFS=$'\t' read -r id v by _ <"$r"
-        case "$v:$by" in killed-abort:*|killed-timeout:*|killed:merge-gate) cp "$r" "$W/first/$id" ;; esac
+        IFS=$'\t' read -r id v by why <"$r"
+        case "$v:$by" in killed-abort:*|killed-timeout:*|killed:merge-gate) cp "$r" "$W/first/$id"; continue ;; esac
+        case "$v:$why" in killed:*'(bound '[0-9]*|killed:*'(want ≤'[0-9]*|killed:*"want 'bounded'"*) cp "$r" "$W/first/$id" ;; esac
     done
     n=$(find "$W/first" -type f | wc -l | tr -d ' ')
     if [ "$n" -gt 0 ]; then
-        echo "re-running alone $n kill(s) made under load (aborts, timeouts, merge-gate)"
+        echo "re-running alone $n kill(s) made under load (aborts, timeouts, merge-gate, time bounds)"
         (cd "$W/first" && ls) | xargs -n 1 bash "$W/base/mutation/run.sh" --mutant "$W"
     fi
 fi
 
 # --- summary ---------------------------------------------------------------------------
-python3 -I - "$W" <<'PY'
+python3 -I - "$W" "$FROM" <<'PY'
 import os, sys
-W = sys.argv[1]
+W, FROM = sys.argv[1], sys.argv[2]
+# A failing line cut by bytes can end mid-character: read it, never crash on it.
+def rd(p): return open(p, encoding='utf-8', errors='replace')
 exp, files = {}, {}
-for line in open(os.path.join(W, 'list'), encoding='utf-8'):
+for line in rd(os.path.join(W, 'list')):
     i, f, s, e = line.rstrip('\n').split('\t')
     exp[i] = e; files[i] = f
 res = {}
 for i in exp:
     p = os.path.join(W, 'res', i)
-    res[i] = open(p, encoding='utf-8').read().rstrip('\n').split('\t') if os.path.exists(p) else [i, 'no-result', '-', '']
+    res[i] = rd(p).read().rstrip('\n').split('\t') if os.path.exists(p) else [i, 'no-result', '-', '']
 k = [i for i in exp if res[i][1].startswith('killed')]
 ab = [i for i in k if res[i][1] == 'killed-abort']
 to = [i for i in k if res[i][1] == 'killed-timeout']
@@ -149,7 +176,7 @@ first = {}
 fd = os.path.join(W, 'first')
 if os.path.isdir(fd):
     for i in os.listdir(fd):
-        first[i] = open(os.path.join(fd, i), encoding='utf-8').read().rstrip('\n').split('\t')
+        first[i] = rd(os.path.join(fd, i)).read().rstrip('\n').split('\t')
 gone = [i for i in first if not res[i][1].startswith('killed')]
 by = {}
 for i in k:
@@ -165,8 +192,8 @@ for i in fa: print('❌ %s: %s %s %s' % (res[i][1], i, files[i], res[i][3]))
 for i in unexpected: print('❌ survived, expected killed: %s (%s; ran %s) — logs in %s' % (i, files[i], res[i][2], os.path.join(W, 'logs', i)))
 for i in stale: print('⚠️  killed, expected to survive (%s): %s — update its expect' % (exp[i], i))
 print()
-print('mutation: %d run — %d killed (%d aborts, %d timeouts), %d survived (%d expected), %d failed to apply; %d unexpected survivor(s)'
-      % (len(exp), len(k), len(ab), len(to), len(sv), len(sv) - len(unexpected), len(fa), len(unexpected)))
+print('mutation: %d run from %s — %d killed (%d aborts, %d timeouts), %d survived (%d expected), %d failed to apply; %d unexpected survivor(s)'
+      % (len(exp), FROM, len(k), len(ab), len(to), len(sv), len(sv) - len(unexpected), len(fa), len(unexpected)))
 print('logs: ' + os.path.join(W, 'logs'))
 sys.exit(1 if unexpected or fa else 0)
 PY

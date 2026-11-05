@@ -15,3 +15,10 @@ and whether this release takes it (folded in on a branch merged to `dev` first) 
 leaves it (an issue). The `release review` check fails a PR into `main` without that
 section filled. Owner's instruction, 2026-11-01: the release is the moment a change
 upstream can still reach the batch.
+
+Also before step 2a, in this repo: run `mutation/run.sh -j 4` from a worktree of the
+commit being promoted (`mutation/README.md` gives the commands) and put its summary line
+in the release PR body under `## Mutation run`. The `release review` check fails a PR
+into `main` unless that line is clean and names the PR's head commit, so a commit pushed
+after the run means running it again. Owner's instruction, 2026-11-04 and -05: the
+suites are checked against a broken hook before every release, better safe than sorry.

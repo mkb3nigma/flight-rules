@@ -123,3 +123,33 @@ jobs:
             exit 1
           fi
           echo "ok  Upstream check section present and filled"
+      # And the mutation run (owner, 2026-11-04): mutation/run.sh on the commit this PR
+      # promotes, its summary line in the body. The run takes hours, so CI reads the line,
+      # not the suites: nothing survived that should not, everything applied, nothing
+      # uncommitted, and run from this PR's head — a commit pushed after the run means
+      # running it again (owner, 2026-11-05: better safe than sorry).
+      - name: The release PR body carries a clean mutation run of its head commit
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          line=$(printf '%s\n' "$BODY" | tr -d '\r' | awk '
+            /^## Mutation run/ { in_s = 1; next }
+            in_s && /^##?([[:space:]]|$)/ { in_s = 0 }
+            in_s && /^`?mutation: [0-9]+ run from / { print; exit }') || { echo "::error::could not read the PR body (awk exited $?)"; exit 1; }
+          line=${line#\`}; line=${line%\`}
+          if [ -z "$line" ]; then
+            echo "::error::PR into main has no '## Mutation run' section with mutation/run.sh's summary line — run it on this PR's head commit (mutation/README.md) and put the line there"
+            exit 1
+          fi
+          case "$line" in
+            *" run from $HEAD_SHA — "*) ;;
+            *" run from $HEAD_SHA + uncommitted changes — "*)
+              echo "::error::the mutation run was made with a tracked file changed — run it again from a clean worktree of the head: git worktree add --detach .ai/worktrees/mutation $HEAD_SHA, then mutation/run.sh -j 4 there"; exit 1 ;;
+            *)
+              echo "::error::the mutation run is not of this PR's head commit $HEAD_SHA — run it on the head (git worktree add --detach .ai/worktrees/mutation $HEAD_SHA, then mutation/run.sh -j 4 there) and replace the line: $line"; exit 1 ;;
+          esac
+          case "$line" in
+            *", 0 failed to apply; 0 unexpected survivor(s)") ;;
+            *) echo "::error::the mutation run did not pass — a mutant expected killed survived or did not apply, a release blocker: $line"; exit 1 ;;
+          esac
+          echo "ok  Mutation run of $HEAD_SHA present and clean"
