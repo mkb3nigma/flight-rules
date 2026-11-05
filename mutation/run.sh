@@ -225,13 +225,26 @@ PY
 rc=$?
 # The stamp goes on the commit as a git note, and the push it needs is printed every
 # time: the release review check refuses the PR without it (owner, 2026-11-05: the
-# instruction is shown, never left to memory).
+# instruction is shown, never left to memory). Every machine keeps its own copy of the
+# notes ref, so origin's stamps are merged in first — a push from a machine that never
+# fetched them was rejected, and forcing it would have dropped the other machine's. On
+# the same commit, the stamp written here replaces origin's.
+MERGE="git fetch origin refs/notes/mutation:refs/notes/mutation-origin && git notes --ref=mutation merge -s theirs refs/notes/mutation-origin"
 if [ -s "$W/stamp" ]; then
+    merged=0
+    git -C "$ROOT" ls-remote --exit-code origin refs/notes/mutation >/dev/null; lr=$?
+    if [ "$lr" -eq 2 ]; then merged=1   # origin has no stamps yet: nothing to merge
+    elif [ "$lr" -eq 0 ] && git -C "$ROOT" fetch -q origin refs/notes/mutation:refs/notes/mutation-origin \
+        && git -C "$ROOT" notes --ref=mutation merge -q -s theirs refs/notes/mutation-origin; then merged=1
+    fi
     git -C "$ROOT" notes --ref=mutation add -f -F "$W/stamp" "$FROM" \
         || { echo "❌ could not write the mutation stamp on $FROM" >&2; exit 2; }
     echo
     echo "✅ stamped $FROM (refs/notes/mutation). Before the release PR, push the stamp:"
     echo "   git push origin refs/notes/mutation"
+    [ "$merged" -eq 1 ] || echo "⚠️  origin's stamps could not be fetched and merged (git said why above), so that push may be rejected. First: $MERGE"
+    echo "   If the push is rejected — another machine pushed stamps since — run: $MERGE"
+    echo "   then push again. Never force it: that drops the other machine's stamps."
 else
     echo
     echo "not stamped: $(cat "$W/unstamped") — a release needs a clean run of the whole kit from a clean worktree of its commit (mutation/README.md)"

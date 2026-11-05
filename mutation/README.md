@@ -28,7 +28,10 @@ kit and of that commit (owner, 2026-11-05: a pasted line could be typed; the sta
 written only by the run). A commit pushed after the run has no stamp, so the run is made
 again. A selection, a dirty tree or a failed run is not stamped, and the run says why.
 An assistant never writes this note by hand, as with the `pre-merge-check` note: the
-note says the run happened. Run it from a worktree of the commit, so nothing else in a
+note says the run happened. Each machine keeps its own copy of the notes, so before
+stamping the run merges origin's in; if that fails, or the push is rejected because
+another machine pushed since, the run prints the fetch-and-merge to make first. Never
+force the push: it drops the other machine's stamps. Run it from a worktree of the commit, so nothing else in a
 checkout is in the way:
 
 ```bash
