@@ -23,7 +23,7 @@ commit with no tracked file changed, `run.sh` writes a git note on it
 (`refs/notes/mutation`): its summary line and one row per mutant. It prints the push
 the note needs, and the owner makes it with `dev`'s. The `release review` check fetches
 the note and holds it to the kit as the PR's head commit has it (`mutants.py verify`):
-every mutant once, every mutant expected killed killed, the run clean, of the whole kit
+every mutant once, every mutant expected killed was killed, the run clean, of the whole kit
 and of that commit (owner, 2026-11-05: a pasted line could be typed; the stamp is written only
 by the run). A known gap now killed passes — the kit got stronger — and the check's ok
 line names it, to have its expect updated; one killed only by an abort or a timeout is

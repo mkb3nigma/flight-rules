@@ -16,7 +16,7 @@ change, and one whose `old` no longer occurs once is an error, not a skip.
 The stamp is the git note run.sh writes on the commit after a clean run of the whole
 kit (refs/notes/mutation): its summary line, then one row per mutant — id, result, the
 suite that killed it. `verify` holds it to this list as the commit has it: every mutant
-once, none extra, every mutant expected killed killed, and the line clean and of <sha>.
+once, none extra, every mutant expected killed was killed, and the line clean and of <sha>.
 So a typed summary line, a selection, a stale kit or another commit's run fails. A known
 gap now killed passes, named in the line it prints: the kit got stronger, and its expect
 is to update (owner, 2026-11-05). One killed only by an abort or a timeout passes too,
