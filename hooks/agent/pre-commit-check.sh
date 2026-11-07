@@ -437,6 +437,33 @@ target_path() {
 # then the built-in defaults), whether a merge is in progress there, and whether it is
 # this project at all. Cached on the directory: nearly every command names one.
 RESOLVED_DIR=""; RESOLVED=0
+# worktree_route <-b branch>: the by-hand route to a new worktree, as Required 8 and
+# /feature-start 4 and 6 have it — the local integration branch, origin's work brought
+# into it, then the add from the repo root. Where a worktree holds that branch, the pull
+# runs there; where none does, `git fetch origin <int>:<int>` makes or fast-forwards it
+# without touching what is checked out. A pull printed for "the repo root" ran on main in
+# a clone with no local dev, moving main and leaving nothing to branch from (0.29.0
+# release-fix review, X-1).
+worktree_route() {
+  local int root="" holder="" cur="" l
+  int=$(read_conf INTEGRATION_BRANCH "$CONF_FILE"); int="${int:-main}"
+  while IFS= read -r l; do
+    case "$l" in
+      "worktree "*) cur="${l#worktree }"; [ -n "$root" ] || root="$cur" ;;
+      "branch refs/heads/$int") holder="$cur" ;;
+    esac
+  done < <("${GIT[@]}" worktree list --porcelain 2>/dev/null)
+  printf '  cd %s\n' "$(shq "${root:-.}")"
+  if [ -z "$holder" ]; then
+    printf '  git fetch origin %s:%s\n' "$(shq "$int")" "$(shq "$int")"
+  elif [ "$holder" = "$root" ]; then
+    printf '  git pull --ff --no-rebase origin %s\n' "$(shq "$int")"
+  else
+    printf '  git -C %s pull --ff --no-rebase origin %s\n' "$(shq "$holder")" "$(shq "$int")"
+  fi
+  printf '  git worktree add %s/<name> -b %s %s\n' "$(shq "$WORKTREE_DIR")" "$1" "$(shq "$int")"
+  printf '  cd %s/<name>' "$(shq "$WORKTREE_DIR")"
+}
 resolve_target() {
   local dir="$1" target_root target_repo project_repo
   [[ $RESOLVED -eq 1 && "$dir" == "$RESOLVED_DIR" ]] && return
@@ -673,10 +700,8 @@ elif [[ "$ACTION" == "branch-create" ]]; then
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
 
-Instead, run /feature-start <prefix>/<name>: it checks how many branches are already open (OPEN_BRANCH_LIMIT) and asks at the limit, which a raw worktree add skips. By hand, from the checkout that has <integration-branch> (the repo root, usually), with absolute paths — origin pulled into the local one, which also holds merges not yet pushed:
-  git pull --ff --no-rebase origin <integration-branch>
-  git worktree add $(shq "$WORKTREE_DIR")/<name> -b <prefix>/<name> <integration-branch>
-  cd $(shq "$WORKTREE_DIR")/<name>
+Instead, run /feature-start <prefix>/<name>: it checks how many branches are already open (OPEN_BRANCH_LIMIT) and asks at the limit, which a raw worktree add skips. By hand — from the local integration branch, origin's work brought into it, since it also holds merges not yet pushed:
+$(worktree_route "<prefix>/<name>")
 
 Prefixes: feature/ fix/ refactor/ test/ docs/ chore/ hotfix/.
 
@@ -700,10 +725,8 @@ elif [[ "$IS_PROTECTED" == "1" ]]; then
     REMEDY="Leave it alone. If the branch really is finished with, the person who owns
 the project decides that — not the session that happened to merge something."
   else
-    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check — from the checkout that has <integration-branch>, origin pulled into the local one:
-  git pull --ff --no-rebase origin <integration-branch>
-  git worktree add $(shq "$WORKTREE_DIR")/<name> -b feature/<name> <integration-branch>
-  cd $(shq "$WORKTREE_DIR")/<name>
+    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check — from the local integration branch, origin's work brought into it:
+$(worktree_route "feature/<name>")
 
 Use absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified."
   fi

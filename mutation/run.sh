@@ -258,7 +258,7 @@ if [ -s "$W/stamp" ]; then
     # A worktree made for the run is left behind once it is done, and blocks the next
     # release's `worktree add` at the same path (0.29.0 release review, R-3).
     [ "$(git -C "$ROOT" rev-parse --git-dir)" = "$(git -C "$ROOT" rev-parse --git-common-dir)" ] \
-        || echo "   Once it is pushed, remove this worktree: git worktree remove $ROOT"
+        || printf '   Once it is pushed, remove this worktree: git worktree remove %q\n' "$ROOT"
 else
     echo
     echo "not stamped: $(cat "$W/unstamped") — a release needs a clean run of the whole kit from a clean worktree of its commit (mutation/README.md)"

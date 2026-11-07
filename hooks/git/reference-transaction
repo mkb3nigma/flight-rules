@@ -203,18 +203,35 @@ while read -r _old new ref; do
         box_row "revert, rebase, branch -f, update-ref, reset --hard —"
         box_row "the ref landing off-upstream is the violation."
         box_row ""
-        # From the local integration branch, origin pulled into it, into the project's
-        # worktree directory, as the guard, /feature-start and Required 8 say it: with no
-        # start point the branch was cut from HEAD, the PR-only branch itself (full
+        # From the local integration branch, origin's work brought into it, into the
+        # project's worktree directory, as the guard, /feature-start and Required 8 say it:
+        # with no start point the branch was cut from HEAD, the PR-only branch itself (full
         # release review, S3); from origin's, it missed merges not yet pushed (0.29.0
-        # release review, R-1).
+        # release review, R-1). Where a worktree holds that branch the pull runs there;
+        # where none does, `git fetch origin <int>:<int>` makes or fast-forwards it — a
+        # pull "where it is checked out" had no such place in a clone with no local
+        # integration branch (0.29.0 release-fix review, X-1).
         _wt="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf_from HEAD WORKTREE_DIR)}"; _wt="${_wt:-.ai/worktrees}"
         _int=$(read_conf_from HEAD INTEGRATION_BRANCH); _int="${_int:-main}"
-        box_row "Do this instead, where $_int is checked out:"
+        _root="" _holder="" _cur=""
+        while IFS= read -r _l; do
+            case "$_l" in
+                "worktree "*) _cur="${_l#worktree }"; [ -n "$_root" ] || _root="$_cur" ;;
+                "branch refs/heads/$_int") _holder="$_cur" ;;
+            esac
+        done < <(git worktree list --porcelain 2>/dev/null)
+        box_row "Do this instead, from the repo root:"
+        if [ -z "$_holder" ]; then
+            box_row "  git fetch origin $(shq "$_int"):$(shq "$_int")"
+        elif [ "$_holder" = "$_root" ]; then
+            box_row "  git pull --ff --no-rebase origin $(shq "$_int")"
+        else
+            box_row "  git -C $(shq "$_holder") \\"
+            box_row "      pull --ff --no-rebase origin $(shq "$_int")"
+        fi
         # Two rows for the add: on one, the default route was 70 columns in a 66-column box.
-        box_row "  git pull --ff --no-rebase origin $_int"
         box_row "  git worktree add $(shq "${_wt%/}")/<name> \\"
-        box_row "      -b <prefix>/<name> $_int"
+        box_row "      -b <prefix>/<name> $(shq "$_int")"
         box_row "  # commit there, push, open a PR"
         box_row ""
         box_row "To sync this branch:"

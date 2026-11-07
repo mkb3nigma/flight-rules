@@ -738,14 +738,26 @@ for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|m
         <<<"$(jq -n --arg c "$(cut -d'|' -f1 <<<"$c")" '{tool_input:{command:$c}}')" 2>/dev/null)
   if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q '/feature-start' <<<"$OUT" && grep -q 'open-branch limit\|OPEN_BRANCH_LIMIT' <<<"$OUT" \
      && grep -q 'raw worktree add skips\|by hand, which skips' <<<"$OUT" \
-     && grep -q 'git pull --ff --no-rebase origin <integration-branch>' <<<"$OUT" \
-     && grep -qE 'worktree add .* <integration-branch>($|\\n)' <<<"$OUT" && ! grep -q 'origin/<integration-branch>' <<<"$OUT"; then
-    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on the local <integration-branch> after a pull\n' "$(cut -d'|' -f3 <<<"$c")"
+     && grep -q 'git pull --ff --no-rebase origin main' <<<"$OUT" \
+     && grep -qE 'worktree add [^ ]+ -b [^ ]+ main\\n' <<<"$OUT" && ! grep -q 'origin/main\|<integration-branch>' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on the local integration branch after a pull\n' "$(cut -d'|' -f3 <<<"$c")"
   else
     FAIL=$((FAIL+1)); printf '  ❌ %s: the block does not point at /feature-start and its branch count\n' "$(cut -d'|' -f3 <<<"$c")"
   fi
   rm -rf "$D"
 done
+# The integration branch where the route finds it (0.29.0 release-fix review, X-1): a
+# clone holds only main, so dev is fetched straight into, not pulled "where it is checked
+# out" — run on main, that pull moved main; held by a linked worktree, the pull runs
+# there, by path. The command lines only, as the reason prints them.
+route_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$1" | sed -n '/^  cd /,/^  cd .*<name>$/p' | sed '1d;$d' | tr '\n' '|'; }
+D=$(make_repo main); mkdir -p "$D/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "  git fetch origin dev:dev|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "no local dev (a clone): the route fetches origin's dev into a local one, then adds from it"
+git -C "$D" branch dev && git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev|  git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev|" "…and dev held by a linked worktree: the pull runs there, by path"
+rm -rf "$D"
 
 echo "Target parsing is per simple command, not per command STRING:"
 # Both directions were live and both are reproduced here (2026-09-10).

@@ -402,8 +402,9 @@ Guards that fire on the assistant's own events, before git ever runs:
   of a protected branch — local deletion, which `post-merge` was found recommending.
   A command string is split at `;`, `&`, `|`, `(`, `)` and newlines before any matcher
   reads it, so a subshell, brace group or loop body hides nothing. A redirect is not a
-  split point: written against the last word (`git commit>/dev/null`, `… main>/dev/null`)
-  it hides that word, and the command gets through — an open gap (#138).
+  split point: glued to a word the guard reads — the git verb, a flag or the target
+  (`git commit>/dev/null`, `… main>/dev/null`) — it hides that word, and the command gets
+  through; `git commit -m x>/dev/null` is still refused. An open gap (#138).
   **Targets are read per simple command**, not per command string. On a **protected** branch of the project
   it denies `git checkout -b`/`-B` and `git switch -c`/`--create` — branches are
   created as worktrees (workflow rule 6), and the block shows the command. That applies

@@ -334,22 +334,30 @@ for phase in committed aborted; do
 done
 
 # route <output>: the two rows after "Do this instead:", frame and padding stripped, joined.
-route() { grep -A3 'Do this instead' <<<"$1" | tail -3 | sed -e 's/^║ *//' -e 's/ *║$//' | tr '\n' ' ' | sed 's/ *$//'; }
+# The route's rows: between "Do this instead" and "# commit there", frames taken off.
+route() { sed -n '/Do this instead/,/# commit there/p' <<<"$1" | sed -e '1d' -e '$d' -e 's/^║ *//' -e 's/ *║$//' | tr '\n' ' ' | sed 's/ *$//'; }
 echo "The refusal's route starts where the guard and /feature-start start (full release review, S3; 0.29.0 R-1):"
 # With no start point the suggested worktree branch was cut from HEAD, the PR-only
 # branch itself, into a fixed .ai/worktrees whatever WORKTREE_DIR said.
 d=$(make_repo "$(printf 'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\nWORKTREE_DIR=wt')" armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1); RC=$?
 say "$([ "$RC" -ne 0 ] && ! escaped "$d" && echo refused)" "refused" "a commit on main is refused, and main stays on origin/main"
-say "$(route "$OUT")" "git pull --ff --no-rebase origin dev git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…routing to a branch off the local dev, origin pulled into it, in WORKTREE_DIR"
-say "$(grep -c 'Do this instead, where dev is checked out:' <<<"$OUT")" "1" "…and saying where the pull runs"
+# A clone has only main locally: no worktree holds dev, so the route fetches straight
+# into it — a pull printed for "where dev is checked out" had nowhere to run, and run on
+# main it moved main (0.29.0 release-fix review, X-1).
+say "$(route "$OUT")" "git fetch origin dev:dev git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…routing to a branch off the local dev, fetched into it where no worktree holds it, in WORKTREE_DIR"
+say "$(grep -c 'Do this instead, from the repo root:' <<<"$OUT")" "1" "…and saying where it runs"
 OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR=elsewhere/ git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git pull --ff --no-rebase origin dev git worktree add elsewhere/<name> \\ -b <prefix>/<name> dev" "…and FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it"
+say "$(route "$OUT")" "git fetch origin dev:dev git worktree add elsewhere/<name> \\ -b <prefix>/<name> dev" "…and FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it"
 OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR="my wt" git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git pull --ff --no-rebase origin dev git worktree add 'my wt'/<name> \\ -b <prefix>/<name> dev" "…a directory with a space, quoted to paste (fix review, 2026-10-26)"
+say "$(route "$OUT")" "git fetch origin dev:dev git worktree add 'my wt'/<name> \\ -b <prefix>/<name> dev" "…a directory with a space, quoted to paste (fix review, 2026-10-26)"
+# dev held by a linked worktree: the pull runs there, by path, quoted to paste.
+git -C "$d" branch dev 2>/dev/null; git -C "$d" worktree add -q "$d/../dev wt" dev || die "could not add a worktree for dev in $d"
+OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
+say "$(route "$OUT" | sed "s|'$(cd "$d/.." && pwd -P)/dev wt'|<devwt>|; s|'$(cd "$d/.." && pwd)/dev wt'|<devwt>|")" "git -C <devwt> \\ pull --ff --no-rebase origin dev git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…and with dev held by a linked worktree, the pull runs there"
 d=$(make_repo default armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git pull --ff --no-rebase origin main git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> main" "…with neither set: .ai/worktrees, off the local main, origin pulled into it"
+say "$(route "$OUT")" "git pull --ff --no-rebase origin main git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> main" "…with neither set: .ai/worktrees, off the local main, pulled where the root holds it"
 # Width in bytes, of rows that are ASCII between the frames: the route rows against the
 # row above them. On one row the default route ran 4 columns past the frame.
 say "$(grep -A3 'Do this instead' <<<"$OUT" | awk '{ print length($0) }' | sort -u | wc -l | tr -d ' ')" "1" "…and its rows stay inside the box"

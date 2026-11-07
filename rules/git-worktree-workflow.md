@@ -51,9 +51,10 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`, which is recorded in the merge commit
    as a `Merge-authorisation:` trailer. Setting that variable when the user did not ask
    is the thing this forbids — the hook cannot tell, the trailer makes it auditable.
-   Two clean merges land no new work, so need no instruction and carry no trailer: a
-   back-merge of a PR-only branch's reviewed tip, and the branch's own upstream when the
-   two have diverged — the catch-up `feature-start` 4 makes.
+   Two clean merges need no instruction and carry no trailer: a back-merge of a PR-only
+   branch's tip, all of it already reviewed, and the merge of `origin/<the branch>` into
+   it when the two have diverged — what a fast-forward would bring; `feature-start` 4's
+   pull makes it.
    A project that does not want the check sets `MERGE_NEEDS_INSTRUCTION=off`; that is
    recorded in the trailer too — hook (`commit-msg`)
 
