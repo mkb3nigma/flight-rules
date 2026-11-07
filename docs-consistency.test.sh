@@ -410,11 +410,15 @@ PM=$(prefixes skills/pre-merge-check/SKILL.md '8. **Conventional commits**' 'bra
 PR=$(prefixes rules/git-worktree-workflow.md '3. Conventional commit messages' 'ci/' 's/ \(.*//')
 # And the list they copy: the branch prefixes (feature-start's), less hotfix/, which
 # commits as fix:, plus ci: — so a branch prefix added alone fails here too (/dg D-1).
-PB=$(sed -n 's/^- Branch name must start with an allowed prefix: //p' skills/feature-start/SKILL.md \
-  | grep -oE '`[a-z]+/`' | tr -d '`' | grep -vx 'hotfix/' | sed 's|/$|:|'; echo 'ci:')
-PB=$(printf '%s\n' "$PB" | sort -u | tr '\n' ' ')
+# The bullet is joined through its last prefix, as the others are, so a reflow keeps it.
+BL=$(awk 'index($0, "- Branch name must start with an allowed prefix") { f = 1 } f { printf "%s ", $0 } f && index($0, "`hotfix/`") { exit }' skills/feature-start/SKILL.md)
+PB=$(printf '%s\n' "$BL" | grep -oE '`[a-z]+/`' | tr -d '`' | grep -vx 'hotfix/' | sed 's|/$|:|' | sort -u | tr '\n' ' ')
 [ -n "$PC" ] && [ "$PC" = "$PM" ] && ok "commit and pre-merge-check 8 allow the same prefixes ($PC)" || bad "commit allows '$PC', pre-merge-check 8 '$PM'"
-[ "$PC" = "$PB" ] && ok "…which are feature-start's branch prefixes, less hotfix/, plus ci:" || bad "the commit prefixes '$PC' are not feature-start's branch prefixes less hotfix/ plus ci: ('$PB')"
+if [ -z "$PB" ]; then bad "feature-start's 'Branch name must start with an allowed prefix' bullet was not found, or lists no prefix"
+else
+  PB=$(printf '%s ci: ' "$PB" | tr ' ' '\n' | grep . | sort -u | tr '\n' ' ')
+  [ "$PC" = "$PB" ] && ok "…which are feature-start's branch prefixes, less hotfix/, plus ci:" || bad "the commit prefixes '$PC' are not feature-start's branch prefixes less hotfix/ plus ci: ('$PB')"
+fi
 case " $PC" in *" ci: "*) ok "…and ci: is among them" ;; *) bad "ci: is not an allowed prefix ($PC)" ;; esac
 [ "$PR" = "ci: " ] && ok "…and the rule names ci:, the one prefix that is not a branch's" || bad "rules/git-worktree-workflow.md Required 3 adds '$PR' to the branch prefixes, want 'ci: '"
 
