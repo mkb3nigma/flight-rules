@@ -15,3 +15,12 @@ and whether this release takes it (folded in on a branch merged to `dev` first) 
 leaves it (an issue). The `release review` check fails a PR into `main` without that
 section filled. Owner's instruction, 2026-11-01: the release is the moment a change
 upstream can still reach the batch.
+
+Also before step 2a, in this repo: run `mutation/run.sh -j 4` from a worktree of the
+commit being promoted (`mutation/README.md` gives the commands). A clean run stamps the
+commit with a git note and prints the push it needs; the owner pushes it,
+`git push origin refs/notes/mutation`, with `dev`. The `release review` check fails a PR
+into `main` unless its head commit carries a stamp that holds against the kit, and its
+refusal prints the commands — so a commit pushed after the run means running it again.
+Owner's instruction, 2026-11-04 and -05: the suites are checked against a broken hook
+before every release, better safe than sorry, and the push is shown, never remembered.

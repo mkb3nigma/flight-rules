@@ -270,6 +270,71 @@ else
   [ "$RC" -eq 0 ] && grep -q '^ok ' <<<"$OUT" && ok "…passes a filled one" || bad "the upstream step fails a filled section (exit $RC: $OUT)"
   OUT=$(ustep "$UP" "$FX"); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && ok "…and fails when its awk dies (exit $RC)" || bad "the upstream step passes when its awk dies (exit $RC: $OUT)"
+  # The mutation stamp (owner, 2026-11-04 and -05): the release's head commit carries the
+  # git note mutation/run.sh writes after a clean run of the whole kit, and it holds row
+  # by row against the kit at that commit. First the verifier, on the kit as this tree
+  # has it: a stamp built from the list passes; each way a stamp can be short of a clean
+  # whole-kit run of this commit fails, naming what.
+  H=0123456789abcdef0123456789abcdef01234567
+  MK=mutation/mutants.py
+  NM=$(python3 -I "$MK" list | wc -l | tr -d ' ')
+  # stamp <summary> [<sed applied to the rows>]
+  stamp() {
+    printf 'flight-rules mutation stamp\n%s\n' "$1"
+    python3 -I "$MK" list | awk -F '\t' '{ print $1 "\t" ($4 == "killed" ? "killed" : "survived") "\tsuite" }' | sed -e "${2:-}"
+  }
+  clean() { printf 'mutation: all %s run from %s — 1 killed (0 aborts, 0 timeouts), 1 survived (1 expected), 0 failed to apply; 0 unexpected survivor(s)' "$NM" "$1"; }
+  SD=$(mktemp -d "${TMPDIR:-/tmp}/stamp.XXXXXX")
+  vpasses() { stamp "$2" "${3:-}" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+    [ "$RC" -eq 0 ] && ok "mutants.py verify passes $1" || bad "mutants.py verify fails $1 (exit $RC: $OUT)"; }
+  vfails() { stamp "$2" "${3:-}" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+    [ "$RC" -ne 0 ] && grep -q -- "$4" <<<"$OUT" && ok "…fails $1" || bad "mutants.py verify passes $1, or not naming '$4' (exit $RC: $OUT)"; }
+  FIRST=$(python3 -I "$MK" list | awk -F '\t' '$4 == "killed" { print $1; exit }')
+  SURV=$(python3 -I "$MK" list | awk -F '\t' '$4 != "killed" { print $1; exit }')
+  vpasses "a clean stamp of the whole kit on the commit" "$(clean "$H")"
+  vfails "a stamp missing a mutant's row"     "$(clean "$H")" "/^$FIRST	/d"        "$FIRST: no row"
+  vfails "one with a row for no such mutant" "$(clean "$H")" "\$a\\
+NOPE	killed	suite"                                                                  "NOPE is not a mutant"
+  vfails "a row twice"                       "$(clean "$H")" "/^$FIRST	/p"        "$FIRST: 2 rows"
+  vfails "a mutant expected killed that survived" "$(clean "$H")" "s/^$FIRST	killed/$FIRST	survived/" "$FIRST: survived, expected killed"
+  # A known gap now killed is the kit grown stronger, not a regression: it passes, and
+  # the line the check prints names it, to have its expect updated (owner, 2026-11-05).
+  stamp "$(clean "$H")" "s/^$SURV	survived/$SURV	killed/" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+  [ "$RC" -eq 0 ] && grep -q "1 expected survivor(s) now killed ($SURV): update their expect" <<<"$OUT" && ok "…passes a known gap now killed, naming it" || bad "mutants.py verify refuses, or does not name, a known gap now killed (exit $RC: $OUT)"
+  # Killed only by an abort or a timeout is no proof a suite noticed it: it passes, named
+  # apart, to be run alone first — never offered as a gap closed (/dg of 6fe5aeb, F1).
+  SURV2=$(python3 -I "$MK" list | awk -F '\t' '$4 != "killed" { n++ } n == 2 { print $1; exit }')
+  stamp "$(clean "$H")" "s/^$SURV	survived/$SURV	killed-abort/;s/^$SURV2	survived/$SURV2	killed-timeout/" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+  [ "$RC" -eq 0 ] && grep -q "2 expected survivor(s) killed only by an abort or a timeout (.*): run each alone" <<<"$OUT" && grep -q "$SURV killed-abort" <<<"$OUT" && grep -q "$SURV2 killed-timeout" <<<"$OUT" && ! grep -q 'now killed' <<<"$OUT" && ok "…passes one killed only by an abort or a timeout, named apart, not as a gap closed" || bad "mutants.py verify refuses, misnames or calls closed an abort or timeout kill (exit $RC: $OUT)"
+  vfails "another commit's run"              "$(clean "${H%7}8")" ""                "not of $H"
+  vfails "a dirty tree's run"                "$(clean "$H + uncommitted changes")" "" "not of $H"
+  vfails "a selection"                       "mutation: 5 of $NM run from $H — 5 killed (0 aborts, 0 timeouts), 0 survived (0 expected), 0 failed to apply; 0 unexpected survivor(s)" "" "not of the whole kit"
+  vfails "a run that did not pass"           "$(clean "$H" | sed 's/0 unexpected/1 unexpected/')" "" "not clean"
+  printf '%s\n' "$(clean "$H")" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+  [ "$RC" -ne 0 ] && grep -q 'not a stamp run.sh wrote' <<<"$OUT" && ok "…and a summary line alone, typed" || bad "mutants.py verify passes a typed summary line (exit $RC: $OUT)"
+  # Then the step, as GitHub runs it in a checkout of the head: the note is fetched from
+  # origin, so one not pushed, one on another commit, and one that does not hold each
+  # fail and print the push and run commands; a pushed clean stamp passes.
+  MRUN=$(awk '/run: \|/ { n++; f = (n == 3); next } f && /^      - name:/ { exit } f' "$RR" | sed -e 's/^          //')
+  G=(git -c user.name=t -c user.email=t@invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null)
+  ORG="$SD/origin"; CO="$SD/co"
+  mkdir -p "$ORG/mutation" && cp "$MK" "$ORG/mutation/" && "${G[@]}" -C "$ORG" init -q && "${G[@]}" -C "$ORG" add -A && "${G[@]}" -C "$ORG" commit -qm head \
+    && "${G[@]}" clone -q "$ORG" "$CO" || die "could not build the stamp step's repositories"
+  HS=$(git -C "$CO" rev-parse HEAD)
+  mstep() { (cd "$CO" && HEAD_SHA=$HS bash -e -c "$MRUN" 2>&1); }
+  OUT=$(mstep); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q 'git push origin refs/notes/mutation' <<<"$OUT" && grep -q 're-run this one' <<<"$OUT" && ok "the stamp step fails when no stamp was pushed, printing the push and the re-run" || bad "the stamp step passes, or prints no push, with no stamp pushed (exit $RC: $OUT)"
+  H=$HS; stamp "$(clean "$HS")" >"$SD/good"; stamp "$(clean "$HS")" "/^$FIRST	/d" >"$SD/short"
+  "${G[@]}" -C "$ORG" commit -q --allow-empty -m later && "${G[@]}" -C "$ORG" notes --ref=mutation add -F "$SD/good" HEAD || die "could not stamp the later commit"
+  OUT=$(mstep); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q "worktree add --detach .ai/worktrees/mutation $HS" <<<"$OUT" && ok "…fails when only another commit is stamped, printing the run" || bad "the stamp step passes another commit's stamp (exit $RC: $OUT)"
+  "${G[@]}" -C "$ORG" notes --ref=mutation add -f -F "$SD/short" "$HS" || die "could not stamp the head"
+  OUT=$(mstep); RC=$?
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q "$FIRST: no row" <<<"$OUT" && ok "…fails a stamp that does not hold, naming why" || bad "the stamp step passes a short stamp (exit $RC: $OUT)"
+  "${G[@]}" -C "$ORG" notes --ref=mutation add -f -F "$SD/good" "$HS" 2>/dev/null || die "could not stamp the head"
+  OUT=$(mstep); RC=$?
+  [ "$RC" -eq 0 ] && grep -q "^ok  Mutation stamp on $HS: mutation: all $NM run from $HS" <<<"$OUT" && ok "…and passes a pushed clean stamp of the head, printing its summary" || bad "the stamp step fails a clean stamp (exit $RC: $OUT)"
+  rm -rf "$SD"
   rm -rf "$FX"
 fi
 

@@ -123,3 +123,36 @@ jobs:
             exit 1
           fi
           echo "ok  Upstream check section present and filled"
+      # And the mutation run (owner, 2026-11-04): mutation/run.sh on the commit this PR
+      # promotes. The run takes hours, so CI checks its stamp, not the suites: the git note
+      # run.sh writes on the commit after a clean run of the whole kit (refs/notes/mutation),
+      # held row by row to the kit as this commit has it (mutants.py verify). A pasted line
+      # could be typed; the stamp is written only by the run (owner, 2026-11-05). A commit
+      # pushed after the run has no stamp, so the run is made again — better safe than
+      # sorry. The owner pushes the note; every refusal prints the commands.
+      - name: Check out the head commit, for the mutation stamp
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: The release's head commit carries a clean mutation stamp
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          route="from a clean worktree of it — git worktree add --detach .ai/worktrees/mutation $HEAD_SHA, then mutation/run.sh -j 4 there — and push the stamp it writes: git push origin refs/notes/mutation. A pushed note starts no check, so then re-run this one (Re-run jobs, on the PR's Checks tab) or edit the PR body, which re-runs it"
+          if ! git fetch -q origin refs/notes/mutation:refs/notes/mutation; then
+            echo "::error::no mutation stamps on origin (refs/notes/mutation not pushed, or not fetched: git's message is above) — run the kit $route"
+            exit 1
+          fi
+          stamp=$(mktemp)
+          if ! git notes --ref=mutation show "$HEAD_SHA" >"$stamp" 2>/dev/null; then
+            echo "::error::$HEAD_SHA has no mutation stamp — run the kit on it $route"
+            exit 1
+          fi
+          if ! out=$(python3 -I mutation/mutants.py verify "$HEAD_SHA" "$stamp"); then
+            printf '%s\n' "$out"
+            echo "::error::the mutation stamp on $HEAD_SHA does not hold (above) — a survivor that holds is a gap to close in the suites, a missing row a run to make again: run the kit $route"
+            exit 1
+          fi
+          echo "ok  Mutation stamp on $HEAD_SHA: $out"
