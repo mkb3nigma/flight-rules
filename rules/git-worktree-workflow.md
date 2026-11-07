@@ -62,8 +62,9 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    rest to `{INTEGRATION_BRANCH}`); a branch without one is routed only by asking, every
    time — skill
    (`feature-start` 3; `pr-create` routes on it)
-3. Conventional commit messages using the same prefixes (`hotfix/` branches commit as
-   `fix:` — there is no `hotfix:` message prefix) — the prefix says what kind of change
+3. Conventional commit messages using the same prefixes, plus `ci:` for a change to the
+   CI (`hotfix/` branches commit as `fix:` — there is no `hotfix:` message prefix, and no
+   `ci/` branch) — the prefix says what kind of change
    each commit is, which a reviewer and whoever writes the release notes read off the
    log; without it, each commit has to be opened to tell — skill (`commit` 4,
    `pre-merge-check` 8)
