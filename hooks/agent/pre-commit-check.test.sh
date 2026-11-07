@@ -728,15 +728,19 @@ else
 fi
 rm -rf "$D"
 # The worktree the blocks suggest goes through /feature-start first: a raw worktree add
-# skips its open-branch count, the only gate on it (0.27.0 release review).
+# skips its open-branch count, the only gate on it (0.27.0 release review). By hand, it
+# starts where Required 8 and /feature-start start — the local integration branch, origin
+# pulled into it — not origin's, which lacks merges not yet pushed (0.29.0 release
+# review, R-1).
 for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|main|a commit on main'; do
   D=$(make_repo "$(cut -d'|' -f2 <<<"$c")")
   OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
         <<<"$(jq -n --arg c "$(cut -d'|' -f1 <<<"$c")" '{tool_input:{command:$c}}')" 2>/dev/null)
   if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q '/feature-start' <<<"$OUT" && grep -q 'open-branch limit\|OPEN_BRANCH_LIMIT' <<<"$OUT" \
      && grep -q 'raw worktree add skips\|by hand, which skips' <<<"$OUT" \
-     && grep -q 'worktree add .* origin/<integration-branch>' <<<"$OUT"; then
-    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on origin/<integration-branch>\n' "$(cut -d'|' -f3 <<<"$c")"
+     && grep -q 'git pull --ff --no-rebase origin <integration-branch>' <<<"$OUT" \
+     && grep -qE 'worktree add .* <integration-branch>($|\\n)' <<<"$OUT" && ! grep -q 'origin/<integration-branch>' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on the local <integration-branch> after a pull\n' "$(cut -d'|' -f3 <<<"$c")"
   else
     FAIL=$((FAIL+1)); printf '  ❌ %s: the block does not point at /feature-start and its branch count\n' "$(cut -d'|' -f3 <<<"$c")"
   fi

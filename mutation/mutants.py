@@ -162,7 +162,9 @@ mut('P114', PCC, 'Never commit directly to a protected branch.', '', 'pre-commit
 mut('P112', PCC, 'This command would rewrite it or discard work in its working tree.', '', 'pre-commit-check', expect='survives: not held — the destructive refusal loses its sentence', what='destructive VERB blank')
 mut('P113', PCC, 'This command would force-push, delete or overwrite it on the remote, destroying history others have built on.', '', 'pre-commit-check', expect='survives: not held — the force-push refusal loses its sentence', what='force-push VERB blank')
 mut('P116', PCC, 'with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check', 'by hand', 'pre-commit-check', what='protected route drops /feature-start')
-mut('P111', PCC, '  git worktree add $(shq "$WORKTREE_DIR")/<name> -b feature/<name> origin/<integration-branch>', '  git worktree add $WORKTREE_DIR/<name> -b feature/<name> origin/<integration-branch>', 'pre-commit-check', expect='survives: not held — the protected-branch route prints WORKTREE_DIR unquoted', what='protected-branch route not shell-quoted')
+mut('P111', PCC, '  git worktree add $(shq "$WORKTREE_DIR")/<name> -b feature/<name> <integration-branch>', '  git worktree add $WORKTREE_DIR/<name> -b feature/<name> <integration-branch>', 'pre-commit-check', expect='survives: not held — the protected-branch route prints WORKTREE_DIR unquoted', what='protected-branch route not shell-quoted')
+mut('P194', PCC, '  git pull --ff --no-rebase origin <integration-branch>\n  git worktree add $(shq "$WORKTREE_DIR")/<name> -b <prefix>/<name>', '  git worktree add $(shq "$WORKTREE_DIR")/<name> -b <prefix>/<name>', 'pre-commit-check', what='branch-create route: no pull into the local integration branch')
+mut('P195', PCC, '-b feature/<name> <integration-branch>', '-b feature/<name> origin/<integration-branch>', 'pre-commit-check', what="protected-branch route: based on origin's integration branch again")
 mut('P186', PCC, 'PROTECTED_BRANCHES=off in .ai/flight-rules.conf (the secret scan stays on)', 'nothing', 'pre-commit-check', what='protected-branch block drops the opt-out')
 mut('P118', PCC, 'err=$("$@" 2>&1 >/dev/null', 'err=$(true', 'pre-commit-check', what='read_failed: no git error')
 mut('P119', PCC, '[[ -f "$gd/MERGE_HEAD" ]] || return 0', 'return 0', 'pre-commit-check', what='merge_tree: never a merge')
@@ -492,6 +494,8 @@ mut('T15', RT, '        } >&2\n        exit 1\n    fi', '        } >&2\n        
 mut('T18', RT, '_wt="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf_from HEAD WORKTREE_DIR)}"', '_wt="$(read_conf_from HEAD WORKTREE_DIR)"', 'ref-gate merge-gate')
 mut('T17', RT, '_int="${_int:-main}"', '_int="${_int:-dev}"', 'ref-gate merge-gate')
 mut('T25', RT, '        box_row "  git worktree add $(shq "${_wt%/}")/<name> \\\\"', '        box_row "  git worktree add ${_wt%/}/<name> \\\\"', 'ref-gate merge-gate')
+mut('T26', RT, '        box_row "  git pull --ff --no-rebase origin $_int"\n', '', 'ref-gate', what='refusal route: no pull into the local integration branch')
+mut('T27', RT, '        box_row "      -b <prefix>/<name> $_int"', '        box_row "      -b <prefix>/<name> origin/$_int"', 'ref-gate', what="refusal route: based on origin's integration branch again")
 mut('T16', RT, '    } >&2\n    exit 1\ndone', '    } >&2\n    exit 0\ndone', 'ref-gate merge-gate')
 
 # ---- hooks/git/post-merge

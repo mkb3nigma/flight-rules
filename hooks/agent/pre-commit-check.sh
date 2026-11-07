@@ -671,9 +671,9 @@ elif [[ "$ACTION" == "branch-create" ]]; then
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
 
-Instead, run /feature-start <prefix>/<name>: it checks how many branches are already open (OPEN_BRANCH_LIMIT) and asks at the limit, which a raw worktree add skips. By hand, from the repo root with absolute paths:
-  git fetch origin
-  git worktree add $(shq "$WORKTREE_DIR")/<name> -b <prefix>/<name> origin/<integration-branch>
+Instead, run /feature-start <prefix>/<name>: it checks how many branches are already open (OPEN_BRANCH_LIMIT) and asks at the limit, which a raw worktree add skips. By hand, from the checkout that has <integration-branch> (the repo root, usually), with absolute paths — origin pulled into the local one, which also holds merges not yet pushed:
+  git pull --ff --no-rebase origin <integration-branch>
+  git worktree add $(shq "$WORKTREE_DIR")/<name> -b <prefix>/<name> <integration-branch>
   cd $(shq "$WORKTREE_DIR")/<name>
 
 Prefixes: feature/ fix/ refactor/ test/ docs/ chore/ hotfix/.
@@ -698,9 +698,9 @@ elif [[ "$IS_PROTECTED" == "1" ]]; then
     REMEDY="Leave it alone. If the branch really is finished with, the person who owns
 the project decides that — not the session that happened to merge something."
   else
-    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check:
-  git fetch origin
-  git worktree add $(shq "$WORKTREE_DIR")/<name> -b feature/<name> origin/<integration-branch>
+    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check — from the checkout that has <integration-branch>, origin pulled into the local one:
+  git pull --ff --no-rebase origin <integration-branch>
+  git worktree add $(shq "$WORKTREE_DIR")/<name> -b feature/<name> <integration-branch>
   cd $(shq "$WORKTREE_DIR")/<name>
 
 Use absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified."

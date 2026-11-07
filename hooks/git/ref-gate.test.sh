@@ -334,23 +334,24 @@ for phase in committed aborted; do
 done
 
 # route <output>: the two rows after "Do this instead:", frame and padding stripped, joined.
-route() { grep -A2 'Do this instead:' <<<"$1" | tail -2 | sed -e 's/^║ *//' -e 's/ *║$//' | tr '\n' ' ' | sed 's/ *$//'; }
-echo "The refusal's route starts where the guard and /feature-start start (full release review, S3):"
+route() { grep -A3 'Do this instead' <<<"$1" | tail -3 | sed -e 's/^║ *//' -e 's/ *║$//' | tr '\n' ' ' | sed 's/ *$//'; }
+echo "The refusal's route starts where the guard and /feature-start start (full release review, S3; 0.29.0 R-1):"
 # With no start point the suggested worktree branch was cut from HEAD, the PR-only
 # branch itself, into a fixed .ai/worktrees whatever WORKTREE_DIR said.
 d=$(make_repo "$(printf 'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\nWORKTREE_DIR=wt')" armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1); RC=$?
 say "$([ "$RC" -ne 0 ] && ! escaped "$d" && echo refused)" "refused" "a commit on main is refused, and main stays on origin/main"
-say "$(route "$OUT")" "git worktree add wt/<name> \\ -b <prefix>/<name> origin/dev" "…routing to a branch off origin/dev in WORKTREE_DIR"
+say "$(route "$OUT")" "git pull --ff --no-rebase origin dev git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…routing to a branch off the local dev, origin pulled into it, in WORKTREE_DIR"
+say "$(grep -c 'Do this instead, where dev is checked out:' <<<"$OUT")" "1" "…and saying where the pull runs"
 OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR=elsewhere/ git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree add elsewhere/<name> \\ -b <prefix>/<name> origin/dev" "…and FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it"
+say "$(route "$OUT")" "git pull --ff --no-rebase origin dev git worktree add elsewhere/<name> \\ -b <prefix>/<name> dev" "…and FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it"
 OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR="my wt" git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree add 'my wt'/<name> \\ -b <prefix>/<name> origin/dev" "…a directory with a space, quoted to paste (fix review, 2026-10-26)"
+say "$(route "$OUT")" "git pull --ff --no-rebase origin dev git worktree add 'my wt'/<name> \\ -b <prefix>/<name> dev" "…a directory with a space, quoted to paste (fix review, 2026-10-26)"
 d=$(make_repo default armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> origin/main" "…with neither set: .ai/worktrees, off origin/main"
+say "$(route "$OUT")" "git pull --ff --no-rebase origin main git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> main" "…with neither set: .ai/worktrees, off the local main, origin pulled into it"
 # Width in bytes, of rows that are ASCII between the frames: the route rows against the
 # row above them. On one row the default route ran 4 columns past the frame.
-say "$(grep -A2 'Do this instead:' <<<"$OUT" | awk '{ print length($0) }' | sort -u | wc -l | tr -d ' ')" "1" "…and its rows stay inside the box"
+say "$(grep -A3 'Do this instead' <<<"$OUT" | awk '{ print length($0) }' | sort -u | wc -l | tr -d ' ')" "1" "…and its rows stay inside the box"
 
 finish
