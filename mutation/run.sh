@@ -57,7 +57,9 @@ if [ "${1:-}" = --mutant ]; then
     for s in $suites; do
         mkdir -p "$D/tmp"
         b=$(basename "$s" .test.sh)
-        TMPDIR="$D/tmp" bounded "$L/$b.log" "$D/tree" bash "$s" 2>>"$L/runner.err"; rc=$?
+        # MUTATION_UNDER_TEST: the mutant applied — its own anchor is gone, so the docs
+        # suite's every-anchor-once case would fail for that alone, not for the mutant.
+        MUTATION_UNDER_TEST=$id TMPDIR="$D/tmp" bounded "$L/$b.log" "$D/tree" bash "$s" 2>>"$L/runner.err"; rc=$?
         if [ "$rc" -ne 0 ]; then
             case "$rc" in 2) verdict=killed-abort ;; 124) verdict=killed-timeout ;; *) verdict=killed ;; esac
             why=$(grep -m1 -E '❌|ABORTED' "$L/$b.log" | tr '\t' ' ' | cut -c1-200)
@@ -108,6 +110,13 @@ N=$(wc -l <"$W/list" | tr -d ' ')
 # release review check refuses: a few ids re-run to confirm a fix are not the release run.
 if [ "$#" -eq 0 ]; then SCOPE=all
 else SCOPE="of $(python3 -I "$W/base/mutation/mutants.py" list | wc -l | tr -d ' ')"
+fi
+# Every anchor, before a whole-kit run: one a hook edit moved would surface only as
+# apply-failed in the summary, hours in, with no stamp (0.29.0 release review, R-2).
+if [ "$SCOPE" = all ] && ! python3 -I "$W/base/mutation/mutants.py" check "$W/base" >"$W/logs/anchors" 2>&1; then
+    grep -v ' 0 not anchored' "$W/logs/anchors" >&2
+    echo "❌ mutants whose anchor no longer occurs exactly once — update them in the change that moved them (mutation/README.md → Upkeep), then run again" >&2
+    exit 2
 fi
 [ "$N" -gt 0 ] || { echo "❌ no mutants selected" >&2; exit 2; }
 G=(git -C "$W/base" -c core.hooksPath=/dev/null -c user.name=mutation -c user.email=mutation@invalid -c commit.gpgsign=false)

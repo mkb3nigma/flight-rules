@@ -77,7 +77,9 @@ summary. That adds about two hours at `-j 4`. Keep `-j` at 4 or so.
 ## Upkeep
 
 - **A hook edit that moves a mutant's anchor updates that mutant in the same change.**
-  `python3 -I mutation/mutants.py check .` says which no longer occur exactly once.
+  `python3 -I mutation/mutants.py check .` says which no longer occur exactly once;
+  `docs-consistency.test.sh` runs it, so a moved anchor fails the suites on the branch
+  that moved it, and `run.sh` refuses a whole-kit run with one, before its baseline.
   A mutant whose target is gone is deleted with it.
 - A mutant expected `killed` that survives is a gap in the suites: close it there, not
   by changing the expectation. `survives: not held — <what>` marks a gap the suites are
