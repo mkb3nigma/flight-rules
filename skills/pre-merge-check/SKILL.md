@@ -83,7 +83,8 @@ locally with no PR, its commit messages.
    it reports those too, as ⚠️. ❌ on any other hit (redact values).
 7. **Debug-logging check** — new `console.log` / stray print/debug lines: ⚠️ warn.
 8. **Conventional commits** — every commit on the branch starts with an allowed prefix
-   (`feature:` `fix:` `refactor:` `test:` `docs:` `chore:`; `hotfix/` branches use `fix:`).
+   (`feature:` `fix:` `refactor:` `test:` `docs:` `chore:` `ci:`; `hotfix/` branches use
+   `fix:`; `ci:`, a change to the CI, has no branch prefix of its own).
 9. **Single-purpose scope** — commits describe one coherent concern; ⚠️ if clearly not.
 10. **Merge-conflict markers** — none added in the diff.
 11. **Dependency audits** — `npm audit --audit-level=high` / `pip-audit` (or the
