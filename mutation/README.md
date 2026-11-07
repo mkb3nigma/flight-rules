@@ -18,7 +18,9 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 (owner, 2026-11-04). It takes hours, so it is not a per-branch check, and it is not one
 of `{TEST_COMMANDS}`.
 
-For a release, the run stamps the commit. After a clean run of the whole kit on a
+For a release, it runs last: on the final head, after the release's `/dg` (`pr-create`
+2b) and every finding it applied, just before the push — one run, not one per applied
+finding (owner, 2026-11-07). The run stamps the commit. After a clean run of the whole kit on a
 commit with no tracked file changed, `run.sh` writes a git note on it
 (`refs/notes/mutation`): its summary line and one row per mutant. It prints the push
 the note needs, and the owner makes it with `dev`'s. The `release review` check fetches
@@ -37,9 +39,10 @@ force the push: it drops the other machine's stamps. Run it from a worktree of t
 checkout is in the way:
 
 ```bash
-git worktree add --detach .ai/worktrees/mutation <sha>
+git worktree add --detach .ai/worktrees/mutation <sha>   # one left from before: git worktree remove .ai/worktrees/mutation
 cd .ai/worktrees/mutation && mutation/run.sh -j 4
-git push origin refs/notes/mutation      # printed at the end of a stamped run
+git push origin refs/notes/mutation        # printed at the end of a stamped run
+git worktree remove .ai/worktrees/mutation  # once the stamp is pushed; printed too
 ```
 
 The gaps the suites are known to leave — the `survives: not held` mutants — are #133: a
