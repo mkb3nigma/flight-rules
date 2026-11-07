@@ -141,7 +141,9 @@ B='(^|[^[:alnum:]_.-])'
 # `{ …; }` on a protected branch; `;)&|` were added to E for it (6c88a27). Since 926f884
 # (2026-09-14) every matcher reads one segment of command_segments, which has split on
 # all four first, so they could never reach E and were dropped (test sweep, 2026-11-02). The wrapper × core product
-# in pre-commit-check.test.sh is what proves the split still covers those shapes.
+# in pre-commit-check.test.sh is what proves the split still covers those shapes. A
+# redirect written against the word (`git commit>/dev/null`) is neither whitespace nor a
+# split point, so that word is not read as `commit`: an open gap, #138.
 E='([[:space:]]|$)'
 
 is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
