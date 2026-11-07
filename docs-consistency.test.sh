@@ -301,6 +301,11 @@ NOPE	killed	suite"                                                              
   # the line the check prints names it, to have its expect updated (owner, 2026-11-05).
   stamp "$(clean "$H")" "s/^$SURV	survived/$SURV	killed/" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
   [ "$RC" -eq 0 ] && grep -q "1 expected survivor(s) now killed ($SURV): update their expect" <<<"$OUT" && ok "…passes a known gap now killed, naming it" || bad "mutants.py verify refuses, or does not name, a known gap now killed (exit $RC: $OUT)"
+  # Killed only by an abort or a timeout is no proof a suite noticed it: it passes, named
+  # apart, to be run alone first — never offered as a gap closed (/dg of 6fe5aeb, F1).
+  SURV2=$(python3 -I "$MK" list | awk -F '\t' '$4 != "killed" { n++ } n == 2 { print $1; exit }')
+  stamp "$(clean "$H")" "s/^$SURV	survived/$SURV	killed-abort/;s/^$SURV2	survived/$SURV2	killed-timeout/" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
+  [ "$RC" -eq 0 ] && grep -q "2 expected survivor(s) killed only by an abort or a timeout (.*): run each alone" <<<"$OUT" && grep -q "$SURV killed-abort" <<<"$OUT" && grep -q "$SURV2 killed-timeout" <<<"$OUT" && ! grep -q 'now killed' <<<"$OUT" && ok "…passes one killed only by an abort or a timeout, named apart, not as a gap closed" || bad "mutants.py verify refuses, misnames or calls closed an abort or timeout kill (exit $RC: $OUT)"
   vfails "another commit's run"              "$(clean "${H%7}8")" ""                "not of $H"
   vfails "a dirty tree's run"                "$(clean "$H + uncommitted changes")" "" "not of $H"
   vfails "a selection"                       "mutation: 5 of $NM run from $H — 5 killed (0 aborts, 0 timeouts), 0 survived (0 expected), 0 failed to apply; 0 unexpected survivor(s)" "" "not of the whole kit"

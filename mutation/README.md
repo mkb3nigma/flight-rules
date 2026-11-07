@@ -23,10 +23,11 @@ commit with no tracked file changed, `run.sh` writes a git note on it
 (`refs/notes/mutation`): its summary line and one row per mutant. It prints the push
 the note needs, and the owner makes it with `dev`'s. The `release review` check fetches
 the note and holds it to the kit as the PR's head commit has it (`mutants.py verify`):
-every mutant once, each expected killed killed, the run clean, of the whole kit and of
-that commit (owner, 2026-11-05: a pasted line could be typed; the stamp is written only
+every mutant once, every mutant expected killed killed, the run clean, of the whole kit
+and of that commit (owner, 2026-11-05: a pasted line could be typed; the stamp is written only
 by the run). A known gap now killed passes — the kit got stronger — and the check's ok
-line names it, to have its expect updated. A commit pushed after the run has no stamp, so the run is made
+line names it, to have its expect updated; one killed only by an abort or a timeout is
+named apart, to be run alone before its expect changes. A commit pushed after the run has no stamp, so the run is made
 again. A selection, a dirty tree or a failed run is not stamped, and the run says why.
 An assistant never writes this note by hand, as with the `pre-merge-check` note: the
 note says the run happened. Each machine keeps its own copy of the notes, so before

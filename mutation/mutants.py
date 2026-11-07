@@ -16,10 +16,12 @@ change, and one whose `old` no longer occurs once is an error, not a skip.
 The stamp is the git note run.sh writes on the commit after a clean run of the whole
 kit (refs/notes/mutation): its summary line, then one row per mutant — id, result, the
 suite that killed it. `verify` holds it to this list as the commit has it: every mutant
-once, none extra, each expected killed killed, and the line clean and of <sha>. So a
-typed summary line, a selection, a stale kit or another commit's run fails. A known gap
-now killed passes, named in the line it prints: the kit got stronger, and its expect is
-to update (owner, 2026-11-05).
+once, none extra, every mutant expected killed killed, and the line clean and of <sha>.
+So a typed summary line, a selection, a stale kit or another commit's run fails. A known
+gap now killed passes, named in the line it prints: the kit got stronger, and its expect
+is to update (owner, 2026-11-05). One killed only by an abort or a timeout passes too,
+named apart: that is no proof a suite noticed it, so it is run alone before its expect
+changes.
 """
 import os, sys
 
@@ -827,6 +829,7 @@ mut('misc-V3', MP, "if (' run from %s — ' % sha) " "not in summary:", 'if Fals
 mut('misc-V4', MP, "if not summary.endswith(" "', 0 failed to apply; 0 unexpected survivor(s)'):", 'if False:', 'docs-consistency', what='verify: a run that did not pass passes')
 mut('misc-V5', MP, "if not f[1]." "startswith('killed'):", 'if False:', 'docs-consistency', what='verify: an expected kill that survived passes')
 mut('misc-V9', MP, 'stale.' 'append(f[0])', "bad.append(f[0])", 'docs-consistency', what='verify: a known gap now killed is refused')
+mut('misc-V10', MP, "elif f[1] == " "'killed':", "elif f[1].startswith('killed'):", 'docs-consistency', what='verify: an abort or timeout kill is named a closed gap')
 mut('misc-V6', MP, "bad += ['%s: %d rows' % (i, n) " "for i, n in seen.items() if n > 1]", 'pass', 'docs-consistency', what='verify: a row twice passes')
 mut('misc-V7', MP, "bad += ['%s: no row — the run did not cover it' % i " "for i in by_id if i not in seen]", 'pass', 'docs-consistency', what='verify: a mutant with no row passes')
 mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "continue", 'continue', 'docs-consistency', what='verify: a row for no such mutant passes')
@@ -863,7 +866,7 @@ def verify(sha, path, by_id):
         bad.append('its summary is not of %s with no tracked file changed: %r' % (sha, summary))
     if not summary.endswith(', 0 failed to apply; 0 unexpected survivor(s)'):
         bad.append('its summary is not clean: %r' % summary)
-    seen, stale = {}, []
+    seen, stale, unsure = {}, [], []
     for row in lines[2:]:
         f = row.split('\t')
         if len(f) != 3:
@@ -875,8 +878,10 @@ def verify(sha, path, by_id):
         if m['expect'] == 'killed':
             if not f[1].startswith('killed'):
                 bad.append('%s: %s, expected killed' % (f[0], f[1]))
-        elif f[1].startswith('killed'):
+        elif f[1] == 'killed':
             stale.append(f[0])
+        elif f[1].startswith('killed'):
+            unsure.append('%s %s' % (f[0], f[1]))
         elif f[1] != 'survived':
             bad.append('%s: %s, expected survived' % (f[0], f[1]))
     bad += ['%s: %d rows' % (i, n) for i, n in seen.items() if n > 1]
@@ -886,11 +891,15 @@ def verify(sha, path, by_id):
         for b in bad[:20]: print('  ' + b)
         if len(bad) > 20: print('  … and %d more' % (len(bad) - 20))
         return 1
+    line = summary
     if stale:
-        print('%s — %d expected survivor(s) now killed (%s): update their expect (#133)'
-              % (summary, len(stale), ', '.join(sorted(stale))))
-    else:
-        print(summary)
+        line += (' — %d expected survivor(s) now killed (%s): update their expect (#133)'
+                 % (len(stale), ', '.join(sorted(stale))))
+    if unsure:
+        line += (' — %d expected survivor(s) killed only by an abort or a timeout (%s): run'
+                 ' each alone and read its log before changing its expect'
+                 % (len(unsure), ', '.join(sorted(unsure))))
+    print(line)
     return 0
 
 
