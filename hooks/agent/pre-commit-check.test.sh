@@ -746,17 +746,26 @@ for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|m
   fi
   rm -rf "$D"
 done
-# The integration branch where the route finds it (0.29.0 release-fix review, X-1): a
-# clone holds only main, so dev is fetched straight into, not pulled "where it is checked
-# out" — run on main, that pull moved main; held by a linked worktree, the pull runs
-# there, by path. The command lines only, as the reason prints them.
+# The integration branch where the route finds it (0.29.0 release-fix review, X-1, Z-1..3):
+# a clone holds only main, so dev is made from origin's, tracking it — a pull printed for
+# "where it is checked out" ran on main and moved it; held by a live linked worktree, the
+# pull runs there, by path; a local dev no live worktree holds (none ever did, or its
+# worktree was deleted by hand) may be ahead or diverged, so the route defers to
+# /feature-start 4. The command lines only, as the reason prints them.
 route_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$1" | sed -n '/^  cd /,/^  cd .*<name>$/p' | sed '1d;$d' | tr '\n' '|'; }
+DEFER="  # no live worktree holds dev: bring it up to date as the feature-start skill step 4 says (it may be ahead of origin or diverged), then:"
 D=$(make_repo main); mkdir -p "$D/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say "$(route_of "$OUT")" "  git fetch origin dev:dev|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "no local dev (a clone): the route fetches origin's dev into a local one, then adds from it"
-git -C "$D" branch dev && git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
+say "$(route_of "$OUT")" "  git fetch origin|  git branch --track dev origin/dev|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
+git -C "$D" branch dev || die "could not make dev in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "$DEFER|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "…a local dev no worktree holds: it may be ahead or diverged, so the route defers to /feature-start 4"
+git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
-say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev|  git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev|" "…and dev held by a linked worktree: the pull runs there, by path"
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev|  git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev|" "…dev held by a linked worktree: the pull runs there, by path"
+rm -rf "$D/dev wt"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "$DEFER|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "…and that worktree deleted by hand, not pruned: no pull is printed for a directory that is gone"
 rm -rf "$D"
 
 echo "Target parsing is per simple command, not per command STRING:"

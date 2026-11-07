@@ -439,11 +439,12 @@ target_path() {
 RESOLVED_DIR=""; RESOLVED=0
 # worktree_route <-b branch>: the by-hand route to a new worktree, as Required 8 and
 # /feature-start 4 and 6 have it — the local integration branch, origin's work brought
-# into it, then the add from the repo root. Where a worktree holds that branch, the pull
-# runs there; where none does, `git fetch origin <int>:<int>` makes or fast-forwards it
-# without touching what is checked out. A pull printed for "the repo root" ran on main in
-# a clone with no local dev, moving main and leaving nothing to branch from (0.29.0
-# release-fix review, X-1).
+# into it, then the add from the repo root. It spells out only the layouts it can be sure
+# of: a live worktree holds the branch (the pull runs there), or there is no local one
+# (made from origin's, tracking it, as step 4 does). A local branch no live worktree
+# holds may be ahead of origin or diverged, which step 4 settles, so the route defers to
+# it. A pull printed for "the repo root" ran on main in a clone with no local dev, and
+# each layout spelled out after that found another (0.29.0 release-fix review, X-1, Z-1..3).
 worktree_route() {
   local int root="" holder="" cur="" l
   int=$(read_conf INTEGRATION_BRANCH "$CONF_FILE"); int="${int:-main}"
@@ -453,13 +454,16 @@ worktree_route() {
       "branch refs/heads/$int") holder="$cur" ;;
     esac
   done < <("${GIT[@]}" worktree list --porcelain 2>/dev/null)
+  [ -d "$holder" ] || holder=""   # removed by hand and not pruned: no pull can run there
   printf '  cd %s\n' "$(shq "${root:-.}")"
-  if [ -z "$holder" ]; then
-    printf '  git fetch origin %s:%s\n' "$(shq "$int")" "$(shq "$int")"
-  elif [ "$holder" = "$root" ]; then
+  if [ -n "$holder" ] && [ "$holder" = "$root" ]; then
     printf '  git pull --ff --no-rebase origin %s\n' "$(shq "$int")"
-  else
+  elif [ -n "$holder" ]; then
     printf '  git -C %s pull --ff --no-rebase origin %s\n' "$(shq "$holder")" "$(shq "$int")"
+  elif ! "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
+    printf '  git fetch origin\n  git branch --track %s origin/%s\n' "$(shq "$int")" "$(shq "$int")"
+  else
+    printf '  # no live worktree holds %s: bring it up to date as the feature-start skill step 4 says (it may be ahead of origin or diverged), then:\n' "$int"
   fi
   printf '  git worktree add %s/<name> -b %s %s\n' "$(shq "$WORKTREE_DIR")" "$1" "$(shq "$int")"
   printf '  cd %s/<name>' "$(shq "$WORKTREE_DIR")"
