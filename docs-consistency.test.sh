@@ -395,4 +395,31 @@ for f in "CLAUDE.md @MISSION.md" "CLAUDE.md @AGENTS.md" "GEMINI.md @./MISSION.md
   if grep -qxF "$2" "$1"; then ok "$1 imports ${2#@}"; else bad "$1 has no line '$2'"; fi
 done
 
+echo "The commit prefixes are one list, in the commit skill, pre-merge-check 8 and the rule:"
+# Three copies of one list: `ci:` reached commits that pre-merge-check 8 then refused,
+# because the list there and the commit skill's both lacked it (test/mutation-kit,
+# 2026-11-07), and a copy that changes alone leaves a commit allowed by one and refused
+# by the next. The rule's list is the branch prefixes', so it names the one addition.
+# Each copy's own list only, not its notes, which name `fix:` and `ci:` again: the
+# bullet joined into a line and cut — at its first " (", or item 8's ";" — first.
+prefixes() {   # <file> <first line> <last line> <sed: what to keep>
+  awk -v from="$2" -v to="$3" 'index($0, from) { f = 1 } f { printf "%s ", $0 } f && index($0, to) { exit }' "$1" \
+    | sed -E "$4" | grep -oE '`[a-z]+:`' | tr -d '`' | sort -u | tr '\n' ' '; }
+PC=$(prefixes skills/commit/SKILL.md '- Message starts with' 'there is no' 's/ \(.*//')
+PM=$(prefixes skills/pre-merge-check/SKILL.md '8. **Conventional commits**' 'branch prefix' 's/.*allowed prefix//; s/;.*//')
+PR=$(prefixes rules/git-worktree-workflow.md '3. Conventional commit messages' 'ci/' 's/ \(.*//')
+# And the list they copy: the branch prefixes (feature-start's), less hotfix/, which
+# commits as fix:, plus ci: — so a branch prefix added alone fails here too (/dg D-1).
+# The bullet is joined through its last prefix, as the others are, so a reflow keeps it.
+BL=$(awk 'index($0, "- Branch name must start with an allowed prefix") { f = 1 } f { printf "%s ", $0 } f && index($0, "`hotfix/`") { exit }' skills/feature-start/SKILL.md)
+PB=$(printf '%s\n' "$BL" | grep -oE '`[a-z]+/`' | tr -d '`' | grep -vx 'hotfix/' | sed 's|/$|:|' | sort -u | tr '\n' ' ')
+[ -n "$PC" ] && [ "$PC" = "$PM" ] && ok "commit and pre-merge-check 8 allow the same prefixes ($PC)" || bad "commit allows '$PC', pre-merge-check 8 '$PM'"
+if [ -z "$PB" ]; then bad "feature-start's 'Branch name must start with an allowed prefix' bullet was not found, or lists no prefix"
+else
+  PB=$(printf '%s ci: ' "$PB" | tr ' ' '\n' | grep . | sort -u | tr '\n' ' ')
+  [ "$PC" = "$PB" ] && ok "…which are feature-start's branch prefixes, less hotfix/, plus ci:" || bad "the commit prefixes '$PC' are not feature-start's branch prefixes less hotfix/ plus ci: ('$PB')"
+fi
+case " $PC" in *" ci: "*) ok "…and ci: is among them" ;; *) bad "ci: is not an allowed prefix ($PC)" ;; esac
+[ "$PR" = "ci: " ] && ok "…and the rule names ci:, the one prefix that is not a branch's" || bad "rules/git-worktree-workflow.md Required 3 adds '$PR' to the branch prefixes, want 'ci: '"
+
 finish
