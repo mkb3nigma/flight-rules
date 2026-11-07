@@ -408,7 +408,13 @@ prefixes() {   # <file> <first line> <last line> <sed: what to keep>
 PC=$(prefixes skills/commit/SKILL.md '- Message starts with' 'there is no' 's/ \(.*//')
 PM=$(prefixes skills/pre-merge-check/SKILL.md '8. **Conventional commits**' 'branch prefix' 's/.*allowed prefix//; s/;.*//')
 PR=$(prefixes rules/git-worktree-workflow.md '3. Conventional commit messages' 'ci/' 's/ \(.*//')
+# And the list they copy: the branch prefixes (feature-start's), less hotfix/, which
+# commits as fix:, plus ci: — so a branch prefix added alone fails here too (/dg D-1).
+PB=$(sed -n 's/^- Branch name must start with an allowed prefix: //p' skills/feature-start/SKILL.md \
+  | grep -oE '`[a-z]+/`' | tr -d '`' | grep -vx 'hotfix/' | sed 's|/$|:|'; echo 'ci:')
+PB=$(printf '%s\n' "$PB" | sort -u | tr '\n' ' ')
 [ -n "$PC" ] && [ "$PC" = "$PM" ] && ok "commit and pre-merge-check 8 allow the same prefixes ($PC)" || bad "commit allows '$PC', pre-merge-check 8 '$PM'"
+[ "$PC" = "$PB" ] && ok "…which are feature-start's branch prefixes, less hotfix/, plus ci:" || bad "the commit prefixes '$PC' are not feature-start's branch prefixes less hotfix/ plus ci: ('$PB')"
 case " $PC" in *" ci: "*) ok "…and ci: is among them" ;; *) bad "ci: is not an allowed prefix ($PC)" ;; esac
 [ "$PR" = "ci: " ] && ok "…and the rule names ci:, the one prefix that is not a branch's" || bad "rules/git-worktree-workflow.md Required 3 adds '$PR' to the branch prefixes, want 'ci: '"
 
