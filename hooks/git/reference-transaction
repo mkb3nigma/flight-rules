@@ -226,16 +226,21 @@ while read -r _old new ref; do
         # git's own mark first; -d for a git too old to print it.
         [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -d "$_holder" ]; } && { _holder=""; _stale=1; }
         _qi=$(shq "$_int")
-        # A merge the pull started is aborted; one already in progress there is the
-        # person's, and an abort would discard their resolution (S-1).
-        if [ -n "$_holder" ]; then
+        # Whose a merge in that checkout is, is decided before the pull, by state: one
+        # already in progress is the person's; with none, one a failed pull leaves is its
+        # own. The guard's `worktree_route` comment says why git's words could not (Q-1).
+        if [ -n "$_holder" ] && git -C "$_holder" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+            box_row "$_int is checked out, and a merge is in progress in that"
+            box_row "checkout: it is for the person to finish or abort. Stop"
+            box_row "and ask, and run nothing below until it is done."
+            box_row ""
+        elif [ -n "$_holder" ]; then
             box_row "$_int is checked out, so the pull runs in that checkout."
             box_row "It brings in the commits origin/$_int has that it lacks,"
-            box_row "if any, merging them if the two diverged. If it stops on"
-            box_row "a CONFLICT, it started that merge: run git merge --abort"
-            box_row "there, then stop and ask. If it fails any other way, stop"
-            box_row "and ask: a merge already in progress there is for the"
-            box_row "person to finish or abort."
+            box_row "if any, merging them if the two diverged. If it fails,"
+            box_row "stop and ask, first running git merge --abort there if it"
+            box_row "left a merge in progress: none was there before it, so"
+            box_row "that merge is its own."
             box_row ""
         elif git show-ref --verify --quiet "refs/heads/$_int"; then
             if [ -n "$_stale" ]; then
