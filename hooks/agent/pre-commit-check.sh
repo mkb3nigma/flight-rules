@@ -438,15 +438,16 @@ target_path() {
 # this project at all. Cached on the directory: nearly every command names one.
 RESOLVED_DIR=""; RESOLVED=0
 # worktree_route <-b branch>: the by-hand route to a new worktree, as Required 8 and
-# /feature-start 4 and 6 have it — the local integration branch, authoritative for every
-# local branch, with origin's commits it lacks brought in, then the add from the repo
-# root (rules/git-worktree-workflow.md → *Which branch new work starts from*). Where a
-# live worktree holds it, the pull runs there. Where none does: missing, it is made from
-# origin's, tracking it; local, origin's is brought in only if it has anything new — a
-# fast-forward, the fetch included in the chain, so a refusal (diverged, never pushed,
-# unreachable) stops the add. A worktree removed by hand still holds the branch to git
-# until pruned. Each layout the route once missed is in the 0.29.0 release-fix review
-# (X-1, Z-1..3, W-1..3, V-1..3); a switch to origin's branch is #141. No command row
+# /feature-start 4 and 6 have it — the local integration branch, the authoritative base
+# every new branch is cut from, with origin's commits it lacks brought in, then the add
+# from the repo root (rules/git-worktree-workflow.md → *Which branch new work starts
+# from*). Where a live worktree holds it, the pull runs there. Where none does: missing,
+# it is made from origin's, tracking it; local, origin's is brought in only if it has
+# anything new, by fast-forward. In every layout the update is chained to the add, so a
+# refusal — offline, diverged, never pushed — stops it before a branch is cut off a
+# stale base. A worktree removed by hand still holds the branch to git until pruned.
+# Each layout the route once missed is in the 0.29.0 release-fix review (X-1, Z-1..3,
+# W-1..3, V-1..3, U-1); a switch to origin's branch is #141. No command row
 # carries a `#` or an apostrophe: interactive zsh, the macOS default, reads `#` as an
 # argument unless `interactivecomments` is set, and an apostrophe as an open quote that
 # swallowed the rest of the pasted block (V-1); what the rows need said goes on a prose
@@ -469,11 +470,11 @@ worktree_route() {
   fi
   printf '  cd %s\n' "$(shq "${root:-.}")"
   if [ -n "$holder" ] && [ "$holder" = "$root" ]; then
-    printf '  git pull --ff --no-rebase origin %s\n' "$(shq "$int")"
+    printf '  git pull --ff --no-rebase origin %s && \\\n  ' "$(shq "$int")"
   elif [ -n "$holder" ]; then
-    printf '  git -C %s pull --ff --no-rebase origin %s\n' "$(shq "$holder")" "$(shq "$int")"
+    printf '  git -C %s pull --ff --no-rebase origin %s && \\\n  ' "$(shq "$holder")" "$(shq "$int")"
   elif ! "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
-    printf '  git fetch origin\n  git branch --track %s origin/%s\n' "$(shq "$int")" "$(shq "$int")"
+    printf '  git fetch origin && \\\n    git branch --track %s origin/%s && \\\n  ' "$(shq "$int")" "$(shq "$int")"
   else
     [ -n "$stale" ] && printf '  git worktree prune\n'
     printf '  git fetch origin && \\\n'

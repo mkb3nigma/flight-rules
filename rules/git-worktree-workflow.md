@@ -108,8 +108,8 @@ So before a branch is cut, `git fetch origin`, then origin's commits it lacks co
 
 `feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill.
 A `git worktree add` by hand is advisory: no hook checks a start point, because
-legitimate branches start elsewhere (a revert from origin's branch, a `hotfix/` from
-`main`) and a check would refuse them. A project that branches from origin's instead
+legitimate branches start elsewhere (a revert, from that branch on origin) and a check
+would refuse them. A project that branches from origin's instead
 (one that merges only by PR has nothing local to keep) says so in its own rules, which
 override these; the hooks' printed routes still name the local branch until a switch
 exists (#141).

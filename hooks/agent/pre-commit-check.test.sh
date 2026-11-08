@@ -761,7 +761,7 @@ CHAIN="  git fetch origin && \\|    { git merge-base --is-ancestor origin/dev de
 PRUNE="  git worktree prune|"
 D=$(make_repo main); mkdir -p "$D/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say "$(route_of "$OUT")" "  git fetch origin|  git branch --track dev origin/dev|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
+say "$(route_of "$OUT")" "  git fetch origin && \\|    git branch --track dev origin/dev && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
 git -C "$D" branch dev || die "could not make dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
 say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, the fetch and the add chained"
@@ -770,11 +770,11 @@ say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's co
 say "$(reason_of "$OUT" | grep -c '^dev is checked out in no live worktree\. .*stop and ask\.$') $(route_lines "$OUT" | grep -c "[#']")" "1 0" "…said in a prose line above the commands, which carry no # or apostrophe"
 git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
-say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev|  git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev|" "…dev held by a linked worktree: the pull runs there, by path"
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev|" "…dev held by a linked worktree: the pull runs there, by path"
 # Named with git -C from outside the repo, as assistants write it: the lookup reads the
 # target repo, not the shell's (W-4).
 O=$(tmpd); OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<"$(jq -n --arg c "git -C $D commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
-say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "…the same, named with git -C from outside the repo"
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "…the same, named with git -C from outside the repo"
 rm -rf "$O"
 rm -rf "$D/dev wt/.git"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
@@ -820,6 +820,29 @@ say "$(run_route d) $(git -C "$U/r" rev-parse -q --verify feature/d || echo none
 # add once ran on that, exit 0 off a stale dev (V-2). Now nothing runs past the fetch.
 git -C "$U/r" update-ref refs/remotes/origin/dev dev~1 && git -C "$U/r" remote set-url origin "$U/gone.git" || die "could not take origin away in $U/r"
 say "$(run_route u | sed 's/^[1-9][0-9]*$/refused/') $(git -C "$U/r" rev-parse -q --verify feature/u || echo none)" "refused none" "…origin unreachable: the fetch fails and nothing past it runs"
+# The same offline, in every other layout: the update in each is chained to the add, where
+# the pull or fetch once stood alone and the add ran off a stale base, exit 0 (U-1).
+offline_case() {   # <root|linked|missing>: a clone in that layout, origin gone; the route run
+  local F r cmds
+  F=$(tmpd); r="$F/r"
+  git init -q --bare -b main "$F/up.git" && git clone -q "$F/up.git" "$r" 2>/dev/null || die "could not make the clone in $F"
+  git -C "$r" config user.email t@t.t; git -C "$r" config user.name t
+  git -C "$r" commit -q --allow-empty -m a && git -C "$r" push -q origin main main:dev && git -C "$r" fetch -q || die "could not seed $F/up.git"
+  mkdir -p "$r/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$r/.ai/flight-rules.conf"
+  case "$1" in
+    root)    git -C "$r" checkout -q -b dev origin/dev ;;
+    linked)  git -C "$r" branch -q --track dev origin/dev && git -C "$r" worktree add -q "$F/dw" dev ;;
+    missing) : ;;
+  esac || die "could not lay out $1 in $r"
+  git -C "$r" remote set-url origin "$F/gone.git"
+  cmds=$(route_lines "$(cd "$r" && CLAUDE_PROJECT_DIR="$r" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)" | sed 's/<name>/off/g')
+  if [ -z "$cmds" ]; then echo "no route"; elif (cd "$r" && bash -c "$cmds") >/dev/null 2>&1; then echo ran; else echo refused; fi
+  git -C "$r" rev-parse -q --verify feature/off >/dev/null && echo branch || echo none
+  rm -rf "$F"
+}
+for l in root linked missing; do
+  say "$(offline_case "$l" | tr '\n' ' ')" "refused none " "…origin unreachable with dev $l: nothing past the update runs"
+done
 rm -rf "$U"
 
 echo "Target parsing is per simple command, not per command STRING:"

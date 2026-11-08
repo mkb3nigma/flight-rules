@@ -35,10 +35,10 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 4. **Sync the base from origin — non-negotiable.**
    - `git fetch origin` first, **always**, then pull origin into the local
      `{INTEGRATION_BRANCH}`, in the checkout that has it. The base is the local one,
-     authoritative for every local branch: it holds origin's work and any merges not yet
-     pushed, which a branch from origin's would miss (`git-worktree-workflow.md` → *Which
-     branch new work starts from*); a local copy left behind is the exact way work gets
-     built on the wrong foundation.
+     authoritative for every new branch, a revert aside (`git-worktree-workflow.md` →
+     *Which branch new work starts from*): it holds origin's work and any merges not yet
+     pushed, which a branch from origin's would miss; a local copy left behind is the
+     exact way work gets built on the wrong foundation.
      ```bash
      git pull --ff --no-rebase origin {INTEGRATION_BRANCH}
      ```
