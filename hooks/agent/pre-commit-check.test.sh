@@ -757,14 +757,17 @@ done
 reason_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$1"; }
 route_lines() { reason_of "$1" | sed -n '/^  cd /,/^  cd .*<name>$/p' | sed '1d;$d'; }
 route_of() { route_lines "$1" | tr '\n' '|'; }
-CHAIN="  git fetch origin|  # brings in origin's commits dev lacks; refused, the two have diverged: stop and ask|  { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev|"
-PRUNE="  git worktree prune   # the worktree that held dev is gone|"
+CHAIN="  git fetch origin && \\|    { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev|"
+PRUNE="  git worktree prune|"
 D=$(make_repo main); mkdir -p "$D/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
 say "$(route_of "$OUT")" "  git fetch origin|  git branch --track dev origin/dev|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
 git -C "$D" branch dev || die "could not make dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, chained to the add"
+say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, the fetch and the add chained"
+# What the rows need said is prose above them: interactive zsh, the macOS default, reads
+# a `#` in a pasted row as an argument and an apostrophe as an open quote (V-1).
+say "$(reason_of "$OUT" | grep -c '^dev is checked out in no live worktree\. .*stop and ask\.$') $(route_lines "$OUT" | grep -c "[#']")" "1 0" "…said in a prose line above the commands, which carry no # or apostrophe"
 git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
 say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev|  git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev|" "…dev held by a linked worktree: the pull runs there, by path"
@@ -776,6 +779,7 @@ rm -rf "$O"
 rm -rf "$D/dev wt/.git"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
 say "$(route_of "$OUT")" "$PRUNE$CHAIN" "…that worktree's .git gone, its directory left: git marks it prunable, so it is pruned, not pulled in"
+say "$(reason_of "$OUT" | grep -c 'the one that held it is gone, so it is pruned first\.')" "1" "…and says why"
 rm -rf "$D/dev wt"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
 say "$(route_of "$OUT")" "$PRUNE$CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
@@ -792,18 +796,30 @@ git -C "$U/r" fetch -q && git -C "$U/r" branch -q --track dev origin/dev || die 
 git -C "$U/o" fetch -q && git -C "$U/o" checkout -q -b dev origin/dev || die "could not check out dev in $U/o"
 origin_moves() { git -C "$U/o" commit -q --allow-empty -m "o$1" && git -C "$U/o" push -q origin dev || die "could not move origin/dev"; }
 local_moves()  { git -C "$U/r" worktree add -q "$U/lw" dev && git -C "$U/lw" commit -q --allow-empty -m "l$1" && git -C "$U/r" worktree remove "$U/lw" || die "could not move the local dev"; }
-run_route() {   # <name>: the route the guard prints in $U/r, run there; the exit status
+run_route() {   # <name> [zsh]: the route the guard prints in $U/r, run there — by bash, or
+  # pasted into interactive zsh, the macOS default (V-1); the exit status
   local cmds
   cmds=$(route_lines "$(cd "$U/r" && CLAUDE_PROJECT_DIR="$U/r" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)" | sed "s/<name>/$1/g")
   [ -n "$cmds" ] || { echo "no route"; return; }
-  (cd "$U/r" && bash -c "$cmds") >/dev/null 2>&1; echo $?
+  if [ "${2:-}" = zsh ]; then (cd "$U/r" && zsh -f -i <<<"$cmds") >/dev/null 2>&1; else (cd "$U/r" && bash -c "$cmds") >/dev/null 2>&1; fi
+  echo $?
 }
 origin_moves 1
 say "$(run_route b) $(git -C "$U/r" rev-parse feature/b) $(git -C "$U/r" rev-parse dev)" "0 $(git -C "$U/o" rev-parse dev) $(git -C "$U/o" rev-parse dev)" "…run: dev behind, origin's commit brought in, and the branch cut from it"
+if command -v zsh >/dev/null 2>&1; then
+  origin_moves z
+  say "$(run_route z zsh) $(git -C "$U/r" rev-parse -q --verify feature/z) $(git -C "$U/r" rev-parse dev)" "0 $(git -C "$U/o" rev-parse dev) $(git -C "$U/o" rev-parse dev)" "…the same, pasted into interactive zsh"
+else
+  echo "  ⚠️  no zsh here: the interactive-zsh paste case did not run"
+fi
 local_moves 1; L=$(git -C "$U/r" rev-parse dev)
 say "$(run_route a) $(git -C "$U/r" rev-parse feature/a) $(git -C "$U/r" rev-parse dev)" "0 $L $L" "…dev ahead (a merge not yet pushed): cut from the local dev, which stays as it is"
 origin_moves 2
 say "$(run_route d) $(git -C "$U/r" rev-parse -q --verify feature/d || echo none) $(git -C "$U/r" rev-parse dev)" "1 none $L" "…the two diverged: the fetch is refused and the add never runs"
+# Offline: the first fetch fails, and origin/dev, last fetched, says nothing is new — the
+# add once ran on that, exit 0 off a stale dev (V-2). Now nothing runs past the fetch.
+git -C "$U/r" update-ref refs/remotes/origin/dev dev~1 && git -C "$U/r" remote set-url origin "$U/gone.git" || die "could not take origin away in $U/r"
+say "$(run_route u | sed 's/^[1-9][0-9]*$/refused/') $(git -C "$U/r" rev-parse -q --verify feature/u || echo none)" "refused none" "…origin unreachable: the fetch fails and nothing past it runs"
 rm -rf "$U"
 
 echo "Target parsing is per simple command, not per command STRING:"

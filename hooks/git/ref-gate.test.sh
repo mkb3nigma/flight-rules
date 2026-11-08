@@ -355,20 +355,38 @@ say "$(route "$OUT")" "git fetch origin git branch --track dev origin/dev git wo
 # A local dev no live worktree holds gets origin's commits only if there are any, chained
 # so a refusal (the two diverged) stops the add (W-1; owner, 2026-11-08); a worktree that
 # held it, deleted by hand or with its .git gone, is pruned first (W-2, W-3).
-CHAIN="git fetch origin # brings in origin's commits dev lacks; refused, # the two have diverged: stop and ask { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev"
+CHAIN="git fetch origin && \\ { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev"
 git -C "$d" branch dev 2>/dev/null
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, chained to the add"
+say "$(route "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, the fetch and the add chained"
+say "$(grep -c 'dev is checked out in no live worktree\.' <<<"$OUT") $(grep -c 'stop and ask\.' <<<"$OUT")" "1 1" "…said in prose above the commands, which carry no # or apostrophe (V-1)"
+# The rows pasted into interactive zsh, the macOS default, where a `#` is an argument and
+# an apostrophe opens a quote (V-1): with origin's dev a commit ahead, it is brought in
+# and the branch cut from it. No hooks in this paste: the gate's own run is above.
+if command -v zsh >/dev/null 2>&1; then
+    git -C "$d" -c core.hooksPath=/dev/null push -q origin dev || die "could not push dev from $d"
+    o=$(dirname "$d")/o; git clone -q "$(dirname "$d")/up.git" "$o" 2>/dev/null || die "could not clone into $o"
+    git -C "$o" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "chore: o" && git -C "$o" push -q origin HEAD:dev || die "could not move origin's dev"
+    rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e '/^ *cd /d' -e 's|<prefix>/<name>|feature/z|; s|<name>|z|')
+    (cd "$d" && zsh -f -i <<<"$rows") >/dev/null 2>&1
+    say "$(git -C "$d" rev-parse -q --verify feature/z) $(git -C "$d" rev-parse dev)" "$(git -C "$o" rev-parse HEAD) $(git -C "$o" rev-parse HEAD)" "…pasted into interactive zsh: origin's commit brought in, the branch cut from it"
+    if git -C "$d" rev-parse -q --verify feature/z >/dev/null; then
+        git -C "$d" worktree remove "$d/wt/z" && git -C "$d" branch -q -D feature/z || die "could not remove the zsh case's worktree"
+    fi
+else
+    echo "  ⚠️  no zsh here: the interactive-zsh paste case did not run"
+fi
 # dev held by a linked worktree: the pull runs there, by path, quoted to paste.
 git -C "$d" worktree add -q "$d/../dev wt" dev || die "could not add a worktree for dev in $d"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT" | sed "s|'$(cd "$d/.." && pwd -P)/dev wt'|<devwt>|; s|'$(cd "$d/.." && pwd)/dev wt'|<devwt>|")" "git -C <devwt> \\ pull --ff --no-rebase origin dev git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…dev held by a linked worktree: the pull runs there"
 rm -rf "$d/../dev wt/.git"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree prune   # its worktree is gone $CHAIN" "…that worktree's .git gone, its directory left: pruned, not pulled in"
+say "$(route "$OUT")" "git worktree prune $CHAIN" "…that worktree's .git gone, its directory left: pruned, not pulled in"
+say "$(grep -c 'so it is pruned first\.' <<<"$OUT")" "1" "…and says why"
 rm -rf "$d/../dev wt"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree prune   # its worktree is gone $CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
+say "$(route "$OUT")" "git worktree prune $CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
 d=$(make_repo default armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT")" "git pull --ff --no-rebase origin main git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> main" "…with neither set: .ai/worktrees, off the local main, pulled where the root holds it"

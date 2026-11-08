@@ -55,8 +55,9 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      git merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} \
        || git fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}
      ```
-     Equal or ahead, nothing moves; behind, it fast-forwards. Refused, the two have
-     diverged, and merging them needs a checkout of it: STOP and ask.
+     Equal or ahead, nothing moves; behind, it fast-forwards. Refused — diverged
+     (merging them needs a checkout of it), never pushed, or unreachable; git's message
+     says which — STOP and ask.
    - **Reconcile `main` into the integration branch** — only when
      `{INTEGRATION_BRANCH}` differs from `main`. A hotfix or change applied straight
      to `main` is not on the integration branch, so a branch built off it silently

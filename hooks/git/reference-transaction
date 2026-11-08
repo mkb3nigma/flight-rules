@@ -210,7 +210,8 @@ while read -r _old new ref; do
         # *Which branch new work starts from*): with no start point the branch was cut from
         # HEAD, the PR-only branch itself (full release review, S3); from origin's, it
         # missed merges not yet pushed (0.29.0 release review, R-1). The layouts are the
-        # guard's `worktree_route`'s, and its comment says what each once got wrong.
+        # guard's `worktree_route`'s, and its comment says what each once got wrong, and
+        # why no command row carries a `#` or an apostrophe (V-1).
         _wt="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf_from HEAD WORKTREE_DIR)}"; _wt="${_wt:-.ai/worktrees}"
         _int=$(read_conf_from HEAD INTEGRATION_BRANCH); _int="${_int:-main}"
         _root="" _holder="" _cur="" _stale=""
@@ -224,6 +225,19 @@ while read -r _old new ref; do
         # git's own mark first; -d for a git too old to print it.
         [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -d "$_holder" ]; } && { _holder=""; _stale=1; }
         _qi=$(shq "$_int")
+        if [ -z "$_holder" ] && git show-ref --verify --quiet "refs/heads/$_int"; then
+            if [ -n "$_stale" ]; then
+                box_row "$_int is checked out in no live worktree, and the"
+                box_row "one that held it is gone, so it is pruned first."
+            else
+                box_row "$_int is checked out in no live worktree."
+            fi
+            box_row "The commands below bring in the commits origin/$_int"
+            box_row "has that it lacks, if any. If git refuses, read its"
+            box_row "message (diverged, never pushed, or unreachable), and"
+            box_row "stop and ask."
+            box_row ""
+        fi
         box_row "Do this instead:"
         box_row "  cd $(shq "${_root:-.}")"
         _add="  "
@@ -236,11 +250,9 @@ while read -r _old new ref; do
             box_row "  git fetch origin"
             box_row "  git branch --track $_qi origin/$_qi"
         else
-            [ -n "$_stale" ] && box_row "  git worktree prune   # its worktree is gone"
-            box_row "  git fetch origin"
-            box_row "  # brings in origin's commits $_int lacks; refused,"
-            box_row "  # the two have diverged: stop and ask"
-            box_row "  { git merge-base --is-ancestor origin/$_qi $_qi ||"
+            [ -n "$_stale" ] && box_row "  git worktree prune"
+            box_row "  git fetch origin && \\"
+            box_row "    { git merge-base --is-ancestor origin/$_qi $_qi ||"
             box_row "      git fetch origin $_qi:$_qi; } && \\"
             _add="    "
         fi

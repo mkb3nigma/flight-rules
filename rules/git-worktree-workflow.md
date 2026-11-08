@@ -89,24 +89,30 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
 
 ## Which branch new work starts from
 
-The local `{INTEGRATION_BRANCH}` is authoritative for every local branch (owner,
-2026-11-08). It holds
-origin's work once that is brought in, and the merges made here and not yet pushed,
-which origin's lacks: a branch cut from origin's missed the very merge it was meant to
-fix (2026-11-01, #125). So before a branch is cut, origin's commits it lacks come in:
+The local `{INTEGRATION_BRANCH}` is authoritative: it is the base every new branch is
+cut from — a revert of a merge on a protected branch aside (*Merge flow*, below), which
+starts from that branch on origin (owner, 2026-11-08). It holds origin's work once that
+is brought in, and the merges made here and not yet pushed, which origin's lacks: a
+branch cut from origin's missed the very merge it was meant to fix (2026-11-01, #125).
+So before a branch is cut, `git fetch origin`, then origin's commits it lacks come in:
 
-- checked out somewhere: `git pull --ff --no-rebase origin {INTEGRATION_BRANCH}` there;
+- checked out in a live worktree: `git pull --ff --no-rebase origin
+  {INTEGRATION_BRANCH}` there;
 - missing: `git branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`;
-- checked out nowhere: a fast-forward, only if origin's has anything new —
-  `git merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} || git
-  fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`. Refused, the two have
-  diverged, and merging needs a checkout: **stop and ask**.
+- checked out nowhere — first `git worktree prune` if the worktree that held it is gone
+  (`git worktree list` marks it `prunable`): a fast-forward, only if origin's has
+  anything new — `git merge-base --is-ancestor origin/{INTEGRATION_BRANCH}
+  {INTEGRATION_BRANCH} || git fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`.
+  Refused — diverged, never pushed or unreachable; git's message says which — **stop
+  and ask**: merging diverged branches needs a checkout.
 
-`feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill,
-and advisory for a `git worktree add` by hand, whose start point no hook checks. A
-project that branches from origin's instead (one that merges only by PR has nothing
-local to keep) says so in its own rules, which override these; the hooks' printed
-routes still name the local branch until a switch exists (#141).
+`feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill.
+A `git worktree add` by hand is advisory: no hook checks a start point, because
+legitimate branches start elsewhere (a revert from origin's branch, a `hotfix/` from
+`main`) and a check would refuse them. A project that branches from origin's instead
+(one that merges only by PR has nothing local to keep) says so in its own rules, which
+override these; the hooks' printed routes still name the local branch until a switch
+exists (#141).
 
 ## The cwd-drift trap (learned the hard way)
 
