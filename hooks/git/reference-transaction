@@ -205,8 +205,8 @@ while read -r _old new ref; do
         box_row "the ref landing off-upstream is the violation."
         box_row ""
         # From the local integration branch, the authoritative base every new branch is cut
-        # from, with origin's commits it lacks brought in, each layout's update chained to
-        # the add (U-1), into the project's worktree directory, as
+        # from, a revert aside, with origin's commits it lacks brought in, the rows one
+        # chain from the `cd` to the add (U-1, T-1), into the project's worktree directory, as
         # the guard, /feature-start and Required 8 say it (rules/git-worktree-workflow.md →
         # *Which branch new work starts from*): with no start point the branch was cut from
         # HEAD, the PR-only branch itself (full release review, S3); from origin's, it
@@ -226,7 +226,14 @@ while read -r _old new ref; do
         # git's own mark first; -d for a git too old to print it.
         [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -d "$_holder" ]; } && { _holder=""; _stale=1; }
         _qi=$(shq "$_int")
-        if [ -z "$_holder" ] && git show-ref --verify --quiet "refs/heads/$_int"; then
+        if [ -n "$_holder" ]; then
+            box_row "$_int is checked out, so the pull runs in that checkout."
+            box_row "It brings in the commits origin/$_int has that it lacks,"
+            box_row "if any, merging them if the two diverged. If it fails,"
+            box_row "run git merge --abort there if it left a merge in"
+            box_row "progress, and stop and ask."
+            box_row ""
+        elif git show-ref --verify --quiet "refs/heads/$_int"; then
             if [ -n "$_stale" ]; then
                 box_row "$_int is checked out in no live worktree, and the"
                 box_row "one that held it is gone, so it is pruned first."
@@ -240,20 +247,20 @@ while read -r _old new ref; do
             box_row ""
         fi
         box_row "Do this instead:"
-        box_row "  cd $(shq "${_root:-.}")"
+        box_row "  cd $(shq "${_root:-.}") && \\"
         if [ -n "$_holder" ] && [ "$_holder" = "$_root" ]; then
-            box_row "  git pull --ff --no-rebase origin $_qi && \\"
+            box_row "    git pull --ff --no-rebase origin $_qi && \\"
         elif [ -n "$_holder" ]; then
-            box_row "  git -C $(shq "$_holder") \\"
-            box_row "      pull --ff --no-rebase origin $_qi && \\"
+            box_row "    git -C $(shq "$_holder") \\"
+            box_row "        pull --ff --no-rebase origin $_qi && \\"
         elif ! git show-ref --verify --quiet "refs/heads/$_int"; then
-            box_row "  git fetch origin && \\"
+            box_row "    git fetch origin && \\"
             box_row "    git branch --track $_qi origin/$_qi && \\"
         else
-            [ -n "$_stale" ] && box_row "  git worktree prune"
-            box_row "  git fetch origin && \\"
+            [ -n "$_stale" ] && box_row "    git worktree prune && \\"
+            box_row "    git fetch origin && \\"
             box_row "    { git merge-base --is-ancestor origin/$_qi $_qi ||"
-            box_row "      git fetch origin $_qi:$_qi; } && \\"
+            box_row "        git fetch origin $_qi:$_qi; } && \\"
         fi
         # Two rows for the add: on one, the default route was 70 columns in a 66-column box.
         box_row "    git worktree add $(shq "${_wt%/}")/<name> \\"

@@ -336,13 +336,14 @@ done
 # route <output>: the route's rows, between "Do this instead" and "# commit there", frames
 # and the `cd` row taken off, joined. cd_row <output>: the `cd` row, frame taken off.
 route() { sed -n '/Do this instead/,/# commit there/p' <<<"$1" | sed -e '1d' -e '$d' -e 's/^║ *//' -e 's/ *║$//' -e '/^cd /d' | tr '\n' ' ' | sed 's/ *$//'; }
-# offline <dir> <output>: the route's rows run in <dir> with origin unreachable — "ran"
-# or "refused", and whether a branch was cut. In every layout the update is chained to the
-# add; where the pull or fetch stood alone, the add ran off a stale base, exit 0 (U-1).
+# offline <dir> <output>: the route's rows, its `cd` included, run in <dir> with origin
+# unreachable — "ran" or "refused", and whether a branch was cut. In every layout the rows
+# are one chain from the `cd` to the add; where the pull or fetch stood alone, the add ran
+# off a stale base, exit 0 (U-1), and where the `cd` did, in another repo (T-1).
 offline() {
     local d="$1" url rows rc wt
     url=$(git -C "$d" remote get-url origin)
-    rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$2" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e '/^ *cd /d' -e 's|<prefix>/<name>|feature/off|; s|<name>|off|')
+    rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$2" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/off|; s|<name>|off|')
     git -C "$d" remote set-url origin "$d/gone.git"
     if (cd "$d" && bash -c "$rows") >/dev/null 2>&1; then rc=ran; else rc=refused; fi
     git -C "$d" remote set-url origin "$url"
@@ -366,7 +367,7 @@ say "$([ "$RC" -ne 0 ] && ! escaped "$d" && echo refused)" "refused" "a commit o
 # run, and run on main it moved main (0.29.0 release-fix review, X-1, Z-1).
 say "$(route "$OUT")" "git fetch origin && \\ git branch --track dev origin/dev && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…routing to a branch off a local dev, made from origin's where there is none, in WORKTREE_DIR"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the fetch runs"
-say "$(cd_row "$OUT" | sed "s|'$(cd "$d" && pwd -P)'|<root>|; s|$(cd "$d" && pwd -P)|<root>|")" "cd <root>" "…from the repo root, which it names (Z-4)"
+say "$(cd_row "$OUT" | sed "s|'$(cd "$d" && pwd -P)'|<root>|; s|$(cd "$d" && pwd -P)|<root>|")" "cd <root> && \\" "…from the repo root, which it names, chained to the rest (Z-4, T-1)"
 OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR=elsewhere/ git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT")" "git fetch origin && \\ git branch --track dev origin/dev && \\ git worktree add elsewhere/<name> \\ -b <prefix>/<name> dev" "…and FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it"
 OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR="my wt" git commit -q --allow-empty -m "chore: direct" 2>&1)
@@ -387,7 +388,7 @@ if command -v zsh >/dev/null 2>&1; then
     git -C "$d" -c core.hooksPath=/dev/null push -q origin dev || die "could not push dev from $d"
     o=$(dirname "$d")/o; git clone -q "$(dirname "$d")/up.git" "$o" 2>/dev/null || die "could not clone into $o"
     git -C "$o" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "chore: o" && git -C "$o" push -q origin HEAD:dev || die "could not move origin's dev"
-    rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e '/^ *cd /d' -e 's|<prefix>/<name>|feature/z|; s|<name>|z|')
+    rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/z|; s|<name>|z|')
     (cd "$d" && zsh -f -i <<<"$rows") >/dev/null 2>&1
     say "$(git -C "$d" rev-parse -q --verify feature/z) $(git -C "$d" rev-parse dev)" "$(git -C "$o" rev-parse HEAD) $(git -C "$o" rev-parse HEAD)" "…pasted into interactive zsh: origin's commit brought in, the branch cut from it"
     if git -C "$d" rev-parse -q --verify feature/z >/dev/null; then
@@ -401,18 +402,30 @@ git -C "$d" worktree add -q "$d/../dev wt" dev || die "could not add a worktree 
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT" | sed "s|'$(cd "$d/.." && pwd -P)/dev wt'|<devwt>|; s|'$(cd "$d/.." && pwd)/dev wt'|<devwt>|")" "git -C <devwt> \\ pull --ff --no-rebase origin dev && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…dev held by a linked worktree: the pull runs there"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the pull runs"
+# A pull in a checkout merges a diverged dev, and a conflict leaves the merge in progress,
+# where git says to fix and commit: the prose says to abort it and ask (T-2).
+say "$(grep -c 'dev is checked out, so the pull runs in that checkout\.' <<<"$OUT") $(grep -c 'run git merge --abort there' <<<"$OUT")" "1 1" "…said in prose above the commands: a failed pull there is aborted, then ask"
 rm -rf "$d/../dev wt/.git"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree prune $CHAIN" "…that worktree's .git gone, its directory left: pruned, not pulled in"
+say "$(route "$OUT")" "git worktree prune && \\ $CHAIN" "…that worktree's .git gone, its directory left: pruned, not pulled in"
 say "$(grep -c 'so it is pruned first\.' <<<"$OUT")" "1" "…and says why"
 rm -rf "$d/../dev wt"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree prune $CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
+say "$(route "$OUT")" "git worktree prune && \\ $CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the fetch runs"
 d=$(make_repo default armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT")" "git pull --ff --no-rebase origin main && \\ git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> main" "…with neither set: .ai/worktrees, off the local main, pulled where the root holds it"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the pull runs"
+# The `cd` failing — the repo moved, a slip — stops the rows too: unchained, the pull and
+# the add ran in whatever repo the shell was in, and cut a branch there (T-1).
+c=$(dirname "$d")/c; git clone -q "$(dirname "$d")/up.git" "$c" 2>/dev/null || die "could not clone into $c"
+rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/c|; s|<name>|c|')
+mv "$d" "$d.moved" || die "could not move $d"
+say "$( (cd "$c" && bash -c "$rows") >/dev/null 2>&1; echo $?) $(git -C "$c" rev-parse -q --verify feature/c || echo none)" "1 none" "…the cd failing: nothing runs in the repo the shell is in"
+mv "$d.moved" "$d" || die "could not move $d back"
+# The prose rows above the route, the longest the box holds, stay inside it.
+say "$(sed -n '/is checked out, so the pull/,/Do this instead/p' <<<"$OUT" | awk '{ print length($0) }' | sort -u | wc -l | tr -d ' ')" "1" "…and its prose rows stay inside the box"
 # Width in bytes, of the framed rows between the frames: the route rows against the row
 # above them. On one row the default route ran 4 columns past the frame. The `cd` row
 # names a temporary path, so it is left out here and has the case below.
