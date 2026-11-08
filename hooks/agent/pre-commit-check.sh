@@ -442,14 +442,15 @@ RESOLVED_DIR=""; RESOLVED=0
 # every new branch is cut from, a revert aside, with origin's commits it lacks brought
 # in, then the add from the repo root (rules/git-worktree-workflow.md → *Which branch
 # new work starts from*). Where a live worktree holds it, the pull runs there, and
-# merges if the two diverged; if it fails, the prose above says to abort any merge it
-# left and stop. Where none does: missing, it is made from origin's, tracking it; local,
+# merges if the two diverged; if it fails, the prose above says to abort only a merge
+# it started (git printed CONFLICT) and stop — one already in progress there is the
+# person's (S-1). Where none does: missing, it is made from origin's, tracking it; local,
 # origin's is brought in only if it has anything new, by fast-forward, refused if the
 # two diverged. The whole route is one chain, from the first `cd` to the last, so a
 # failure anywhere — the `cd`, offline, never pushed — stops it before a branch is cut
 # off a stale base, or in the wrong repo. A worktree removed by hand still holds the
 # branch to git until pruned. Each layout the route once missed is in the 0.29.0
-# release-fix review (X-1, Z-1..3, W-1..3, V-1..3, U-1, T-1, T-2); a switch to origin's
+# release-fix review (X-1, Z-1..3, W-1..3, V-1..3, U-1, T-1, T-2, S-1); a switch to origin's
 # branch is #141. No command row
 # carries a `#` or an apostrophe: interactive zsh, the macOS default, reads `#` as an
 # argument unless `interactivecomments` is set, and an apostrophe as an open quote that
@@ -468,7 +469,7 @@ worktree_route() {
   # git's own mark first; -d for a git too old to print it.
   [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -d "$holder" ]; } && { holder=""; stale=1; }
   if [ -n "$holder" ]; then
-    printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, run git merge --abort there if it left a merge in progress, and stop and ask.\n' \
+    printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it stops on a CONFLICT, it started that merge: run git merge --abort there, then stop and ask. If it fails any other way, stop and ask: a merge already in progress there is for the person to finish or abort.\n' \
       "$int" "$(shq "$holder")" "$int"
   elif "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
     printf '%s is checked out in no live worktree%s. These bring in the commits origin/%s has that it lacks, if any; if git refuses, read its message (diverged, never pushed, or unreachable) and stop and ask.\n' \

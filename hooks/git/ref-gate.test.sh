@@ -403,8 +403,19 @@ OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT" | sed "s|'$(cd "$d/.." && pwd -P)/dev wt'|<devwt>|; s|'$(cd "$d/.." && pwd)/dev wt'|<devwt>|")" "git -C <devwt> \\ pull --ff --no-rebase origin dev && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…dev held by a linked worktree: the pull runs there"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the pull runs"
 # A pull in a checkout merges a diverged dev, and a conflict leaves the merge in progress,
-# where git says to fix and commit: the prose says to abort it and ask (T-2).
-say "$(grep -c 'dev is checked out, so the pull runs in that checkout\.' <<<"$OUT") $(grep -c 'run git merge --abort there' <<<"$OUT")" "1 1" "…said in prose above the commands: a failed pull there is aborted, then ask"
+# where git says to fix and commit: the prose says to abort it and ask (T-2) — only a
+# merge the pull started: one already in progress there is the person's (S-1).
+say "$(grep -c 'dev is checked out, so the pull runs in that checkout\.' <<<"$OUT") $(grep -c 'a CONFLICT, it started that merge: run git merge --abort' <<<"$OUT") $(grep -c 'person to finish or abort\.' <<<"$OUT")" "1 1 1" "…said in prose above the commands: a merge the pull started is aborted, one already there is left, then ask"
+# The person part-way through a merge in the dev worktree, resolved and not committed: the
+# rows, run whole, refuse at the pull, and the merge and the resolution are left (S-1).
+w="$d/../dev wt"; nh=(-c core.hooksPath=/dev/null)
+{ git -C "$w" "${nh[@]}" checkout -q -b side && echo s > "$w/f" && git -C "$w" add f && git -C "$w" "${nh[@]}" commit -q -m s \
+  && git -C "$w" checkout -q dev && echo d > "$w/f" && git -C "$w" add f && git -C "$w" "${nh[@]}" commit -q -m d; } || die "could not make the merge in $w"
+git -C "$w" "${nh[@]}" merge -q side >/dev/null 2>&1; git -C "$w" rev-parse -q --verify MERGE_HEAD >/dev/null || die "no merge in progress in $w"
+echo resolved > "$w/f" && git -C "$w" add f || die "could not resolve the merge in $w"
+rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/m|; s|<name>|m|')
+say "$( (cd "$d" && bash -c "$rows") >/dev/null 2>&1 && echo ran || echo refused) $(git -C "$d" rev-parse -q --verify feature/m || echo none) $(git -C "$w" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging) $(cat "$w/f")" "refused none merging resolved" "…the person part-way through a merge there: the pull refuses, the merge and its resolution left"
+git -C "$w" merge --abort || die "could not end the merge in $w"
 rm -rf "$d/../dev wt/.git"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT")" "git worktree prune && \\ $CHAIN" "…that worktree's .git gone, its directory left: pruned, not pulled in"

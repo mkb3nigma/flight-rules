@@ -226,12 +226,16 @@ while read -r _old new ref; do
         # git's own mark first; -d for a git too old to print it.
         [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -d "$_holder" ]; } && { _holder=""; _stale=1; }
         _qi=$(shq "$_int")
+        # A merge the pull started is aborted; one already in progress there is the
+        # person's, and an abort would discard their resolution (S-1).
         if [ -n "$_holder" ]; then
             box_row "$_int is checked out, so the pull runs in that checkout."
             box_row "It brings in the commits origin/$_int has that it lacks,"
-            box_row "if any, merging them if the two diverged. If it fails,"
-            box_row "run git merge --abort there if it left a merge in"
-            box_row "progress, and stop and ask."
+            box_row "if any, merging them if the two diverged. If it stops on"
+            box_row "a CONFLICT, it started that merge: run git merge --abort"
+            box_row "there, then stop and ask. If it fails any other way, stop"
+            box_row "and ask: a merge already in progress there is for the"
+            box_row "person to finish or abort."
             box_row ""
         elif git show-ref --verify --quiet "refs/heads/$_int"; then
             if [ -n "$_stale" ]; then
