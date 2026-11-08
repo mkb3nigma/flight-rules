@@ -85,7 +85,28 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    skill (`pre-merge-check` 21, for what the checks started), reminded (`post-merge`
    prints what still runs from the worktree, containers included, at the merge;
    `session-start`)
-8. New branches derive from the local **`{INTEGRATION_BRANCH}`** once origin is pulled into it — never a stale one; it also holds merges not yet pushed. When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
+8. New branches derive from the local **`{INTEGRATION_BRANCH}`** once origin's commits it lacks are brought in — never a stale one (*Which branch new work starts from*, below). When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
+
+## Which branch new work starts from
+
+The local `{INTEGRATION_BRANCH}` is authoritative for every local branch (owner,
+2026-11-08). It holds
+origin's work once that is brought in, and the merges made here and not yet pushed,
+which origin's lacks: a branch cut from origin's missed the very merge it was meant to
+fix (2026-11-01, #125). So before a branch is cut, origin's commits it lacks come in:
+
+- checked out somewhere: `git pull --ff --no-rebase origin {INTEGRATION_BRANCH}` there;
+- missing: `git branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`;
+- checked out nowhere: a fast-forward, only if origin's has anything new —
+  `git merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} || git
+  fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`. Refused, the two have
+  diverged, and merging needs a checkout: **stop and ask**.
+
+`feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill,
+and advisory for a `git worktree add` by hand, whose start point no hook checks. A
+project that branches from origin's instead (one that merges only by PR has nothing
+local to keep) says so in its own rules, which override these; the hooks' printed
+routes still name the local branch until a switch exists (#141).
 
 ## The cwd-drift trap (learned the hard way)
 

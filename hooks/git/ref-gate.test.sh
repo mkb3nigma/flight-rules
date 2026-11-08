@@ -352,20 +352,23 @@ OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR=elsewhere/ git commit -q --allow-empt
 say "$(route "$OUT")" "git fetch origin git branch --track dev origin/dev git worktree add elsewhere/<name> \\ -b <prefix>/<name> dev" "…and FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it"
 OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR="my wt" git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT")" "git fetch origin git branch --track dev origin/dev git worktree add 'my wt'/<name> \\ -b <prefix>/<name> dev" "…a directory with a space, quoted to paste (fix review, 2026-10-26)"
-# A local dev no live worktree holds may be ahead of origin or diverged: the route defers
-# to /feature-start 4, which settles both (Z-2), and does so too once the worktree that
-# held it is deleted by hand and not pruned (Z-3).
-DEFER="# no live worktree holds dev: bring it up to date # as the feature-start skill step 4 says (it may be # ahead of origin or diverged), then: git worktree add wt/<name> \\ -b <prefix>/<name> dev"
+# A local dev no live worktree holds gets origin's commits only if there are any, chained
+# so a refusal (the two diverged) stops the add (W-1; owner, 2026-11-08); a worktree that
+# held it, deleted by hand or with its .git gone, is pruned first (W-2, W-3).
+CHAIN="git fetch origin # brings in origin's commits dev lacks; refused, # the two have diverged: stop and ask { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev"
 git -C "$d" branch dev 2>/dev/null
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "$DEFER" "…a local dev no worktree holds: deferred to /feature-start 4"
+say "$(route "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, chained to the add"
 # dev held by a linked worktree: the pull runs there, by path, quoted to paste.
 git -C "$d" worktree add -q "$d/../dev wt" dev || die "could not add a worktree for dev in $d"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT" | sed "s|'$(cd "$d/.." && pwd -P)/dev wt'|<devwt>|; s|'$(cd "$d/.." && pwd)/dev wt'|<devwt>|")" "git -C <devwt> \\ pull --ff --no-rebase origin dev git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…dev held by a linked worktree: the pull runs there"
+rm -rf "$d/../dev wt/.git"
+OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
+say "$(route "$OUT")" "git worktree prune   # its worktree is gone $CHAIN" "…that worktree's .git gone, its directory left: pruned, not pulled in"
 rm -rf "$d/../dev wt"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "$DEFER" "…and that worktree deleted by hand: deferred, no pull printed for a directory that is gone"
+say "$(route "$OUT")" "git worktree prune   # its worktree is gone $CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
 d=$(make_repo default armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT")" "git pull --ff --no-rebase origin main git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> main" "…with neither set: .ai/worktrees, off the local main, pulled where the root holds it"
@@ -377,7 +380,7 @@ say "$(grep -A4 'Do this instead' <<<"$OUT" | grep -v '^║   cd ' | awk '{ prin
 # a long linked-worktree path ran to 161 columns, pushing that row's edge out).
 LONG=$(printf 'w%.0s' $(seq 1 80))
 OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR="$LONG" git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(grep "worktree add $LONG" <<<"$OUT" | grep -c '║$')" "0" "…a row too long for the box carries no right edge"
+say "$(grep -c "worktree add $LONG" <<<"$OUT") $(grep "worktree add $LONG" <<<"$OUT" | grep -c '║$')" "1 0" "…a row too long for the box is printed, and carries no right edge"
 say "$(grep -A4 'Do this instead' <<<"$OUT" | grep -v "^║   cd \|$LONG" | awk '{ print length($0) }' | sort -u | wc -l | tr -d ' ')" "1" "…and the rows around it keep the frame"
 
 finish

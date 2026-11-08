@@ -746,27 +746,65 @@ for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|m
   fi
   rm -rf "$D"
 done
-# The integration branch where the route finds it (0.29.0 release-fix review, X-1, Z-1..3):
+# The integration branch where the route finds it — the local one, authoritative for
+# every local branch, origin's commits it lacks brought in (rules/git-worktree-workflow.md
+# → *Which branch new work starts from*; 0.29.0 release-fix review, X-1, Z-1..3, W-1..4):
 # a clone holds only main, so dev is made from origin's, tracking it — a pull printed for
 # "where it is checked out" ran on main and moved it; held by a live linked worktree, the
-# pull runs there, by path; a local dev no live worktree holds (none ever did, or its
-# worktree was deleted by hand) may be ahead or diverged, so the route defers to
-# /feature-start 4. The command lines only, as the reason prints them.
-route_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$1" | sed -n '/^  cd /,/^  cd .*<name>$/p' | sed '1d;$d' | tr '\n' '|'; }
-DEFER="  # no live worktree holds dev: bring it up to date as the feature-start skill step 4 says (it may be ahead of origin or diverged), then:"
+# pull runs there, by path; a local dev no live worktree holds gets origin's commits only
+# if there are any, chained so a refusal stops the add; a worktree removed by hand, or
+# whose .git is gone, is pruned first. The command lines only, as the reason prints them.
+reason_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$1"; }
+route_lines() { reason_of "$1" | sed -n '/^  cd /,/^  cd .*<name>$/p' | sed '1d;$d'; }
+route_of() { route_lines "$1" | tr '\n' '|'; }
+CHAIN="  git fetch origin|  # brings in origin's commits dev lacks; refused, the two have diverged: stop and ask|  { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev|"
+PRUNE="  git worktree prune   # the worktree that held dev is gone|"
 D=$(make_repo main); mkdir -p "$D/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
 say "$(route_of "$OUT")" "  git fetch origin|  git branch --track dev origin/dev|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
 git -C "$D" branch dev || die "could not make dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say "$(route_of "$OUT")" "$DEFER|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "…a local dev no worktree holds: it may be ahead or diverged, so the route defers to /feature-start 4"
+say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, chained to the add"
 git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
 say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev|  git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev|" "…dev held by a linked worktree: the pull runs there, by path"
+# Named with git -C from outside the repo, as assistants write it: the lookup reads the
+# target repo, not the shell's (W-4).
+O=$(tmpd); OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<"$(jq -n --arg c "git -C $D commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "  git -C <devwt> pull --ff --no-rebase origin dev|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "…the same, named with git -C from outside the repo"
+rm -rf "$O"
+rm -rf "$D/dev wt/.git"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "$PRUNE$CHAIN" "…that worktree's .git gone, its directory left: git marks it prunable, so it is pruned, not pulled in"
 rm -rf "$D/dev wt"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say "$(route_of "$OUT")" "$DEFER|  git worktree add .ai/worktrees/<name> -b feature/<name> dev|" "…and that worktree deleted by hand, not pruned: no pull is printed for a directory that is gone"
+say "$(route_of "$OUT")" "$PRUNE$CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
 rm -rf "$D"
+# The chain, run as printed in a clone whose dev no worktree holds (owner, 2026-11-08):
+# behind, it takes origin's commits and adds from them; ahead, it adds from the local dev
+# untouched; diverged, it stops before the add.
+U=$(tmpd)
+git init -q --bare -b main "$U/up.git" && git clone -q "$U/up.git" "$U/r" 2>/dev/null && git clone -q "$U/up.git" "$U/o" 2>/dev/null || die "could not make the clones in $U"
+for r in r o; do git -C "$U/$r" config user.email t@t.t; git -C "$U/$r" config user.name t; done
+git -C "$U/r" commit -q --allow-empty -m a && git -C "$U/r" push -q origin main main:dev || die "could not seed $U/up.git"
+mkdir -p "$U/r/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$U/r/.ai/flight-rules.conf"
+git -C "$U/r" fetch -q && git -C "$U/r" branch -q --track dev origin/dev || die "could not make dev in $U/r"
+git -C "$U/o" fetch -q && git -C "$U/o" checkout -q -b dev origin/dev || die "could not check out dev in $U/o"
+origin_moves() { git -C "$U/o" commit -q --allow-empty -m "o$1" && git -C "$U/o" push -q origin dev || die "could not move origin/dev"; }
+local_moves()  { git -C "$U/r" worktree add -q "$U/lw" dev && git -C "$U/lw" commit -q --allow-empty -m "l$1" && git -C "$U/r" worktree remove "$U/lw" || die "could not move the local dev"; }
+run_route() {   # <name>: the route the guard prints in $U/r, run there; the exit status
+  local cmds
+  cmds=$(route_lines "$(cd "$U/r" && CLAUDE_PROJECT_DIR="$U/r" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)" | sed "s/<name>/$1/g")
+  [ -n "$cmds" ] || { echo "no route"; return; }
+  (cd "$U/r" && bash -c "$cmds") >/dev/null 2>&1; echo $?
+}
+origin_moves 1
+say "$(run_route b) $(git -C "$U/r" rev-parse feature/b) $(git -C "$U/r" rev-parse dev)" "0 $(git -C "$U/o" rev-parse dev) $(git -C "$U/o" rev-parse dev)" "…run: dev behind, origin's commit brought in, and the branch cut from it"
+local_moves 1; L=$(git -C "$U/r" rev-parse dev)
+say "$(run_route a) $(git -C "$U/r" rev-parse feature/a) $(git -C "$U/r" rev-parse dev)" "0 $L $L" "…dev ahead (a merge not yet pushed): cut from the local dev, which stays as it is"
+origin_moves 2
+say "$(run_route d) $(git -C "$U/r" rev-parse -q --verify feature/d || echo none) $(git -C "$U/r" rev-parse dev)" "1 none $L" "…the two diverged: the fetch is refused and the add never runs"
+rm -rf "$U"
 
 echo "Target parsing is per simple command, not per command STRING:"
 # Both directions were live and both are reproduced here (2026-09-10).

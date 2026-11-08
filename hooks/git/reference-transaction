@@ -204,43 +204,49 @@ while read -r _old new ref; do
         box_row "revert, rebase, branch -f, update-ref, reset --hard —"
         box_row "the ref landing off-upstream is the violation."
         box_row ""
-        # From the local integration branch, origin's work brought into it, into the
-        # project's worktree directory, as the guard, /feature-start and Required 8 say it:
-        # with no start point the branch was cut from HEAD, the PR-only branch itself (full
-        # release review, S3); from origin's, it missed merges not yet pushed (0.29.0
-        # release review, R-1). Only the layouts the route can be sure of are spelled out —
-        # a live worktree holds the branch, or there is no local one — and a local branch
-        # no live worktree holds defers to /feature-start 4, which settles ahead and
-        # diverged: each layout spelled out found another (0.29.0 release-fix review, X-1,
-        # Z-1..3).
+        # From the local integration branch, authoritative for every local branch, with
+        # origin's commits it lacks brought in, into the project's worktree directory, as
+        # the guard, /feature-start and Required 8 say it (rules/git-worktree-workflow.md →
+        # *Which branch new work starts from*): with no start point the branch was cut from
+        # HEAD, the PR-only branch itself (full release review, S3); from origin's, it
+        # missed merges not yet pushed (0.29.0 release review, R-1). The layouts are the
+        # guard's `worktree_route`'s, and its comment says what each once got wrong.
         _wt="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf_from HEAD WORKTREE_DIR)}"; _wt="${_wt:-.ai/worktrees}"
         _int=$(read_conf_from HEAD INTEGRATION_BRANCH); _int="${_int:-main}"
-        _root="" _holder="" _cur=""
+        _root="" _holder="" _cur="" _stale=""
         while IFS= read -r _l; do
             case "$_l" in
                 "worktree "*) _cur="${_l#worktree }"; [ -n "$_root" ] || _root="$_cur" ;;
                 "branch refs/heads/$_int") _holder="$_cur" ;;
+                prunable*) [ "$_cur" = "$_holder" ] && _stale=1 ;;
             esac
         done < <(git worktree list --porcelain 2>/dev/null)
-        [ -d "$_holder" ] || _holder=""   # removed by hand and not pruned
+        # git's own mark first; -d for a git too old to print it.
+        [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -d "$_holder" ]; } && { _holder=""; _stale=1; }
+        _qi=$(shq "$_int")
         box_row "Do this instead:"
         box_row "  cd $(shq "${_root:-.}")"
+        _add="  "
         if [ -n "$_holder" ] && [ "$_holder" = "$_root" ]; then
-            box_row "  git pull --ff --no-rebase origin $(shq "$_int")"
+            box_row "  git pull --ff --no-rebase origin $_qi"
         elif [ -n "$_holder" ]; then
             box_row "  git -C $(shq "$_holder") \\"
-            box_row "      pull --ff --no-rebase origin $(shq "$_int")"
+            box_row "      pull --ff --no-rebase origin $_qi"
         elif ! git show-ref --verify --quiet "refs/heads/$_int"; then
             box_row "  git fetch origin"
-            box_row "  git branch --track $(shq "$_int") origin/$(shq "$_int")"
+            box_row "  git branch --track $_qi origin/$_qi"
         else
-            box_row "  # no live worktree holds $_int: bring it up to date"
-            box_row "  # as the feature-start skill step 4 says (it may be"
-            box_row "  # ahead of origin or diverged), then:"
+            [ -n "$_stale" ] && box_row "  git worktree prune   # its worktree is gone"
+            box_row "  git fetch origin"
+            box_row "  # brings in origin's commits $_int lacks; refused,"
+            box_row "  # the two have diverged: stop and ask"
+            box_row "  { git merge-base --is-ancestor origin/$_qi $_qi ||"
+            box_row "      git fetch origin $_qi:$_qi; } && \\"
+            _add="    "
         fi
         # Two rows for the add: on one, the default route was 70 columns in a 66-column box.
-        box_row "  git worktree add $(shq "${_wt%/}")/<name> \\"
-        box_row "      -b <prefix>/<name> $(shq "$_int")"
+        box_row "${_add}git worktree add $(shq "${_wt%/}")/<name> \\"
+        box_row "${_add}    -b <prefix>/<name> $_qi"
         box_row "  # commit there, push, open a PR"
         box_row ""
         box_row "To sync this branch:"
