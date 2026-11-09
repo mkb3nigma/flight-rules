@@ -356,9 +356,9 @@ say "$(grep -A2 'Do this instead:' <<<"$OUT" | awk '{ print length($0) }' | sort
 echo "A direct move of a protected branch that is not PR-only is warned of, never refused (#115):"
 DVCONF=$'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^(main|dev)$'
 # dvrepo [unpushed]: make_repo's, with dev protected and on origin (or not, given
-# "unpushed"), checked out. The pre-push hook is wired beside the ref gate.
+# "unpushed"), checked out; DV_CONF in place of DVCONF, "none" for no conf. The pre-push hook is wired beside the ref gate.
 dvrepo() {
-    local d; d=$(make_repo "$DVCONF")
+    local d; d=$(make_repo "${DV_CONF:-$DVCONF}")
     cp "$(dirname "$HOOK_SRC")/pre-push" "$d/../hooks/pre-push" && chmod +x "$d/../hooks/pre-push" \
         || die "could not wire pre-push in $d"
     git -C "$d" branch -q dev main || die "no dev in $d"
@@ -370,6 +370,21 @@ dvrepo() {
     printf '%s' "$d"
 }
 moved() { grep -c "flight-rules: $2 moves to" <<<"$1"; }
+# ahead_on <repo> <branch> [merge]: origin's <branch> ahead by a squash-merged PR (a plain
+# commit), or with "merge" by a merged one, pushed from a clone with no hooks; fetched.
+ahead_on() {
+    local c; c=$(mktemp -d "$TMPROOT/c.XXXXXX")
+    git clone -q -b "$2" "$1/../up.git" "$c/c" 2>/dev/null || die "could not clone $2 for $1"
+    git -C "$c/c" config user.email t@t.t; git -C "$c/c" config user.name t
+    if [ "${3:-}" = merge ]; then
+        git -C "$c/c" checkout -q -b pr && git -C "$c/c" commit -q --allow-empty -m "feature: pr" \
+            && git -C "$c/c" checkout -q "$2" && git -C "$c/c" merge -q --no-ff -m "Merge pull request #2" pr
+    else
+        git -C "$c/c" commit -q --allow-empty -m "fix: squash-merged hotfix (#1)"
+    fi || die "could not put $2 ahead for $1"
+    git -C "$c/c" push -q origin "$2" 2>/dev/null || die "could not push $2 for $1"
+    git -C "$1" fetch -q origin || die "could not fetch in $1"
+}
 # upstream_ahead <repo>: origin's dev one commit ahead, pushed from a second clone.
 upstream_ahead() {
     local c; c=$(mktemp -d "$TMPROOT/c.XXXXXX")
@@ -450,6 +465,24 @@ OUT=$(git -C "$D" pull -q --no-rebase origin dev 2>&1); RC=$?
 say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-list --count --merges -1 dev)$(git -C "$D" rev-parse 'dev^1')" "001$PRE" "a diverged pull, a merge made on dev: silent, and made"
 OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES='^DEV$' git -C "$D" commit -q --allow-empty -m "chore: case" 2>&1); RC=$?
 say "$RC$(moved "$OUT" dev)" "01" "a protected pattern in another case: matched, and warned"
+# Undoing the later of two local merges lands on a merge whose first parent is not where
+# dev is: back along dev's own line, not a direct move (#144 fix review, F-1).
+D=$(dvrepo); git -C "$D" checkout -q -b feature/a main; git -C "$D" commit -q --allow-empty -m "feature: a"
+git -C "$D" checkout -q dev
+git -C "$D" merge -q --no-ff -m "Merge feature/x" feature/x && M1=$(git -C "$D" rev-parse dev) \
+    && git -C "$D" merge -q --no-ff -m "Merge feature/a" feature/a || die "merges failed in $D"
+OUT=$(git -C "$D" reset -q --hard HEAD^ 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-parse dev)" "00$M1" "undoing the later of two local merges: silent, and undone"
+OUT=$(git -C "$D" reset -q --hard HEAD^2 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "01" "…but dev onto the tip of the branch it merged: warned"
+# Brought up to a release merge on main, reviewed there (#144 fix review, F-2). A hotfix
+# first, so the merge's first parent is not where dev is.
+D=$(dvrepo); ahead_on "$D" main; ahead_on "$D" main merge
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" merge -q --ff-only origin/main 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "01" "dev fast-forwarded to a merge on main, with PR_ONLY_BRANCHES=off: warned"
+git -C "$D" reset -q --hard origin/dev
+OUT=$(git -C "$D" merge -q --ff-only origin/main 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-parse dev)" "00$(git -C "$D" rev-parse origin/main)" "…and with main PR-only, reviewed there: silent, and moved"
 D=$(dvrepo)
 git -C "$D" commit -q --allow-empty -m "chore: direct" 2>/dev/null
 OUT=$(git -C "$D" reset -q --hard HEAD 2>&1); RC=$?
@@ -517,15 +550,22 @@ OUT=$(git -C "$D" push origin dev 2>&1); RC=$?
 say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "dev not protected by the conf: silent"
 # /feature-start's route brings dev up to main by a push. A squash-merged PR is a plain
 # commit on main, already reviewed: not counted (#144 review, E-2).
-D=$(dvrepo); C=$(mktemp -d "$TMPROOT/c.XXXXXX")
-git clone -q "$D/../up.git" "$C/c" 2>/dev/null || die "could not clone for $D"
-git -C "$C/c" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "fix: squash-merged hotfix (#1)" \
-    && git -C "$C/c" push -q origin main 2>/dev/null || die "could not push main ahead for $D"
-git -C "$D" fetch -q origin
+D=$(dvrepo); ahead_on "$D" main
 OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" push --dry-run origin origin/main:refs/heads/dev 2>&1)
 say "$(pushed "$OUT" 1 dev)" "1" "the main-to-dev route, with PR_ONLY_BRANCHES=off: a hotfix on main is counted"
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES='(' git -C "$D" push --dry-run origin origin/main:refs/heads/dev 2>&1)
+say "$(pushed "$OUT" 1 dev)" "1" "…with a PR-only pattern that does not compile: counted, not left out"
 OUT=$(git -C "$D" push origin origin/main:refs/heads/dev 2>&1); RC=$?
 say "$RC$(grep -c 'flight-rules:' <<<"$OUT")$(git -C "$D" ls-remote origin dev | cut -f1)" "00$(git -C "$D" rev-parse origin/main)" "…and with main PR-only, it is main's: silent, and pushed"
+# The PR-only branches come from the conf at HEAD, and with no conf, the default ^main$.
+D=$(DV_CONF=$'PR_ONLY_BRANCHES=^trunk$\nPROTECTED_BRANCHES=^(main|trunk|dev)$' dvrepo)
+git -C "$D" push -q origin main:refs/heads/trunk 2>/dev/null || die "could not push trunk from $D"
+ahead_on "$D" trunk
+OUT=$(git -C "$D" push --dry-run origin origin/trunk:refs/heads/dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "a conf naming trunk PR-only: trunk's commits are left out"
+D=$(DV_CONF=none dvrepo); ahead_on "$D" main
+OUT=$(git -C "$D" push --dry-run origin origin/main:refs/heads/dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "no conf: main is PR-only by default, and its commits are left out"
 OUT=$(printf 'refs/heads/dev %s refs/heads/dev %s\n' "$(printf 'f%.0s' $(seq 40))" "$(git -C "$D" rev-parse origin/dev)" \
     | (cd "$D" || exit 9; bash ../hooks/pre-push origin "$D/../up.git" 2>&1)); RC=$?
 say "$RC$(grep -c 'flight-rules: could not check this push to dev at origin: git rev-list failed.' <<<"$OUT")" "01" "a git rev-list that fails: says it could not check"

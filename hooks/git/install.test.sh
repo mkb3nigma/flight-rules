@@ -640,10 +640,13 @@ OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 say "$(head -1 <<<"$OUT")$(grep -c 'lfs' "$D/.ai/hooks/pre-push")" "11" "a project's pre-push: exit 1, and it is not replaced"
 say "$(grep -c "is not flight-rules' pre-push (git-lfs's?) and would be lost" <<<"$OUT")" "1" "…naming it"
 say "$(grep -cxF "   mv -n $D/.ai/hooks/pre-push $D/.ai/hooks/pre-push.local" <<<"$OUT")" "1" "…with the rename to pre-push.local"
-# The daily sync: marking it adapted would keep flight-rules' pre-push out for good.
+# The daily sync: marking it adapted would keep flight-rules' pre-push out for good, and
+# a linter's pre-commit the same.
+printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git" --stale-only)
 say "$(head -1 <<<"$OUT")$(grep -c 'lfs' "$D/.ai/hooks/pre-push")" "01" "--stale-only: exit 0, and it is not replaced"
 say "$(grep -cxF "   pre-push: not flight-rules' pre-push — left alone. If it is your project's own, rename it pre-push.local (flight-rules' pre-push runs it after its own check) and run this again" <<<"$OUT")$(grep -c 'flight-rules: adapted' <<<"$OUT")" "10" "…naming the rename to pre-push.local, not the adapted mark"
+say "$(grep -cxF "   pre-commit: not flight-rules' pre-commit — left alone. If it is your project's own, rename it pre-commit.local (flight-rules' pre-commit runs it after its own check) and run this again" <<<"$OUT")$(grep -c 'lint-staged' "$D/.ai/hooks/pre-commit")" "11" "…and a linter's pre-commit: the rename to pre-commit.local, and it is not replaced"
 echo old > "$D/.ai/hooks/pre-push.local"
 OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 say "$(head -1 <<<"$OUT")$(grep -c 'pre-push.local already exists — merge this one into it by hand, then remove this one and re-run: the flight-rules one runs pre-push.local after its own check.' <<<"$OUT")" "11" "…and with pre-push.local taken, says merge by hand"

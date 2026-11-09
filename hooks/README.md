@@ -73,7 +73,7 @@ whitespace, so a `#` inside a value (`^feature#1$`) is kept.
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
 | Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh`, git hooks, doctor | Branches the guard defends. POSIX ERE, matched case-insensitively, as `PR_ONLY_BRANCHES` and `NOTE_GATED_BRANCHES` are, by every hook — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch until it is fixed, and the guard's block names it — except on a mirror push, which any pattern refuses (#103: it used to protect none). The git hooks do the same: to `commit-msg`, every branch but a PR-only one is note-gated while it is broken (with `NOTE_GATED_BRANCHES` unset), and the refusal names it and prints the way past it. `off` (or `none`) disables six things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, the warnings of a direct change (the ref gate's and `pre-push`'s), `pre-rebase`'s refusal of a branch that is not PR-only, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
-| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured by every hook that reads it — the ref gate, the local merge gate, the rebase gate and `commit-msg`'s squash guard stand down, and no merge counts as a back-merge — while `PROTECTED_BRANCHES` still applies, so a direct change to a branch it protects is warned of, not refused. A pattern that does not compile makes every branch PR-only until it is fixed (#103: it used to make none): no local merge commit or rebase, and no pushed branch moves off its upstream. The refusal names the pattern and prints the way past it, for a branch the pattern does not mean: the command that finishes or repeats what it refused, with the pattern meant in `FLIGHT_RULES_PR_ONLY_BRANCHES`. Where a match grants an exemption — a back-merge needs no note, a PR-only branch is outside the derived note-gated set — it takes the pattern's exact case, so `^MAIN$` gates `main` without exempting it. |
+| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks | No local merge or rebase; moves only through a PR. Default `^main$`. `off` is honoured by every hook that reads it — the ref gate, the local merge gate, the rebase gate and `commit-msg`'s squash guard stand down, and no merge counts as a back-merge — while `PROTECTED_BRANCHES` still applies, so a direct change to a branch it protects is warned of, not refused. A pattern that does not compile makes every branch PR-only until it is fixed (#103: it used to make none): no local merge commit or rebase, and no pushed branch moves off its upstream. The refusal names the pattern and prints the way past it, for a branch the pattern does not mean: the command that finishes or repeats what it refused, with the pattern meant in `FLIGHT_RULES_PR_ONLY_BRANCHES`. Where a match grants an exemption — a back-merge needs no note, a PR-only branch is outside the derived note-gated set — it takes the pattern's exact case, so `^MAIN$` gates `main` without exempting it. Where a match only quiets a warning — commits already on `origin/main` are not a direct change to `dev` — it is case-insensitive, as the gating is. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. A pattern that does not compile gates every branch until it is fixed, and the refusal names it and prints the way past it (#103). Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills; the routes `pre-merge-commit` and the ref gate print (the conf at `HEAD`) | Where features merge. Default `main` everywhere. |
@@ -290,14 +290,15 @@ that the logic has exactly one home.
   usable. That includes a repo whose remote is not called `origin` — the gate reads that
   name only.
   **A protected branch that is not PR-only** (`dev`) is **warned of, never refused**,
-  when it moves to a commit that is neither on its upstream nor a merge made on it (one
-  whose first parent is where the branch was): a commit made on it, an amend (of a
-  merge too), a cherry-pick, a revert, a squash, a fast-forward or `branch -f` onto it
-  (#115). A plain commit on `dev` passed every git hook: a probe script that lost its
+  when it moves to a commit that is not on its upstream, not on a PR-only branch's
+  (`origin/main`, reviewed there), not back along its own unpushed first-parent line
+  (an undone local merge), and not a merge made on it (one whose first parent is where
+  the branch was): a commit made on it, an amend (of a merge too), a cherry-pick, a
+  revert, a squash, a fast-forward or `branch -f` onto it (#115). A plain commit on `dev` passed every git hook: a probe script that lost its
   `cd` committed on local `dev`, inside a script the agent guard never read (2026-10-25).
   Anyone who means to change `dev` directly can, so the move goes ahead, and the warning
-  names the commit. A merge, a pull, `git fetch origin dev:dev` and a move back onto
-  `origin/dev` say nothing, nor does a branch with no upstream, as above. With
+  names the commit. A merge, a pull of `dev` or of `main`, `git fetch origin dev:dev`
+  and a move back onto `origin/dev` say nothing, nor does a branch with no upstream, as above. With
   `PR_ONLY_BRANCHES=off`, `main` is such a branch too.
   Tests: `ref-gate.test.sh` (no arguments, no network).
 - **`pre-commit`** — the secret scan, on what the commit will actually record: a
@@ -347,8 +348,8 @@ that the logic has exactly one home.
   `git push origin origin/main:refs/heads/dev` would otherwise name every squash-merged
   PR on `main`. Every protected branch is checked, PR-only ones too. A branch's first
   push is not, since it carries the history it was cut from; nor is an amended merge,
-  still a merge whose first parent the remote has, which only the ref gate sees. **Already have a `pre-push`**
-  (git-lfs installs one)? Rename it `pre-push.local` beside this one: it runs after,
+  still a merge whose first parent the remote has, which only the ref gate sees.
+  **Already have a `pre-push`** (git-lfs installs one)? Rename it `pre-push.local` beside this one: it runs after,
   with the same arguments and input, and its exit status decides the push. Tests:
   `ref-gate.test.sh`.
 - **`post-merge`** — after a merge into the integration branch, writes a cleanup note
@@ -552,8 +553,9 @@ produced it.
 the push. A warning is only as good as the screen it reaches: a script that sends its
 output to `/dev/null` shows neither, and `git push --no-verify` skips `pre-push`. A
 `dev` with no `origin/dev`, and a branch's first push, are not checked at all. The ref gate
-reads `origin` only, as the PR-only rule does: a pull into `dev` from another remote
-(a fork's `upstream`) that brings plain commits is warned of.
+reads `origin` only, as the PR-only rule does: a fast-forward pull into `dev` from
+another remote (a fork's `upstream`) that brings plain commits is warned of; a pull that
+makes a merge on `dev` is not.
 
 **The design rule follows: close the paths reachable by accident; do not contort the
 design to stop someone acting deliberately.** A guard that catches the careless case
