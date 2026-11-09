@@ -776,11 +776,11 @@ git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
 say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev && \\|" "…dev held by a linked worktree: the pull runs there, by path"
 # A pull in a checkout merges a diverged dev, and a conflict leaves the merge in progress,
-# where git says to fix and commit: the prose says to abort it and ask (T-2). With no
-# merge there before the pull, one it leaves is its own; read from git's words instead,
-# the person's own merge was aborted, their resolution with it (S-1, Q-1). One already
-# in progress there is the layout_case "merging" cases below.
-say "$(reason_of "$OUT" | grep -c "^dev is checked out at '$D/dev wt', so the pull runs there: it brings in the commits origin/dev has that it lacks, if any, merging them if the two diverged\. If it fails, stop and ask, first running git merge --abort there if it left a merge in progress: none was there when this was printed, so that merge is its own\.$")" "1" "…said in a prose line: a merge a failed pull leaves is its own, aborted, then ask"
+# where git says to fix and commit: the prose says to stop and ask (T-2), and to abort
+# nothing, since a merge there may be the person's: each way tried to tell one the pull
+# left from theirs misread one (S-1, Q-1, P-1, O-1). One already in progress there is
+# the layout_case "merging" cases below.
+say "$(reason_of "$OUT" | grep -c "^dev is checked out at '$D/dev wt', so the pull runs there: it brings in the commits origin/dev has that it lacks, if any, merging them if the two diverged\. If it fails, stop and ask, and leave whatever it left there to the person\.$")" "1" "…said in a prose line: on a failure, stop and ask, aborting nothing"
 # Named with git -C from outside the repo, as assistants write it: the lookup reads the
 # target repo, not the shell's (W-4).
 O=$(tmpd); OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<"$(jq -n --arg c "git -C $D commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
@@ -844,12 +844,12 @@ say "$(run_route u | sed 's/^[1-9][0-9]*$/refused/') $(git -C "$U/r" rev-parse -
 # in each is chained to the add, where the pull or fetch once stood alone and the add ran
 # off a stale base, exit 0 (U-1). Merging, the checkout holding dev is part-way through
 # the person's own merge — open, f resolved and g not, which git refuses with "an
-# unresolved conflict" (Q-1); or resolved, not committed (S-1): the prose says the merge
-# is theirs and to stop, the pull refuses, and the merge and the resolution are left.
+# unresolved conflict" (Q-1); or resolved, not committed (S-1): the pull refuses, and the
+# merge and the resolution are left.
 layout_case() {   # <root|linked|missing> <online|offline|merging|merging-open>: a clone in
   # that layout, origin's dev a commit ahead; the route run — ran or refused, then the
-  # branch's commit or none, then, merging, what the prose says, whether the merge is
-  # still in progress, and f's content
+  # branch's commit or none, then, merging, whether the merge is still in progress, and
+  # f's content
   local F r h out cmds tip
   F=$(tmpd); r="$F/r"
   git init -q --bare -b main "$F/up.git" && git clone -q "$F/up.git" "$r" 2>/dev/null || die "could not make the clone in $F"
@@ -880,7 +880,6 @@ layout_case() {   # <root|linked|missing> <online|offline|merging|merging-open>:
   if [ -z "$cmds" ]; then echo "no route"; elif (cd "$r" && bash -c "$cmds") >/dev/null 2>&1; then echo ran; else echo refused; fi
   git -C "$r" rev-parse -q --verify feature/on | sed "s/^$tip$/tip/" | grep . || echo none
   if [ -n "${h:-}" ]; then
-    reason_of "$out" | grep -q "^dev is checked out at .*, and a merge is in progress there that this route did not start\. Stop and ask, and run nothing below until it is done\.$" && echo stop
     git -C "$h" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging; cat "$h/f"
   fi
   rm -rf "$F"
@@ -890,8 +889,8 @@ for l in root linked missing; do
   say "$(layout_case "$l" offline | tr '\n' ' ')" "refused none " "…origin unreachable with dev $l: nothing past the update runs"
 done
 for l in root linked; do
-  say "$(layout_case "$l" merging-open | tr '\n' ' ')" "refused none stop merging resolved " "…dev $l, the person part-way through a merge there, a conflict still open: theirs, stop; the pull refuses, the merge and the resolution left"
-  say "$(layout_case "$l" merging | tr '\n' ' ')" "refused none stop merging resolved " "…the same, the merge resolved and not committed"
+  say "$(layout_case "$l" merging-open | tr '\n' ' ')" "refused none merging resolved " "…dev $l, the person part-way through a merge there, a conflict still open: the pull refuses, the merge and the resolution left"
+  say "$(layout_case "$l" merging | tr '\n' ' ')" "refused none merging resolved " "…the same, the merge resolved and not committed"
 done
 rm -rf "$U"
 

@@ -403,44 +403,22 @@ OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT" | sed "s|'$(cd "$d/.." && pwd -P)/dev wt'|<devwt>|; s|'$(cd "$d/.." && pwd)/dev wt'|<devwt>|")" "git -C <devwt> \\ pull --ff --no-rebase origin dev && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev" "…dev held by a linked worktree: the pull runs there"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the pull runs"
 # A pull in a checkout merges a diverged dev, and a conflict leaves the merge in progress,
-# where git says to fix and commit: the prose says to abort it and ask (T-2). With no
-# merge there before the pull, one it leaves is its own; read from git's words instead,
-# the person's own merge was aborted (S-1, Q-1). Pinned whole: pinned in fragments, a
-# rewording back to "abort on any failure" passed (Q-3).
+# where git says to fix and commit: the prose says to stop and ask (T-2), and to abort
+# nothing, since a merge there may be the person's (S-1, Q-1, P-1, O-1). Pinned whole:
+# pinned in fragments, a rewording to "abort on any failure" passed (Q-3).
 prose() { sed -n "/$1/,/^║ *║\$/p" <<<"$2" | sed -e 's/^║ *//' -e 's/ *║$//' | tr '\n' ' ' | sed 's/ *$//'; }
-say "$(prose 'is checked out, so the pull' "$OUT")" "dev is checked out, so the pull runs in that checkout. It brings in the commits origin/dev has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, first running git merge --abort there if it left a merge in progress: none was there when this was printed, so that merge is its own." "…said in prose above the commands: a merge a failed pull leaves is its own, aborted, then ask"
+say "$(prose 'is checked out, so the pull' "$OUT")" "dev is checked out, so the pull runs in that checkout. It brings in the commits origin/dev has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, and leave whatever it left there to the person." "…said in prose above the commands: on a failure, stop and ask, aborting nothing"
 # The person part-way through a merge in the dev worktree, f resolved and g not, which
-# git refuses with "an unresolved conflict": the prose says it is theirs and to stop, the
-# rows, run whole, refuse at the pull, and the merge and the resolution are left (Q-1).
+# git refuses with "an unresolved conflict": the rows, run whole, refuse at the pull, and
+# the merge and the resolution are left (Q-1).
 w="$d/../dev wt"; nh=(-c core.hooksPath=/dev/null)
 { git -C "$w" "${nh[@]}" checkout -q -b side && echo s > "$w/f" && echo s > "$w/g" && git -C "$w" add f g && git -C "$w" "${nh[@]}" commit -q -m s \
   && git -C "$w" checkout -q dev && echo d > "$w/f" && echo d > "$w/g" && git -C "$w" add f g && git -C "$w" "${nh[@]}" commit -q -m d; } || die "could not make the merge in $w"
 git -C "$w" "${nh[@]}" merge -q side >/dev/null 2>&1; git -C "$w" rev-parse -q --verify MERGE_HEAD >/dev/null || die "no merge in progress in $w"
 echo resolved > "$w/f" && git -C "$w" add f || die "could not resolve f in $w"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(prose 'a merge is in progress in that' "$OUT")" "dev is checked out, and a merge is in progress in that checkout that this route did not start. Stop and ask, and run nothing below until it is done." "…the person part-way through a merge there: theirs, so stop"
 rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/m|; s|<name>|m|')
 say "$( (cd "$d" && bash -c "$rows") >/dev/null 2>&1 && echo ran || echo refused) $(git -C "$d" rev-parse -q --verify feature/m || echo none) $(git -C "$w" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging) $(cat "$w/f")" "refused none merging resolved" "…and the rows, run anyway, refuse at the pull, the merge and the resolution left"
-# The same refusal from a linked worktree, where git exports GIT_DIR to the hook and -C
-# does not override it: the check read the issuing worktree, saw no merge, and the prose
-# said to abort the person's (P-1).
-# main checked out in a linked worktree and committed on there, and main moved from a
-# feature worktree, the person's merge still open in dev's.
-git -C "$d" checkout -q --detach && git -C "$d" worktree add -q "$d/../main wt" main && git -C "$d" worktree add -q -b feature/p "$d/../feat wt" dev || die "could not add the worktrees in $d"
-for c in "main wt|commit -q --allow-empty -m chore:direct" "feat wt|update-ref refs/heads/main HEAD"; do
-    OUT=$(cd "$d/../${c%%|*}" && git ${c#*|} 2>&1)
-    say "$(escaped "$d" || echo refused) $(prose 'a merge is in progress in that' "$OUT") $(git -C "$w" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging)" "refused dev is checked out, and a merge is in progress in that checkout that this route did not start. Stop and ask, and run nothing below until it is done. merging" "…refused from a linked worktree (${c%%|*}: git ${c#*|}): the merge is read in dev's checkout, and stopped on"
-done
-{ git -C "$d" worktree remove "$d/../feat wt" && git -C "$d" branch -q -D feature/p && git -C "$d" worktree remove "$d/../main wt" && git -C "$d" checkout -q main; } || die "could not remove the worktrees in $d"
-# And dev at the root, as this repo works, the person's merge open there and main
-# committed on from a linked worktree: one line serves both holders, so pinned for each.
-r=$(make_repo "$(printf 'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\nWORKTREE_DIR=wt')" armed)
-{ git -C "$r" checkout -q -b side && echo s > "$r/f" && git -C "$r" add f && git -C "$r" "${nh[@]}" commit -q -m s \
-  && git -C "$r" checkout -q -b dev main && echo d > "$r/f" && git -C "$r" add f && git -C "$r" "${nh[@]}" commit -q -m d; } || die "could not make the merge in $r"
-git -C "$r" "${nh[@]}" merge -q side >/dev/null 2>&1; git -C "$r" rev-parse -q --verify MERGE_HEAD >/dev/null || die "no merge in progress in $r"
-git -C "$r" worktree add -q "$r/../main wt" main || die "could not add a worktree for main in $r"
-OUT=$(cd "$r/../main wt" && git commit -q --allow-empty -m chore:direct 2>&1)
-say "$(escaped "$r" || echo refused) $(prose 'a merge is in progress in that' "$OUT") $(git -C "$r" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging)" "refused dev is checked out, and a merge is in progress in that checkout that this route did not start. Stop and ask, and run nothing below until it is done. merging" "…dev at the root, refused from a linked worktree: the merge is read at the root"
 git -C "$w" merge --abort || die "could not end the merge in $w"
 rm -rf "$d/../dev wt/.git"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)

@@ -226,24 +226,14 @@ while read -r _old new ref; do
         # git's own mark first; -d for a git too old to print it.
         [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -d "$_holder" ]; } && { _holder=""; _stale=1; }
         _qi=$(shq "$_int")
-        # Whose a merge in that checkout is, is decided before the pull, by state: one
-        # already in progress is not the route's; with none, one a failed pull leaves is its
-        # own. The guard's `worktree_route` comment says why git's words could not (Q-1).
-        # git exports GIT_DIR to a hook run from a linked worktree, and -C does not
-        # override it: without the unset, the check read the state of the worktree the
-        # command ran in, and called the person's merge the pull's own (P-1).
-        if [ -n "$_holder" ] && (unset GIT_DIR GIT_WORK_TREE; git -C "$_holder" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1); then
-            box_row "$_int is checked out, and a merge is in progress in that"
-            box_row "checkout that this route did not start. Stop and ask,"
-            box_row "and run nothing below until it is done."
-            box_row ""
-        elif [ -n "$_holder" ]; then
+        # A failed pull is left for the person: a merge in progress in that checkout may
+        # be theirs, so the prose says to abort nothing. The guard's `worktree_route`
+        # comment says why (S-1, Q-1, P-1, O-1).
+        if [ -n "$_holder" ]; then
             box_row "$_int is checked out, so the pull runs in that checkout."
             box_row "It brings in the commits origin/$_int has that it lacks,"
-            box_row "if any, merging them if the two diverged. If it fails,"
-            box_row "stop and ask, first running git merge --abort there if it"
-            box_row "left a merge in progress: none was there when this was"
-            box_row "printed, so that merge is its own."
+            box_row "if any, merging them if the two diverged. If it fails, stop"
+            box_row "and ask, and leave whatever it left there to the person."
             box_row ""
         elif git show-ref --verify --quiet "refs/heads/$_int"; then
             if [ -n "$_stale" ]; then

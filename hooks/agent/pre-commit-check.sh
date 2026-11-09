@@ -442,12 +442,11 @@ RESOLVED_DIR=""; RESOLVED=0
 # every new branch is cut from, a revert aside, with origin's commits it lacks brought
 # in, then the add from the repo root (rules/git-worktree-workflow.md → *Which branch
 # new work starts from*). Where a live worktree holds it, the pull runs there, and
-# merges if the two diverged. Whose a merge left there is, is decided before the pull,
-# by state, as /feature-start 4 does: one already in progress is not the route's — stop,
-# run nothing; with none, a merge a failed pull leaves is its own — abort it, then stop.
-# Read from git's words after the pull, it was wrong: "unresolved conflict" for the
-# person's merge, no CONFLICT for a clean one a hook refused, none in another language
-# (S-1, Q-1, Q-2). Where none does: missing, it is made from origin's, tracking it; local,
+# merges if the two diverged. If it fails, the prose says to stop and ask and leave what
+# it left: it says to abort nothing, since a merge in progress there may be the person's.
+# Each way tried to tell one a failed pull left from theirs misread one — git's words
+# after the pull, a check for MERGE_HEAD before it (S-1, Q-1, Q-2, P-1, O-1; owner,
+# 2026-11-09). Where none does: missing, it is made from origin's, tracking it; local,
 # origin's is brought in only if it has anything new, by fast-forward, refused if the
 # two diverged. The whole route is one chain, from the first `cd` to the last, so a
 # failure anywhere — the `cd`, offline, never pushed — stops it before a branch is cut
@@ -471,11 +470,8 @@ worktree_route() {
   done < <("${GIT[@]}" worktree list --porcelain 2>/dev/null)
   # git's own mark first; -d for a git too old to print it.
   [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -d "$holder" ]; } && { holder=""; stale=1; }
-  if [ -n "$holder" ] && git -C "$holder" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
-    printf '%s is checked out at %s, and a merge is in progress there that this route did not start. Stop and ask, and run nothing below until it is done.\n' \
-      "$int" "$(shq "$holder")"
-  elif [ -n "$holder" ]; then
-    printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, first running git merge --abort there if it left a merge in progress: none was there when this was printed, so that merge is its own.\n' \
+  if [ -n "$holder" ]; then
+    printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, and leave whatever it left there to the person.\n' \
       "$int" "$(shq "$holder")" "$int"
   elif "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
     printf '%s is checked out in no live worktree%s. These bring in the commits origin/%s has that it lacks, if any; if git refuses, read its message (diverged, never pushed, or unreachable) and stop and ask.\n' \
