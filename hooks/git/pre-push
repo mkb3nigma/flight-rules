@@ -15,10 +15,14 @@
 # `<remote> HEAD:dev` is. A branch the remote does not have yet is not checked: its
 # first push carries the history it was cut from, and every commit would count. Every
 # protected branch is checked, PR-only ones too: the ref gate refuses those moves
-# locally, and one that got past it is worth saying.
+# locally, and one that got past it is worth saying. Commits already on the remote's
+# PR-only branch (origin/main) are not counted: they came through its review, and
+# /feature-start prints `git push origin origin/main:refs/heads/dev` to bring dev up to
+# main, which holds plain commits wherever a PR was squash-merged (#144 review, E-2).
 #
-# Configuration — first match wins:
+# Configuration — first match wins, for each:
 #   1. Environment            FLIGHT_RULES_PROTECTED_BRANCHES='^(main|dev)$'
+#                             FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
 #   2. .ai/flight-rules.conf  as committed on HEAD
 #   3. The default below
 # Parsed as data, never sourced.
@@ -29,6 +33,7 @@
 
 set -uo pipefail
 
+DEFAULT_PR_ONLY='^main$'
 DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
 CONF_PATH='.ai/flight-rules.conf'
 ZERO='0000000000000000000000000000000000000000'
@@ -47,6 +52,20 @@ read_conf_at_head() {
 PROT_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf_at_head PROTECTED_BRANCHES "$CONF_PATH")}"
 PROT_RE="${PROT_RE:-$DEFAULT_PROTECTED}"
 [ "$PROT_RE" = none ] && PROT_RE=off
+PR_ONLY_RE="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf_at_head PR_ONLY_BRANCHES "$CONF_PATH")}"
+PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
+
+# The remote's PR-only branches, as this clone last fetched them, each as ^<ref>: a ref
+# name holds no space or glob character, so the list is split on whitespace. Only a
+# pattern that matches counts: one that does not compile excludes nothing, and says
+# more, not less. A remote given as a URL has no refs/remotes/ here.
+NOT_PR_ONLY=""
+case "$PR_ONLY_RE" in off|none) ;; *)
+    for r in $(git for-each-ref --format='%(refname)' "refs/remotes/$1/"); do
+        printf '%s' "${r#"refs/remotes/$1/"}" | grep -qiE -e "$PR_ONLY_RE" 2>/dev/null \
+            && NOT_PR_ONLY="$NOT_PR_ONLY ^$r"
+    done ;;
+esac
 
 # Read once: the lines are handed on to pre-push.local as they came.
 IN=$(cat)
@@ -64,11 +83,11 @@ IN=$(cat)
             echo "⚠️  flight-rules: could not check this push to $br at $1: $1 has $br at ${rsha:0:7}, which is not in this clone (fetch, and look at what it has)."
             continue
         fi
-        n=$(git rev-list --count --first-parent --no-merges "$lsha" "^$rsha") \
+        n=$(git rev-list --count --first-parent --no-merges "$lsha" "^$rsha" $NOT_PR_ONLY) \
             || { echo "⚠️  flight-rules: could not check this push to $br at $1: git rev-list failed."; continue; }
         [ "$n" -gt 0 ] || continue
         echo "⚠️  flight-rules: this push puts $n commit(s) on $br at $1 that no merge brought in:"
-        git log --first-parent --no-merges --format='     %h %s' -n 5 "$lsha" "^$rsha"
+        git log --first-parent --no-merges --format='     %h %s' -n 5 "$lsha" "^$rsha" $NOT_PR_ONLY
         [ "$n" -le 5 ] || echo "     … and $((n - 5)) more"
         echo "   $br is a protected branch: work reaches it by merging its own branch. The push goes ahead."
         [ "$m" -eq 0 ] || echo "   PROTECTED_BRANCHES ($PROT_RE) is not a pattern that compiles, so every branch is taken as protected until it is fixed."

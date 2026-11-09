@@ -73,7 +73,7 @@ newer_than() {
 
 # A hook that is present, executable and EMPTY passes every other check here while
 # enforcing nothing. doctor already content-checks the agent guard (for a pre-conf copy);
-# these are the same idea for the six git hooks — one string each that a real copy must
+# these are the same idea for the seven git hooks — one string each that a real copy must
 # contain. It is a grep, so a determined edit defeats it; it catches the stub, the
 # truncated copy and the wrong-file-name, which is what actually happens.
 hook_marker() {

@@ -310,6 +310,13 @@ if [ -n "$FROM" ]; then
             elif [ "$_a" -ne 1 ]; then
                 echo "   $h: could not be read (grep exited $_a) — could not check it; left alone"
                 LEFT=$((LEFT+1))
+            # A pre-commit or pre-push that is not flight-rules' at all (a linter's,
+            # git-lfs's) is no adapted copy: marked so, it kept flight-rules' own out for
+            # good. It goes to .local, as the full install says (#144 review, E-4).
+            elif { [ "$h" = pre-commit ] || [ "$h" = pre-push ]; } \
+                 && { grep -qF -e "$(hook_marker "$h")" "$dst"; [ "$?" -eq 1 ]; }; then
+                echo "   $h: not flight-rules' $h — left alone. If it is your project's own, rename it $h.local (flight-rules' $h runs it after its own check) and run this again"
+                LEFT=$((LEFT+1))
             else
                 echo "   $h: differs from every flight-rules release in the plugin cache — left alone (adapted here? diff it against $src, and add a line '# flight-rules: adapted' if so)"
                 LEFT=$((LEFT+1))

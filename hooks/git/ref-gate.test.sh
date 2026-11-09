@@ -386,9 +386,6 @@ say "$(moved "$OUT" dev)" "1" "…warned of"
 say "$(grep -cF "dev moves to $(git -C "$D" rev-parse --short dev) (chore: on dev itself), which no merge brought in and origin/dev does not have." <<<"$OUT")" "1" "…naming the commit"
 say "$(grep -c 'The move goes ahead; nothing leaves this clone until dev is pushed.' <<<"$OUT")" "1" "…and that it goes ahead"
 git -C "$D" reset -q --hard origin/dev
-# -x: a pick onto feature/x's own parent in the same second is feature/x itself.
-OUT=$(git -C "$D" cherry-pick -x feature/x 2>&1); RC=$?
-say "$RC$(moved "$OUT" dev)" "01" "a clean cherry-pick onto dev, which runs no commit hook: warned, and goes ahead"
 OUT=$(git -C "$D" merge -q --no-ff -m "Merge feature/x" feature/x 2>&1); RC=$?
 say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-list --count --merges -1 dev)" "001" "a merge into dev: silent, and made"
 git -C "$D" checkout -q main
@@ -416,6 +413,43 @@ say "$RC$(moved "$OUT" main)" "01" "PR_ONLY_BRANCHES=off: main is only protected
 git -C "$D" checkout -q -b kickoff; git -C "$D" push -q origin kickoff 2>/dev/null
 OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" commit -q --allow-empty -m "chore: kickoff" 2>&1); RC=$?
 say "$RC" "0" "…and off is not a pattern: a branch named kickoff is not taken as PR-only"
+# Each shape of a direct move, on a fresh dev (AGENTS.md: cross the shapes, do not sample
+# them). merge-amend and ff-merge-tip land on a merge that was not made on dev: any merge
+# was waved through, and both were silent (#144 review, E-1).
+for shape in amend merge-amend cherry-pick revert squash reset update-ref ff-merge ff-merge-tip; do
+    D=$(dvrepo)
+    case "$shape" in
+        merge-amend)
+            git -C "$D" merge -q --no-ff -m "Merge feature/x" feature/x 2>/dev/null || die "merge failed in $D" ;;
+        revert)
+            echo r > "$D/r"; git -C "$D" add r; git -C "$D" commit -qm "chore: to revert" 2>/dev/null
+            git -C "$D" push -q origin dev 2>/dev/null || die "push failed in $D" ;;
+        ff-merge-tip)
+            upstream_ahead "$D"; git -C "$D" pull -q --ff --no-rebase origin dev 2>/dev/null || die "pull failed in $D"
+            git -C "$D" checkout -q -b feature/w feature/x
+            git -C "$D" merge -q --no-ff -m "Merge dev into feature/w" dev 2>/dev/null || die "back-merge failed in $D"
+            git -C "$D" checkout -q dev ;;
+    esac
+    case "$shape" in
+        amend|merge-amend) OUT=$(git -C "$D" commit -q --amend --allow-empty -m "chore: amended" 2>&1); RC=$? ;;
+        # -x: a pick onto feature/x's own parent in the same second is feature/x itself.
+        cherry-pick)  OUT=$(git -C "$D" cherry-pick -x feature/x 2>&1); RC=$? ;;
+        revert)       OUT=$(git -C "$D" revert --no-edit HEAD 2>&1); RC=$? ;;
+        squash)       OUT=$({ git -C "$D" merge -q --squash --ff feature/x && git -C "$D" commit -qm "chore: squashed"; } 2>&1); RC=$? ;;
+        reset)        OUT=$(git -C "$D" reset -q --hard feature/x 2>&1); RC=$? ;;
+        update-ref)   OUT=$(git -C "$D" update-ref refs/heads/dev feature/x 2>&1); RC=$? ;;
+        ff-merge)     OUT=$(git -C "$D" merge -q --ff-only feature/x 2>&1); RC=$? ;;
+        ff-merge-tip) OUT=$(git -C "$D" merge -q --ff-only feature/w 2>&1); RC=$? ;;
+    esac
+    say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-list --count origin/dev..dev | grep -c '^[1-9]')" "011" "$shape onto dev: warned, and it moved"
+done
+D=$(dvrepo)
+git -C "$D" merge -q --no-ff -m "Merge feature/x" feature/x 2>/dev/null || die "merge failed in $D"
+upstream_ahead "$D"; PRE=$(git -C "$D" rev-parse dev)
+OUT=$(git -C "$D" pull -q --no-rebase origin dev 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-list --count --merges -1 dev)$(git -C "$D" rev-parse 'dev^1')" "001$PRE" "a diverged pull, a merge made on dev: silent, and made"
+OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES='^DEV$' git -C "$D" commit -q --allow-empty -m "chore: case" 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "01" "a protected pattern in another case: matched, and warned"
 D=$(dvrepo)
 git -C "$D" commit -q --allow-empty -m "chore: direct" 2>/dev/null
 OUT=$(git -C "$D" reset -q --hard HEAD 2>&1); RC=$?
@@ -448,6 +482,11 @@ git -C "$D" commit -q --allow-empty -m "chore: direct" 2>/dev/null
 OUT=$(git -C "$D" push origin dev 2>&1); RC=$?
 say "$RC$(pushed "$OUT" 1 dev)$(git -C "$D" rev-parse origin/dev)" "01$(git -C "$D" rev-parse dev)" "a push of dev carrying a direct commit: warned, and pushed"
 say "$(grep -c "^     $(git -C "$D" rev-parse --short dev) chore: direct$" <<<"$OUT")$(grep -c 'dev is a protected branch: work reaches it by merging its own branch. The push goes ahead.' <<<"$OUT")" "11" "…naming it, and saying it goes ahead"
+git -C "$D" checkout -q feature/x; git -C "$D" commit -q --allow-empty -m "feature: x2"; git -C "$D" checkout -q dev
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge -q --no-ff -m "Merge feature/x again" feature/x || die "merge failed in $D"
+git -C "$D" commit -q --allow-empty -m "chore: after a merge" 2>/dev/null
+OUT=$(git -C "$D" push origin dev 2>&1)
+say "$(pushed "$OUT" 1 dev)$(grep -c '^     [0-9a-f]* Merge' <<<"$OUT")$(grep -c '^     [0-9a-f]* feature: x2$' <<<"$OUT")" "100" "a merge and a direct commit: one counted, and neither the merge nor what it brought listed"
 for i in 1 2 3 4 5 6 7; do git -C "$D" commit -q --allow-empty -m "chore: direct $i" 2>/dev/null; done
 OUT=$(git -C "$D" push origin dev 2>&1)
 say "$(pushed "$OUT" 7 dev)$(grep -c '^     [0-9a-f]* chore: direct [0-9]$' <<<"$OUT")$(grep -c '^     … and 2 more$' <<<"$OUT")" "151" "seven: five named, and the rest counted"
@@ -460,6 +499,9 @@ say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "…and its next push: silent
 git -C "$D" commit -q --allow-empty -m "feature: y2"
 OUT=$(git -C "$D" push origin HEAD:dev 2>&1); RC=$?
 say "$RC$(pushed "$OUT" 3 dev)" "01" "a feature branch pushed straight to dev: warned, its three commits counted"
+git -C "$D" commit -q --allow-empty -m "feature: y2a"
+OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES='^DEV$' git -C "$D" push origin HEAD:dev 2>&1); RC=$?
+say "$RC$(pushed "$OUT" 1 dev)" "01" "a protected pattern in another case: matched, and warned"
 git -C "$D" commit -q --allow-empty -m "feature: y3"
 OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES=off git -C "$D" push origin HEAD:dev 2>&1); RC=$?
 say "$RC$(grep -c 'flight-rules: this push' <<<"$OUT")$(git -C "$D" rev-parse origin/dev)" "00$(git -C "$D" rev-parse HEAD)" "PROTECTED_BRANCHES=off: silent, and pushed"
@@ -473,6 +515,20 @@ git -C "$D" branch -q dev main; git -C "$D" push -q origin dev 2>/dev/null; git 
 git -C "$D" commit -q --allow-empty -m "chore: conf" 2>/dev/null
 OUT=$(git -C "$D" push origin dev 2>&1); RC=$?
 say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "dev not protected by the conf: silent"
+# /feature-start's route brings dev up to main by a push. A squash-merged PR is a plain
+# commit on main, already reviewed: not counted (#144 review, E-2).
+D=$(dvrepo); C=$(mktemp -d "$TMPROOT/c.XXXXXX")
+git clone -q "$D/../up.git" "$C/c" 2>/dev/null || die "could not clone for $D"
+git -C "$C/c" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "fix: squash-merged hotfix (#1)" \
+    && git -C "$C/c" push -q origin main 2>/dev/null || die "could not push main ahead for $D"
+git -C "$D" fetch -q origin
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" push --dry-run origin origin/main:refs/heads/dev 2>&1)
+say "$(pushed "$OUT" 1 dev)" "1" "the main-to-dev route, with PR_ONLY_BRANCHES=off: a hotfix on main is counted"
+OUT=$(git -C "$D" push origin origin/main:refs/heads/dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules:' <<<"$OUT")$(git -C "$D" ls-remote origin dev | cut -f1)" "00$(git -C "$D" rev-parse origin/main)" "…and with main PR-only, it is main's: silent, and pushed"
+OUT=$(printf 'refs/heads/dev %s refs/heads/dev %s\n' "$(printf 'f%.0s' $(seq 40))" "$(git -C "$D" rev-parse origin/dev)" \
+    | (cd "$D" || exit 9; bash ../hooks/pre-push origin "$D/../up.git" 2>&1)); RC=$?
+say "$RC$(grep -c 'flight-rules: could not check this push to dev at origin: git rev-list failed.' <<<"$OUT")" "01" "a git rev-list that fails: says it could not check"
 D=$(dvrepo unpushed); git -C "$D" commit -q --allow-empty -m "chore: before the first push" 2>/dev/null
 OUT=$(git -C "$D" push origin dev 2>&1); RC=$?
 say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "dev's first push: not checked"
@@ -481,8 +537,11 @@ OUT=$(git -C "$D" push origin dev 2>&1)
 say "$(grep -c "flight-rules: could not check this push to dev at origin: origin has dev at [0-9a-f]*, which is not in this clone" <<<"$OUT")" "1" "origin has dev at a commit not here: says it could not check"
 printf '#!/bin/sh\necho "local: $*" >&2; cat >&2; exit 7\n' > "$D/../hooks/pre-push.local"; chmod +x "$D/../hooks/pre-push.local"
 git -C "$D" fetch -q origin; git -C "$D" checkout -q -b feature/z
-OUT=$(git -C "$D" push origin feature/z 2>&1); RC=$?
-say "$RC$(grep -c '^local: origin ' <<<"$OUT")$(grep -c "^refs/heads/feature/z $(git -C "$D" rev-parse HEAD) refs/heads/feature/z 0\{40\}$" <<<"$OUT")" "111" "pre-push.local runs with the same arguments and lines, and its status is the push's"
+OUT=$(git -C "$D" push origin feature/z feature/z:refs/heads/z2 feature/z:refs/heads/z3 2>&1); RC=$?
+say "$RC$(grep -c '^local: origin ' <<<"$OUT")$(grep -c "^refs/heads/feature/z $(git -C "$D" rev-parse HEAD) refs/heads/\(feature/z\|z2\|z3\) 0\{40\}$" <<<"$OUT")" "113" "pre-push.local runs with the same arguments and lines, all three, and its status is the push's"
+printf '#!/bin/sh\necho "local read $(wc -c | tr -d " ") bytes" >&2\n' > "$D/../hooks/pre-push.local"
+OUT=$(cd "$D" || exit 9; bash ../hooks/pre-push origin "$D/../up.git" </dev/null 2>&1); RC=$?
+say "$RC$(grep -c '^local read 0 bytes$' <<<"$OUT")" "01" "…and with no lines, it reads none"
 chmod -x "$D/../hooks/pre-push.local"
 OUT=$(git -C "$D" push origin feature/z 2>&1); RC=$?
 say "$RC$(grep -c '^local:' <<<"$OUT")" "00" "…and is skipped when not executable"

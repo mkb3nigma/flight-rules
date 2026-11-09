@@ -290,9 +290,10 @@ that the logic has exactly one home.
   usable. That includes a repo whose remote is not called `origin` — the gate reads that
   name only.
   **A protected branch that is not PR-only** (`dev`) is **warned of, never refused**,
-  when it moves to a commit that is neither on its upstream nor a merge: a commit made
-  on it, an amend, a cherry-pick, a revert, a squash, a fast-forward or `branch -f` onto
-  it (#115). A plain commit on `dev` passed every git hook: a probe script that lost its
+  when it moves to a commit that is neither on its upstream nor a merge made on it (one
+  whose first parent is where the branch was): a commit made on it, an amend (of a
+  merge too), a cherry-pick, a revert, a squash, a fast-forward or `branch -f` onto it
+  (#115). A plain commit on `dev` passed every git hook: a probe script that lost its
   `cd` committed on local `dev`, inside a script the agent guard never read (2026-10-25).
   Anyone who means to change `dev` directly can, so the move goes ahead, and the warning
   names the commit. A merge, a pull, `git fetch origin dev:dev` and a move back onto
@@ -341,8 +342,12 @@ that the logic has exactly one home.
   where such a commit does harm; the ref gate's warning came when it landed. A normal
   push of `dev` after local merges says nothing: a merged branch's commits come in as a
   merge's second parent. A feature branch pushed straight to `<remote> HEAD:dev` is
-  warned of. Every protected branch is checked, PR-only ones too. A branch's first push
-  is not, since it carries the history it was cut from. **Already have a `pre-push`**
+  warned of. Commits already on the remote's PR-only branch (`origin/main`) are not
+  counted: they came through its review, and `/feature-start`'s
+  `git push origin origin/main:refs/heads/dev` would otherwise name every squash-merged
+  PR on `main`. Every protected branch is checked, PR-only ones too. A branch's first
+  push is not, since it carries the history it was cut from; nor is an amended merge,
+  still a merge whose first parent the remote has, which only the ref gate sees. **Already have a `pre-push`**
   (git-lfs installs one)? Rename it `pre-push.local` beside this one: it runs after,
   with the same arguments and input, and its exit status decides the push. Tests:
   `ref-gate.test.sh`.
@@ -546,7 +551,9 @@ produced it.
 **A direct change to `dev` is warned of, not stopped** (#115, #144) — at the move and at
 the push. A warning is only as good as the screen it reaches: a script that sends its
 output to `/dev/null` shows neither, and `git push --no-verify` skips `pre-push`. A
-`dev` with no `origin/dev`, and a branch's first push, are not checked at all.
+`dev` with no `origin/dev`, and a branch's first push, are not checked at all. The ref gate
+reads `origin` only, as the PR-only rule does: a pull into `dev` from another remote
+(a fork's `upstream`) that brings plain commits is warned of.
 
 **The design rule follows: close the paths reachable by accident; do not contort the
 design to stop someone acting deliberately.** A guard that catches the careless case
