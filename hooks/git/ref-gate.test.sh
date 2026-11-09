@@ -374,7 +374,8 @@ OUT=$(cd "$d" && FLIGHT_RULES_WORKTREE_DIR="my wt" git commit -q --allow-empty -
 say "$(route "$OUT")" "git fetch origin && \\ git branch --track dev origin/dev && \\ git worktree add 'my wt'/<name> \\ -b <prefix>/<name> dev" "…a directory with a space, quoted to paste (fix review, 2026-10-26)"
 # A local dev no live worktree holds gets origin's commits only if there are any, chained
 # so a refusal (the two diverged) stops the add (W-1; owner, 2026-11-08); a worktree that
-# held it, deleted by hand or with its .git gone, is pruned first (W-2, W-3).
+# held it and is gone is named, never pruned: git cannot tell one moved from one
+# deleted, and a prune clears every worktree it cannot find (W-2, W-3, B-1).
 CHAIN="git fetch origin && \\ { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev"
 git -C "$d" branch dev 2>/dev/null
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
@@ -420,13 +421,25 @@ OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/m|; s|<name>|m|')
 say "$( (cd "$d" && bash -c "$rows") >/dev/null 2>&1 && echo ran || echo refused) $(git -C "$d" rev-parse -q --verify feature/m || echo none) $(git -C "$w" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging) $(cat "$w/f")" "refused none merging resolved" "…and the rows, run anyway, refuse at the pull, the merge and the resolution left"
 git -C "$w" merge --abort || die "could not end the merge in $w"
-rm -rf "$d/../dev wt/.git"
+# Moved, with work staged in it: the rows, run whole, leave it for git worktree repair,
+# which a prune they once ran first had put past (B-1).
+m="$d/../moved"; echo s > "$w/s" && git -C "$w" add s && mv "$w" "$m" || die "could not move the dev worktree from $w"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree prune && \\ $CHAIN" "…that worktree's .git gone, its directory left: pruned, not pulled in"
-say "$(grep -c 'so it is pruned first\.' <<<"$OUT")" "1" "…and says why"
-rm -rf "$d/../dev wt"
+say "$(route "$OUT")" "$CHAIN" "…that worktree moved: git marks it prunable, so it is not pulled in, and not pruned"
+gone() { prose 'was checked out at' "$1" | sed "s|'$(cd "$d/.." && pwd -P)/dev wt'|<devwt>|; s|'$(cd "$d/.." && pwd)/dev wt'|<devwt>|"; }
+say "$(gone "$OUT")" "dev was checked out at <devwt>, which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, git worktree repair <new path>, then run what was refused again for its route. If it was deleted, git worktree prune, which clears every worktree git cannot find, then the commands below." "…said in prose naming the path: stop and ask, repair if moved, prune if deleted"
+rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/m|; s|<name>|m|')
+(cd "$d" && bash -c "$rows") >/dev/null 2>&1
+say "$(git -C "$d" worktree repair "$m" >/dev/null 2>&1 && git -C "$m" diff --cached --name-only)" "s" "…and the rows, run whole, leave it to repair, its staged work there"
+if git -C "$d" rev-parse -q --verify feature/m >/dev/null; then
+    git -C "$d" worktree remove "$d/wt/m" && git -C "$d" branch -q -D feature/m || die "could not remove the moved case's worktree"
+fi
+rm -rf "$m/.git"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git worktree prune && \\ $CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
+say "$(route "$OUT") $(grep -c 'was checked out at' <<<"$OUT")" "$CHAIN 1" "…its .git gone, its directory left: named, not pulled in, not pruned"
+rm -rf "$m"
+OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
+say "$(route "$OUT") $(grep -c 'was checked out at' <<<"$OUT")" "$CHAIN 1" "…and the whole worktree deleted by hand: the same"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the fetch runs"
 d=$(make_repo default armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)

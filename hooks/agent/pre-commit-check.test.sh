@@ -753,7 +753,8 @@ done
 # dev is made from origin's, tracking it — a pull printed for "where it is checked out"
 # ran on main and moved it; held by a live linked worktree, the pull runs there, by path;
 # a local dev no live worktree holds gets origin's commits only if there are any; a
-# worktree removed by hand, or whose .git is gone, is pruned first. In every layout the
+# worktree that held it and is gone is named, never pruned: git cannot tell one moved
+# from one deleted, and a prune clears every worktree it cannot find (B-1). In every layout the
 # rows are one chain, from the first `cd` to the last. route_rows: all of them, as the
 # reason prints them; route_lines: the rows between the two `cd`s.
 reason_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$1"; }
@@ -761,7 +762,6 @@ route_rows() { reason_of "$1" | sed -n '/^  cd /,/^    cd .*<name>$/p'; }
 route_lines() { route_rows "$1" | sed '1d;$d'; }
 route_of() { route_lines "$1" | tr '\n' '|'; }
 CHAIN="    git fetch origin && \\|    { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|"
-PRUNE="    git worktree prune && \\|"
 D=$(make_repo main); mkdir -p "$D/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
 say "$(route_of "$OUT")" "    git fetch origin && \\|    git branch --track dev origin/dev && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
@@ -786,13 +786,20 @@ say "$(reason_of "$OUT" | grep -c "^dev is checked out at '$D/dev wt', so the pu
 O=$(tmpd); OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<"$(jq -n --arg c "git -C $D commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
 say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|" "…the same, named with git -C from outside the repo"
 rm -rf "$O"
-rm -rf "$D/dev wt/.git"
+# Moved, with work staged in it: the rows, run whole, leave it for git worktree repair,
+# which a prune they once ran first had put past (B-1).
+echo s > "$D/dev wt/s" && git -C "$D/dev wt" add s && mv "$D/dev wt" "$D/moved" || die "could not move the dev worktree in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say "$(route_of "$OUT")" "$PRUNE$CHAIN" "…that worktree's .git gone, its directory left: git marks it prunable, so it is pruned, not pulled in"
-say "$(reason_of "$OUT" | grep -c 'the one that held it is gone, so it is pruned first\.')" "1" "…and says why"
-rm -rf "$D/dev wt"
+say "$(route_of "$OUT")" "$CHAIN" "…that worktree moved: git marks it prunable, so it is not pulled in, and not pruned"
+say "$(reason_of "$OUT" | grep -c "^dev was checked out at '$D/dev wt', which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask\. If it was moved, git worktree repair <new path>, then run what was refused again for its route\. If it was deleted, git worktree prune, which clears every worktree git cannot find, then the commands below\.$")" "1" "…said in a prose line naming the path: stop and ask, repair if moved, prune if deleted"
+(cd "$D" && bash -c "$(route_rows "$OUT" | sed 's|<name>|m|g')") >/dev/null 2>&1
+say "$(git -C "$D" worktree repair "$D/moved" >/dev/null 2>&1 && git -C "$D/moved" diff --cached --name-only)" "s" "…and the rows, run whole, leave it to repair, its staged work there"
+rm -rf "$D/moved/.git"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say "$(route_of "$OUT")" "$PRUNE$CHAIN" "…and the whole worktree deleted by hand: pruned first, then the chain"
+say "$(route_of "$OUT") $(reason_of "$OUT" | grep -c "^dev was checked out at .*/moved'*, which is gone")" "$CHAIN 1" "…its .git gone, its directory left: named, not pulled in, not pruned"
+rm -rf "$D/moved"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT") $(reason_of "$OUT" | grep -c "^dev was checked out at .*/moved'*, which is gone")" "$CHAIN 1" "…and the whole worktree deleted by hand: the same"
 rm -rf "$D"
 # The chain, run as printed in a clone whose dev no worktree holds (owner, 2026-11-08):
 # behind, it takes origin's commits and adds from them; ahead, it adds from the local dev

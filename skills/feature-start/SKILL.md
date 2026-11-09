@@ -46,11 +46,13 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      person's to finish or abort, then run this again. Tracking nothing: `git branch -u origin/{INTEGRATION_BRANCH}
      {INTEGRATION_BRANCH}`. Behind, the pull fast-forwards; ahead, nothing moves;
      diverged, it merges its own upstream, which `commit-msg` lets through when clean.
-     It fails: abort the merge it started, if any, then STOP and show git's output —
-     never stash or touch the person's edits. No checkout has it: missing, `git branch
-     --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`. Otherwise — first `git
-     worktree prune` if the worktree that held it is gone (`git worktree list` marks it
-     `prunable`) — origin's commits it lacks come in by fast-forward, if there are any:
+     It fails: STOP and show git's output, and leave whatever it left to the person —
+     abort nothing, never stash or touch their edits. No checkout has it: missing, `git
+     branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`. The worktree that
+     held it gone (`git worktree list` marks it `prunable`): STOP and ask — git cannot
+     tell one moved, `git worktree repair <new path>`, from one deleted, `git worktree
+     prune`, which clears every worktree it cannot find — then run this step again.
+     Otherwise origin's commits it lacks come in by fast-forward, if there are any:
      ```bash
      git merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} \
        || git fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}

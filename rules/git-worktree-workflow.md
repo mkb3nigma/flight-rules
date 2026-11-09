@@ -99,12 +99,14 @@ So before a branch is cut, `git fetch origin`, then origin's commits it lacks co
 - checked out in a live worktree: `git pull --ff --no-rebase origin
   {INTEGRATION_BRANCH}` there;
 - missing: `git branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`;
-- checked out nowhere — first `git worktree prune` if the worktree that held it is gone
-  (`git worktree list` marks it `prunable`): a fast-forward, only if origin's has
-  anything new — `git merge-base --is-ancestor origin/{INTEGRATION_BRANCH}
-  {INTEGRATION_BRANCH} || git fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`.
-  Refused — diverged, never pushed or unreachable; git's message says which — **stop
-  and ask**: merging diverged branches needs a checkout.
+- checked out nowhere: a fast-forward, only if origin's has anything new — `git
+  merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} || git
+  fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`. Refused — diverged, never
+  pushed or unreachable; git's message says which — **stop and ask**: merging diverged
+  branches needs a checkout. If the worktree that held it is gone (`git worktree list`
+  marks it `prunable`), **stop and ask** before any of it: git cannot tell one moved
+  (`git worktree repair <new path>`) from one deleted (`git worktree prune`, which
+  clears every worktree it cannot find).
 
 `feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill.
 A `git worktree add` by hand is advisory: no hook checks a start point, because

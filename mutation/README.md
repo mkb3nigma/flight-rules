@@ -36,13 +36,15 @@ note says the run happened. Each machine keeps its own copy of the notes, so bef
 stamping the run merges origin's in; if that fails, or the push is rejected because
 another machine pushed since, the run prints the fetch-and-merge to make first. Never
 force the push: it drops the other machine's stamps. Run it from a worktree of the commit, so nothing else in a
-checkout is in the way:
+checkout is in the way. One left from an earlier run is removed first, with `git
+worktree remove .ai/worktrees/mutation`. The push is printed at the end of a stamped
+run, and the remove after it, once the stamp is pushed, is printed too:
 
 ```bash
-git worktree add --detach .ai/worktrees/mutation <sha>   # one left from before: git worktree remove .ai/worktrees/mutation
+git worktree add --detach .ai/worktrees/mutation <sha>
 cd .ai/worktrees/mutation && mutation/run.sh -j 4
-git push origin refs/notes/mutation        # printed at the end of a stamped run
-git worktree remove .ai/worktrees/mutation  # once the stamp is pushed; printed too
+git push origin refs/notes/mutation
+git worktree remove .ai/worktrees/mutation
 ```
 
 The gaps the suites are known to leave — the `survives: not held` mutants — are #133: a

@@ -450,16 +450,19 @@ RESOLVED_DIR=""; RESOLVED=0
 # origin's is brought in only if it has anything new, by fast-forward, refused if the
 # two diverged. The whole route is one chain, from the first `cd` to the last, so a
 # failure anywhere — the `cd`, offline, never pushed — stops it before a branch is cut
-# off a stale base, or in the wrong repo. A worktree removed by hand still holds the
-# branch to git until pruned. Each layout the route once missed is in the 0.29.0
-# release-fix review (X-1, Z-1..3, W-1..3, V-1..3, U-1, T-1, T-2, S-1, Q-1); a switch to origin's
+# off a stale base, or in the wrong repo. A worktree that held it and is gone from its
+# path still holds the branch to git until pruned, but git cannot tell one deleted from
+# one moved or on a disk not mounted, and a prune clears every worktree it cannot find,
+# past repair: the prose names the path, says to stop and ask, and gives both, so the
+# person picks (B-1). Each layout the route once missed is in the 0.29.0
+# release-fix review (X-1, Z-1..3, W-1..3, V-1..3, U-1, T-1, T-2, S-1, Q-1, B-1); a switch to origin's
 # branch is #141. No command row
 # carries a `#` or an apostrophe: interactive zsh, the macOS default, reads `#` as an
 # argument unless `interactivecomments` is set, and an apostrophe as an open quote that
 # swallowed the rest of the pasted block (V-1); what the rows need said goes on a prose
 # line above them.
 worktree_route() {
-  local int root="" holder="" cur="" stale="" l
+  local int root="" holder="" cur="" stale="" gone="" l
   int=$(read_conf INTEGRATION_BRANCH "$CONF_FILE"); int="${int:-main}"
   while IFS= read -r l; do
     case "$l" in
@@ -469,13 +472,15 @@ worktree_route() {
     esac
   done < <("${GIT[@]}" worktree list --porcelain 2>/dev/null)
   # git's own mark first; -d for a git too old to print it.
-  [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -d "$holder" ]; } && { holder=""; stale=1; }
+  [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -d "$holder" ]; } && { gone="$holder"; holder=""; }
   if [ -n "$holder" ]; then
     printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, and leave whatever it left there to the person.\n' \
       "$int" "$(shq "$holder")" "$int"
   elif "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
-    printf '%s is checked out in no live worktree%s. These bring in the commits origin/%s has that it lacks, if any; if git refuses, read its message (diverged, never pushed, or unreachable) and stop and ask.\n' \
-      "$int" "${stale:+, and the one that held it is gone, so it is pruned first}" "$int"
+    [ -n "$gone" ] && printf '%s was checked out at %s, which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, git worktree repair <new path>, then run what was refused again for its route. If it was deleted, git worktree prune, which clears every worktree git cannot find, then the commands below.\n' \
+      "$int" "$(shq "$gone")"
+    printf '%s is checked out in no live worktree. These bring in the commits origin/%s has that it lacks, if any; if git refuses, read its message (diverged, never pushed, or unreachable) and stop and ask.\n' \
+      "$int" "$int"
   fi
   printf '  cd %s && \\\n' "$(shq "${root:-.}")"
   if [ -n "$holder" ] && [ "$holder" = "$root" ]; then
@@ -485,7 +490,6 @@ worktree_route() {
   elif ! "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
     printf '    git fetch origin && \\\n    git branch --track %s origin/%s && \\\n' "$(shq "$int")" "$(shq "$int")"
   else
-    [ -n "$stale" ] && printf '    git worktree prune && \\\n'
     printf '    git fetch origin && \\\n'
     printf '    { git merge-base --is-ancestor origin/%s %s || git fetch origin %s:%s; } && \\\n' \
       "$(shq "$int")" "$(shq "$int")" "$(shq "$int")" "$(shq "$int")"
