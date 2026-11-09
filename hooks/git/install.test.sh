@@ -8,7 +8,7 @@ set -uo pipefail
 H="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
 
-HOOKS='pre-merge-commit post-merge commit-msg pre-rebase reference-transaction pre-commit'
+HOOKS='pre-merge-commit post-merge commit-msg pre-rebase reference-transaction pre-commit pre-push'
 
 # A "plugin" directory laid out as the cache has it: <root>/hooks/git/* and
 # <root>/.claude-plugin/plugin.json, so install.sh can name the version it syncs from.
@@ -631,6 +631,20 @@ say "$(grep -c 'pre-commit.local already exists — merge this one into it by ha
 say "$(grep -cE '^[[:space:]]+mv -n ' <<<"$OUT")" "0" "…and offers no mv that would do nothing"
 rm -rf "$D" "$P"
 
+echo "A project's own pre-push (git-lfs installs one) is kept as pre-push.local (#144):"
+D=$(mkrepo); P=$(mkplugin)
+printf '#!/bin/sh
+git lfs pre-push "$@"
+' > "$D/.ai/hooks/pre-push"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")$(grep -c 'lfs' "$D/.ai/hooks/pre-push")" "11" "a project's pre-push: exit 1, and it is not replaced"
+say "$(grep -c "is not flight-rules' pre-push (git-lfs's?) and would be lost" <<<"$OUT")" "1" "…naming it"
+say "$(grep -cxF "   mv -n $D/.ai/hooks/pre-push $D/.ai/hooks/pre-push.local" <<<"$OUT")" "1" "…with the rename to pre-push.local"
+echo old > "$D/.ai/hooks/pre-push.local"
+OUT=$(run "$D" "$P/hooks/git/install.sh" --from "$P/hooks/git")
+say "$(head -1 <<<"$OUT")$(grep -c 'pre-push.local already exists — merge this one into it by hand, then remove this one and re-run: the flight-rules one runs pre-push.local after its own check.' <<<"$OUT")" "11" "…and with pre-push.local taken, says merge by hand"
+rm -rf "$D" "$P"
+
 echo "The marker table is one table, and an unknown slot fails safe (#97 review, G8, D12):"
 DOC="$H/../flight-rules-doctor.sh"; [ -f "$DOC" ] || die "no flight-rules-doctor.sh beside $H"
 for h in $HOOKS install.sh; do
@@ -696,16 +710,16 @@ echo "A fresh install names the hooks git will stop running, and carries on (#11
 grun() { local d="$1"; shift; local out rc; out=$(cd "$d" && HOME="$d/fakehome" GIT_CONFIG_GLOBAL="$d/gcfg" GIT_CONFIG_NOSYSTEM=1 bash "$@" 2>&1); rc=$?; printf '%s\n%s' "$rc" "$out"; }
 fresh() { local d; d=$(mkrepo); git -C "$d" config --unset core.hooksPath; printf '[user]\n\tname = t\n\temail = t@t.t\n' > "$d/gcfg"; rm -f "$d"/.git/hooks/*; printf '%s' "$d"; }
 own() { printf '#!/bin/sh\necho own %s\n' "${1##*/}" > "$1"; chmod +x "$1"; }
-D=$(fresh); own "$D/.git/hooks/commit-msg"; own "$D/.git/hooks/pre-push"; own "$D/.git/hooks/pre-commit"; own "$D/.git/hooks/pre-rebase.sample"
+D=$(fresh); own "$D/.git/hooks/commit-msg"; own "$D/.git/hooks/pre-push"; own "$D/.git/hooks/pre-commit"; own "$D/.git/hooks/post-checkout"; own "$D/.git/hooks/pre-rebase.sample"
 own "$D/.git/hooks/post-merge"; chmod -x "$D/.git/hooks/post-merge"   # git skips it: not executable
 BEFORE=$(sums "$D/.git/hooks")
 OUT=$(grun "$D" .ai/hooks/install.sh)
 W=$(grep '^⚠️ git runs these hooks from' <<<"$OUT")
-say "$(head -1 <<<"$OUT")" "0" ".git/hooks with a commit-msg, pre-push and pre-commit: exit 0"
+say "$(head -1 <<<"$OUT")" "0" ".git/hooks with a commit-msg, pre-push, pre-commit and post-checkout: exit 0"
 say "$(grep -c "from $(cd "$D/.git/hooks" && pwd -P) today" <<<"$W")" "1" "…warned, naming .git/hooks"
-say "$(grep -c ' pre-commit' <<<"$W")$(grep -c ' commit-msg' <<<"$W")$(grep -c ' pre-push' <<<"$W")" "111" "…and each of the three"
+say "$(grep -c ' pre-commit' <<<"$W")$(grep -c ' commit-msg' <<<"$W")$(grep -c ' pre-push' <<<"$W")$(grep -c ' post-checkout' <<<"$W")" "1111" "…and each of the four"
 say "$(grep -c 'sample' <<<"$W")$(grep -c 'post-merge' <<<"$W")" "00" "…not the .sample, nor a post-merge git would not run (not executable)"
-say "$(grep -c -- '- pre-push: copy it into' <<<"$OUT")$(grep -c -- '- pre-commit: copy it in as pre-commit.local' <<<"$OUT")$(grep -c -- '- commit-msg: flight-rules. runs no other' <<<"$OUT")" "111" "…with the way to keep each"
+say "$(grep -c -- '- post-checkout: copy it into' <<<"$OUT")$(grep -c -- '- pre-commit: copy it in as pre-commit.local' <<<"$OUT")$(grep -c -- '- pre-push: copy it in as pre-push.local' <<<"$OUT")$(grep -c -- '- commit-msg: flight-rules. runs no other' <<<"$OUT")" "1111" "…with the way to keep each"
 say "$(git -C "$D" config core.hooksPath)" ".ai/hooks" "…and installs anyway"
 say "$(sums "$D/.git/hooks")" "$BEFORE" "…leaving .git/hooks as it was"
 rm -rf "$D"
@@ -766,6 +780,10 @@ OUT=$(run "$D" .ai/hooks/install.sh)
 say "$(head -1 <<<"$OUT")" "1" "install.sh refuses when pre-commit is missing"
 say "$(grep -c 'pre-commit is missing' <<<"$OUT")" "1" "…and names it"
 cp "$H/pre-commit" "$D/.ai/hooks/" || die "could not copy pre-commit"
+rm "$D/.ai/hooks/pre-push"
+OUT=$(run "$D" .ai/hooks/install.sh)
+say "$(head -1 <<<"$OUT")$(grep -c 'pre-push is missing' <<<"$OUT")$(grep -c 'Without it nothing says when a push puts commits no merge brought in on a protected branch.' <<<"$OUT")" "111" "install.sh refuses when pre-push is missing, and says what it loses"
+cp "$H/pre-push" "$D/.ai/hooks/" || die "could not copy pre-push"
 mkdir -p "$D/.ai/hooks/agent"; touch "$D/.ai/hooks/README.md"
 OUT=$(run "$D" .ai/hooks/install.sh)
 say "$(head -1 <<<"$OUT")" "0" "install.sh exits 0 with an agent/ subdirectory and a README beside the hooks"

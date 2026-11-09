@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# pre-push hook — says when a push puts commits on a protected branch that no merge
+# brought in. It warns; it never refuses (#144).
+#
+# The ref gate warns as such a commit lands on a protected branch that is not PR-only
+# (#115), but the push is where it does harm: until then the commit is local and can
+# be moved to a branch of its own. A probe script that lost its cd committed on local
+# dev (2026-10-25); nothing then would have said that a later push of dev carried it.
+# Anyone who means to push it can (owner, 2026-11-09), so the push goes ahead.
+#
+# What it counts: the commits on the pushed branch's first-parent line that the remote
+# does not have and that are not merges — made on the branch, cherry-picked, reverted,
+# or fast-forwarded onto it. A feature branch's own commits come in as a merge's second
+# parent, so a merged branch is not counted; a push of a feature branch straight to
+# `<remote> HEAD:dev` is. A branch the remote does not have yet is not checked: its
+# first push carries the history it was cut from, and every commit would count. Every
+# protected branch is checked, PR-only ones too: the ref gate refuses those moves
+# locally, and one that got past it is worth saying.
+#
+# Configuration — first match wins:
+#   1. Environment            FLIGHT_RULES_PROTECTED_BRANCHES='^(main|dev)$'
+#   2. .ai/flight-rules.conf  as committed on HEAD
+#   3. The default below
+# Parsed as data, never sourced.
+#
+# A project that has its own pre-push (git-lfs installs one) renames it
+# `pre-push.local` beside this one; it runs after this, with the same arguments and
+# the same lines on its input, and its exit status is the push's.
+
+set -uo pipefail
+
+DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
+CONF_PATH='.ai/flight-rules.conf'
+ZERO='0000000000000000000000000000000000000000'
+LOCAL_HOOK="$(dirname "$0")/pre-push.local"
+
+# commit-msg's read_conf_at_head, verbatim.
+read_conf_at_head() {
+  local key="$1" path="$2" content
+  content=$(git show "HEAD:$path" 2>/dev/null) || return 0
+  printf '%s\n' "$content" \
+    | sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" \
+    | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
+
+PROT_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf_at_head PROTECTED_BRANCHES "$CONF_PATH")}"
+PROT_RE="${PROT_RE:-$DEFAULT_PROTECTED}"
+[ "$PROT_RE" = none ] && PROT_RE=off
+
+# Read once: the lines are handed on to pre-push.local as they came.
+IN=$(cat)
+
+[ "$PROT_RE" = off ] || while read -r _lref lsha rref rsha; do
+    case "$rref" in refs/heads/*) br="${rref#refs/heads/}" ;; *) continue ;; esac
+    [ "$lsha" != "$ZERO" ] && [ "$rsha" != "$ZERO" ] || continue   # a deletion; a new branch
+    # A pattern that does not compile matches every branch, as the ref gate reads it.
+    m=0; printf '%s' "$br" | grep -qiE -e "$PROT_RE" 2>/dev/null || m=$?
+    [ "$m" -eq 1 ] && continue
+    {
+        if ! git cat-file -e "$rsha^{commit}" 2>/dev/null; then
+            # Not here, so not countable; the push is refused as not a fast-forward
+            # unless it is forced.
+            echo "⚠️  flight-rules: could not check this push to $br at $1: $1 has $br at ${rsha:0:7}, which is not in this clone (fetch, and look at what it has)."
+            continue
+        fi
+        n=$(git rev-list --count --first-parent --no-merges "$lsha" "^$rsha") \
+            || { echo "⚠️  flight-rules: could not check this push to $br at $1: git rev-list failed."; continue; }
+        [ "$n" -gt 0 ] || continue
+        echo "⚠️  flight-rules: this push puts $n commit(s) on $br at $1 that no merge brought in:"
+        git log --first-parent --no-merges --format='     %h %s' -n 5 "$lsha" "^$rsha"
+        [ "$n" -le 5 ] || echo "     … and $((n - 5)) more"
+        echo "   $br is a protected branch: work reaches it by merging its own branch. The push goes ahead."
+        [ "$m" -eq 0 ] || echo "   PROTECTED_BRANCHES ($PROT_RE) is not a pattern that compiles, so every branch is taken as protected until it is fixed."
+    } >&2
+done <<<"$IN"
+
+[ -x "$LOCAL_HOOK" ] || exit 0
+if [ -n "$IN" ]; then
+    "$LOCAL_HOOK" "$@" <<<"$IN"
+else
+    "$LOCAL_HOOK" "$@" </dev/null
+fi

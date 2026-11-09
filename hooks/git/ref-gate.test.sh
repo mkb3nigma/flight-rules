@@ -353,4 +353,138 @@ say "$(route "$OUT")" "git worktree add .ai/worktrees/<name> \\ -b <prefix>/<nam
 # row above them. On one row the default route ran 4 columns past the frame.
 say "$(grep -A2 'Do this instead:' <<<"$OUT" | awk '{ print length($0) }' | sort -u | wc -l | tr -d ' ')" "1" "…and its rows stay inside the box"
 
+echo "A direct move of a protected branch that is not PR-only is warned of, never refused (#115):"
+DVCONF=$'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^(main|dev)$'
+# dvrepo [unpushed]: make_repo's, with dev protected and on origin (or not, given
+# "unpushed"), checked out. The pre-push hook is wired beside the ref gate.
+dvrepo() {
+    local d; d=$(make_repo "$DVCONF")
+    cp "$(dirname "$HOOK_SRC")/pre-push" "$d/../hooks/pre-push" && chmod +x "$d/../hooks/pre-push" \
+        || die "could not wire pre-push in $d"
+    git -C "$d" branch -q dev main || die "no dev in $d"
+    if [ "${1:-}" != unpushed ]; then
+        git -C "$d" push -q origin dev 2>/dev/null && git -C "$d" branch -q -u origin/dev dev \
+            || die "could not push dev from $d"
+    fi
+    git -C "$d" checkout -q dev || die "could not check out dev in $d"
+    printf '%s' "$d"
+}
+moved() { grep -c "flight-rules: $2 moves to" <<<"$1"; }
+# upstream_ahead <repo>: origin's dev one commit ahead, pushed from a second clone.
+upstream_ahead() {
+    local c; c=$(mktemp -d "$TMPROOT/c.XXXXXX")
+    git clone -q -b dev "$1/../up.git" "$c/c" 2>/dev/null || die "could not clone for $1"
+    git -C "$c/c" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "chore: upstream" \
+        && git -C "$c/c" push -q origin dev 2>/dev/null || die "could not push ahead for $1"
+}
+
+D=$(dvrepo)
+echo a > "$D/a"; git -C "$D" add a
+OUT=$(git -C "$D" commit -qm "chore: on dev itself" 2>&1); RC=$?
+say "$RC$(git -C "$D" log -1 --format=%s dev)" "0chore: on dev itself" "a commit on dev goes ahead"
+say "$(moved "$OUT" dev)" "1" "…warned of"
+say "$(grep -cF "dev moves to $(git -C "$D" rev-parse --short dev) (chore: on dev itself), which no merge brought in and origin/dev does not have." <<<"$OUT")" "1" "…naming the commit"
+say "$(grep -c 'The move goes ahead; nothing leaves this clone until dev is pushed.' <<<"$OUT")" "1" "…and that it goes ahead"
+git -C "$D" reset -q --hard origin/dev
+# -x: a pick onto feature/x's own parent in the same second is feature/x itself.
+OUT=$(git -C "$D" cherry-pick -x feature/x 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "01" "a clean cherry-pick onto dev, which runs no commit hook: warned, and goes ahead"
+OUT=$(git -C "$D" merge -q --no-ff -m "Merge feature/x" feature/x 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-list --count --merges -1 dev)" "001" "a merge into dev: silent, and made"
+git -C "$D" checkout -q main
+OUT=$(git -C "$D" branch -f dev feature/x 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "01" "branch -f dev onto a feature branch: warned"
+OUT=$(git -C "$D" branch -f dev origin/dev 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-parse dev)" "00$(git -C "$D" rev-parse origin/dev)" "…and back onto origin/dev: silent"
+upstream_ahead "$D"
+# The route's own command: origin/dev moves in the same transaction as dev, so read
+# before it lands it lacked what the fetch brought.
+OUT=$(git -C "$D" fetch origin dev:dev 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" log -1 --format=%s dev)" "00chore: upstream" "fetch origin dev:dev, origin ahead: silent, and dev brought up"
+git -C "$D" checkout -q dev; git -C "$D" reset -q --hard HEAD~1
+OUT=$(git -C "$D" pull -q --ff --no-rebase origin dev 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" log -1 --format=%s dev)" "00chore: upstream" "a fast-forward pull: silent"
+OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES=off git -C "$D" commit -q --allow-empty -m "chore: off" 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "00" "PROTECTED_BRANCHES=off: silent"
+OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES='^(main|dev' git -C "$D" commit -q --allow-empty -m "chore: broken" 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(grep -c 'is not a pattern that compiles, so every branch is taken as protected' <<<"$OUT")" "011" "a protected pattern that does not compile: warned, and says so"
+git -C "$D" checkout -q feature/x; git -C "$D" push -q origin feature/x 2>/dev/null
+OUT=$(git -C "$D" commit -q --allow-empty -m "feature: more" 2>&1); RC=$?
+say "$RC$(moved "$OUT" feature/x)" "00" "a commit on a branch that is not protected: silent"
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" checkout -q main 2>&1 && FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" commit -q --allow-empty -m "chore: main" 2>&1); RC=$?
+say "$RC$(moved "$OUT" main)" "01" "PR_ONLY_BRANCHES=off: main is only protected, so a commit there is warned of, not refused"
+git -C "$D" checkout -q -b kickoff; git -C "$D" push -q origin kickoff 2>/dev/null
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" commit -q --allow-empty -m "chore: kickoff" 2>&1); RC=$?
+say "$RC" "0" "…and off is not a pattern: a branch named kickoff is not taken as PR-only"
+D=$(dvrepo)
+git -C "$D" commit -q --allow-empty -m "chore: direct" 2>/dev/null
+OUT=$(git -C "$D" reset -q --hard HEAD 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "00" "an update to the value dev already has: silent"
+git -C "$D" checkout -q main
+OUT=$(git -C "$D" branch -q -D dev 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-parse -q --verify dev | wc -l | tr -d ' ')" "000" "deleting the local dev: silent, and deleted"
+D=$(dvrepo unpushed)
+OUT=$(git -C "$D" commit -q --allow-empty -m "chore: no upstream" 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "00" "dev with no upstream: silent, as the rule leaves it"
+# The conf is read, and with no PROTECTED_BRANCHES in it the default protects dev.
+for c in default 'PR_ONLY_BRANCHES=^main$'; do
+    D=$(make_repo "$c"); git -C "$D" branch -q dev main
+    git -C "$D" push -q origin dev 2>/dev/null; git -C "$D" checkout -q dev
+    OUT=$(git -C "$D" commit -q --allow-empty -m "chore: conf" 2>&1); RC=$?
+    if [ "$c" = default ]; then
+        say "$RC$(moved "$OUT" dev)" "00" "a commit on dev, where the conf protects only main: silent"
+    else
+        say "$RC$(moved "$OUT" dev)" "01" "a commit on dev, with no PROTECTED_BRANCHES in the conf: protected by default, warned"
+    fi
+done
+
+echo "A push that puts commits no merge brought in on a protected branch is warned of (#144):"
+pushed() { grep -c "flight-rules: this push puts $2 commit(s) on $3 at origin that no merge brought in:" <<<"$1"; }
+D=$(dvrepo)
+FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge -q --no-ff -m "Merge feature/x" feature/x || die "merge failed in $D"
+OUT=$(git -C "$D" push origin dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules: this push' <<<"$OUT")$(git -C "$D" rev-parse origin/dev)" "00$(git -C "$D" rev-parse dev)" "a push of dev carrying only a merge: silent, and pushed"
+git -C "$D" commit -q --allow-empty -m "chore: direct" 2>/dev/null
+OUT=$(git -C "$D" push origin dev 2>&1); RC=$?
+say "$RC$(pushed "$OUT" 1 dev)$(git -C "$D" rev-parse origin/dev)" "01$(git -C "$D" rev-parse dev)" "a push of dev carrying a direct commit: warned, and pushed"
+say "$(grep -c "^     $(git -C "$D" rev-parse --short dev) chore: direct$" <<<"$OUT")$(grep -c 'dev is a protected branch: work reaches it by merging its own branch. The push goes ahead.' <<<"$OUT")" "11" "…naming it, and saying it goes ahead"
+for i in 1 2 3 4 5 6 7; do git -C "$D" commit -q --allow-empty -m "chore: direct $i" 2>/dev/null; done
+OUT=$(git -C "$D" push origin dev 2>&1)
+say "$(pushed "$OUT" 7 dev)$(grep -c '^     [0-9a-f]* chore: direct [0-9]$' <<<"$OUT")$(grep -c '^     … and 2 more$' <<<"$OUT")" "151" "seven: five named, and the rest counted"
+git -C "$D" checkout -q -b feature/y; git -C "$D" commit -q --allow-empty -m "feature: y"
+OUT=$(git -C "$D" push origin feature/y 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules: this push' <<<"$OUT")$(git -C "$D" ls-remote origin feature/y | wc -l | tr -d ' ')" "001" "a feature branch's own push: silent, and pushed"
+git -C "$D" commit -q --allow-empty -m "feature: y1"
+OUT=$(git -C "$D" push origin feature/y 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "…and its next push: silent"
+git -C "$D" commit -q --allow-empty -m "feature: y2"
+OUT=$(git -C "$D" push origin HEAD:dev 2>&1); RC=$?
+say "$RC$(pushed "$OUT" 3 dev)" "01" "a feature branch pushed straight to dev: warned, its three commits counted"
+git -C "$D" commit -q --allow-empty -m "feature: y3"
+OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES=off git -C "$D" push origin HEAD:dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules: this push' <<<"$OUT")$(git -C "$D" rev-parse origin/dev)" "00$(git -C "$D" rev-parse HEAD)" "PROTECTED_BRANCHES=off: silent, and pushed"
+git -C "$D" commit -q --allow-empty -m "feature: y4"
+OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES='^(main|dev' git -C "$D" push origin HEAD:dev 2>&1); RC=$?
+say "$RC$(pushed "$OUT" 1 dev)$(grep -c 'is not a pattern that compiles, so every branch is taken as protected' <<<"$OUT")" "011" "a protected pattern that does not compile: warned, and says so"
+OUT=$(git -C "$D" push origin --delete dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules:' <<<"$OUT")$(git -C "$D" ls-remote origin dev | wc -l | tr -d ' ')" "000" "deleting dev on the remote: not checked"
+D=$(make_repo default); cp "$(dirname "$HOOK_SRC")/pre-push" "$D/../hooks/pre-push"
+git -C "$D" branch -q dev main; git -C "$D" push -q origin dev 2>/dev/null; git -C "$D" checkout -q dev
+git -C "$D" commit -q --allow-empty -m "chore: conf" 2>/dev/null
+OUT=$(git -C "$D" push origin dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "dev not protected by the conf: silent"
+D=$(dvrepo unpushed); git -C "$D" commit -q --allow-empty -m "chore: before the first push" 2>/dev/null
+OUT=$(git -C "$D" push origin dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "dev's first push: not checked"
+upstream_ahead "$D"; git -C "$D" commit -q --allow-empty -m "chore: behind" 2>/dev/null
+OUT=$(git -C "$D" push origin dev 2>&1)
+say "$(grep -c "flight-rules: could not check this push to dev at origin: origin has dev at [0-9a-f]*, which is not in this clone" <<<"$OUT")" "1" "origin has dev at a commit not here: says it could not check"
+printf '#!/bin/sh\necho "local: $*" >&2; cat >&2; exit 7\n' > "$D/../hooks/pre-push.local"; chmod +x "$D/../hooks/pre-push.local"
+git -C "$D" fetch -q origin; git -C "$D" checkout -q -b feature/z
+OUT=$(git -C "$D" push origin feature/z 2>&1); RC=$?
+say "$RC$(grep -c '^local: origin ' <<<"$OUT")$(grep -c "^refs/heads/feature/z $(git -C "$D" rev-parse HEAD) refs/heads/feature/z 0\{40\}$" <<<"$OUT")" "111" "pre-push.local runs with the same arguments and lines, and its status is the push's"
+chmod -x "$D/../hooks/pre-push.local"
+OUT=$(git -C "$D" push origin feature/z 2>&1); RC=$?
+say "$RC$(grep -c '^local:' <<<"$OUT")" "00" "…and is skipped when not executable"
+
 finish

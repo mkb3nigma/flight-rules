@@ -84,6 +84,7 @@ hook_marker() {
     post-merge)             printf 'post-merge-note' ;;
     reference-transaction)  printf 'PR_ONLY' ;;   # not is-ancestor, a common idiom (#97 review)
     pre-commit)             printf 'PRIVATE KEY' ;;
+    pre-push)               printf 'pre-push.local' ;;
     # Not a hook: tells flight-rules' install.sh from a project's own — a heuristic,
     # like the rest. The phrase is in the header comment of every revision since it was
     # added (7b7f968, 2026-07-19). merge.ff and core.hooksPath would not do: every
@@ -110,10 +111,10 @@ if [[ -z "$HOOKS_PATH" ]]; then
   # flight-rules' voice (security review, 2026-10-13). core.hooksPath and merge.ff are
   # per-clone config.
   if [[ -f "$ROOT/.ai/hooks/pre-merge-commit" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
-    # install.sh refuses a set missing any of the six (a 0.22.0 one has no pre-commit),
+    # install.sh refuses a set missing any of the seven (a 0.22.0 one has no pre-commit),
     # so name the copy first rather than print a command that fails (fix review).
     _cp=""
-    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
       [[ -f "$ROOT/.ai/hooks/$h" ]] || _cp="$_cp$(printf 'cp %s %s/ && ' "$(shq "$GIT_HOOKS_SRC/$h")" "$(shq "$ROOT/.ai/hooks")")"
     done
     [[ -n "$_cp" ]] && _cp_note=" Commit the hooks it copies in, so the next clone has them."
@@ -129,7 +130,7 @@ else
     bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
   else
     ok "core.hooksPath=$HOOKS_PATH"
-    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
         # A plugin upgrade cannot copy git hooks into a project, so a hook added in a
         # release (pre-commit, 0.23.0) arrives as this line; say where to copy it from.
@@ -156,7 +157,8 @@ else
         else
           # pre-commit is the one hook a project is likely to have had already (a linter),
           # and the upgrade to 0.23.0 is when it meets this line; say where it goes.
-          _own=""; [[ "$h" == pre-commit ]] && _own=". If it is your project's own pre-commit, rename it pre-commit.local (the flight-rules one runs it after its scan) and copy flight-rules' hooks/git/pre-commit in beside it"
+          # pre-push likewise (git-lfs installs one), from 0.29.0.
+          _own=""; [[ "$h" == pre-commit || "$h" == pre-push ]] && _own=". If it is your project's own $h, rename it $h.local (the flight-rules one runs it after its own check) and copy flight-rules' hooks/git/$h in beside it"
           bad "$h does not look like the flight-rules hook — it is present and executable but has no '$(hook_marker "$h")' in it, so it may be a stub or a stale copy that silently allows everything$_own"
         fi
       # The status is kept, as in install.sh: a grep that errors could not check it, and
@@ -268,11 +270,13 @@ else
       printf '     to update: bash %s --from %s --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
         "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"
     fi
-    # The scan runs pre-commit.local only if it is executable, and skips it without a
-    # word otherwise — a project's linter would stop running unnoticed.
-    if [[ -f "$HOOKS_DIR/pre-commit.local" && ! -x "$HOOKS_DIR/pre-commit.local" ]]; then
-      bad "pre-commit.local is not executable — pre-commit skips it silently, so your own pre-commit no longer runs (chmod +x)"
-    fi
+    # pre-commit and pre-push run their .local only if it is executable, and skip it
+    # without a word otherwise — a project's linter, or git-lfs, would stop unnoticed.
+    for h in pre-commit pre-push; do
+      if [[ -f "$HOOKS_DIR/$h.local" && ! -x "$HOOKS_DIR/$h.local" ]]; then
+        bad "$h.local is not executable — $h skips it silently, so your own $h no longer runs (chmod +x)"
+      fi
+    done
   fi
 fi
 MERGE_FF=$(git config merge.ff 2>/dev/null || true)

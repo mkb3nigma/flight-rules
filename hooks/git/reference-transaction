@@ -2,7 +2,8 @@
 # reference-transaction hook — the ref gate for PR-only branches.
 #
 # ONE RULE:  a PR-only branch may only move to a commit that is already on its
-# upstream (refs/remotes/origin/<branch>).
+# upstream (refs/remotes/origin/<branch>). Any other protected branch moving off its
+# upstream to a commit that is not a merge is warned of, never refused (warn_direct).
 #
 # Why this hook and not another. Every other guard in this repo asks "what command
 # is this?" and then has to enumerate the commands that write to a branch. That set
@@ -20,7 +21,8 @@
 # nobody thought of cannot walk around it.
 #
 # What stays allowed: `git pull --ff-only origin main` and any other move onto a
-# commit already reviewed on the remote; every operation on a non-PR-only branch;
+# commit already reviewed on the remote; every operation on a non-PR-only branch, a
+# direct change to a protected one said as it goes ahead;
 # fetch, status, log, worktree add, and all feature work.
 #
 # Configuration — first match wins:
@@ -43,6 +45,7 @@
 set -uo pipefail
 
 DEFAULT_PR_ONLY='^main$'
+DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
 CONF_PATH='.ai/flight-rules.conf'
 ZERO='0000000000000000000000000000000000000000'
 
@@ -110,6 +113,36 @@ broken_box() {
     echo ""
 }
 
+# warn_direct: a protected branch that is not PR-only (dev) moving to a commit that is
+# neither on its upstream nor a merge — a commit made on it, a cherry-pick, a revert,
+# a reset, a fast-forward onto it — is said, never refused (#115). A plain commit on dev
+# passed every git hook: a probe script that lost its cd committed on local dev, inside
+# a script the agent guard never read (2026-10-25). Anyone who means to change dev
+# directly can (owner, 2026-11-09). Here, not in commit-msg: a clean cherry-pick or
+# revert runs no commit hook. A branch with no upstream is left alone, as the rule
+# below leaves it: there, a fresh repository's own commits would be all it said.
+warn_direct() {
+    local m=0 cur up
+    printf '%s' "$short" | grep -qiE -e "${PROT_RE:-$DEFAULT_PROTECTED}" 2>/dev/null || m=$?
+    [ "$m" -eq 1 ] && return 0
+    cur=$(git rev-parse -q --verify "$ref" 2>/dev/null) || return 0
+    [ "$new" != "$cur" ] && [ "$new" != "$ZERO" ] || return 0
+    git rev-parse -q --verify "$upstream" >/dev/null 2>&1 || return 0
+    git merge-base --is-ancestor "$new" "$upstream" 2>/dev/null && return 0
+    # Where this transaction moves the upstream too: `git fetch origin dev:dev` updates
+    # both at once, and read before it lands, origin/dev lacked what it brought.
+    up=$(printf '%s\n' "$TX" | awk -v r="$upstream" '$3 == r { n = $2 } END { print n }')
+    [ -n "$up" ] && git merge-base --is-ancestor "$new" "$up" 2>/dev/null && return 0
+    git rev-parse -q --verify "$new^2" >/dev/null 2>&1 && return 0
+    {
+        echo "⚠️  flight-rules: $short moves to $(git log -1 --format='%h (%s)' "$new"), which no merge brought in and origin/$short does not have."
+        echo "   $short is a protected branch: work reaches it by merging its own branch. The move goes ahead; nothing leaves this clone until $short is pushed."
+        [ "$m" -eq 0 ] || echo "   PROTECTED_BRANCHES (${PROT_RE:-$DEFAULT_PROTECTED}) is not a pattern that compiles, so every branch is taken as protected until it is fixed."
+    } >&2
+}
+
+# The whole transaction, read once: warn_direct looks in it for the upstream's update.
+TX=$(cat)
 while read -r _old new ref; do
     case "$ref" in
         refs/heads/*) short="${ref#refs/heads/}" ;;
@@ -127,7 +160,6 @@ while read -r _old new ref; do
     fi
     # `none` is `off`, as the doctor reads it (0.28.0 release review).
     [ "$PR_ONLY_RE" = none ] && PR_ONLY_RE=off
-    [ "$PR_ONLY_RE" = "off" ] && continue
 
     # PROTECTED_BRANCHES=off is the opt-out the README, the agent guard's own block
     # message and flight-rules-doctor.sh all name. It used to disable only the agent guard, so a
@@ -148,8 +180,8 @@ while read -r _old new ref; do
     # for it, which read as "no match" and let the move through (#103). -i, as the
     # agent guard matches; -e, or a pattern starting with `-` is read as an option
     # (#103 review).
-    _rc=0; printf '%s' "$short" | grep -qiE -e "$PR_ONLY_RE" 2>/dev/null || _rc=$?
-    [ "$_rc" -eq 1 ] && continue
+    _rc=1; [ "$PR_ONLY_RE" = off ] || { _rc=0; printf '%s' "$short" | grep -qiE -e "$PR_ONLY_RE" 2>/dev/null || _rc=$?; }
+    [ "$_rc" -eq 1 ] && { warn_direct; continue; }
 
     # A ref that does not exist yet is being CREATED (clone, `git branch <new>`),
     # not moved. `_old` cannot be used to detect this: `git update-ref <ref> <sha>`
@@ -226,6 +258,6 @@ while read -r _old new ref; do
         echo ""
     } >&2
     exit 1
-done
+done <<<"$TX"
 
 exit 0
