@@ -880,7 +880,7 @@ layout_case() {   # <root|linked|missing> <online|offline|merging|merging-open>:
   if [ -z "$cmds" ]; then echo "no route"; elif (cd "$r" && bash -c "$cmds") >/dev/null 2>&1; then echo ran; else echo refused; fi
   git -C "$r" rev-parse -q --verify feature/on | sed "s/^$tip$/tip/" | grep . || echo none
   if [ -n "${h:-}" ]; then
-    reason_of "$out" | grep -q "^dev is checked out at .*, and a merge is in progress there: it is the person's\. Stop and ask, and run nothing below until it is done\.$" && echo stop
+    reason_of "$out" | grep -q "^dev is checked out at .*, and a merge is in progress there that this route did not start\. Stop and ask, and run nothing below until it is done\.$" && echo stop
     git -C "$h" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging; cat "$h/f"
   fi
   rm -rf "$F"
