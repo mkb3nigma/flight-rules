@@ -472,10 +472,10 @@ worktree_route() {
   # git's own mark first; -d for a git too old to print it.
   [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -d "$holder" ]; } && { holder=""; stale=1; }
   if [ -n "$holder" ] && git -C "$holder" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
-    printf '%s is checked out at %s, and a merge is in progress there: it is for the person to finish or abort. Stop and ask, and run nothing below until it is done.\n' \
+    printf '%s is checked out at %s, and a merge is in progress there: it is the person'\''s. Stop and ask, and run nothing below until it is done.\n' \
       "$int" "$(shq "$holder")"
   elif [ -n "$holder" ]; then
-    printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, first running git merge --abort there if it left a merge in progress: none was there before it, so that merge is its own.\n' \
+    printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, first running git merge --abort there if it left a merge in progress: none was there when this was printed, so that merge is its own.\n' \
       "$int" "$(shq "$holder")" "$int"
   elif "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
     printf '%s is checked out in no live worktree%s. These bring in the commits origin/%s has that it lacks, if any; if git refuses, read its message (diverged, never pushed, or unreachable) and stop and ask.\n' \

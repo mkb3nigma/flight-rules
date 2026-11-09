@@ -780,7 +780,7 @@ say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull
 # merge there before the pull, one it leaves is its own; read from git's words instead,
 # the person's own merge was aborted, their resolution with it (S-1, Q-1). One already
 # in progress there is the layout_case "merging" cases below.
-say "$(reason_of "$OUT" | grep -c "^dev is checked out at '$D/dev wt', so the pull runs there: it brings in the commits origin/dev has that it lacks, if any, merging them if the two diverged\. If it fails, stop and ask, first running git merge --abort there if it left a merge in progress: none was there before it, so that merge is its own\.$")" "1" "…said in a prose line: a merge a failed pull leaves is its own, aborted, then ask"
+say "$(reason_of "$OUT" | grep -c "^dev is checked out at '$D/dev wt', so the pull runs there: it brings in the commits origin/dev has that it lacks, if any, merging them if the two diverged\. If it fails, stop and ask, first running git merge --abort there if it left a merge in progress: none was there when this was printed, so that merge is its own\.$")" "1" "…said in a prose line: a merge a failed pull leaves is its own, aborted, then ask"
 # Named with git -C from outside the repo, as assistants write it: the lookup reads the
 # target repo, not the shell's (W-4).
 O=$(tmpd); OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<"$(jq -n --arg c "git -C $D commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
@@ -880,7 +880,7 @@ layout_case() {   # <root|linked|missing> <online|offline|merging|merging-open>:
   if [ -z "$cmds" ]; then echo "no route"; elif (cd "$r" && bash -c "$cmds") >/dev/null 2>&1; then echo ran; else echo refused; fi
   git -C "$r" rev-parse -q --verify feature/on | sed "s/^$tip$/tip/" | grep . || echo none
   if [ -n "${h:-}" ]; then
-    reason_of "$out" | grep -q "^dev is checked out at .*, and a merge is in progress there: it is for the person to finish or abort\. Stop and ask, and run nothing below until it is done\.$" && echo stop
+    reason_of "$out" | grep -q "^dev is checked out at .*, and a merge is in progress there: it is the person's\. Stop and ask, and run nothing below until it is done\.$" && echo stop
     git -C "$h" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging; cat "$h/f"
   fi
   rm -rf "$F"
