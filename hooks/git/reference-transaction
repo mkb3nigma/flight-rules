@@ -3,8 +3,8 @@
 #
 # ONE RULE:  a PR-only branch may only move to a commit that is already on its
 # upstream (refs/remotes/origin/<branch>). Any other protected branch moving off its
-# upstream to a commit that is not a merge made on it is warned of, never refused
-# (warn_direct).
+# upstream to a commit that is not a merge made on it, not a value it has held, and not
+# on a PR-only branch's upstream is warned of, never refused (warn_direct).
 #
 # Why this hook and not another. Every other guard in this repo asks "what command
 # is this?" and then has to enumerate the commands that write to a branch. That set
@@ -115,8 +115,8 @@ broken_box() {
 }
 
 # warn_direct: a protected branch that is not PR-only (dev) moving to a commit that is
-# not on its upstream, not on a PR-only branch's upstream, not back along its own
-# unpushed line, and not a merge made on it — a commit made on it, an amend, a
+# not on its upstream, not a merge made on it, not a value it has held, and not on a
+# PR-only branch's upstream — a commit made on it, an amend, a
 # cherry-pick, a revert, a reset, a fast-forward onto it — is said, never refused
 # (#115). A plain commit on dev passed every git hook: a probe script that lost its cd
 # committed on local dev, inside a script the agent guard never read (2026-10-25).
@@ -125,10 +125,11 @@ broken_box() {
 # upstream is left alone, as the rule below leaves it: there, a fresh repository's own
 # commits would be all it said.
 warn_direct() {
-    local m=0 cur up
+    local m=0 cur up b
     printf '%s' "$short" | grep -qiE -e "${PROT_RE:-$DEFAULT_PROTECTED}" 2>/dev/null || m=$?
     [ "$m" -eq 1 ] && return 0
     cur=$(git rev-parse -q --verify "$ref" 2>/dev/null) || return 0
+    # A no-op update would pass the reflog test below too; this only saves the git calls.
     [ "$new" != "$cur" ] && [ "$new" != "$ZERO" ] || return 0
     git rev-parse -q --verify "$upstream" >/dev/null 2>&1 || return 0
     git merge-base --is-ancestor "$new" "$upstream" 2>/dev/null && return 0
@@ -136,28 +137,32 @@ warn_direct() {
     # both at once, and read before it lands, origin/dev lacked what it brought.
     up=$(printf '%s\n' "$TX" | awk -v r="$upstream" '$3 == r { n = $2 } END { print n }')
     [ -n "$up" ] && git merge-base --is-ancestor "$new" "$up" 2>/dev/null && return 0
-    # On a PR-only branch's upstream (origin/main) it was reviewed there: a fast-forward
-    # of dev to a release merge on main warned once a merge had to be made on dev (#144
-    # fix review, F-2). A ref name holds no space or glob character.
-    if [ "$PR_ONLY_RE" != off ]; then
-        for r in $(git for-each-ref --format='%(refname)' refs/remotes/origin/); do
-            printf '%s' "${r#refs/remotes/origin/}" | grep -qiE -e "$PR_ONLY_RE" 2>/dev/null \
-                && git merge-base --is-ancestor "$new" "$r" 2>/dev/null && return 0
-        done
-    fi
-    # Back along its own unpushed line: `git reset --hard HEAD^` undoing the later of two
-    # local merges lands on one whose first parent is not where dev is (#144 fix review,
-    # F-1). Not any ancestor: HEAD^2 is a merged branch's tip, and moving onto it is direct.
-    # A case, not a pipe into grep -q, which under pipefail could take rev-list's
-    # SIGPIPE for no match.
-    case $'\n'"$(git rev-list --first-parent "$cur" "^$upstream" 2>/dev/null)"$'\n' in
-        *$'\n'"$new"$'\n'*) return 0 ;;
-    esac
     # A merge made on the branch itself: its first parent is where the branch is now.
     # Any merge was waved through, so an amend of dev's merge tip, or a fast-forward
     # onto a feature tip that had dev merged in, said nothing (#144 review, E-1).
     git rev-parse -q --verify "$new^2" >/dev/null 2>&1 \
         && [ "$(git rev-parse -q --verify "$new^1" 2>/dev/null)" = "$cur" ] && return 0
+    # A value the branch has held, by its own reflog: an undo (reset --hard HEAD^ off the
+    # later of two local merges), a redo (ORIG_HEAD, @{1}), a branch -f back. It was
+    # judged when it first landed. A first-parent test caught the undo and missed the
+    # redo (#144 fix reviews, F-1, H-1). The branch's reflog, not HEAD's: HEAD has held
+    # every feature tip checked out. An amended merge has not been held, so it is said.
+    # A case, not a pipe into grep -q, which under pipefail could take a SIGPIPE for no
+    # match.
+    case $'\n'"$(git log -g --format=%H "$ref" 2>/dev/null)"$'\n' in
+        *$'\n'"$new"$'\n'*) return 0 ;;
+    esac
+    # On a PR-only branch's upstream (origin/main) it was reviewed there: a fast-forward
+    # of dev to a release merge on main warned once a merge had to be made on dev (#144
+    # fix review, F-2). The conf is trusted to name only reviewed branches. One grep over
+    # the list, not one per ref: with 2,000 origin refs that cost 3.9s a move (H-2). A
+    # ref name holds no space or glob character.
+    if [ "$PR_ONLY_RE" != off ]; then
+        for b in $(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/ \
+                   | grep -iE -e "$PR_ONLY_RE" 2>/dev/null); do
+            git merge-base --is-ancestor "$new" "refs/remotes/origin/$b" 2>/dev/null && return 0
+        done
+    fi
     {
         echo "⚠️  flight-rules: $short moves to $(git log -1 --format='%h (%s)' "$new"), which no merge brought in and origin/$short does not have."
         echo "   $short is a protected branch: work reaches it by merging its own branch. The move goes ahead; nothing leaves this clone until $short is pushed."

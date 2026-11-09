@@ -290,10 +290,11 @@ that the logic has exactly one home.
   usable. That includes a repo whose remote is not called `origin` — the gate reads that
   name only.
   **A protected branch that is not PR-only** (`dev`) is **warned of, never refused**,
-  when it moves to a commit that is not on its upstream, not on a PR-only branch's
-  (`origin/main`, reviewed there), not back along its own unpushed first-parent line
-  (an undone local merge), and not a merge made on it (one whose first parent is where
-  the branch was): a commit made on it, an amend (of a merge too), a cherry-pick, a
+  when it moves to a commit that is not on its upstream, not a merge made on it (one
+  whose first parent is where the branch was), not a value it has held by its own
+  reflog (an undo or a redo of a local merge), and not on a PR-only branch's upstream
+  (`origin/main`, reviewed there; the conf is trusted to name only reviewed branches,
+  so anchor it): a commit made on it, an amend (of a merge too), a cherry-pick, a
   revert, a squash, a fast-forward or `branch -f` onto it (#115). A plain commit on `dev` passed every git hook: a probe script that lost its
   `cd` committed on local `dev`, inside a script the agent guard never read (2026-10-25).
   Anyone who means to change `dev` directly can, so the move goes ahead, and the warning

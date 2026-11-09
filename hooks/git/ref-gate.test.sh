@@ -416,6 +416,10 @@ say "$RC$(moved "$OUT" dev)$(git -C "$D" log -1 --format=%s dev)" "00chore: upst
 git -C "$D" checkout -q dev; git -C "$D" reset -q --hard HEAD~1
 OUT=$(git -C "$D" pull -q --ff --no-rebase origin dev 2>&1); RC=$?
 say "$RC$(moved "$OUT" dev)$(git -C "$D" log -1 --format=%s dev)" "00chore: upstream" "a fast-forward pull: silent"
+# …and one onto a commit dev has never held, so its reflog does not cover it.
+D2=$(dvrepo); upstream_ahead "$D2"
+OUT=$(git -C "$D2" pull -q --ff --no-rebase origin dev 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D2" log -1 --format=%s dev)" "00chore: upstream" "a fast-forward pull onto a commit dev has never held: silent"
 OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES=off git -C "$D" commit -q --allow-empty -m "chore: off" 2>&1); RC=$?
 say "$RC$(moved "$OUT" dev)" "00" "PROTECTED_BRANCHES=off: silent"
 OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES='^(main|dev' git -C "$D" commit -q --allow-empty -m "chore: broken" 2>&1); RC=$?
@@ -465,16 +469,27 @@ OUT=$(git -C "$D" pull -q --no-rebase origin dev 2>&1); RC=$?
 say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-list --count --merges -1 dev)$(git -C "$D" rev-parse 'dev^1')" "001$PRE" "a diverged pull, a merge made on dev: silent, and made"
 OUT=$(FLIGHT_RULES_PROTECTED_BRANCHES='^DEV$' git -C "$D" commit -q --allow-empty -m "chore: case" 2>&1); RC=$?
 say "$RC$(moved "$OUT" dev)" "01" "a protected pattern in another case: matched, and warned"
-# Undoing the later of two local merges lands on a merge whose first parent is not where
-# dev is: back along dev's own line, not a direct move (#144 fix review, F-1).
+# A value dev has held, by its own reflog, is not a direct move: undoing the later of two
+# local merges lands on a merge whose first parent is not where dev is, and so does
+# redoing it (#144 fix reviews, F-1, H-1).
 D=$(dvrepo); git -C "$D" checkout -q -b feature/a main; git -C "$D" commit -q --allow-empty -m "feature: a"
 git -C "$D" checkout -q dev
 git -C "$D" merge -q --no-ff -m "Merge feature/x" feature/x && M1=$(git -C "$D" rev-parse dev) \
-    && git -C "$D" merge -q --no-ff -m "Merge feature/a" feature/a || die "merges failed in $D"
+    && git -C "$D" merge -q --no-ff -m "Merge feature/a" feature/a && M2=$(git -C "$D" rev-parse dev) \
+    || die "merges failed in $D"
 OUT=$(git -C "$D" reset -q --hard HEAD^ 2>&1); RC=$?
 say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-parse dev)" "00$M1" "undoing the later of two local merges: silent, and undone"
+OUT=$(git -C "$D" reset -q --hard ORIG_HEAD 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-parse dev)" "00$M2" "…redoing it with ORIG_HEAD: silent, and redone"
+git -C "$D" reset -q --hard origin/dev
+OUT=$(git -C "$D" reset -q --hard 'HEAD@{1}' 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-parse dev)" "00$M2" "…restoring both after a reset to origin/dev, with @{1}: silent, and restored"
+git -C "$D" checkout -q main
+OUT=$(git -C "$D" branch -f dev "$M1" 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)$(git -C "$D" rev-parse dev)" "00$M1" "…branch -f dev back to the first merge, from main: silent"
+git -C "$D" checkout -q dev
 OUT=$(git -C "$D" reset -q --hard HEAD^2 2>&1); RC=$?
-say "$RC$(moved "$OUT" dev)" "01" "…but dev onto the tip of the branch it merged: warned"
+say "$RC$(moved "$OUT" dev)" "01" "…but dev onto the tip of the branch it merged, which HEAD has held and dev has not: warned"
 # Brought up to a release merge on main, reviewed there (#144 fix review, F-2). A hotfix
 # first, so the merge's first parent is not where dev is.
 D=$(dvrepo); ahead_on "$D" main; ahead_on "$D" main merge
@@ -557,6 +572,20 @@ OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES='(' git -C "$D" push --dry-run origin origin
 say "$(pushed "$OUT" 1 dev)" "1" "…with a PR-only pattern that does not compile: counted, not left out"
 OUT=$(git -C "$D" push origin origin/main:refs/heads/dev 2>&1); RC=$?
 say "$RC$(grep -c 'flight-rules:' <<<"$OUT")$(git -C "$D" ls-remote origin dev | cut -f1)" "00$(git -C "$D" rev-parse origin/main)" "…and with main PR-only, it is main's: silent, and pushed"
+# PR_ONLY_BRANCHES=off leaves out nothing, though "off" as a pattern would match a
+# branch named feature/offline; and the PR-only match ignores case, as the gating does
+# (#144 fix review, H-3).
+D=$(dvrepo); git -C "$D" push -q origin main:refs/heads/feature/offline 2>/dev/null || die "could not push feature/offline from $D"
+ahead_on "$D" feature/offline; ahead_on "$D" main; ahead_on "$D" main merge
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" push --dry-run origin origin/feature/offline:refs/heads/dev 2>&1)
+say "$(pushed "$OUT" 1 dev)" "1" "PR_ONLY_BRANCHES=off, a push of feature/offline's commit to dev: counted"
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git -C "$D" push --dry-run origin origin/main:refs/heads/dev 2>&1); RC=$?
+say "$RC$(grep -c 'flight-rules:' <<<"$OUT")" "00" "PR_ONLY_BRANCHES=^MAIN\$, the main-to-dev route: main's commits left out"
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES=off git -C "$D" merge -q --ff-only origin/feature/offline 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "01" "PR_ONLY_BRANCHES=off, dev fast-forwarded to feature/offline: warned"
+git -C "$D" reset -q --hard origin/dev
+OUT=$(FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$' git -C "$D" merge -q --ff-only origin/main 2>&1); RC=$?
+say "$RC$(moved "$OUT" dev)" "00" "PR_ONLY_BRANCHES=^MAIN\$, dev fast-forwarded to a merge on main: silent"
 # The PR-only branches come from the conf at HEAD, and with no conf, the default ^main$.
 D=$(DV_CONF=$'PR_ONLY_BRANCHES=^trunk$\nPROTECTED_BRANCHES=^(main|trunk|dev)$' dvrepo)
 git -C "$D" push -q origin main:refs/heads/trunk 2>/dev/null || die "could not push trunk from $D"

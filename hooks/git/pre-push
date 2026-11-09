@@ -58,12 +58,15 @@ PR_ONLY_RE="${PR_ONLY_RE:-$DEFAULT_PR_ONLY}"
 # The remote's PR-only branches, as this clone last fetched them, each as ^<ref>: a ref
 # name holds no space or glob character, so the list is split on whitespace. Only a
 # pattern that matches counts: one that does not compile excludes nothing, and says
-# more, not less. A remote given as a URL has no refs/remotes/ here.
+# more, not less. A remote given as a URL has no refs/remotes/ here. One grep over the
+# list, not one per ref: with 2,000 refs that cost 3.9s a push (#144 fix review, H-2).
+# awk, not lstrip: a remote's name may hold a slash.
 NOT_PR_ONLY=""
 case "$PR_ONLY_RE" in off|none) ;; *)
-    for r in $(git for-each-ref --format='%(refname)' "refs/remotes/$1/"); do
-        printf '%s' "${r#"refs/remotes/$1/"}" | grep -qiE -e "$PR_ONLY_RE" 2>/dev/null \
-            && NOT_PR_ONLY="$NOT_PR_ONLY ^$r"
+    for b in $(git for-each-ref --format='%(refname)' "refs/remotes/$1/" \
+               | awk -v p="refs/remotes/$1/" 'index($0, p) == 1 { print substr($0, length(p) + 1) }' \
+               | grep -iE -e "$PR_ONLY_RE" 2>/dev/null); do
+        NOT_PR_ONLY="$NOT_PR_ONLY ^refs/remotes/$1/$b"
     done ;;
 esac
 
