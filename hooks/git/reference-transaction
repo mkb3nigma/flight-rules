@@ -223,8 +223,8 @@ while read -r _old new ref; do
                 prunable*) [ "$_cur" = "$_holder" ] && _stale=1 ;;
             esac
         done < <(git worktree list --porcelain 2>/dev/null)
-        # git's own mark first; -d for a git too old to print it.
-        [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -d "$_holder" ]; } && { _gone="$_holder"; _holder=""; }
+        # git's own mark first; the .git file for a git too old to print it (C-3).
+        [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -e "$_holder/.git" ]; } && { _gone="$_holder"; _holder=""; }
         _qi=$(shq "$_int")
         # A failed pull is left for the person: a merge in progress in that checkout may
         # be theirs, so the prose says to abort nothing. The guard's `worktree_route`
@@ -237,16 +237,31 @@ while read -r _old new ref; do
             box_row ""
         elif git show-ref --verify --quiet "refs/heads/$_int"; then
             # Gone, not pruned: moved and deleted look the same to git, and a prune
-            # clears every worktree it cannot find, past repair (B-1).
-            if [ -n "$_gone" ]; then
+            # clears every worktree it cannot find, past repair (B-1). After a repair,
+            # the pull named, not "run it again", which a refused merge blocks (C-1);
+            # the folder still there, repair restores it (C-2).
+            _qg=$(shq "$_gone")
+            if [ -d "$_gone" ]; then
                 box_row "$_int was checked out at"
-                box_row "  $(shq "$_gone"),"
+                box_row "  $_qg,"
+                box_row "whose .git file is missing or broken, so stop and ask."
+                box_row "This restores it, staged work included, though git"
+                box_row "prints an error as it does:"
+                box_row "  git worktree repair $_qg"
+                box_row "Then pull in it, and run the add below:"
+                box_row "  git -C $_qg pull --ff --no-rebase origin $_qi"
+                box_row ""
+            elif [ -n "$_gone" ]; then
+                box_row "$_int was checked out at"
+                box_row "  $_qg,"
                 box_row "which is gone: moved, on a disk not mounted, or deleted,"
                 box_row "which git cannot tell apart, so stop and ask. If it was"
-                box_row "moved, git worktree repair <new path>, then run what was"
-                box_row "refused again for its route. If it was deleted, git"
-                box_row "worktree prune, which clears every worktree git cannot"
-                box_row "find, then the commands below."
+                box_row "moved, repair it, then pull in it, and run the add below:"
+                box_row "  git worktree repair <new path>"
+                box_row "  git -C <new path> pull --ff --no-rebase origin $_qi"
+                box_row "If it was deleted, prune, which clears every worktree git"
+                box_row "cannot find, then run the commands below:"
+                box_row "  git worktree prune"
                 box_row ""
             fi
             box_row "$_int is checked out in no live worktree."

@@ -51,7 +51,9 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`. The worktree that
      held it gone (`git worktree list` marks it `prunable`): STOP and ask — git cannot
      tell one moved, `git worktree repair <new path>`, from one deleted, `git worktree
-     prune`, which clears every worktree it cannot find — then run this step again.
+     prune`, which clears every worktree it cannot find; its folder still there and only
+     its `.git` file gone or broken, `git worktree repair <path>` restores it, staged
+     work included, though git prints an error as it does — then run this step again.
      Otherwise origin's commits it lacks come in by fast-forward, if there are any:
      ```bash
      git merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} \

@@ -454,7 +454,10 @@ RESOLVED_DIR=""; RESOLVED=0
 # path still holds the branch to git until pruned, but git cannot tell one deleted from
 # one moved or on a disk not mounted, and a prune clears every worktree it cannot find,
 # past repair: the prose names the path, says to stop and ask, and gives both, so the
-# person picks (B-1). Each layout the route once missed is in the 0.29.0
+# person picks (B-1). After a repair the branch is held again, so the prose names the
+# pull to run there, not "run it again", which a merge the ref gate refused blocks
+# (C-1). Its folder still there and only its .git file gone, repair restores it, staged
+# work included, and a prune would drop that (C-2). Each layout the route once missed is in the 0.29.0
 # release-fix review (X-1, Z-1..3, W-1..3, V-1..3, U-1, T-1, T-2, S-1, Q-1, B-1); a switch to origin's
 # branch is #141. No command row
 # carries a `#` or an apostrophe: interactive zsh, the macOS default, reads `#` as an
@@ -471,14 +474,21 @@ worktree_route() {
       prunable*) [ "$cur" = "$holder" ] && stale=1 ;;
     esac
   done < <("${GIT[@]}" worktree list --porcelain 2>/dev/null)
-  # git's own mark first; -d for a git too old to print it.
-  [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -d "$holder" ]; } && { gone="$holder"; holder=""; }
+  # git's own mark first; the .git file for a git too old to print it. Not the folder:
+  # one left without its .git under the repo's own tree reads as live, and the pull,
+  # sent there, ran in the checkout above it (C-3).
+  [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -e "$holder/.git" ]; } && { gone="$holder"; holder=""; }
   if [ -n "$holder" ]; then
     printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, and leave whatever it left there to the person.\n' \
       "$int" "$(shq "$holder")" "$int"
   elif "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
-    [ -n "$gone" ] && printf '%s was checked out at %s, which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, git worktree repair <new path>, then run what was refused again for its route. If it was deleted, git worktree prune, which clears every worktree git cannot find, then the commands below.\n' \
-      "$int" "$(shq "$gone")"
+    if [ -d "$gone" ]; then
+      printf '%s was checked out at %s, whose .git file is missing or broken, so stop and ask. This restores it, staged work included, though git prints an error as it does: git worktree repair %s. Then pull in it, and run the add below: git -C %s pull --ff --no-rebase origin %s.\n' \
+        "$int" "$(shq "$gone")" "$(shq "$gone")" "$(shq "$gone")" "$int"
+    elif [ -n "$gone" ]; then
+      printf '%s was checked out at %s, which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, repair it, then pull in it, and run the add below: git worktree repair <new path>, then git -C <new path> pull --ff --no-rebase origin %s. If it was deleted, prune, which clears every worktree git cannot find, then run the commands below: git worktree prune.\n' \
+        "$int" "$(shq "$gone")" "$int"
+    fi
     printf '%s is checked out in no live worktree. These bring in the commits origin/%s has that it lacks, if any; if git refuses, read its message (diverged, never pushed, or unreachable) and stop and ask.\n' \
       "$int" "$int"
   fi

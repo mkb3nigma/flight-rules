@@ -106,7 +106,8 @@ So before a branch is cut, `git fetch origin`, then origin's commits it lacks co
   branches needs a checkout. If the worktree that held it is gone (`git worktree list`
   marks it `prunable`), **stop and ask** before any of it: git cannot tell one moved
   (`git worktree repair <new path>`) from one deleted (`git worktree prune`, which
-  clears every worktree it cannot find).
+  clears every worktree it cannot find); one whose folder is there and only its `.git`
+  file gone or broken, `git worktree repair <path>` restores, staged work included.
 
 `feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill.
 A `git worktree add` by hand is advisory: no hook checks a start point, because

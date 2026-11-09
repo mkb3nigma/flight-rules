@@ -375,7 +375,7 @@ say "$(route "$OUT")" "git fetch origin && \\ git branch --track dev origin/dev 
 # A local dev no live worktree holds gets origin's commits only if there are any, chained
 # so a refusal (the two diverged) stops the add (W-1; owner, 2026-11-08); a worktree that
 # held it and is gone is named, never pruned: git cannot tell one moved from one
-# deleted, and a prune clears every worktree it cannot find (W-2, W-3, B-1).
+# deleted, and a prune clears every worktree it cannot find (W-2, W-3, B-1, C-1..C-4).
 CHAIN="git fetch origin && \\ { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\ git worktree add wt/<name> \\ -b <prefix>/<name> dev"
 git -C "$d" branch dev 2>/dev/null
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
@@ -421,25 +421,35 @@ OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/m|; s|<name>|m|')
 say "$( (cd "$d" && bash -c "$rows") >/dev/null 2>&1 && echo ran || echo refused) $(git -C "$d" rev-parse -q --verify feature/m || echo none) $(git -C "$w" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging) $(cat "$w/f")" "refused none merging resolved" "…and the rows, run anyway, refuse at the pull, the merge and the resolution left"
 git -C "$w" merge --abort || die "could not end the merge in $w"
-# Moved, with work staged in it: the rows, run whole, leave it for git worktree repair,
-# which a prune they once ran first had put past (B-1).
+# Moved, with work staged in it, and origin's dev strictly ahead: the rows, run whole,
+# stop at git's refusal to fetch into a branch it still counts as checked out, and leave
+# the worktree for git worktree repair, which a prune they once ran first had put past
+# (B-1, C-4). After the repair, the pull the prose names brings origin's commit in:
+# "run it again" was a dead end after a refused merge (C-1).
+nh=(-c core.hooksPath=/dev/null)
+git -C "$d" "${nh[@]}" push -q -f origin dev || die "could not push dev from $d"
+c=$(dirname "$d")/c; git clone -q -b dev "$(dirname "$d")/up.git" "$c" 2>/dev/null \
+  && git -C "$c" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "chore: c" && git -C "$c" "${nh[@]}" push -q origin dev || die "could not move origin's dev ahead"
 m="$d/../moved"; echo s > "$w/s" && git -C "$w" add s && mv "$w" "$m" || die "could not move the dev worktree from $w"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
 say "$(route "$OUT")" "$CHAIN" "…that worktree moved: git marks it prunable, so it is not pulled in, and not pruned"
 gone() { prose 'was checked out at' "$1" | sed "s|'$(cd "$d/.." && pwd -P)/dev wt'|<devwt>|; s|'$(cd "$d/.." && pwd)/dev wt'|<devwt>|"; }
-say "$(gone "$OUT")" "dev was checked out at <devwt>, which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, git worktree repair <new path>, then run what was refused again for its route. If it was deleted, git worktree prune, which clears every worktree git cannot find, then the commands below." "…said in prose naming the path: stop and ask, repair if moved, prune if deleted"
+say "$(gone "$OUT")" "dev was checked out at <devwt>, which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, repair it, then pull in it, and run the add below: git worktree repair <new path> git -C <new path> pull --ff --no-rebase origin dev If it was deleted, prune, which clears every worktree git cannot find, then run the commands below: git worktree prune" "…said in prose naming the path: stop and ask; repair and pull if moved, prune if deleted"
 rows=$(sed -n '/Do this instead/,/# commit there/p' <<<"$OUT" | sed -e '1d' -e '$d' -e 's/^║ //' -e 's/ *║$//' -e 's|<prefix>/<name>|feature/m|; s|<name>|m|')
-(cd "$d" && bash -c "$rows") >/dev/null 2>&1
-say "$(git -C "$d" worktree repair "$m" >/dev/null 2>&1 && git -C "$m" diff --cached --name-only)" "s" "…and the rows, run whole, leave it to repair, its staged work there"
-if git -C "$d" rev-parse -q --verify feature/m >/dev/null; then
-    git -C "$d" worktree remove "$d/wt/m" && git -C "$d" branch -q -D feature/m || die "could not remove the moved case's worktree"
-fi
-rm -rf "$m/.git"
+dv=$(git -C "$d" rev-parse dev)
+err=$( (cd "$d" && bash -c "$rows") 2>&1 >/dev/null) && rc=ran || rc=refused
+say "$rc $(grep -c "refusing to fetch into branch 'refs/heads/dev' checked out at" <<<"$err") $(git -C "$d" rev-parse -q --verify feature/m || echo none) $([ "$(git -C "$d" rev-parse dev)" = "$dv" ] && echo kept)" "refused 1 none kept" "…origin's dev ahead: the rows, run whole, refuse at the fetch, as git refuses a branch it counts as checked out, dev and the branch untouched"
+say "$(git -C "$d" worktree repair "$m" >/dev/null 2>&1 && git -C "$m" diff --cached --name-only)" "s" "…and leave it to repair, its staged work there"
+say "$(git -C "$m" pull -q --ff --no-rebase origin dev >/dev/null 2>&1; git -C "$d" rev-parse dev)" "$(git -C "$c" rev-parse HEAD)" "…then the pull the prose names brings origin's commit in"
+# Its .git file gone, the folder left: repair restores it, staged work included, which a
+# prune would drop, so the prose says repair (C-2).
+M=$(cd "$m" && pwd -P); rm -f "$m/.git"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT") $(grep -c 'was checked out at' <<<"$OUT")" "$CHAIN 1" "…its .git gone, its directory left: named, not pulled in, not pruned"
-rm -rf "$m"
+say "$(route "$OUT") $(prose 'was checked out at' "$OUT" | sed -E "s#'?$M'?#<m>#g")" "$CHAIN dev was checked out at <m>, whose .git file is missing or broken, so stop and ask. This restores it, staged work included, though git prints an error as it does: git worktree repair <m> Then pull in it, and run the add below: git -C <m> pull --ff --no-rebase origin dev" "…its .git file gone, its folder left: not pulled in, and the prose says repair restores it"
+say "$(git -C "$d" worktree repair "$m" >/dev/null 2>&1; git -C "$m" diff --cached --name-only)" "s" "…and repair restores it, its staged work there, though git exits 1"
+rm -rf "$m" "$c"
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT") $(grep -c 'was checked out at' <<<"$OUT")" "$CHAIN 1" "…and the whole worktree deleted by hand: the same"
+say "$(route "$OUT") $(grep -c 'which is gone: moved' <<<"$OUT")" "$CHAIN 1" "…and the whole worktree deleted by hand: named as gone, not pulled in, not pruned"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the fetch runs"
 d=$(make_repo default armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
