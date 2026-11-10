@@ -44,7 +44,7 @@ mkrepo() {
   git -C "$d" config merge.ff false
   mkdir -p "$d/.ai/hooks" "$d/.ai/worktrees"
   cp "$H/../git/pre-merge-commit" "$H/../git/commit-msg" "$H/../git/pre-rebase" \
-     "$H/../git/post-merge" "$H/../git/reference-transaction" "$H/../git/pre-commit" "$d/.ai/hooks/"
+     "$H/../git/post-merge" "$H/../git/reference-transaction" "$H/../git/pre-commit" "$H/../git/pre-push" "$d/.ai/hooks/"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath .ai/hooks
   printf 'INTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.ai/worktrees\nPROTECTED_BRANCHES=^trunk$\n' \
@@ -235,7 +235,7 @@ mkplugin() {
   local t; t=$(tmpd); mkdir -p "$t/.claude-plugin" "$t/hooks/agent" "$t/hooks/git"
   cp "$HOOK" "$t/hooks/agent/" && cp "$H/../flight-rules-doctor.sh" "$t/hooks/" \
     && cp "$H"/../git/pre-merge-commit "$H"/../git/commit-msg "$H"/../git/pre-rebase "$H"/../git/post-merge \
-          "$H"/../git/reference-transaction "$H"/../git/pre-commit "$H"/../git/install.sh "$t/hooks/git/" \
+          "$H"/../git/reference-transaction "$H"/../git/pre-commit "$H"/../git/pre-push "$H"/../git/install.sh "$t/hooks/git/" \
     || die "could not lay out the fake plugin"
   printf '{ "name": "flight-rules", "version": "9.9.9" }\n' > "$t/.claude-plugin/plugin.json"
   printf '%s' "$t"
@@ -312,7 +312,7 @@ say "$(grep -c 'updated git hooks\|could not update' <<<"$OUT")" "0" "…syncs n
 say "$(ls "$D/fakehome/githooks" | wc -l | tr -d ' ')" "0" "…and writes nothing into the global directory"
 # Doctor reads git's EFFECTIVE config, as git does: the global directory is where git
 # runs hooks from, and it lacks the flight-rules ones — the honest diagnosis.
-say "$(grep -c 'missing from' <<<"$OUT")" "6" "…while doctor reports the global directory as missing every hook"
+say "$(grep -c 'missing from' <<<"$OUT")" "7" "…while doctor reports the global directory as missing every hook"
 rm -rf "$D"
 # A session in a linked worktree, with the usual install: an absolute core.hooksPath into
 # the main checkout, shared by every worktree. Not synced from here, and said as such
@@ -409,12 +409,12 @@ say "$(usr <<<"$J" | grep -c 'could not fully check')" "0" "…and not that the 
 # status.showUntrackedFiles=no hid an untracked file there — a hook the sync copied in
 # (group A fix review, F12).
 git -C "$D" config status.branch false; git -C "$D" checkout -q -- .ai/hooks/post-merge
-git -C "$D" config status.showUntrackedFiles no; : > "$D/.ai/hooks/pre-push"
+git -C "$D" config status.showUntrackedFiles no; : > "$D/.ai/hooks/post-checkout"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?" )
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "status.showUntrackedFiles=no: session-start exits 0"
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…still says the hooks directory has changes"
-say "$(usr <<<"$J" | grep -c '?? .ai/hooks/pre-push')" "1" "…naming the untracked file"
+say "$(usr <<<"$J" | grep -c '?? .ai/hooks/post-checkout')" "1" "…naming the untracked file"
 rm -rf "$D"
 # On a protected branch nothing is written: the diff could not be committed there, and
 # `git restore` was refused as discarding work, so it blocked the merge that would land
@@ -762,7 +762,7 @@ for scope in local global; do
   if [ "$scope" = local ]; then git -C "$F" config core.hooksPath .husky
   else printf '[core]\n\thooksPath = %s\n' "$F/.husky" > "$F/fakehome/.gitconfig"; fi
   J=$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) )
-  say "$(ctx <<<"$J" | grep -c 'missing from')" "5" "husky as $scope core.hooksPath: the assistant is told"
+  say "$(ctx <<<"$J" | grep -c 'missing from')" "6" "husky as $scope core.hooksPath: the assistant is told"
   say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on screen"
   rm -f "$F"/fakehome/.claude/hooks/.worktree-check-*
   say "$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) | jq -r 'has("systemMessage")')" "false" "…the next day either"
@@ -782,7 +782,7 @@ rm -rf "$F"
 F=$(mkrepo); git -C "$F" config --unset core.hooksPath; rm "$F/.ai/flight-rules.conf"
 mkdir -p "$F/fakehome/githooks"; printf '[core]\n\thooksPath = %s\n' "$F/fakehome/githooks" > "$F/fakehome/.gitconfig"
 J=$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) )
-say "$(ctx <<<"$J" | grep -c 'missing from')" "6" "committed hooks + a foreign global hooksPath: the assistant is told"
+say "$(ctx <<<"$J" | grep -c 'missing from')" "7" "committed hooks + a foreign global hooksPath: the assistant is told"
 say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on screen"
 rm -rf "$F"
 # The hint is once per repository, not per worktree.

@@ -17,14 +17,14 @@ mkrepo() {
   # expect for other reasons — the 2026-09-11 shape where a suite silently tested the
   # wrong copy. So it is checked, not assumed.
   cp "$H/git/pre-merge-commit" "$H/git/commit-msg" "$H/git/pre-rebase" "$H/git/post-merge" \
-     "$H/git/reference-transaction" "$H/git/pre-commit" "$d/.ai/hooks/" || die "could not copy the git hooks from $H/git"
+     "$H/git/reference-transaction" "$H/git/pre-commit" "$H/git/pre-push" "$d/.ai/hooks/" || die "could not copy the git hooks from $H/git"
   chmod +x "$d"/.ai/hooks/*
   git -C "$d" config core.hooksPath .ai/hooks
   git -C "$d" config merge.ff false
   printf 'PROTECTED_BRANCHES=^main$\n' > "$d/.ai/flight-rules.conf"
-  # What every assertion assumes: a repo, and six hooks that are there to be broken.
+  # What every assertion assumes: a repo, and seven hooks that are there to be broken.
   [ -d "$d/.git" ] || die "no .git in the fixture at $d"
-  for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit; do
+  for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
     [ -x "$d/.ai/hooks/$_h" ] || die "$_h missing or not executable in the fixture"
   done
   printf '%s' "$d"
@@ -179,6 +179,13 @@ D=$(mkrepo)
 printf '#!/bin/sh\nnpx lint-staged\n' > "$D/.ai/hooks/pre-commit"
 say "$(has "$D" "rename it pre-commit.local")" "0" "a foreign pre-commit → told about pre-commit.local"
 rm -rf "$D"
+# The same for pre-push, from 0.29.0: git-lfs installs one (#144).
+D=$(mkrepo)
+printf '#!/bin/sh
+git lfs pre-push "$@"
+' > "$D/.ai/hooks/pre-push"
+say "$(rc "$D")$(has "$D" "If it is your project's own pre-push, rename it pre-push.local")" "10" "a foreign pre-push → problem, told about pre-push.local"
+rm -rf "$D"
 
 # 1c. A pre-commit.local without its executable bit is skipped by the scan without a
 #     word, so the project's own linter stops running unnoticed (/dg, 2026-10-08).
@@ -187,6 +194,12 @@ printf '#!/bin/sh\nexit 0\n' > "$D/.ai/hooks/pre-commit.local"
 say "$(rc "$D")" "1" "a non-executable pre-commit.local → problem"
 say "$(has "$D" "pre-commit.local is not executable")" "0" "…and says so"
 chmod +x "$D/.ai/hooks/pre-commit.local"
+say "$(rc "$D")" "0" "…and an executable one is fine"
+rm -rf "$D"
+D=$(mkrepo)
+printf '#!/bin/sh\nexit 0\n' > "$D/.ai/hooks/pre-push.local"
+say "$(rc "$D")$(has "$D" "pre-push.local is not executable — pre-push skips it silently")" "10" "a non-executable pre-push.local → problem, and says so"
+chmod +x "$D/.ai/hooks/pre-push.local"
 say "$(rc "$D")" "0" "…and an executable one is fine"
 rm -rf "$D"
 

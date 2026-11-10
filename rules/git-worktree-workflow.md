@@ -19,7 +19,9 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
 (no gate, but `post-merge` shows it at the merge and `session-start.sh` at the next session).
 
 ### 🚫 Forbidden
-1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
+1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook (the agent guard refuses one an
+   assistant types; the ref gate refuses one on a PR-only branch and warns of one on the
+   others, as `pre-push` does when it is pushed)
 2. Multiple features in one branch — one purpose per branch: two changes in one branch
    are reviewed, reverted and released as one, so a defect in either holds back or takes
    out both — skill (`pre-merge-check` 9, ⚠️)
