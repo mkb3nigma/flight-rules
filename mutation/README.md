@@ -18,7 +18,9 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 (owner, 2026-11-04). It takes hours, so it is not a per-branch check, and it is not one
 of `{TEST_COMMANDS}`.
 
-For a release, the run stamps the commit. After a clean run of the whole kit on a
+For a release, it runs last: on the final head, after the release's `/dg` (`pr-create`
+2b) and every finding it applied, just before the push — one run, not one per applied
+finding (owner, 2026-11-07). The run stamps the commit. After a clean run of the whole kit on a
 commit with no tracked file changed, `run.sh` writes a git note on it
 (`refs/notes/mutation`): its summary line and one row per mutant. It prints the push
 the note needs, and the owner makes it with `dev`'s. The `release review` check fetches
@@ -34,12 +36,15 @@ note says the run happened. Each machine keeps its own copy of the notes, so bef
 stamping the run merges origin's in; if that fails, or the push is rejected because
 another machine pushed since, the run prints the fetch-and-merge to make first. Never
 force the push: it drops the other machine's stamps. Run it from a worktree of the commit, so nothing else in a
-checkout is in the way:
+checkout is in the way. One left from an earlier run is removed first, with `git
+worktree remove .ai/worktrees/mutation`. The push is printed at the end of a stamped
+run, and the remove after it, once the stamp is pushed, is printed too:
 
 ```bash
 git worktree add --detach .ai/worktrees/mutation <sha>
 cd .ai/worktrees/mutation && mutation/run.sh -j 4
-git push origin refs/notes/mutation      # printed at the end of a stamped run
+git push origin refs/notes/mutation
+git worktree remove .ai/worktrees/mutation
 ```
 
 The gaps the suites are known to leave — the `survives: not held` mutants — are #133: a
@@ -77,7 +82,9 @@ summary. That adds about two hours at `-j 4`. Keep `-j` at 4 or so.
 ## Upkeep
 
 - **A hook edit that moves a mutant's anchor updates that mutant in the same change.**
-  `python3 -I mutation/mutants.py check .` says which no longer occur exactly once.
+  `python3 -I mutation/mutants.py check .` says which no longer occur exactly once;
+  `docs-consistency.test.sh` runs it, so a moved anchor fails the suites on the branch
+  that moved it, and `run.sh` refuses a whole-kit run with one, before its baseline.
   A mutant whose target is gone is deleted with it.
 - A mutant expected `killed` that survives is a gap in the suites: close it there, not
   by changing the expectation. `survives: not held — <what>` marks a gap the suites are

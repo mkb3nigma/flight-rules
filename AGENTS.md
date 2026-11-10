@@ -67,11 +67,7 @@ line while GitHub reported all three mergeable.
 branch and a PR — `dev` is protected and the promotion PR's head *is* `dev`, so there is
 nowhere else to put it. Bump `.claude-plugin/plugin.json` and add the CHANGELOG entry on
 a `chore/release-<v>` branch, merge that to `dev`, then open the promotion PR: run
-`/upstream-check` (its report under `## Upstream check` in the PR body), and
-`mutation/run.sh -j 4` from a worktree of the commit being promoted, then push the
-stamp it writes (`git push origin refs/notes/mutation`, printed by the run; the `release
-review` check requires a clean stamp on the PR's head, and an assistant never writes
-one by hand — `mutation/README.md`), then
+`/upstream-check` (its report under `## Upstream check` in the PR body), then
 `pr-create` step 2a (every `{TEST_COMMANDS}` entry on the exact commit being
 pushed, reporting the sha), then 2b (`/dg origin/main...<that sha>`, verdict and
 dispositions in the PR body, with the release's added and net lines by class — `MISSION.md`
@@ -80,7 +76,11 @@ hooks = `hooks/**` minus `*.md`, `*.json`; CI = `.github/**`; session-reaching =
 `.ai/skills/**`, `.claude/skills/**`, `MISSION.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`; other = the rest, the five summing to `--numstat`'s total —
 and the five questions asked of each subsystem; a critical finding is the owner's call; a finding applied
 arrives through a branch merged to `dev`, then 2a again on the new tip and `/dg` on the
-fix's own diff), and `--base main`. That promotion is the one PR whose head is
+fix's own diff), then — last, on the final head, once 2b has nothing left to apply —
+`mutation/run.sh -j 4` from a worktree of it, and the stamp it writes pushed
+(`git push origin refs/notes/mutation`, printed by the run; the `release review` check
+requires a clean stamp on the PR's head, so a commit after it means running it again,
+and an assistant never writes one by hand — `mutation/README.md`), and `--base main`. That promotion is the one PR whose head is
 a protected branch, which `pr-create`'s constraint names as its only exception.
 
 ## The skills run here too

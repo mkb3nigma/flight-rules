@@ -728,20 +728,189 @@ else
 fi
 rm -rf "$D"
 # The worktree the blocks suggest goes through /feature-start first: a raw worktree add
-# skips its open-branch count, the only gate on it (0.27.0 release review).
+# skips its open-branch count, the only gate on it (0.27.0 release review). By hand, it
+# starts where Required 8 and /feature-start start — the local integration branch, origin
+# pulled into it — not origin's, which lacks merges not yet pushed (0.29.0 release
+# review, R-1).
 for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|main|a commit on main'; do
   D=$(make_repo "$(cut -d'|' -f2 <<<"$c")")
   OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
         <<<"$(jq -n --arg c "$(cut -d'|' -f1 <<<"$c")" '{tool_input:{command:$c}}')" 2>/dev/null)
   if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q '/feature-start' <<<"$OUT" && grep -q 'open-branch limit\|OPEN_BRANCH_LIMIT' <<<"$OUT" \
      && grep -q 'raw worktree add skips\|by hand, which skips' <<<"$OUT" \
-     && grep -q 'worktree add .* origin/<integration-branch>' <<<"$OUT"; then
-    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on origin/<integration-branch>\n' "$(cut -d'|' -f3 <<<"$c")"
+     && grep -q 'git pull --ff --no-rebase origin main' <<<"$OUT" \
+     && grep -qE 'worktree add [^ ]+ -b [^ ]+ main && ' <<<"$OUT" && ! grep -qE ' -b [^ ]+ origin/main|<integration-branch>' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on the local integration branch after a pull\n' "$(cut -d'|' -f3 <<<"$c")"
   else
     FAIL=$((FAIL+1)); printf '  ❌ %s: the block does not point at /feature-start and its branch count\n' "$(cut -d'|' -f3 <<<"$c")"
   fi
   rm -rf "$D"
 done
+# The integration branch where the route finds it — the local one, authoritative, the
+# base every new branch is cut from, a revert aside, origin's commits it lacks brought in
+# (rules/git-worktree-workflow.md → *Which branch new work starts from*; 0.29.0
+# release-fix review, X-1, Z-1..3, W-1..4, U-1, T-1, T-2): a clone holds only main, so
+# dev is made from origin's, tracking it — a pull printed for "where it is checked out"
+# ran on main and moved it; held by a live linked worktree, the pull runs there, by path;
+# a local dev no live worktree holds gets origin's commits only if there are any; a
+# worktree that held it and is gone is named, never pruned: git cannot tell one moved
+# from one deleted, and a prune clears every worktree it cannot find (B-1, C-1..C-3). In every layout the
+# rows are one chain, from the first `cd` to the last. route_rows: all of them, as the
+# reason prints them; route_lines: the rows between the two `cd`s.
+reason_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$1"; }
+route_rows() { reason_of "$1" | sed -n '/^  cd /,/^    cd .*<name>$/p'; }
+route_lines() { route_rows "$1" | sed '1d;$d'; }
+route_of() { route_lines "$1" | tr '\n' '|'; }
+CHAIN="    git fetch origin && \\|    { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|"
+D=$(make_repo main); mkdir -p "$D/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "    git fetch origin && \\|    git branch --track dev origin/dev && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
+say "$(route_rows "$OUT" | sed -n '1p;$p' | sed "s|^  cd '*$D'* |  cd <root> |" | tr '\n' '|')" "  cd <root> && \\|    cd .ai/worktrees/<name>|" "…the first cd chained to the rest, the last after the add (T-1)"
+git -C "$D" branch dev || die "could not make dev in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, the fetch and the add chained"
+# What the rows need said is prose above them: interactive zsh, the macOS default, reads
+# a `#` in a pasted row as an argument and an apostrophe as an open quote (V-1).
+say "$(reason_of "$OUT" | grep -c '^dev is checked out in no live worktree\. .*stop and ask\.$') $(route_lines "$OUT" | grep -c "[#']")" "1 0" "…said in a prose line above the commands, which carry no # or apostrophe"
+git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev && \\|" "…dev held by a linked worktree: the pull runs there, by path"
+# A pull in a checkout merges a diverged dev, and a conflict leaves the merge in progress,
+# where git says to fix and commit: the prose says to stop and ask (T-2), and to abort
+# nothing, since a merge there may be the person's: each way tried to tell one the pull
+# left from theirs misread one (S-1, Q-1, P-1, O-1). One already in progress there is
+# the layout_case "merging" cases below.
+say "$(reason_of "$OUT" | grep -c "^dev is checked out at '$D/dev wt', so the pull runs there: it brings in the commits origin/dev has that it lacks, if any, merging them if the two diverged\. If it fails, stop and ask, and leave whatever it left there to the person\.$")" "1" "…said in a prose line: on a failure, stop and ask, aborting nothing"
+# Named with git -C from outside the repo, as assistants write it: the lookup reads the
+# target repo, not the shell's (W-4).
+O=$(tmpd); OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<"$(jq -n --arg c "git -C $D commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|" "…the same, named with git -C from outside the repo"
+rm -rf "$O"
+# Moved, with work staged in it: the rows, run whole, leave it for git worktree repair,
+# which a prune they once ran first had put past (B-1). The prose names the pull to run
+# after a repair, not "run it again" (C-1).
+echo s > "$D/dev wt/s" && git -C "$D/dev wt" add s && mv "$D/dev wt" "$D/moved" || die "could not move the dev worktree in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "$CHAIN" "…that worktree moved: git marks it prunable, so it is not pulled in, and not pruned"
+say "$(reason_of "$OUT" | grep -cxF "dev was checked out at '$D/dev wt', which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, repair it, then pull in it, and run the add below: git worktree repair <new path>, then git -C <new path> pull --ff --no-rebase origin dev. If it was deleted, prune, which clears every worktree git cannot find, then run the commands below: git worktree prune.")" "1" "…said in a prose line naming the path: stop and ask; repair and pull if moved, prune if deleted"
+(cd "$D" && bash -c "$(route_rows "$OUT" | sed 's|<name>|m|g')") >/dev/null 2>&1
+say "$(git -C "$D" worktree repair "$D/moved" >/dev/null 2>&1 && git -C "$D/moved" diff --cached --name-only)" "s" "…and the rows, run whole, leave it to repair, its staged work there"
+# Its .git file gone, the folder left: repair restores it, staged work included, which
+# a prune would drop, so the prose says repair (C-2). Read by the .git file, not the
+# folder, for a git too old to mark it prunable: by the folder it read as live, and the
+# pull sent there ran in the checkout above it (C-3). A git wrapper hides the mark.
+M=$(cd "$D/moved" && pwd -P); rm -f "$D/moved/.git"
+gone_b() { reason_of "$1" | sed -E "s#'?$M'?#<m>#g; s#'?$D/moved'?#<m>#g" | grep -cxF "dev was checked out at <m>, whose .git file is missing or broken, so stop and ask. This restores it, staged work included, though git prints an error as it does: git worktree repair <m>. Then pull in it, and run the add below: git -C <m> pull --ff --no-rebase origin dev."; }
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT") $(gone_b "$OUT")" "$CHAIN 1" "…its .git file gone, its folder left: not pulled in, and the prose says repair restores it"
+W=$(tmpd); printf '#!/bin/bash\nif [[ " $* " == *" worktree list "* ]]; then %q "$@" | grep -v "^prunable"; else exec %q "$@"; fi\n' "$(command -v git)" "$(command -v git)" > "$W/git" && chmod +x "$W/git" || die "could not write the git wrapper in $W"
+OUT=$(cd "$D" && PATH="$W:$PATH" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT") $(gone_b "$OUT")" "$CHAIN 1" "…the same on a git too old to mark it prunable: read by its .git file, not pulled in"
+rm -rf "$W"
+say "$(git -C "$D" worktree repair "$D/moved" >/dev/null 2>&1; git -C "$D/moved" diff --cached --name-only)" "s" "…and repair restores it, its staged work there, though git exits 1"
+rm -rf "$D/moved"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT") $(reason_of "$OUT" | grep -c "^dev was checked out at .*/moved'*, which is gone: moved")" "$CHAIN 1" "…and the whole worktree deleted by hand: named as gone, not pulled in, not pruned"
+rm -rf "$D"
+# The chain, run as printed in a clone whose dev no worktree holds (owner, 2026-11-08):
+# behind, it takes origin's commits and adds from them; ahead, it adds from the local dev
+# untouched; diverged, it stops before the add.
+U=$(tmpd)
+git init -q --bare -b main "$U/up.git" && git clone -q "$U/up.git" "$U/r" 2>/dev/null && git clone -q "$U/up.git" "$U/o" 2>/dev/null || die "could not make the clones in $U"
+for r in r o; do git -C "$U/$r" config user.email t@t.t; git -C "$U/$r" config user.name t; done
+git -C "$U/r" commit -q --allow-empty -m a && git -C "$U/r" push -q origin main main:dev || die "could not seed $U/up.git"
+mkdir -p "$U/r/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$U/r/.ai/flight-rules.conf"
+git -C "$U/r" fetch -q && git -C "$U/r" branch -q --track dev origin/dev || die "could not make dev in $U/r"
+git -C "$U/o" fetch -q && git -C "$U/o" checkout -q -b dev origin/dev || die "could not check out dev in $U/o"
+origin_moves() { git -C "$U/o" commit -q --allow-empty -m "o$1" && git -C "$U/o" push -q origin dev || die "could not move origin/dev"; }
+local_moves()  { git -C "$U/r" worktree add -q "$U/lw" dev && git -C "$U/lw" commit -q --allow-empty -m "l$1" && git -C "$U/r" worktree remove "$U/lw" || die "could not move the local dev"; }
+run_route() {   # <name> [zsh]: the route the guard prints in $U/r, run there — by bash, or
+  # pasted into interactive zsh, the macOS default (V-1); the exit status
+  local cmds
+  cmds=$(route_rows "$(cd "$U/r" && CLAUDE_PROJECT_DIR="$U/r" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)" | sed "s/<name>/$1/g")
+  [ -n "$cmds" ] || { echo "no route"; return; }
+  if [ "${2:-}" = zsh ]; then (cd "$U/r" && zsh -f -i <<<"$cmds") >/dev/null 2>&1; else (cd "$U/r" && bash -c "$cmds") >/dev/null 2>&1; fi
+  echo $?
+}
+origin_moves 1
+say "$(run_route b) $(git -C "$U/r" rev-parse feature/b) $(git -C "$U/r" rev-parse dev)" "0 $(git -C "$U/o" rev-parse dev) $(git -C "$U/o" rev-parse dev)" "…run: dev behind, origin's commit brought in, and the branch cut from it"
+if command -v zsh >/dev/null 2>&1; then
+  origin_moves z
+  say "$(run_route z zsh) $(git -C "$U/r" rev-parse -q --verify feature/z) $(git -C "$U/r" rev-parse dev)" "0 $(git -C "$U/o" rev-parse dev) $(git -C "$U/o" rev-parse dev)" "…the same, pasted into interactive zsh"
+else
+  echo "  ⚠️  no zsh here: the interactive-zsh paste case did not run"
+fi
+local_moves 1; L=$(git -C "$U/r" rev-parse dev)
+say "$(run_route a) $(git -C "$U/r" rev-parse feature/a) $(git -C "$U/r" rev-parse dev)" "0 $L $L" "…dev ahead (a merge not yet pushed): cut from the local dev, which stays as it is"
+origin_moves 2
+say "$(run_route d) $(git -C "$U/r" rev-parse -q --verify feature/d || echo none) $(git -C "$U/r" rev-parse dev)" "1 none $L" "…the two diverged: the fetch is refused and the add never runs"
+# …nor the last cd: into a worktree already at that name it ran anyway, exit 0, in the
+# old worktree (T-1).
+say "$(run_route b)" "1" "…a refused chain does not cd into a worktree already at that name"
+# The first cd failing — the repo moved, a slip — stops it too: unchained, the update and
+# the add ran in whatever repo the shell was in, and cut a branch there (T-1).
+cmds=$(route_rows "$(cd "$U/r" && CLAUDE_PROJECT_DIR="$U/r" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)" | sed "s/<name>/c/g")
+mv "$U/r" "$U/r.moved" || die "could not move $U/r"
+say "$( (cd "$U/o" && bash -c "$cmds") >/dev/null 2>&1; echo $?) $(git -C "$U/o" rev-parse -q --verify feature/c || echo none)" "1 none" "…the first cd failing: nothing runs in the repo the shell is in"
+mv "$U/r.moved" "$U/r" || die "could not move $U/r back"
+# Offline: the first fetch fails, and origin/dev, last fetched, says nothing is new — the
+# add once ran on that, exit 0 off a stale dev (V-2). Now nothing runs past the fetch.
+git -C "$U/r" update-ref refs/remotes/origin/dev dev~1 && git -C "$U/r" remote set-url origin "$U/gone.git" || die "could not take origin away in $U/r"
+say "$(run_route u | sed 's/^[1-9][0-9]*$/refused/') $(git -C "$U/r" rev-parse -q --verify feature/u || echo none)" "refused none" "…origin unreachable: the fetch fails and nothing past it runs"
+# The same in every other layout. Online, with origin's dev a commit ahead, the branch is
+# cut from origin's tip, where the text pins alone held the rows (T-3). Offline, the update
+# in each is chained to the add, where the pull or fetch once stood alone and the add ran
+# off a stale base, exit 0 (U-1). Merging, the checkout holding dev is part-way through
+# the person's own merge — open, f resolved and g not, which git refuses with "an
+# unresolved conflict" (Q-1); or resolved, not committed (S-1): the pull refuses, and the
+# merge and the resolution are left.
+layout_case() {   # <root|linked|missing> <online|offline|merging|merging-open>: a clone in
+  # that layout, origin's dev a commit ahead; the route run — ran or refused, then the
+  # branch's commit or none, then, merging, whether the merge is still in progress, and
+  # f's content
+  local F r h out cmds tip
+  F=$(tmpd); r="$F/r"
+  git init -q --bare -b main "$F/up.git" && git clone -q "$F/up.git" "$r" 2>/dev/null || die "could not make the clone in $F"
+  git -C "$r" config user.email t@t.t; git -C "$r" config user.name t
+  git -C "$r" commit -q --allow-empty -m a && git -C "$r" push -q origin main main:dev && git -C "$r" fetch -q || die "could not seed $F/up.git"
+  mkdir -p "$r/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$r/.ai/flight-rules.conf"
+  case "$1" in
+    root)    git -C "$r" checkout -q -b dev origin/dev ;;
+    linked)  git -C "$r" branch -q --track dev origin/dev && git -C "$r" worktree add -q "$F/dw" dev ;;
+    missing) : ;;
+  esac || die "could not lay out $1 in $r"
+  tip=$(git -C "$r" commit-tree -p HEAD -m o 'HEAD^{tree}') && git -C "$r" push -q origin "$tip:refs/heads/dev" && git -C "$r" update-ref refs/remotes/origin/dev HEAD || die "could not move origin's dev in $F"
+  [ "$2" = offline ] && git -C "$r" remote set-url origin "$F/gone.git"
+  case "$2" in merging*)
+    h="$r"; [ "$1" = linked ] && h="$F/dw"
+    { git -C "$h" checkout -q -b side && echo s > "$h/f" && echo s > "$h/g" && git -C "$h" add f g && git -C "$h" commit -q -m s \
+      && git -C "$h" checkout -q dev && echo d > "$h/f" && echo d > "$h/g" && git -C "$h" add f g && git -C "$h" commit -q -m d; } \
+      || die "could not make the merge in $h"
+    git -C "$h" merge -q side >/dev/null 2>&1; git -C "$h" rev-parse -q --verify MERGE_HEAD >/dev/null || die "no merge in progress in $h"
+    echo resolved > "$h/f" && git -C "$h" add f || die "could not resolve f in $h"
+    [ "$2" = merging-open ] || { echo resolved > "$h/g" && git -C "$h" add g; } || die "could not resolve g in $h" ;;
+  esac
+  # A merge in progress at the root lets a commit through — it may be the merge's own —
+  # so there the route is asked for with checkout -b, which is refused all the same.
+  local c='git commit -m x'; [ -n "${h:-}" ] && c='git checkout -b feature/y'
+  out=$(cd "$r" && CLAUDE_PROJECT_DIR="$r" bash "$HOOK" <<<"{\"tool_input\":{\"command\":\"$c\"}}" 2>/dev/null)
+  cmds=$(route_rows "$out" | sed 's|<prefix>/|feature/|; s/<name>/on/g')
+  if [ -z "$cmds" ]; then echo "no route"; elif (cd "$r" && bash -c "$cmds") >/dev/null 2>&1; then echo ran; else echo refused; fi
+  git -C "$r" rev-parse -q --verify feature/on | sed "s/^$tip$/tip/" | grep . || echo none
+  if [ -n "${h:-}" ]; then
+    git -C "$h" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging; cat "$h/f"
+  fi
+  rm -rf "$F"
+}
+for l in root linked missing; do
+  say "$(layout_case "$l" online | tr '\n' ' ')" "ran tip " "…dev $l, origin a commit ahead: the branch is cut from origin's tip"
+  say "$(layout_case "$l" offline | tr '\n' ' ')" "refused none " "…origin unreachable with dev $l: nothing past the update runs"
+done
+for l in root linked; do
+  say "$(layout_case "$l" merging-open | tr '\n' ' ')" "refused none merging resolved " "…dev $l, the person part-way through a merge there, a conflict still open: the pull refuses, the merge and the resolution left"
+  say "$(layout_case "$l" merging | tr '\n' ' ')" "refused none merging resolved " "…the same, the merge resolved and not committed"
+done
+rm -rf "$U"
 
 echo "Target parsing is per simple command, not per command STRING:"
 # Both directions were live and both are reproduced here (2026-09-10).

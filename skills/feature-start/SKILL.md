@@ -34,10 +34,11 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 3. **Validate the branch name** — ask if not provided; verify the prefix.
 4. **Sync the base from origin — non-negotiable.**
    - `git fetch origin` first, **always**, then pull origin into the local
-     `{INTEGRATION_BRANCH}`, in the checkout that has it. The base is the local one: it
-     holds origin's work and any merges not yet pushed, which a branch from origin's
-     would miss (owner, 2026-11-01, #125); a local copy left behind is the exact way work
-     gets built on the wrong foundation.
+     `{INTEGRATION_BRANCH}`, in the checkout that has it. The base is the local one,
+     authoritative for every new branch, a revert aside (`git-worktree-workflow.md` →
+     *Which branch new work starts from*): it holds origin's work and any merges not yet
+     pushed, which a branch from origin's would miss; a local copy left behind is the
+     exact way work gets built on the wrong foundation.
      ```bash
      git pull --ff --no-rebase origin {INTEGRATION_BRANCH}
      ```
@@ -45,9 +46,22 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      person's to finish or abort, then run this again. Tracking nothing: `git branch -u origin/{INTEGRATION_BRANCH}
      {INTEGRATION_BRANCH}`. Behind, the pull fast-forwards; ahead, nothing moves;
      diverged, it merges its own upstream, which `commit-msg` lets through when clean.
-     It fails: abort the merge it started, if any, then STOP and show git's output —
-     never stash or touch the person's edits. No checkout has it: missing, `git branch
-     --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`; otherwise STOP and ask.
+     It fails: STOP and show git's output, and leave whatever it left to the person —
+     abort nothing, never stash or touch their edits. No checkout has it: missing, `git
+     branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`. The worktree that
+     held it gone (`git worktree list` marks it `prunable`): STOP and ask — git cannot
+     tell one moved, `git worktree repair <new path>`, from one deleted, `git worktree
+     prune`, which clears every worktree it cannot find; its folder still there and only
+     its `.git` file gone or broken, `git worktree repair <path>` restores it, staged
+     work included, though git prints an error as it does — then run this step again.
+     Otherwise origin's commits it lacks come in by fast-forward, if there are any:
+     ```bash
+     git merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} \
+       || git fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}
+     ```
+     Equal or ahead, nothing moves; behind, it fast-forwards. Refused — diverged
+     (merging them needs a checkout of it), never pushed, or unreachable; git's message
+     says which — STOP and ask.
    - **Reconcile `main` into the integration branch** — only when
      `{INTEGRATION_BRANCH}` differs from `main`. A hotfix or change applied straight
      to `main` is not on the integration branch, so a branch built off it silently
