@@ -4,6 +4,207 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.29.0 — 2026-11-10
+
+New branches start from the local integration branch, with origin's work pulled into it
+first, so a merge made here and not yet pushed is in them; the routes the hooks print
+when they refuse now say the same, and work in every layout they were tried in. A
+`pre-merge-check` note now has to show the check ran. A direct change to a protected
+branch that is not PR-only is warned of, never refused, at the move and at the push.
+
+### Upgrading
+
+**Git hooks changed** — `commit-msg`, `post-merge`, `reference-transaction` and
+`install.sh` — **and there is a seventh, `pre-push`**. Sync them, as for 0.28.0:
+`HOOK_SYNC=auto`, or `install.sh --stale-only`, copies `pre-push` in beside the others,
+and `install.sh` now refuses a set without it. The agent guard and the session-start
+hooks and the doctor arrive with the plugin.
+
+**A project with its own `pre-push`** (git-lfs installs one) renames it
+`pre-push.local` first. flight-rules' `pre-push` runs it after its own check, with the
+same arguments and input, and its exit status decides the push — as `pre-commit` runs
+`pre-commit.local`. Until it is renamed, `install.sh` refuses and prints the `mv`, the
+sync leaves it alone and names the rename, and the doctor says it does not look like
+flight-rules' hook. A first install that finds one in `.git/hooks` names it, with the
+way to keep it. The doctor also names a missing `pre-push`, and a `pre-push.local` that
+is not executable, which `pre-push` skips without a word.
+
+**Every `pre-merge-check` note made before this release is refused once** (#107). The
+note gate now takes a note only when its `passed:` line names the tree of the commit
+being merged and it has a `ran:` line. Run `/pre-merge-check` again on any branch
+stamped before the upgrade. A developer working alone writes both by hand, with `-f`
+over the old note; `hooks/README.md` → `commit-msg` has the command.
+
+**New branches are cut from the local integration branch** (#125), once origin's
+commits it lacks are pulled in; before, from `origin/<integration branch>`. A project
+that merges only by PR loses nothing: its local branch fast-forwards to origin's. One
+that wants branches cut from origin's says so in its own rules, which override; the
+hooks' printed routes still name the local branch until a switch exists (#141).
+
+**Rules changed**: `rules/git-worktree-workflow.md`, `rules/multi-ai-setup.md`, and
+`rules/engineering-principles.md`, which now opens with a `trigger: always_on` header
+for Antigravity (the session-start hook strips it before injecting). A project that
+copied them runs `/rules-sync` to fold the changes in; one that reads the plugin's copy
+needs nothing.
+
+**Skills changed**: `/commit`, `/feature-start`, `/pr-create` and `/pre-merge-check`.
+Plugin users need do nothing; a project that copied one into `.ai/skills/` runs
+`/rules-sync`.
+
+**Antigravity users reinstall the plugin** to have the principles loaded into every
+session. **Codex users** may add the `SessionStart` entry in README → Consuming. In
+neither tool does the doctor run, so the git hooks are wired by hand there; the README
+says how.
+
+**What an adopter set that behaves differently:**
+- `PR_ONLY_BRANCHES`: a branch it names is no longer deleted by the agent guard, nor
+  offered for deletion by `post-merge`, when `PROTECTED_BRANCHES` leaves it out (#128).
+  A project that deletes a local PR-only branch on purpose runs the delete itself, or
+  sets `PR_ONLY_BRANCHES` so it no longer names it.
+- `PROTECTED_BRANCHES=off` (or `none`) also turns off the new warnings. With
+  `PR_ONLY_BRANCHES=off`, `main` is warned of as `dev` is, where before nothing was said.
+- `.cursorrules` and `.windsurfrules` are gone from `multi-ai-setup.md`'s layout; a
+  project that has them keeps them working. `AGENTS.md` is the one to add, and
+  `GEMINI.md` for Gemini CLI.
+
+### Fixed
+
+- **A hand-written note passed the note gate** (#107). It took any note beginning
+  `passed:` as proof that `/pre-merge-check` ran, and an assistant wrote that note by
+  hand 12 times. `commit-msg` now needs the merged commit's tree on the `passed:` line
+  and a non-empty `ran:` line. Otherwise it refuses under "THE NOTE DOES NOT SHOW THE
+  CHECK", naming what the note lacks — no tree, a tree that is not a full, lowercase
+  hash, no space before `tree:`, or no `passed:` line at all, which before fell through
+  to the generic box (#124) — and prints the `/pre-merge-check` route and the one for a
+  person working alone. It still cannot tell a hand-written note from a real run: it
+  stops the bare shortcut, and a note carried onto a commit it never checked.
+  `session-start` and `/feature-start` count a branch as waiting to merge only when the
+  gate would take its note.
+- **A new branch missed merges not yet pushed** (#125). `/feature-start` cut it from
+  `origin/<integration branch>`, so a developer who keeps merges local until a release
+  could not branch a fix to one of them. Step 4 now runs `git pull --ff --no-rebase
+  origin <integration branch>` in the checkout that has it and cuts from the local
+  branch: behind, it fast-forwards; ahead, nothing moves; diverged, it merges its own
+  upstream, which `commit-msg` lets through when clean. A merge already in progress
+  there stops the step before the pull, as the person's. A pull that fails stops and
+  shows git's output; the skill aborts nothing and never stashes or touches the
+  person's edits. A branch tracking nothing gets its upstream set first.
+- **The route the agent guard and the ref gate print built on a stale base.** The
+  guard's refusal of a commit on a protected branch or a branch made in place, and the
+  ref gate's refusal on a PR-only branch, printed `git fetch origin` and `git worktree
+  add … origin/<integration-branch>`. They now print the base `/feature-start` 4 uses,
+  for where the branch is: checked out at the repo root, the pull there; in a linked
+  worktree, `git -C <that path> pull …`; missing, `git branch --track` from origin's;
+  checked out nowhere, a fast-forward only if origin's has anything new, which git
+  refuses when the two have diverged, the branch was never pushed or origin is
+  unreachable. The guard reads `INTEGRATION_BRANCH` from the conf, in place of a
+  placeholder, and the ref gate now prints the `cd` to the repo root.
+- **The printed route is one chain, from its first `cd` to its last**, so a `cd` that
+  fails, a fetch with the network down, or any refusal stops it before a branch is cut
+  off a stale base or in another repo. It pastes into interactive zsh, the macOS
+  default, as into bash: no command row carries a `#` or an apostrophe. It cleans up
+  nothing for the person: a failed pull is left to them, and it never says to abort a
+  merge. A worktree that held the branch and is gone from its path is named, with
+  `git worktree repair` if it was moved and `git worktree prune` if it was deleted, for
+  the person to choose — a prune clears every worktree git cannot find, so one that was
+  moved lost its staged work. One whose `.git` file alone is missing gets the repair,
+  which keeps its staged work. `/feature-start` 4 and the rules say the same.
+- **The guard's `python3` fallback ran a project's `json.py`.** With no `jq`, the guard
+  parsed its input with `python3 -c`, which imports from the working directory first, so
+  a `json.py` in the project ran in place of the standard library's, and every git
+  command was then denied as unreadable. It runs `python3 -I` now.
+- **The session-start header could arrive garbled** without `jq`, under a non-UTF-8
+  Linux locale: `python3` was given it as an argument. It goes on stdin with the rules
+  now (#140).
+- **`post-merge` printed the feature-merge block on a fast-forward pull of a merged
+  PR** (#131), and "Earlier merges left …" on every such pull while cleanup was pending,
+  so a project that promotes by PR saw it on every pull. It now reads the reflog: a
+  fast-forward prints nothing. The note file is still written.
+- **A PR-only branch was offered for deletion, and the guard let the delete through**
+  (#128), in a project whose `PROTECTED_BRANCHES` left out `main`, which is PR-only by
+  default. `post-merge` now reads `PR_ONLY_BRANCHES` too, so merging `main` in is the
+  back-merge it is and prints nothing, and the guard refuses `git branch -d` or `-D` of
+  a PR-only branch. Both stand down with `PR_ONLY_BRANCHES=off` or `none`, or
+  `PROTECTED_BRANCHES=off`. A `PR_ONLY_BRANCHES` that does not compile keeps every
+  branch from deletion until it is fixed, and the guard's block names it. A `main` that neither names is a branch like any other:
+  merging it into the integration branch prints its cleanup lines, where before it
+  printed nothing.
+- **The hook sync told an adopter to mark its own hook adapted.** On a `pre-commit` or
+  `pre-push` with no flight-rules marker — a linter's, git-lfs's — `install.sh
+  --stale-only` said to add `# flight-rules: adapted`, which would have kept
+  flight-rules' hook out for good. It now names the rename to `.local`.
+
+### Added
+
+- **A warning of a direct change to a protected branch that is not PR-only** (#115,
+  #144). A plain commit on `dev` passed every git hook: a probe script that lost its
+  `cd` committed on local `dev`, inside a script the agent guard never read. The ref
+  gate now warns when such a branch moves to a commit that is not on its upstream, not
+  a merge made on it, not a value its own reflog has held, and not on `origin/<a PR-only
+  branch>`: a commit, an amend (of a merge too), a cherry-pick, a revert, a squash, a
+  fast-forward or `branch -f` onto it. The new `pre-push` warns when a push puts commits
+  on a protected branch that no merge brought in, naming up to five and counting the
+  rest. Both name the commit and say the move or push goes ahead. A merge, a pull, an
+  undo or redo of a local merge, `git fetch origin dev:dev`, a normal push of `dev`
+  after local merges, and `/feature-start`'s push of `main` into `dev` say nothing.
+  What they do not see — output sent to `/dev/null`, `git push --no-verify`, a branch
+  with no upstream, a branch's first push, an amended merge at the push, a remote not
+  called `origin` — is in `hooks/README.md`.
+- **Codex and Antigravity installs**, in README → Consuming: how to install the plugin
+  from a clone, what each gets, and how to wire the git hooks by hand. Antigravity
+  converts the plugin and now loads `engineering-principles.md` into every session;
+  before, it got the skills and nothing else. Codex runs no plugin hooks; the README
+  gives a `SessionStart` entry for `~/.codex/hooks.json` that injects the principles
+  from the newest installed version and does nothing without the plugin.
+
+### Changed
+
+- **`/feature-start`**: step 4 pulls into the local integration branch, as above, and
+  step 6 cuts from it. A `hotfix/` branch now needs the person's approval as urgent
+  (#143): without it the skill creates nothing and names `fix/` as the route; with it,
+  the branch is cut from `origin/main` with `--no-track`, and an issue is filed saying
+  it bypassed the integration branch, which its PR links (`/pr-create`).
+- **Commit prefixes**: `ci:` is allowed, for a change to the CI; a prefix may carry a
+  scope, `fix(hooks):` (#139); and git's own `Revert "<subject>"` passes as it is
+  (#136), since the rule's route for a bad merge is a revert. In `/commit`,
+  `/pre-merge-check` item 8 and Required 3.
+- **`/pre-merge-check`** stamps the tree it checked and one `ran:` line per command,
+  with its exit status and last line, single-quoted. Uncommitted changes get a ⚠️ row:
+  the stamp vouches for the commit, but the tests ran with those edits on disk. Items 17
+  and 18 read `AGENTS.md` beside `CLAUDE.md`.
+- **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
+  from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
+  local branch, since origin's lacks it (#143); a hotfix only with the person's
+  approval, from `origin/main` (#143); Forbidden 1 says how each layer enforces it,
+  warnings included; Forbidden 8 says the two clean merges `commit-msg` has always let
+  through — a back-merge of a PR-only branch's tip, and the merge of a branch's own
+  upstream when the two have diverged — need no instruction and carry no trailer; the
+  Enforcement section points at `hooks/README.md` → *Git hooks* in place of a summary
+  that still said five hooks.
+- **`rules/multi-ai-setup.md`**: the layout's pointer files are `CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md` and Copilot's; `.cursorrules`, which Cursor's docs call
+  legacy, and `.windsurfrules` are gone. Gemini CLI reads `GEMINI.md`, not `AGENTS.md`,
+  by default.
+- **`commit-msg`'s back-merge exemption** no longer looks up `origin` ignoring case.
+  A hand-typed `^MAIN$` with a hand-made `MAIN` now lands as a back-merge when origin
+  has no `MAIN` or has one holding the commit, and a stale `origin/Main` beside
+  `origin/main` no longer blocks a real back-merge of `main`; every state that code
+  handled was made on purpose. Under a `GIT_TRACE*` variable, the could-not-check box may
+  quote a trace line as git's error.
+- **`hooks/README.md`** says the guard's open gap: a redirect written against a git
+  word, `git commit>/dev/null`, hides that word from it (#138). 0.28.0 had the same gap.
+  The README and `hooks/README.md` lose stale counts and histories the CHANGELOG and
+  tests already carry.
+
+### Changed — this repo
+
+- `AGENTS.md` holds how work is done here; `CLAUDE.md` and `GEMINI.md` import it and
+  `MISSION.md`.
+- A release PR into `main` must carry an `## Upstream check` section and a clean
+  mutation stamp of its head commit, written by the new `mutation/` kit and checked by
+  CI; the test suites share one harness and had duplicates cut and the gaps the mutants
+  found closed.
+
 ## 0.28.0 — 2026-10-30
 
 Each refusal, step and rule was re-checked against what flight-rules is for. What had no failure behind it is gone,
