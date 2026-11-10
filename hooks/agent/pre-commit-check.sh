@@ -535,6 +535,20 @@ resolve_target() {
     [[ "" =~ $PROTECTED_RE ]]
     [[ $? -eq 2 ]] && { PATTERN_BAD="$PROTECTED_RE"; PROTECTED_RE='.'; }
   fi
+  # A PR-only branch is not deleted either, whatever PROTECTED_BRANCHES names: the ref
+  # gate keeps main PR-only by default, and a project that left main out of
+  # PROTECTED_BRANCHES had it offered for deletion by post-merge and let through here
+  # (#128). Only the deletion: a move of it is the ref gate's. A pattern bash cannot
+  # read is left out — the block for one names PROTECTED_BRANCHES, and the ref gate
+  # refuses every move under it, naming PR_ONLY_BRANCHES.
+  DELETE_RE="$PROTECTED_RE"
+  if [[ $GUARD_OFF -eq 0 ]]; then
+    _pro="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf PR_ONLY_BRANCHES "$CONF_FILE")}"
+    _pro="${_pro:-^main\$}"
+    if [[ "$_pro" != off && "$_pro" != none ]]; then
+      [[ "" =~ $_pro ]]; [[ $? -eq 2 ]] || DELETE_RE="($PROTECTED_RE)|($_pro)"
+    fi
+  fi
   MERGE_IN_PROGRESS=0
   # Absolute: `--git-dir` prints `.git` relative to the -C target, and `-f` resolved it
   # from this hook's cwd — refusing a merge commit from a worktree, waiving a direct
@@ -619,7 +633,7 @@ judge_segment() {   # sets ACTION/BLOCKED_BRANCH; returns 0 if this segment must
   fi
   if [[ "$a" == "branch-delete" ]]; then
     while IFS= read -r t; do
-      [[ -n "$t" && "$t" =~ $PROTECTED_RE ]] && { ACTION="$a"; BLOCKED_BRANCH="$t"; return 0; }
+      [[ -n "$t" && "$t" =~ $DELETE_RE ]] && { ACTION="$a"; BLOCKED_BRANCH="$t"; return 0; }
     done <<<"$(branch_delete_targets "$seg")"
     return 1
   fi

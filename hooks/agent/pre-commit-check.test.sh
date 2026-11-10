@@ -715,6 +715,25 @@ check "branch -d -r origin/main"         allow main      'git branch -d -r origi
       FLIGHT_RULES_PROTECTED_BRANCHES=main
 check "guard off lets deletion through"  allow feature/x 'git branch -D main' \
       FLIGHT_RULES_PROTECTED_BRANCHES=off
+# A PR-only branch is not deleted either, whatever PROTECTED_BRANCHES names: a project
+# that left main out of it had main offered for deletion by post-merge, and let through
+# here, while the ref gate still kept main PR-only by default (#128).
+check "branch -d a PR-only main PROTECTED_BRANCHES leaves out" deny feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$'
+check "branch -D a PR-only branch named in PR_ONLY_BRANCHES" deny feature/x 'git branch -D trunk' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^trunk$'
+check "…not with PR_ONLY_BRANCHES=off"   allow feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES=off
+check "…nor with the policy off"         allow feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=off FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
+# Only the deletion: a commit on that main is the ref gate's to refuse, as before.
+check "…a commit on it is still the ref gate's" allow main 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$'
+# A PR_ONLY_BRANCHES bash cannot read is left out here: the guard's broken-pattern
+# message names PROTECTED_BRANCHES, and the ref gate refuses every move under it,
+# naming PR_ONLY_BRANCHES.
+check "…a PR-only pattern bash cannot read is the ref gate's" allow feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^(main'
 # The block must name the branch it saved, not the one you are standing on.
 D=$(make_repo feature/x)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \

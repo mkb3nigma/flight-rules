@@ -1228,11 +1228,12 @@ rm -rf "$PQ"
 echo "A main the project does not protect is a branch like any other (hook sweep, 2026-11-01):"
 # A back-merge is the tip of a protected branch. post-merge also took main's tip for one
 # by name, so a project whose PROTECTED_BRANCHES leaves main out was told nothing after
-# merging it; the protected-branch check alone decides now.
+# merging it; the protected-branch check alone decides now. Not protected means neither
+# list names it: a main left PR-only by default is protected (#128, below).
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=off\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
 cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
 echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 git -C "$QQ" checkout -qb main trunk && echo m > "$QQ/m" && git -C "$QQ" add -A \
@@ -1716,6 +1717,35 @@ for how in "-m sync" "--no-edit"; do
   say "$(grep -c 'git branch -d main' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "0" "…and not main"
   rm -rf "$PQ"
 done
+
+echo "…nor a PR-only main that PROTECTED_BRANCHES leaves out (#128):"
+# The ref gate keeps main PR-only by default; a project whose PROTECTED_BRANCHES names
+# only dev had main listed, marked just merged, after merging main into dev.
+for pro in "" "PR_ONLY_BRANCHES=^main\$"; do
+  PQ=$(tmpd); QQ="$PQ/repo"
+  git init -q -b main "$QQ" || die "git init failed"
+  git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+  mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^dev$\nINTEGRATION_BRANCH=dev\n%s\n' "$pro" > "$QQ/.ai/flight-rules.conf"
+  cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+  echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
+  git -C "$QQ" branch dev && git -C "$QQ" branch old/x || die "could not branch"
+  echo h > "$QQ/h"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "fix: hotfix" || die "could not move main"
+  git -C "$QQ" checkout -q dev && OUT=$(cd "$QQ" && git merge --no-edit main 2>&1) || die "could not back-merge main"
+  say "$(grep -c 'git branch -d old/x' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "1" "${pro:-PR_ONLY_BRANCHES unset}: the note is written, listing old/x"
+  say "$(grep -c 'git branch -d main' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "0" "…and not main"
+  say "$(grep -c 'Post-merge to' <<<"$OUT")" "0" "…and the back-merge of main prints nothing"
+  rm -rf "$PQ"
+done
+PQ=$(tmpd); QQ="$PQ/repo"
+git init -q -b main "$QQ" || die "git init failed"
+git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
+mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^dev$\nPR_ONLY_BRANCHES=off\nINTEGRATION_BRANCH=dev\n' > "$QQ/.ai/flight-rules.conf"
+cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"; git -C "$QQ" branch dev || die "could not branch"
+echo h > "$QQ/h"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "fix: hotfix" || die "could not move main"
+git -C "$QQ" checkout -q dev && (cd "$QQ" && git merge -q --no-edit main >/dev/null 2>&1) || die "could not merge main"
+say "$(grep -c 'git branch -d main' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "1" "PR_ONLY_BRANCHES=off: main, protected by nothing, is listed"
+rm -rf "$PQ"
 
 echo "A note counts only with its evidence: the tree it checked, and what ran (#107):"
 # An assistant wrote bare passed: notes by hand 12 times, mostly into merge commands
