@@ -23,8 +23,8 @@ file is for every assistant; `CLAUDE.md` and `GEMINI.md` import it.
 | `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
 | `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/git/secret-scan.test.sh`, `hooks/git/install.test.sh`, `hooks/flight-rules-doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
-Every change: `/feature-start <prefix>/<slug>` — `git fetch origin`, the open-branch
-count (`OPEN_BRANCH_LIMIT`, asked at the limit), origin pulled into local `dev`, then `git
+Every change: `/feature-start <prefix>/<slug>` — `git fetch origin`, origin pulled into
+local `dev`, the open-branch count (`OPEN_BRANCH_LIMIT`, asked at the limit), then `git
 worktree add .ai/worktrees/<slug> -b <prefix>/<slug> dev`; a raw `worktree add` skips the
 count — and commit there; the owner pushes it. Then, **as the owner** (the assistant
 too, under the standing OK below), merge it into `dev` locally — stamp the
