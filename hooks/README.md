@@ -194,7 +194,8 @@ that the logic has exactly one home.
   incoming commit. A note passes only with its evidence (#107): a `passed:` line naming
   `tree:<hash>`, the tree the check ran on, which must be the incoming commit's, and a
   `ran:` line saying what ran. A bare `passed:`, as notes were written before, is refused,
-  and the box says what it lacks. The refusal prints `/pre-merge-check`, and
+  and the box says what it lacks — as it does for a note with no line beginning
+  `passed:` (indented, mistyped, or `failed:`). The refusal prints `/pre-merge-check`, and
   describes a route for a developer working without an assistant: run the project's
   checks — its tests at the least — then record what ran on the branch's tip and finish
   the merge the refusal left in progress:
