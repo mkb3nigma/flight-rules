@@ -28,7 +28,9 @@ The hooks enforce the hard gates; this skill covers what a hook cannot judge.
 ## Rules
 - Message starts with `feature:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`, or
   `ci:` (a `hotfix/` branch carries `fix:` commits — there is no `hotfix:` prefix; `ci:`
-  is a change to the project's CI, on whichever branch carries it — there is no `ci/`)
+  is a change to the project's CI, on whichever branch carries it — there is no `ci/`).
+  A prefix may carry a scope, `<type>(<scope>):` (`fix(hooks):`); git's own
+  `Revert "<subject>"`, which `git revert` writes, passes as it is
 - Commits happen on feature worktrees, not `{PROTECTED_BRANCHES}` (hook-enforced)
 - Env files and secrets are never committed (hook-enforced)
 
