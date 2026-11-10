@@ -1658,6 +1658,49 @@ for k in PR_ONLY_BRANCHES NOTE_GATED_BRANCHES PROTECTED_BRANCHES; do
   rm -rf "$d"
 done
 
+echo "A fast-forward onto a merge made elsewhere is not a feature merge (#131):"
+# A pull of a PR merged on the host fast-forwards onto that merge commit, so HEAD^2 is
+# the PR's branch, and the hook read the pull as a feature merge: it rewrote the note and
+# printed "Earlier merges left …" on every such pull while cleanup was pending (the test
+# sweep, 2026-11-02, mutant M04). A pull prints nothing; the file has everything. The
+# merge's first parent is the old tip, so ORIG_HEAD cannot tell; the reflog's
+# "Fast-forward" can. fix/old, merged and not deleted, is the cleanup pending; host is
+# the PR merged on the host.
+for how in "merge --ff-only host" "pull --ff --no-rebase . host"; do
+  d=$(mkrepo); git -C "$d" checkout -q dev
+  printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$d/.ai/flight-rules.conf"
+  git -C "$d" branch fix/old || die "could not make fix/old"
+  git -C "$d" checkout -q -b fix/q && echo q > "$d/q" && git -C "$d" add -A && git -C "$d" commit -qm "fix: q" || die "could not commit on fix/q"
+  git -C "$d" checkout -q dev
+  M=$(git -C "$d" commit-tree -p dev -p fix/q -m "Merge pull request #1 from o/fix/q" 'fix/q^{tree}') || die "could not make the host's merge"
+  git -C "$d" branch host "$M" || die "could not point host at it"
+  OUT=$(cd "$d" && git $how 2>&1); RC=$?
+  say "$RC" "0" "git $how onto a host's merge commit lands"
+  say "$(git -C "$d" rev-parse dev)" "$M" "…as a fast-forward"
+  say "$(grep -cE 'Post-merge to|Earlier merges left' <<<"$OUT")" "0" "…and post-merge prints nothing"
+  say "$(grep -c 'git branch -d fix/old' "$d/.claude/post-merge-note.md" 2>/dev/null)" "1" "…while the note file still has everything (fix/old)"
+  # Silence is also what a hook that died would give: a merge made here still speaks.
+  git -C "$d" checkout -q -b fix/r && echo r > "$d/r" && git -C "$d" add -A && git -C "$d" commit -qm "fix: r" || die "could not commit on fix/r"
+  git -C "$d" checkout -q dev
+  OUT=$(cd "$d" && git merge --no-verify --no-edit fix/r 2>&1)
+  say "$(grep -c '## Post-merge to dev: fix/r' <<<"$OUT")" "1" "…while a merge made here, next, is reported"
+  rm -rf "$d"
+done
+
+# A squash makes no merge commit and is no fast-forward: post-merge runs, HEAD has no
+# second parent, and the reflog does not say Fast-forward — it prints nothing, by the
+# HEAD^2 test alone (M04, which the reflog test above stands in for on a fast-forward).
+d=$(mkrepo); git -C "$d" checkout -q dev
+printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$d/.ai/flight-rules.conf"
+git -C "$d" branch fix/old || die "could not make fix/old"
+git -C "$d" checkout -q -b fix/s && echo s > "$d/s" && git -C "$d" add -A && git -C "$d" commit -qm "fix: s" || die "could not commit on fix/s"
+git -C "$d" checkout -q dev
+OUT=$(cd "$d" && git merge --squash --ff fix/s 2>&1); RC=$?
+say "$RC" "0" "git merge --squash --ff into dev stages the change"
+say "$(grep -c 'git branch -d fix/old' "$d/.claude/post-merge-note.md" 2>/dev/null)" "1" "…post-merge ran: the note lists fix/old"
+say "$(grep -cE 'Post-merge to|Earlier merges left' <<<"$OUT")" "0" "…and printed nothing"
+rm -rf "$d"
+
 echo "The post-merge note never offers to delete a protected branch (fix review of 0.28.0's release review):"
 for how in "-m sync" "--no-edit"; do
   PQ=$(tmpd); QQ="$PQ/repo"
