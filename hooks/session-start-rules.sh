@@ -55,16 +55,17 @@ if command -v jq >/dev/null 2>&1; then
 elif command -v python3 >/dev/null 2>&1; then
   # -I: the hook runs in the project, and a json.py there was imported and run in
   # place of the standard library's (security review, 2026-10-13 — reproduced).
-  # The text arrives on stdin as UTF-8 bytes, not as an argument a non-UTF-8 locale could
-  # mis-decode (fix review, 2026-11-01).
-  printf '%s\n' "$BODY" | python3 -I -c '
+  # The text — the header too, whose em dash is not ASCII — arrives on stdin as UTF-8
+  # bytes, not as an argument a non-UTF-8 locale could mis-decode (fix review,
+  # 2026-11-01, for the rules; #140 for the header).
+  printf '%s\n\n%s\n' "$HEADER" "$BODY" | python3 -I -c '
 import json, sys
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "SessionStart",
-        "additionalContext": sys.argv[1] + "\n\n" + sys.stdin.buffer.read().decode("utf-8"),
+        "additionalContext": sys.stdin.buffer.read().decode("utf-8"),
     }
-}))' "$HEADER"
+}))'
 else
   # No JSON tool available — skip injection rather than emit malformed output.
   exit 0

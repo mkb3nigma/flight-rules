@@ -199,6 +199,27 @@ try: print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])
 except Exception: pass')
 rm -f "$LAB/proj/json.py"
 grep -q 'Engineering Principles' <<<"$POUT"; say "$?" 0 "without jq, the python3 fallback injects the rules, past a planted json.py"
+# Nothing non-ASCII reaches python3 as an argument: under a non-UTF-8 Linux locale
+# (latin-1, which Python does not coerce as it does C) an argument is decoded by the
+# locale, and the header's em dash arrived garbled (#140, AH-3). macOS decodes arguments
+# as UTF-8 whatever the locale, so the test cannot set one; it holds the invariant
+# instead — a python3 that refuses a non-ASCII argument, as that locale would misread it.
+NA="$LAB/noascii"; mkdir -p "$NA"
+for t in awk sed head cat dirname; do ln -s "$(command -v "$t")" "$NA/$t" || die "could not link $t"; done
+cat > "$NA/python3" <<SHIM || die "could not write the python3 shim"
+#!$BASH
+for a in "\$@"; do
+  [ -z "\$(printf '%s' "\$a" | LC_ALL=C $(command -v tr) -d '\\000-\\177')" ] || { echo "non-ASCII argument" >&2; exit 3; }
+done
+exec "$(python3 -I -c 'import sys; print(sys.executable)')" "\$@"
+SHIM
+chmod +x "$NA/python3"
+AOUT=$( (cd "$LAB/proj" && PATH="$NA" CLAUDE_PLUGIN_ROOT="$ROOT" "$BASH" "$ROOT/hooks/session-start-rules.sh" </dev/null) 2>/dev/null \
+  | python3 -I -c 'import json,sys
+try: print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])
+except Exception: pass')
+grep -q 'session — follow them' <<<"$AOUT" && grep -q 'Engineering Principles' <<<"$AOUT"
+say "$?" 0 "the python3 fallback passes no text as an argument: the header's em dash and the rules arrive whole"
 
 # The guard is a decision function; exercise it rather than checking it exists.
 for shape in plugin handwired; do
