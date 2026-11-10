@@ -451,6 +451,7 @@ mut('C37', CM, '    NOT_CLEAN="merge of this branch\'s own upstream"', '    :', 
 mut('C38', CM, '    if [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -Eq', '    if false && printf \'%s\\n\' "$NOTE" | grep -Eq', 'merge-gate secret-scan')
 mut('C39', CM, '    elif [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -q \'^passed:.*tree:\'; then', '    elif false; then', 'merge-gate secret-scan')
 mut('C40', CM, '        NOTE_BAD="its passed: line has no tree:<hash>"', '        :', 'merge-gate secret-scan')
+mut('C65', CM, '    NOTE_BAD="it has no line beginning passed:"', '    :', 'merge-gate secret-scan', what='a note with no passed: line gets the generic box')
 mut('C41', CM, '    elif [ "$_nt" != "$(git rev-parse -q --verify "$MERGE_SHA^{tree}" 2>/dev/null)" ]; then', '    elif false; then', 'merge-gate secret-scan')
 mut('C42', CM, '    elif ! printf \'%s\\n\' "$NOTE" | grep -q \'^ran:[[:space:]]*[^[:space:]]\'; then', '    elif false; then', 'merge-gate secret-scan')
 mut('C43', CM, 'if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then', 'if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ]; then', 'merge-gate secret-scan')

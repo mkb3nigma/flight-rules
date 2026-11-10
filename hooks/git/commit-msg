@@ -340,7 +340,11 @@ NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
 # ran. Anyone can still type both; what this stops is the bare shortcut, and a note
 # carried onto a commit it never checked.
 NOTE_PASSED=""; NOTE_BAD=""
-if printf '%s\n' "$NOTE" | grep -q "^passed:"; then
+if [ -n "$NOTE" ] && ! printf '%s\n' "$NOTE" | grep -q "^passed:"; then
+    # A note with no line beginning passed: — indented, mistyped, failed: — got the
+    # generic box, which never said a note was read (#124, F1).
+    NOTE_BAD="it has no line beginning passed:"
+elif printf '%s\n' "$NOTE" | grep -q "^passed:"; then
     _nt=$(printf '%s\n' "$NOTE" | sed -n 's/^passed:.* tree:\([0-9a-f]\{40,64\}\).*$/\1/p' | head -1)
     if [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -Eq '^passed:(.*[^ ])?tree:[0-9a-f]{40,64}([^0-9a-f]|$)'; then
         # A full hash with no space before tree: (passed:tree:…, subtree:…) is not a
@@ -558,7 +562,11 @@ elif [ -n "$CATCHUP" ]; then
     box_row "Undo it (below), and catch up without one:"
     box_row "  git pull --ff-only"
 elif [ -n "$NOTE_BAD" ]; then
-    box_row "The pre-merge-check note says passed, but"
+    if printf '%s\n' "$NOTE" | grep -q "^passed:"; then
+        box_row "The pre-merge-check note says passed, but"
+    else
+        box_row "There is a pre-merge-check note, but"
+    fi
     box_row "$NOTE_BAD."
     box_row "A note counts when its passed: line names tree:<hash>,"
     box_row "the full hash of the tree the check ran on"

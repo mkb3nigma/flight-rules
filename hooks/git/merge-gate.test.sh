@@ -1709,6 +1709,16 @@ for p in "passed:tree:" "passed: 2026-10-31T00:00:00Z subtree:"; do
   say "$RC" "1" "$p<full hash>: refused"
   say "$(grep -c 'its tree: has no space before it' <<<"$OUT")" "1" "…named as no space before tree:"
 done
+# A note with no line beginning passed: — indented, mistyped, or a failed: one — got the
+# generic box, which never said a note was read, or what was wrong with it (#124, F1).
+for p in "  passed: 2026-10-31T00:00:00Z" "pased: 2026-10-31T00:00:00Z" "failed: 2026-10-31T00:00:00Z"; do
+  ev -m "$p branch:feature/e tree:$(printf 'a%.0s' $(seq 40))" -m "ran: ./test.sh → exit 1, 2 failed"
+  say "$RC" "1" "a note '$(printf '%.9s' "$p")…': refused"
+  say "$(grep -c 'THE NOTE DOES NOT SHOW THE CHECK' <<<"$OUT")" "1" "…saying the note does not show the check"
+  say "$(grep -c 'it has no line beginning passed:' <<<"$OUT")" "1" "…and that it has no passed: line"
+  say "$(grep -c 'note says passed' <<<"$OUT")" "0" "…not that it says passed"
+  say "$(grep -c '/pre-merge-check again' <<<"$OUT")" "1" "…with the route"
+done
 ev -m "passed: 2026-10-31T00:00:00Z branch:feature/e tree:$(printf '%040d' 0)" -m "ran: ./test.sh → exit 0, 3 passed"
 say "$RC" "1" "a note naming another tree: refused"
 say "$(grep -c "its tree: is 000000000000, not this commit's" <<<"$OUT")" "1" "…saying whose tree it names"
