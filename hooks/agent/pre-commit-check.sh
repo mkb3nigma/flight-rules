@@ -538,15 +538,17 @@ resolve_target() {
   # A PR-only branch is not deleted either, whatever PROTECTED_BRANCHES names: the ref
   # gate keeps main PR-only by default, and a project that left main out of
   # PROTECTED_BRANCHES had it offered for deletion by post-merge and let through here
-  # (#128). Only the deletion: a move of it is the ref gate's. A pattern bash cannot
-  # read is left out — the block for one names PROTECTED_BRANCHES, and the ref gate
-  # refuses every move under it, naming PR_ONLY_BRANCHES.
-  DELETE_RE="$PROTECTED_RE"
+  # (#128). Only the deletion: a move of it is the ref gate's. Matched as PROTECTED_RE
+  # is, case-insensitively. A pattern bash cannot read fails closed, as a broken
+  # PROTECTED_BRANCHES does: no branch is deleted until it is fixed, and the block names
+  # it (security review of #128: left out, it let main be deleted).
+  DELETE_RE="$PROTECTED_RE"; PRONLY_BAD=""
   if [[ $GUARD_OFF -eq 0 ]]; then
     _pro="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf PR_ONLY_BRANCHES "$CONF_FILE")}"
     _pro="${_pro:-^main\$}"
     if [[ "$_pro" != off && "$_pro" != none ]]; then
-      [[ "" =~ $_pro ]]; [[ $? -eq 2 ]] || DELETE_RE="($PROTECTED_RE)|($_pro)"
+      [[ "" =~ $_pro ]]
+      if [[ $? -eq 2 ]]; then PRONLY_BAD="$_pro"; DELETE_RE='.'; else DELETE_RE="($PROTECTED_RE)|($_pro)"; fi
     fi
   fi
   MERGE_IN_PROGRESS=0
@@ -769,7 +771,10 @@ elif [[ "$IS_PROTECTED" == "1" ]]; then
     commit)      VERB="You are on it. Never commit directly to a protected branch." ;;
     destructive) VERB="You are on it. This command would rewrite it or discard work in its working tree." ;;
     force-push)  VERB="This command would force-push, delete or overwrite it on the remote, destroying history others have built on." ;;
-    branch-delete) VERB="This command would delete it locally. If a cleanup note offered this branch as \"safe to delete\", that note is wrong — report it rather than following it." ;;
+    branch-delete) VERB="This command would delete it locally. If a cleanup note offered this branch as \"safe to delete\", that note is wrong — report it rather than following it."
+                   [[ -n "$PRONLY_BAD" ]] && VERB="$VERB
+
+PR_ONLY_BRANCHES ($PRONLY_BAD) is not a pattern bash can read, so every branch is kept from deletion until it is fixed. It is set in .ai/flight-rules.conf, or in FLIGHT_RULES_PR_ONLY_BRANCHES. Tell the project owner; fixing it is their call." ;;
   esac
   # The message names the opt-out so a project that never wanted the worktree
   # workflow can find the way out without reading hooks/README.md — but it is

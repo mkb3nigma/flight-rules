@@ -729,11 +729,24 @@ check "…nor with the policy off"         allow feature/x 'git branch -d main' 
 # Only the deletion: a commit on that main is the ref gate's to refuse, as before.
 check "…a commit on it is still the ref gate's" allow main 'git commit -m x' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^dev$'
-# A PR_ONLY_BRANCHES bash cannot read is left out here: the guard's broken-pattern
-# message names PROTECTED_BRANCHES, and the ref gate refuses every move under it,
-# naming PR_ONLY_BRANCHES.
-check "…a PR-only pattern bash cannot read is the ref gate's" allow feature/x 'git branch -d main' \
+# Matched case-insensitively, as every layer matches it: ^MAIN$ keeps main (security
+# review of #128).
+check "…PR_ONLY_BRANCHES=^MAIN\$ keeps main" deny feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$'
+# A PR_ONLY_BRANCHES bash cannot read fails closed, as a broken PROTECTED_BRANCHES does
+# (#103): no branch is deleted until it is fixed, and the block names it (security review
+# of #128 — left out, a broken pattern let main be deleted).
+check "…a PR-only pattern bash cannot read keeps main" deny feature/x 'git branch -d main' \
       FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^(main'
+check "…and every other branch, until it is fixed" deny main 'git branch -d feature/old' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^(main'
+D=$(make_repo feature/x)
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^(main' bash "$HOOK" \
+  <<<'{"tool_input":{"command":"git branch -d main"}}' 2>&1); RC=$?
+rm -rf "$D"
+[ "$RC" -eq 0 ] && grep -qF 'PR_ONLY_BRANCHES (^(main) is not a pattern bash can read' <<<"$OUT" \
+  && { PASS=$((PASS+1)); printf '  ✅ …the block names the broken PR_ONLY_BRANCHES\n'; } \
+  || { FAIL=$((FAIL+1)); printf '  ❌ …the block does not name the broken PR_ONLY_BRANCHES (exit %s): %s\n' "$RC" "$(head -c 300 <<<"$OUT")"; }
 # The block must name the branch it saved, not the one you are standing on.
 D=$(make_repo feature/x)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \

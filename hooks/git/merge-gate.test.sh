@@ -1721,7 +1721,9 @@ done
 echo "…nor a PR-only main that PROTECTED_BRANCHES leaves out (#128):"
 # The ref gate keeps main PR-only by default; a project whose PROTECTED_BRANCHES names
 # only dev had main listed, marked just merged, after merging main into dev.
-for pro in "" "PR_ONLY_BRANCHES=^main\$"; do
+# ^MAIN$, as every layer matches it, case-insensitively; one that does not compile fails
+# closed, offering no branch (security review of #128).
+for pro in "" "PR_ONLY_BRANCHES=^main\$" "PR_ONLY_BRANCHES=^MAIN\$" "PR_ONLY_BRANCHES=^(main"; do
   PQ=$(tmpd); QQ="$PQ/repo"
   git init -q -b main "$QQ" || die "git init failed"
   git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
@@ -1731,7 +1733,9 @@ for pro in "" "PR_ONLY_BRANCHES=^main\$"; do
   git -C "$QQ" branch dev && git -C "$QQ" branch old/x || die "could not branch"
   echo h > "$QQ/h"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "fix: hotfix" || die "could not move main"
   git -C "$QQ" checkout -q dev && OUT=$(cd "$QQ" && git merge --no-edit main 2>&1) || die "could not back-merge main"
-  say "$(grep -c 'git branch -d old/x' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "1" "${pro:-PR_ONLY_BRANCHES unset}: the note is written, listing old/x"
+  _want=1; [ "$pro" = "PR_ONLY_BRANCHES=^(main" ] && _want=0
+  say "$([ -f "$QQ/.claude/post-merge-note.md" ] && echo written)" "written" "${pro:-PR_ONLY_BRANCHES unset}: the note is written"
+  say "$(grep -c 'git branch -d old/x' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "$_want" "…listing old/x$([ $_want = 0 ] && echo ' not: every branch is kept until the pattern is fixed')"
   say "$(grep -c 'git branch -d main' "$QQ/.claude/post-merge-note.md" 2>/dev/null)" "0" "…and not main"
   say "$(grep -c 'Post-merge to' <<<"$OUT")" "0" "…and the back-merge of main prints nothing"
   rm -rf "$PQ"
