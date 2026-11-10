@@ -62,11 +62,17 @@ NOTE_FILE="$REPO_ROOT/$NOTE_PATH"
 
 # A feature merge is only a topic branch actually merged IN: a merge commit whose
 # second parent is NOT the tip of a protected branch. Skip fast-forwards (no merge
-# commit) and back-merges of a protected branch into the integration branch (routine
+# commit, or one made elsewhere) and back-merges of a protected branch into the integration branch (routine
 # reconcile/maintenance) — those print nothing.
 _merged_in=$(git rev-parse -q --verify 'HEAD^2' 2>/dev/null || echo "")
 is_feature_merge() {
   [[ -z "$_merged_in" ]] && return 1            # fast-forward / not a merge commit
+  # A fast-forward onto a merge commit made elsewhere — a pull of a PR merged on the
+  # host — has a HEAD^2, but no merge was made here, and it rewrote the note on every
+  # such pull (#131). Its first parent is the old tip as often as not, so ORIG_HEAD
+  # cannot tell; the reflog can, and git writes "Fast-forward" there untranslated
+  # (probed under de_DE). No reflog: read as before, a merge.
+  case $(git reflog -1 --format=%gs HEAD 2>/dev/null) in *": Fast-forward") return 1 ;; esac
   local ref ref_sha name
   # The tip of a protected branch, local or origin's, is a back-merge — main by default,
   # and a project whose released branch is not called main back-merges it too (mission

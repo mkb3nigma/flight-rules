@@ -599,6 +599,7 @@ mut('M08', PM, '  -e "s|^Merge remote-tracking branch \'[^/\']+/([^\']+)\'.*|\\\
 mut('M07', PM, '[[ -z "$MERGED_BRANCH" && -n "$_merged_in" ]] && MERGED_BRANCH=', '[[ -z "$MERGED_BRANCH" && -z "$_merged_in" ]] && MERGED_BRANCH=', 'merge-gate')
 mut('M09', PM, '  | grep -viE -e "$PROTECTED_RE")', '  | grep -vE -e "$PROTECTED_RE")', 'merge-gate')
 mut('M48', PM, '  | grep -viE -e "$PROTECTED_RE")', '  | cat)', 'merge-gate')
+mut('M49', PM, 'in *": Fast-forward") return 1 ;; esac', 'in *": no-such") return 1 ;; esac', 'merge-gate', what='a fast-forward onto a host merge is a feature merge')
 mut('M10', PM, 'grep -vxF "$JUST_MERGED"', 'grep -vF "$JUST_MERGED"', 'merge-gate')
 mut('M11', PM, '  git rev-parse -q --verify "$up^{commit}" >/dev/null 2>&1 || return 0', '  :', 'merge-gate')
 mut('M12', PM, '  git merge-base --is-ancestor "refs/heads/$1" "$up" 2>/dev/null && return 0', '  :', 'merge-gate')
