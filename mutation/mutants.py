@@ -377,6 +377,7 @@ mut('R003', SSR, 'NR==1 && l=="---" {fm=1; next} fm && l=="---" {fm=0; next} !fm
 mut('R004', SSR, '[ -n "$BODY" ] || BODY=$(cat "$RULES")', ':', 'wiring', what='unclosed front matter strips all')
 mut('R006', SSR, '${VERSION:+ $VERSION}', '', 'wiring', what='version not in header')
 mut('R007', SSR, '($h + "\\n\\n" + .)', '(.)', 'wiring', what='jq: header dropped')
+mut('R011', SSR, 'printf \'%s\\n\\n%s\\n\' "$HEADER" "$BODY" | python3', 'printf \'%s\\n\\n%s\\n\' "" "$BODY" | python3', 'wiring', what='python3: header dropped')
 mut('R005', SSR, 'python3 -I -c', 'python3 -c', 'wiring', what='python fallback without -I')
 mut('misc-S07', SSR, 'print(json.dumps({', 'print(({', 'wiring')
 mut('R010', SSR, 'sys.stdin.buffer.read().decode("utf-8")', 'sys.stdin.read()', 'wiring', expect='survives: not held — under a non-UTF-8 locale python3 decodes the rules in that locale', what='python: locale decode')
