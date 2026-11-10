@@ -18,6 +18,7 @@ every assistant reaches them through a small pointer file.
 Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 ├── CLAUDE.md                        # Claude Code
 ├── AGENTS.md                        # Codex, and any assistant that reads AGENTS.md
+├── GEMINI.md                        # Gemini CLI, which reads it, not AGENTS.md, by default
 └── .github/copilot-instructions.md  # GitHub Copilot
 ```
 
