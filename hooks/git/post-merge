@@ -35,6 +35,17 @@ INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # project parameter: {INTEGRAT
 PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(_conf PROTECTED_BRANCHES)}"
 PROTECTED_RE="${PROTECTED_RE:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
 case "$PROTECTED_RE" in off|none) PROTECTED_RE='^$' ;; esac
+# A PR-only branch is protected here too, whatever PROTECTED_BRANCHES names: the ref
+# gate keeps main PR-only by default, and a project that left main out of
+# PROTECTED_BRANCHES had it offered for deletion, marked just merged, after merging main
+# in (#128). With the policy off, nothing is PR-only, as the ref gate reads it. A pattern
+# grep cannot read is left out: the ref gate refuses every move under it, naming it.
+_pro="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(_conf PR_ONLY_BRANCHES)}"; _pro="${_pro:-^main\$}"
+case "$_pro" in off|none) ;; *)
+  if [[ "$PROTECTED_RE" != '^$' ]] && { printf '' | grep -E -e "$_pro" >/dev/null 2>&1; [[ $? -ne 2 ]]; }; then
+    PROTECTED_RE="($PROTECTED_RE)|($_pro)"
+  fi ;;
+esac
 NOTE_PATH='.claude/post-merge-note.md'  # where the note is written (and printed; no
                                         # flight-rules hook reads the file: #110)
 
