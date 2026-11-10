@@ -25,7 +25,9 @@ Open a GitHub PR for the current feature branch. Project parameters:
   integration branch is usually protected too, so without this exception the skill
   forbids the release it describes in step 2a.
 - Base-branch routing: `feature/ fix/ refactor/ test/ docs/ chore/` branches target
-  `{INTEGRATION_BRANCH}`; `hotfix/*` targets `main`; anything else → ask the user.
+  `{INTEGRATION_BRANCH}`; `hotfix/*` targets `main`, and its body links the issue filed
+  for it when it was approved (`feature-start` 3) — none filed, file it first; anything
+  else → ask the user.
 - `/pre-merge-check` must be clean first — no ❌ items may remain. ⚠️ warnings are
   non-blocking but must be listed in the PR body.
 - A release PR (`{INTEGRATION_BRANCH}` → `main`) additionally needs the full
@@ -74,6 +76,8 @@ gh pr create \
   --body "$(cat <<'EOF'
 <STACK MEMBERS ONLY — delete this line otherwise:>
 > 📚 Layer <i> of a `gh stack`. Merges bottom-up with the layers below it.
+<HOTFIX PRs ONLY — delete this line otherwise:>
+> 🚑 Hotfix: bypasses `{INTEGRATION_BRANCH}`, cut from `origin/main`, merged straight into `main` — #<the issue filed for it>
 
 ## Summary
 <one user-facing bullet per commit, reworded from git log>

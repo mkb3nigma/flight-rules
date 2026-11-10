@@ -65,7 +65,8 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    (Forbidden 6); the location is advisory
 2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`,
    `hotfix/` — the prefix is what a pull request is routed by (`hotfix/` to `main`, the
-   rest to `{INTEGRATION_BRANCH}`); a branch without one is routed only by asking, every
+   rest to `{INTEGRATION_BRANCH}`; a `hotfix/` branch only with the person's approval,
+   cut from `origin/main` — *Merge flow*); a branch without one is routed only by asking, every
    time — skill
    (`feature-start` 3; `pr-create` routes on it)
 3. Conventional commit messages using the same prefixes, plus `ci:` for a change to the
@@ -92,8 +93,9 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
 ## Which branch new work starts from
 
 The local `{INTEGRATION_BRANCH}` is authoritative: it is the base every new branch is
-cut from — a revert of a merge on a protected branch aside (*Merge flow*, below), which
-starts from that branch on origin (owner, 2026-11-08). It holds origin's work once that
+cut from — a revert of a merge already pushed to a protected branch, and a hotfix the
+person approved, aside (*Merge flow*, below), which start from that branch, and from `main`, on origin
+(owner, 2026-11-08). It holds origin's work once that
 is brought in, and the merges made here and not yet pushed, which origin's lacks: a
 branch cut from origin's missed the very merge it was meant to fix (2026-11-01, #125).
 So before a branch is cut, `git fetch origin`, then origin's commits it lacks come in:
@@ -113,7 +115,8 @@ So before a branch is cut, `git fetch origin`, then origin's commits it lacks co
 
 `feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill.
 A `git worktree add` by hand is advisory: no hook checks a start point, because
-legitimate branches start elsewhere (a revert, from that branch on origin) and a check
+legitimate branches start elsewhere (a revert, from that branch on origin; a hotfix,
+from `origin/main`) and a check
 would refuse them. A project that branches from origin's instead
 (one that merges only by PR has nothing local to keep) says so in its own rules, which
 override these; the hooks' printed routes still name the local branch until a switch
@@ -159,6 +162,19 @@ git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR
   `git revert -m 1 <merge-sha>` there. It goes back the way the branch allows — a PR to a
   PR-only branch, the usual merge into any other. A branch cut from
   `{INTEGRATION_BRANCH}` to revert `main` would carry its unreleased work into `main`.
+  A merge made here and not yet pushed is not on origin, so a branch cut from there
+  lacks it and the revert fails: cut that one from the local branch, which holds it
+  (#143).
+- A hotfix — a fix that goes straight to `main`, skipping `{INTEGRATION_BRANCH}` and the
+  review there — is for an urgent fix, and only the person decides one is urgent: a
+  `hotfix/` branch is made only with their approval, and without it the fix is an
+  ordinary `fix/` branch off the local `{INTEGRATION_BRANCH}`. Approved, it is cut from
+  `origin/main` (one cut from `{INTEGRATION_BRANCH}` would carry its unreleased work
+  into `main`, #143) and merges into `main` through the PR `main` requires; an issue is
+  filed for it, saying it bypassed `{INTEGRATION_BRANCH}`, was cut from `origin/main`
+  and was merged straight into `main`, and its PR links that issue. `feature-start` 4's
+  reconcile brings it back into `{INTEGRATION_BRANCH}` — skill (`feature-start` 3 and 6,
+  `pr-create`)
 
 ## Enforcement (optional but recommended)
 

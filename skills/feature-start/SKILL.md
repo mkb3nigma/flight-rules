@@ -31,7 +31,15 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    say in one line that they stay there and do not come into the new worktree, and go
    on: edits there are usually work begun on the wrong branch.
 2. *Retired (#119); numbered so later steps keep theirs.*
-3. **Validate the branch name** — ask if not provided; verify the prefix.
+3. **Validate the branch name** — ask if not provided; verify the prefix. A `hotfix/`
+   name goes straight to `main`, skipping `{INTEGRATION_BRANCH}` and its review
+   (`git-worktree-workflow.md` → *Merge flow*), so ask the person to approve it as
+   urgent. Without that approval — or with no one to ask — STOP: create nothing, and say
+   the fix can start again as an ordinary `fix/` branch. With it: in step 4, `git fetch
+   origin` only, and skip to step 5; step 6 cuts it from `origin/main`; then file an
+   issue in the project's tracker (`gh issue create` on GitHub), which their approval
+   covers, saying plainly that this hotfix bypassed `{INTEGRATION_BRANCH}`, was cut from
+   `origin/main`, and is merged straight into `main` — its PR links it (`pr-create`).
 4. **Sync the base from origin — non-negotiable.**
    - `git fetch origin` first, **always**, then pull origin into the local
      `{INTEGRATION_BRANCH}`, in the checkout that has it. The base is the local one,
@@ -149,6 +157,11 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
 6. **Create the worktree** from the local `{INTEGRATION_BRANCH}` (step 4; repo root, absolute paths):
    ```bash
    git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> {INTEGRATION_BRANCH}
+   ```
+   An approved hotfix (step 3) is cut from `origin/main` instead, tracking nothing, so
+   that a bare `git push` or `git pull` in it never aims at `main` itself:
+   ```bash
+   git worktree add {WORKTREE_DIR}/<slug> -b hotfix/<slug> --no-track origin/main
    ```
 7. **Symlink untracked env files** from the main checkout (symlinks, not copies —
    copies go stale):
