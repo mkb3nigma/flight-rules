@@ -486,6 +486,25 @@ else
 fi
 case " $PC" in *" ci: "*) ok "…and ci: is among them" ;; *) bad "ci: is not an allowed prefix ($PC)" ;; esac
 [ "$PR" = "ci: " ] && ok "…and the rule names ci:, the one prefix that is not a branch's" || bad "rules/git-worktree-workflow.md Required 3 adds '$PR' to the branch prefixes, want 'ci: '"
+# Each copy also says what else passes: a scope, `fix(hooks):`, and git's own `Revert "…"`.
+# Read bare, item 8 refused 283 scoped subjects already on main (#139) and the commit the
+# rule's own revert route makes (#136); the remedy at the merge is a history rewrite.
+for c in "skills/commit/SKILL.md|- Message starts with|- Commits happen on" \
+         "skills/pre-merge-check/SKILL.md|8. **Conventional commits**|9. **Single-purpose" \
+         "rules/git-worktree-workflow.md|3. Conventional commit messages|4. Review the full diff"; do
+  f=${c%%|*}; r=${c#*|}; from=${r%%|*}; to=${r#*|}
+  T=$(awk -v from="$from" -v to="$to" 'index($0, to) { exit } index($0, from) { f = 1 } f { printf "%s ", $0 }' "$f")
+  if [ -z "$T" ]; then bad "$f: the prefix bullet ('$from') was not found"; continue; fi
+  case $T in *'`<type>(<scope>):`'*) ok "$f allows a scoped prefix" ;; *) bad "$f's prefix bullet does not allow \`<type>(<scope>):\`" ;; esac
+  case $T in *'`Revert "'*) ok "$f lets git's own Revert subject pass" ;; *) bad "$f's prefix bullet does not let git's \`Revert \"…\"\` subject pass" ;; esac
+done
+# The rule's branch prefixes are feature-start's, which step 3 checks a name against: a
+# prefix added to or dropped from Required 2 alone passed every suite (#137). Its list
+# only: the bullet joined and cut at its first " — ".
+RL=$(awk 'index($0, "2. Branch names prefixed") { f = 1 } f { printf "%s ", $0 } f && index($0, " — ") { exit }' rules/git-worktree-workflow.md \
+  | sed 's/ — .*//' | grep -oE '`[a-z]+/`' | tr -d '`' | sort -u | tr '\n' ' ')
+FL=$(printf '%s\n' "$BL" | grep -oE '`[a-z]+/`' | tr -d '`' | sort -u | tr '\n' ' ')
+[ -n "$RL" ] && [ "$RL" = "$FL" ] && ok "the rule's Required 2 lists feature-start's branch prefixes ($RL)" || bad "Required 2 lists '$RL', feature-start '$FL'"
 
 echo "Every mutation mutant's anchor occurs exactly once:"
 # A hook edit that moved an anchor and not its mutant passed every suite, and surfaced
