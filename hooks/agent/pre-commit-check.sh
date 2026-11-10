@@ -141,7 +141,9 @@ B='(^|[^[:alnum:]_.-])'
 # `{ …; }` on a protected branch; `;)&|` were added to E for it (6c88a27). Since 926f884
 # (2026-09-14) every matcher reads one segment of command_segments, which has split on
 # all four first, so they could never reach E and were dropped (test sweep, 2026-11-02). The wrapper × core product
-# in pre-commit-check.test.sh is what proves the split still covers those shapes.
+# in pre-commit-check.test.sh is what proves the split still covers those shapes. A
+# redirect written against the word (`git commit>/dev/null`) is neither whitespace nor a
+# split point, so that word is not read as `commit`: an open gap, #138.
 E='([[:space:]]|$)'
 
 is_commit() { [[ "$1" =~ ${B}git[[:space:]]+commit${E} ]]; }
@@ -435,6 +437,76 @@ target_path() {
 # then the built-in defaults), whether a merge is in progress there, and whether it is
 # this project at all. Cached on the directory: nearly every command names one.
 RESOLVED_DIR=""; RESOLVED=0
+# worktree_route <-b branch>: the by-hand route to a new worktree, as Required 8 and
+# /feature-start 4 and 6 have it — the local integration branch, the authoritative base
+# every new branch is cut from, a revert aside, with origin's commits it lacks brought
+# in, then the add from the repo root (rules/git-worktree-workflow.md → *Which branch
+# new work starts from*). Where a live worktree holds it, the pull runs there, and
+# merges if the two diverged. If it fails, the prose says to stop and ask and leave what
+# it left: it says to abort nothing, since a merge in progress there may be the person's.
+# Each way tried to tell one a failed pull left from theirs misread one — git's words
+# after the pull, a check for MERGE_HEAD before it (S-1, Q-1, Q-2, P-1, O-1; owner,
+# 2026-11-09). Where none does: missing, it is made from origin's, tracking it; local,
+# origin's is brought in only if it has anything new, by fast-forward, refused if the
+# two diverged. The whole route is one chain, from the first `cd` to the last, so a
+# failure anywhere — the `cd`, offline, never pushed — stops it before a branch is cut
+# off a stale base, or in the wrong repo. A worktree that held it and is gone from its
+# path still holds the branch to git until pruned, but git cannot tell one deleted from
+# one moved or on a disk not mounted, and a prune clears every worktree it cannot find,
+# past repair: the prose names the path, says to stop and ask, and gives both, so the
+# person picks (B-1). After a repair the branch is held again, so the prose names the
+# pull to run there, not "run it again", which a merge the ref gate refused blocks
+# (C-1). Its folder still there and only its .git file gone, repair restores it, staged
+# work included, and a prune would drop that (C-2). Each layout the route once missed is in the 0.29.0
+# release-fix review (X-1, Z-1..3, W-1..3, V-1..3, U-1, T-1, T-2, S-1, Q-1, B-1); a switch to origin's
+# branch is #141. No command row
+# carries a `#` or an apostrophe: interactive zsh, the macOS default, reads `#` as an
+# argument unless `interactivecomments` is set, and an apostrophe as an open quote that
+# swallowed the rest of the pasted block (V-1); what the rows need said goes on a prose
+# line above them.
+worktree_route() {
+  local int root="" holder="" cur="" stale="" gone="" l
+  int=$(read_conf INTEGRATION_BRANCH "$CONF_FILE"); int="${int:-main}"
+  while IFS= read -r l; do
+    case "$l" in
+      "worktree "*) cur="${l#worktree }"; [ -n "$root" ] || root="$cur" ;;
+      "branch refs/heads/$int") holder="$cur" ;;
+      prunable*) [ "$cur" = "$holder" ] && stale=1 ;;
+    esac
+  done < <("${GIT[@]}" worktree list --porcelain 2>/dev/null)
+  # git's own mark first; the .git file for a git too old to print it. Not the folder:
+  # one left without its .git under the repo's own tree reads as live, and the pull,
+  # sent there, ran in the checkout above it (C-3).
+  [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -e "$holder/.git" ]; } && { gone="$holder"; holder=""; }
+  if [ -n "$holder" ]; then
+    printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, and leave whatever it left there to the person.\n' \
+      "$int" "$(shq "$holder")" "$int"
+  elif "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
+    if [ -d "$gone" ]; then
+      printf '%s was checked out at %s, whose .git file is missing or broken, so stop and ask. This restores it, staged work included, though git prints an error as it does: git worktree repair %s. Then pull in it, and run the add below: git -C %s pull --ff --no-rebase origin %s.\n' \
+        "$int" "$(shq "$gone")" "$(shq "$gone")" "$(shq "$gone")" "$int"
+    elif [ -n "$gone" ]; then
+      printf '%s was checked out at %s, which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, repair it, then pull in it, and run the add below: git worktree repair <new path>, then git -C <new path> pull --ff --no-rebase origin %s. If it was deleted, prune, which clears every worktree git cannot find, then run the commands below: git worktree prune.\n' \
+        "$int" "$(shq "$gone")" "$int"
+    fi
+    printf '%s is checked out in no live worktree. These bring in the commits origin/%s has that it lacks, if any; if git refuses, read its message (diverged, never pushed, or unreachable) and stop and ask.\n' \
+      "$int" "$int"
+  fi
+  printf '  cd %s && \\\n' "$(shq "${root:-.}")"
+  if [ -n "$holder" ] && [ "$holder" = "$root" ]; then
+    printf '    git pull --ff --no-rebase origin %s && \\\n' "$(shq "$int")"
+  elif [ -n "$holder" ]; then
+    printf '    git -C %s pull --ff --no-rebase origin %s && \\\n' "$(shq "$holder")" "$(shq "$int")"
+  elif ! "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
+    printf '    git fetch origin && \\\n    git branch --track %s origin/%s && \\\n' "$(shq "$int")" "$(shq "$int")"
+  else
+    printf '    git fetch origin && \\\n'
+    printf '    { git merge-base --is-ancestor origin/%s %s || git fetch origin %s:%s; } && \\\n' \
+      "$(shq "$int")" "$(shq "$int")" "$(shq "$int")" "$(shq "$int")"
+  fi
+  printf '    git worktree add %s/<name> -b %s %s && \\\n' "$(shq "$WORKTREE_DIR")" "$1" "$(shq "$int")"
+  printf '    cd %s/<name>' "$(shq "$WORKTREE_DIR")"
+}
 resolve_target() {
   local dir="$1" target_root target_repo project_repo
   [[ $RESOLVED -eq 1 && "$dir" == "$RESOLVED_DIR" ]] && return
@@ -671,10 +743,8 @@ elif [[ "$ACTION" == "branch-create" ]]; then
 
 A branch created in place puts feature work in this checkout — the drift the worktree workflow exists to prevent.
 
-Instead, run /feature-start <prefix>/<name>: it checks how many branches are already open (OPEN_BRANCH_LIMIT) and asks at the limit, which a raw worktree add skips. By hand, from the repo root with absolute paths:
-  git fetch origin
-  git worktree add $(shq "$WORKTREE_DIR")/<name> -b <prefix>/<name> origin/<integration-branch>
-  cd $(shq "$WORKTREE_DIR")/<name>
+Instead, run /feature-start <prefix>/<name>: it checks how many branches are already open (OPEN_BRANCH_LIMIT) and asks at the limit, which a raw worktree add skips. By hand — from the local integration branch, origin's work brought into it, since it also holds merges not yet pushed:
+$(worktree_route "<prefix>/<name>")
 
 Prefixes: feature/ fix/ refactor/ test/ docs/ chore/ hotfix/.
 
@@ -698,10 +768,8 @@ elif [[ "$IS_PROTECTED" == "1" ]]; then
     REMEDY="Leave it alone. If the branch really is finished with, the person who owns
 the project decides that — not the session that happened to merge something."
   else
-    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check:
-  git fetch origin
-  git worktree add $(shq "$WORKTREE_DIR")/<name> -b feature/<name> origin/<integration-branch>
-  cd $(shq "$WORKTREE_DIR")/<name>
+    REMEDY="Create a feature worktree instead, with /feature-start feature/<name> (it checks the open-branch limit first), or by hand, which skips that check — from the local integration branch, origin's work brought into it:
+$(worktree_route "feature/<name>")
 
 Use absolute paths in the same command as every git operation — a drifting cwd is how the wrong repo gets modified."
   fi

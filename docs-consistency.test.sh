@@ -487,4 +487,16 @@ fi
 case " $PC" in *" ci: "*) ok "…and ci: is among them" ;; *) bad "ci: is not an allowed prefix ($PC)" ;; esac
 [ "$PR" = "ci: " ] && ok "…and the rule names ci:, the one prefix that is not a branch's" || bad "rules/git-worktree-workflow.md Required 3 adds '$PR' to the branch prefixes, want 'ci: '"
 
+echo "Every mutation mutant's anchor occurs exactly once:"
+# A hook edit that moved an anchor and not its mutant passed every suite, and surfaced
+# only hours into the release's mutation run, unstamped (0.29.0 release review, R-2). In
+# that run a mutant is applied, so its own anchor is gone: run.sh names it, and the case
+# stands aside rather than kill it for that.
+if [ -n "${MUTATION_UNDER_TEST:-}" ]; then
+  ok "…not checked while mutant $MUTATION_UNDER_TEST is applied (its own anchor is gone)"
+else
+  OUT=$(python3 -I mutation/mutants.py check . 2>&1); RC=$?
+  [ "$RC" -eq 0 ] && ok "$(tail -1 <<<"$OUT")" || bad "mutants.py check exited $RC — update the mutant in the change that moved its anchor (mutation/README.md → Upkeep): $(grep -v ' not anchored$' <<<"$OUT" | head -3 | tr '\n' ' ')"
+fi
+
 finish

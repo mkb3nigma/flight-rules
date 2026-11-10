@@ -51,6 +51,10 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`, which is recorded in the merge commit
    as a `Merge-authorisation:` trailer. Setting that variable when the user did not ask
    is the thing this forbids — the hook cannot tell, the trailer makes it auditable.
+   Two clean merges need no instruction and carry no trailer: a back-merge of a PR-only
+   branch's tip, all of it already reviewed, and the merge of its upstream,
+   `origin/<the branch>`, into it when the two have diverged — what a fast-forward would
+   bring; `feature-start` 4's pull makes it.
    A project that does not want the check sets `MERGE_NEEDS_INSTRUCTION=off`; that is
    recorded in the trailer too — hook (`commit-msg`)
 
@@ -81,7 +85,37 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    skill (`pre-merge-check` 21, for what the checks started), reminded (`post-merge`
    prints what still runs from the worktree, containers included, at the merge;
    `session-start`)
-8. New branches derive from the local **`{INTEGRATION_BRANCH}`** once origin is pulled into it — never a stale one; it also holds merges not yet pushed. When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
+8. New branches derive from the local **`{INTEGRATION_BRANCH}`** once origin's commits it lacks are brought in — never a stale one (*Which branch new work starts from*, below). When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
+
+## Which branch new work starts from
+
+The local `{INTEGRATION_BRANCH}` is authoritative: it is the base every new branch is
+cut from — a revert of a merge on a protected branch aside (*Merge flow*, below), which
+starts from that branch on origin (owner, 2026-11-08). It holds origin's work once that
+is brought in, and the merges made here and not yet pushed, which origin's lacks: a
+branch cut from origin's missed the very merge it was meant to fix (2026-11-01, #125).
+So before a branch is cut, `git fetch origin`, then origin's commits it lacks come in:
+
+- checked out in a live worktree: `git pull --ff --no-rebase origin
+  {INTEGRATION_BRANCH}` there;
+- missing: `git branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`;
+- checked out nowhere: a fast-forward, only if origin's has anything new — `git
+  merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} || git
+  fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`. Refused — diverged, never
+  pushed or unreachable; git's message says which — **stop and ask**: merging diverged
+  branches needs a checkout. If the worktree that held it is gone (`git worktree list`
+  marks it `prunable`), **stop and ask** before any of it: git cannot tell one moved
+  (`git worktree repair <new path>`) from one deleted (`git worktree prune`, which
+  clears every worktree it cannot find); one whose folder is there and only its `.git`
+  file gone or broken, `git worktree repair <path>` restores, staged work included.
+
+`feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill.
+A `git worktree add` by hand is advisory: no hook checks a start point, because
+legitimate branches start elsewhere (a revert, from that branch on origin) and a check
+would refuse them. A project that branches from origin's instead
+(one that merges only by PR has nothing local to keep) says so in its own rules, which
+override these; the hooks' printed routes still name the local branch until a switch
+exists (#141).
 
 ## The cwd-drift trap (learned the hard way)
 

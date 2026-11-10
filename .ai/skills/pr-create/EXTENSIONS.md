@@ -16,8 +16,10 @@ leaves it (an issue). The `release review` check fails a PR into `main` without 
 section filled. Owner's instruction, 2026-11-01: the release is the moment a change
 upstream can still reach the batch.
 
-Also before step 2a, in this repo: run `mutation/run.sh -j 4` from a worktree of the
-commit being promoted (`mutation/README.md` gives the commands). A clean run stamps the
+Last, in this repo — after step 2b and every finding it applied, on the final head:
+run `mutation/run.sh -j 4` from a worktree of that commit (`mutation/README.md` gives the
+commands). Run earlier, each applied finding would move the head and cost another run of
+hours (owner, 2026-11-07). A clean run stamps the
 commit with a git note and prints the push it needs; the owner pushes it,
 `git push origin refs/notes/mutation`, with `dev`. The `release review` check fails a PR
 into `main` unless its head commit carries a stamp that holds against the kit, and its
