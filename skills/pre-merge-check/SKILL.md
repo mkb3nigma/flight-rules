@@ -53,7 +53,7 @@ locally with no PR, its commit messages.
 6. **Secrets scan** — run the guard's own patterns over the added lines of
    `git diff <dest>...HEAD`: the `+` lines inside hunks, as the guard's `ADDED` awk
    selects them — a `grep -v '^+++'` header filter also drops an added line that
-   begins `++ ` (#77). Prefer the guard's live source: the first of
+   begins `++ `. Prefer the guard's live source: the first of
    `${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh`,
    `~/.claude/plugins/cache/*/flight-rules/*/hooks/agent/pre-commit-check.sh` (highest
    version), `.flight-rules/hooks/agent/pre-commit-check.sh`, `hooks/agent/pre-commit-check.sh`
@@ -112,7 +112,7 @@ locally with no PR, its commit messages.
     line — "for now", "temporary", "remove after", "until we" — with no issue and no
     condition. Judge comments and prose, not identifiers or string literals: a token
     grep over the diff flags enum members such as `ActionStatus.TODO`.
-16. *Retired (#119); numbered so later items keep theirs.*
+16. *Retired; numbered so later items keep theirs.*
 17. **Docs match the change** — ask **"what claims does this diff make false?"**, then
     go find them. Not a grep for renamed symbols: a change that renames nothing and only
     makes a sentence untrue leaves every grep empty. Run narrowly it has missed four
@@ -161,7 +161,7 @@ locally with no PR, its commit messages.
     stopped (`docker compose down`, `docker rm`): a stopped one still takes disk space.
     One left on purpose is reported as `LEFT RUNNING: <what> — <why>; stop with
     <command>`. ⚠️ on one with no reason: it outlives the branch, and once the worktree
-    is removed it runs from nowhere (AppliHawk, 2026-10-24, #109). `post-merge` prints
+    is removed it runs from nowhere (AppliHawk, 2026-10-24). `post-merge` prints
     what is still running from the worktree, and its Compose containers, when it lists
     it for removal; a container with no Compose label is tied to no directory, and only
     this item finds it.
@@ -180,7 +180,7 @@ green to a human and red to CI — then:
   tests ran.
 - Clean → `Result: ✅ READY TO MERGE` and stamp — the tree it checked, and one `ran:` per
   command run, with its exit status and last line of output, as the table has them. The
-  merge gate refuses a note without both (#107). Each `ran:` goes in single quotes, so a
+  merge gate refuses a note without both. Each `ran:` goes in single quotes, so a
   `"`, `$` or backtick in a command or its output is written as it is (a `'` in it is
   written `'\''`):
   ```bash

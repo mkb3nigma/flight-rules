@@ -100,7 +100,7 @@ cut from — a revert of a merge already pushed to a protected branch, and a hot
 person approved, aside (*Merge flow*, below), which start from that branch, and from `main`, on origin
 (owner, 2026-11-08). It holds origin's work once that
 is brought in, and the merges made here and not yet pushed, which origin's lacks: a
-branch cut from origin's missed the very merge it was meant to fix (2026-11-01, #125).
+branch cut from origin's missed the very merge it was meant to fix (2026-11-01).
 So before a branch is cut, `git fetch origin`, then origin's commits it lacks come in:
 
 - checked out in a live worktree: `git pull --ff --no-rebase origin
@@ -122,8 +122,8 @@ legitimate branches start elsewhere (a revert, from that branch on origin; a hot
 from `origin/main`) and a check
 would refuse them. A project that branches from origin's instead
 (one that merges only by PR has nothing local to keep) says so in its own rules, which
-override these; the hooks' printed routes still name the local branch until a switch
-exists (#141).
+override these; the hooks' printed routes name the local branch all the
+same.
 
 ## The cwd-drift trap (learned the hard way)
 
@@ -167,13 +167,13 @@ git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR
   `{INTEGRATION_BRANCH}` to revert `main` would carry its unreleased work into `main`.
   A merge made here and not yet pushed is not on origin, so a branch cut from there
   lacks it and the revert fails: cut that one from the local branch, which holds it
-  (#143).
+  (owner, 2026-11-10).
 - A hotfix — a fix that goes straight to `main`, skipping `{INTEGRATION_BRANCH}` and the
   review there — is for an urgent fix, and only the person decides one is urgent: a
   `hotfix/` branch is made only with their approval, and without it the fix is an
   ordinary `fix/` branch off the local `{INTEGRATION_BRANCH}`. Approved, it is cut from
   `origin/main` (one cut from `{INTEGRATION_BRANCH}` would carry its unreleased work
-  into `main`, #143) and merges into `main` through the PR `main` requires; an issue is
+  into `main`) and merges into `main` through the PR `main` requires; an issue is
   filed for it, saying it bypassed `{INTEGRATION_BRANCH}`, was cut from `origin/main`
   and was merged straight into `main`, and its PR links that issue. `feature-start` 4's
   reconcile brings it back into `{INTEGRATION_BRANCH}` — skill (`feature-start` 3 and 6,

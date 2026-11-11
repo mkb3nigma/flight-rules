@@ -31,7 +31,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    that's fine (worktree creation never commits to it). If it has uncommitted edits,
    say in one line that they stay there and do not come into the new worktree, and go
    on: edits there are usually work begun on the wrong branch.
-2. *Retired (#119); numbered so later steps keep theirs.*
+2. *Retired; numbered so later steps keep theirs.*
 3. **Validate the branch name** — ask if not provided; verify the prefix. A `hotfix/`
    name goes straight to `main`, skipping `{INTEGRATION_BRANCH}` and its review
    (`git-worktree-workflow.md` → *Merge flow*), so ask the person to approve it as
@@ -154,7 +154,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    nothing and report the count as the blocker — a question that cannot be put is not
    a yes. A pile of open branches is
    how this repo's own work came to depend on itself: more than ten sat unmerged
-   (2026-10-20 to 10-23), and the owner saw it only once they did (#108).
+   (2026-10-20 to 10-23), and the owner saw it only once they did.
 6. **Create the worktree** from the local `{INTEGRATION_BRANCH}` (step 4; repo root, absolute paths):
    ```bash
    git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> {INTEGRATION_BRANCH}
