@@ -16,7 +16,7 @@ derivation), then run `/upstream-check`.
 | [WCAG 2.2](https://www.w3.org/TR/WCAG22/) | `skills/ux/accessibility.md`, `skills/ux/forms.md` (the level-A and AA success criteria they cite) | W3C spec | W3C Recommendation of 2024-12-12 | 2026-11-11 |
 | [Core Web Vitals thresholds](https://web.dev/articles/defining-core-web-vitals-thresholds) | `skills/ux/states.md` (S10, the 200 ms and 500 ms responsiveness thresholds) | web page | INP good ≤ 200 ms, poor > 500 ms, as read 2026-11-11 | 2026-11-11 |
 | [NN/g: Response Times, the 3 Important Limits](https://www.nngroup.com/articles/response-times-3-important-limits/) | `skills/ux/states.md` (S7–S9) | web page | 0.1 s / 1 s / 10 s, as read 2026-11-11 | 2026-11-11 |
-| [The UX laws in my CLAUDE.md](https://adamhayes.xyz/blog/the-ux-laws-in-my-claude-md) | `skills/ux/principles.md` (the starting list; concept only) | web page | as published 2026-09-01 | 2026-11-11 |
+| [The UX laws in my CLAUDE.md](https://adamhayes.xyz/blog/the-ux-laws-in-my-claude-md) | `skills/ux/principles.md`, `states.md` and `forms.md` (the starting list; concept only) | web page | as published 2026-09-01 | 2026-11-11 |
 | [mattpocock/skills](https://github.com/mattpocock/skills) | `skills/diagnose/` (structure and several disciplines — see ATTRIBUTIONS) | git repo | `8b78b531ab965735c5dc74f6f7a219e1e37326df` | 2026-08-15 |
 
 > **`v1r3n/dinesh-gilfoyle` baseline review done (2026-10-17).** Its `dg/SKILL.md`,
