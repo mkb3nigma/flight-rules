@@ -83,6 +83,13 @@ requires a clean stamp on the PR's head, so a commit after it means running it a
 and an assistant never writes one by hand — `mutation/README.md`), and `--base main`. That promotion is the one PR whose head is
 a protected branch, which `pr-create`'s constraint names as its only exception.
 
+## Which model does what
+
+`rules/multi-ai-setup.md` principle 6 applies here: the top tier of each family plans,
+designs and reviews, and hands implementation to the tier below through an issue that
+carries the plan (owner, 2026-11-11). At the time of writing that is Fable for
+Anthropic, Sol for OpenAI and Argon for Google; the owner can override it for any task.
+
 ## The skills run here too
 
 The skills are plain Markdown: `skills/<name>/SKILL.md`, plus `upstream-check`, which
