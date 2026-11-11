@@ -95,6 +95,20 @@ box_row() {
     # pushing out its right edge (0.29.0 release-fix review, Z-4).
     if [ "$pad" -lt 0 ]; then printf '║ %s\n' "$s"; else printf '║ %s%*s ║\n' "$s" "$pad" ''; fi
 }
+# go_ahead <what is passed>: the way through that every stop prints (MISSION.md,
+# principle 5) — FLIGHT_RULES_GO_AHEAD=1 in front of the command. Going ahead is the
+# person's decision, so it is said every time it is used (#151).
+go_ahead() {
+    [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1
+    echo "⚠️  flight-rules: going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — $1. That is the person's decision, never an assistant's own." >&2
+}
+# go_ahead_rows <command>: the rows a box prints for it.
+go_ahead_rows() {
+    box_row "Going ahead anyway is the person's decision, never an"
+    box_row "assistant's own, and it is said when it is used:"
+    box_row "  FLIGHT_RULES_GO_AHEAD=1 $1"
+    box_row ""
+}
 
 # A refusal a broken pattern decided: the pattern named, where it is set, and the
 # command that gets past the gate it broke from where this refusal leaves you — the one
@@ -251,6 +265,9 @@ while read -r _old new ref; do
     _up=$(printf '%s\n' "$TX" | awk -v r="$upstream" '$3 == r { n = $2 } END { print n }')
     [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 2>/dev/null && continue
 
+    if go_ahead "$short moves to a commit that is not on origin/$short, though it is PR-only"; then
+        continue
+    fi
     if [ "$_rc" -ne 0 ]; then
         {
             broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "REF MOVE" "$short" "<the same command>"
@@ -374,6 +391,7 @@ while read -r _old new ref; do
         box_row "that through review. Editing your working tree copy"
         box_row "will not lift this: the rule is read from the remote."
         box_row ""
+        go_ahead_rows "<the same command>"
         box_bot
         echo ""
     } >&2

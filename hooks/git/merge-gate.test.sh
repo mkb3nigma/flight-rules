@@ -1876,4 +1876,58 @@ git -C "$PM" merge --no-edit feature/real >/dev/null 2>&1 || die "merge failed (
 say "$(grep -cE 'git branch -d feature/real( |$)' "$PM/.claude/post-merge-note.md" 2>/dev/null)" "1" "post-merge: the integration branch only the old conf names gets its cleanup note"
 rm -rf "$PM"
 
+echo "Every stop prints its way through, and takes it (#151, #149):"
+GA='going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says'
+# The note gate: one command, where the person's route was a note written by hand.
+D=$(mkrepo); git -C "$D" checkout -q -b feature/g dev; echo g > "$D/g"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: g" >/dev/null || die "could not commit on feature/g"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff feature/g -m "Merge feature/g" 2>&1); RC=$?
+say "$RC$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")$(grep -c '^║   FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit  *║$' <<<"$OUT")" "111" "an unstamped merge into dev: refused, and the box prints the command that goes ahead"
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=0 git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c "$GA" <<<"$OUT")" "10" "…FLIGHT_RULES_GO_AHEAD=0 is not it: refused again"
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c "$GA — the merge of feature/g into dev, with no pre-merge-check note the gate takes" <<<"$OUT")" "01" "…the command, as printed: the merge lands, and says what it went past"
+say "$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)' dev | head -1)" "went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)" "…and the merge commit records it"
+# Who asked: a stamped merge, nobody recorded as asking.
+git -C "$D" checkout -q -b feature/h dev; echo h > "$D/h"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: h" >/dev/null || die "could not commit on feature/h"
+stamp "$D" HEAD feature/h; git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff feature/h -m "Merge feature/h" 2>&1); RC=$?
+say "$RC$(grep -c 'WHO ASKED FOR THIS MERGE' <<<"$OUT")" "11" "a stamped merge nobody asked for: refused"
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit 2>&1); RC=$?
+say "$RC$(grep -c "$GA" <<<"$OUT")$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)' dev | head -1)" "01went ahead (FLIGHT_RULES_GO_AHEAD)" "…going ahead lands it, says so, and records it"
+# A merge that needs no way through says nothing of one.
+git -C "$D" checkout -q -b feature/i dev; echo i > "$D/i"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: i" >/dev/null || die "could not commit on feature/i"
+stamp "$D" HEAD feature/i; git -C "$D" checkout -q dev
+OUT=$(cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 FLIGHT_RULES_GO_AHEAD=1 git merge --no-ff feature/i -m "Merge feature/i" 2>&1); RC=$?
+say "$RC$(grep -c "$GA" <<<"$OUT")$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)' dev | head -1)" "00explicit (FLIGHT_RULES_MERGE_AUTHORISED)" "a stamped, authorised merge with the variable set: nothing was passed, so nothing is said"
+# A rebase of a protected branch.
+OUT=$(cd "$D" && git rebase main 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && echo refused)$(grep -c 'dev IS PROTECTED — REBASE BLOCKED' <<<"$OUT")$(grep -c '^║   FLIGHT_RULES_GO_AHEAD=1 <the same command>  *║$' <<<"$OUT")" "refused11" "a rebase of dev: refused, and the box prints the command"
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git rebase main 2>&1); RC=$?
+say "$RC$(grep -c "$GA — a rebase of dev, a protected branch" <<<"$OUT")" "01" "…which goes ahead, and says so"
+# A local merge into a PR-only branch, and a squash committed on it.
+git -C "$D" checkout -q main
+git -C "$D" checkout -q -b feature/j main; echo j > "$D/j"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: j" >/dev/null || die "could not commit on feature/j"
+git -C "$D" checkout -q main
+OUT=$(cd "$D" && git merge --no-ff feature/j -m "Merge feature/j" 2>&1); RC=$?
+say "$RC$(grep -c 'main IS PR-ONLY — LOCAL MERGE BLOCKED' <<<"$OUT")$(grep -c '^║   FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit  *║$' <<<"$OUT")" "111" "a local merge into main: refused, and the box prints the command"
+# The merge again, not the commit that would finish it: pre-merge-commit runs on a merge,
+# and with the ref gate installed, as install.sh installs it, that is what speaks at the commit.
+(cd "$D" && git merge --abort) >/dev/null 2>&1
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git merge --no-ff feature/j -m "Merge feature/j" 2>&1); RC=$?
+say "$RC$(grep -c "$GA — a local merge into main, a PR-only branch" <<<"$OUT")$(git -C "$D" rev-parse -q --verify main^2)" "01$(git -C "$D" rev-parse feature/j)" "…which lands it, and says so"
+git -C "$D" checkout -q -b feature/k main; echo k > "$D/k"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: k" >/dev/null || die "could not commit on feature/k"
+git -C "$D" checkout -q main; (cd "$D" && git merge --squash --ff feature/k) >/dev/null 2>&1 || die "could not squash feature/k"
+BEFORE=$(git -C "$D" rev-parse main)
+OUT=$(cd "$D" && git commit -m "feature: k, squashed" 2>&1); RC=$?
+say "$RC$(grep -c 'main IS PR-ONLY — SQUASH MERGE BLOCKED' <<<"$OUT")$(grep -c '^║   FLIGHT_RULES_GO_AHEAD=1 git commit <same arguments>  *║$' <<<"$OUT")" "111" "a squash committed on main: refused, and the box prints the command"
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git commit -m "feature: k, squashed" 2>&1); RC=$?
+say "$RC$(grep -c "$GA — a squash merge committed on main, a PR-only branch" <<<"$OUT")$([ "$(git -C "$D" rev-parse main)" != "$BEFORE" ] && echo landed)" "01landed" "…which lands it, and says so"
+rm -rf "$D"
+
 finish

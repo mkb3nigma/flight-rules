@@ -783,4 +783,16 @@ OUT=$(printf 'update refs/remotes/origin/main %s\nupdate refs/heads/main %s\n' "
 say "$([ "$RC" -ne 0 ] && echo refused)$(git -C "$D" rev-parse main)" "refused$BEFORE" "…and one transaction moving both, main onto a commit origin's new value lacks: refused"
 rm -rf "$(dirname "$D")"
 
+echo "The PR-only stop prints its way through, and takes it (#151):"
+D=$(make_repo default); BEFORE=$(git -C "$D" rev-parse main)
+echo w > "$D/w.txt"; git -C "$D" add -A
+OUT=$(git -C "$D" commit -m "chore: direct" 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && echo refused)$(git -C "$D" rev-parse main)$(grep -c '^║   FLIGHT_RULES_GO_AHEAD=1 <the same command>  *║$' <<<"$OUT")" "refused${BEFORE}1" "a commit on PR-only main: refused, and the box prints the command that goes ahead"
+OUT=$(FLIGHT_RULES_GO_AHEAD=1 git -C "$D" commit -m "chore: direct" 2>&1); RC=$?
+say "$RC$(grep -c 'going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — main moves to a commit that is not on origin/main, though it is PR-only' <<<"$OUT")$(grep -c 'PROTECTED BRANCH' <<<"$OUT")" "010" "…which lands it, and says what it went past"
+say "$(git -C "$D" log -1 --format=%s main)" "chore: direct" "…main holds the commit"
+OUT=$(FLIGHT_RULES_GO_AHEAD=1 git -C "$D" fetch origin 2>&1); RC=$?
+say "$RC$(grep -c 'going ahead' <<<"$OUT")" "00" "with the variable set and nothing to pass, nothing is said"
+rm -rf "$(dirname "$D")"
+
 finish
