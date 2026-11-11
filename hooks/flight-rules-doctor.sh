@@ -43,6 +43,11 @@ SRC_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 
   "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { bad "not inside a git repository"; exit 1; }
 cd "$ROOT" || exit 1
+# The conf the hooks read: .flight-rules/conf, or .ai/flight-rules.conf, its place before
+# 0.29.0, where the new one is absent (#153). Set here, before any line names it: the
+# update hint below named the new path in a project on the old one, and following it
+# made a one-line conf that hid the whole old one (0.29.0 release review, D4).
+CONF=".flight-rules/conf"; [[ ! -f "$CONF" && -f .ai/flight-rules.conf ]] && CONF=".ai/flight-rules.conf"
 
 # Which flight-rules release shipped this exact file? Searches the plugin cache and
 # prints the version directory's name, or nothing. The same function sits in
@@ -291,8 +296,8 @@ else
       # --this-checkout and "on a branch": the plain form, run in a main checkout on a
       # protected branch, left a diff that could not be committed or cleared there, and
       # from a worktree it sent the user back to that checkout (#99, 2026-10-21).
-      printf '     to update: bash %s --from %s --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in .flight-rules/conf runs this in the first session each day and after an update)\n' \
-        "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"
+      printf '     to update: bash %s --from %s --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in %s runs this in the first session each day and after an update)\n' \
+        "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")" "$CONF"
     fi
     # pre-commit and pre-push run their .local only if it is executable, and skip it
     # without a word otherwise — a project's linter, or git-lfs, would stop unnoticed.
@@ -333,13 +338,11 @@ read_conf() {
     | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
-CONF=".flight-rules/conf"
-# Before 0.29.0 it was .ai/flight-rules.conf, which every hook still reads where the
-# new one is absent (#153). The move is a commit, so it is made on a branch.
-if [[ ! -f "$CONF" && -f .ai/flight-rules.conf ]]; then
-  CONF=".ai/flight-rules.conf"
+# The conf in its place before 0.29.0 ($CONF, set at the top). The move is a commit, so
+# it is made on a branch.
+if [[ "$CONF" == .ai/flight-rules.conf ]]; then
   warn "the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf"
-elif [[ -f "$CONF" && -f .ai/flight-rules.conf ]]; then
+elif [[ -f .ai/flight-rules.conf ]]; then
   warn ".ai/flight-rules.conf is not read: .flight-rules/conf is there, and wins. Once nothing in it is missing from the new one, on a branch: git rm .ai/flight-rules.conf"
 fi
 # The default worktree folder moved with it, and has no fallback (owner, 2026-11-11). A

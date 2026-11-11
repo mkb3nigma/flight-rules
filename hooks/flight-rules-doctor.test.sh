@@ -400,6 +400,12 @@ cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg
 say "$(rc "$D")" "1" "a copy identical to a cached older release → problem"
 say "$(has "$D" "commit-msg is the flight-rules 0.0.1 copy")" "0" "…naming the release it came from"
 say "$(has "$D" "to update: bash")" "0" "…and printing the sync command"
+say "$(has "$D" "HOOK_SYNC=auto in .flight-rules/conf runs this")" "0" "…naming the conf HOOK_SYNC goes in"
+# A project on the old conf: the hint named the new path, and following it made a
+# one-line conf that hid the whole old one (D4).
+mkdir -p "$D/.ai"; mv "$D/.flight-rules/conf" "$D/.ai/flight-rules.conf" || die "could not move the conf in $D"
+say "$(has "$D" "HOOK_SYNC=auto in .ai/flight-rules.conf runs this")$(has "$D" "HOOK_SYNC=auto in .flight-rules/conf")" "01" "…the old conf, where the project's is still there"
+mv "$D/.ai/flight-rules.conf" "$D/.flight-rules/conf" || die "could not move the conf back in $D"
 SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]* --stale-only' | sed 's/^to update: //' | head -1)
 say "$([ -n "$SYNC" ] && echo yes)" "yes" "…which can be lifted from the output, in its --stale-only form"
 (cd "$D" && HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1
