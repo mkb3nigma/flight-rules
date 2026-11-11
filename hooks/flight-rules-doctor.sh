@@ -513,9 +513,13 @@ if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
 elif [[ $PLUGIN_ON -eq 1 ]]; then ok "agent guard via the plugin"
 elif [[ $LOCAL_WIRED -eq 1 ]]; then
   ok "agent guard via .claude/settings.json"
-  if [[ -f .flight-rules/hooks/agent/pre-commit-check.sh ]] && ! grep -q 'read_conf' .flight-rules/hooks/agent/pre-commit-check.sh; then
-    bad ".flight-rules/hooks/agent/pre-commit-check.sh is a pre-conf copy of the guard — it matches 'git commit' as a substring and knows no other command; replace it with the current hooks/agent/ version"
-  fi
+  # Both folders: such a copy predates 0.29.0, so it sits in .ai/hooks/agent/; checked
+  # in the new folder alone, the check could not fire (0.29.0 release review, D2).
+  for _g in .ai/hooks/agent/pre-commit-check.sh .flight-rules/hooks/agent/pre-commit-check.sh; do
+    if [[ -f "$_g" ]] && ! grep -q 'read_conf' "$_g"; then
+      bad "$_g is a pre-conf copy of the guard — it matches 'git commit' as a substring and knows no other command; replace it with the current hooks/agent/ version"
+    fi
+  done
 else
   warn "no agent guard wired: neither the plugin nor .claude/settings.json runs pre-commit-check.sh — only the git hooks are protecting you"
 fi

@@ -864,6 +864,13 @@ printf '#!/bin/bash\n[[ "$COMMAND" == *"git commit"* ]]\n' > "$D/.flight-rules/h
 say "$(rc "$D")" "1" "pre-conf copy of the guard → problem"
 say "$(has "$D" "pre-conf copy")" "0" "…identified as such"
 rm -rf "$D"
+# Where such a copy actually is: it predates 0.29.0, so it was committed in .ai/ (D2).
+D=$(mkrepo); mkdir -p "$D/.claude/" "$D/.ai/hooks/agent"
+printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash .ai/hooks/agent/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
+printf '#!/bin/bash\n[[ "$COMMAND" == *"git commit"* ]]\n' > "$D/.ai/hooks/agent/pre-commit-check.sh"
+say "$(rc "$D")" "1" "pre-conf copy of the guard in .ai/hooks/agent/ → problem"
+say "$(has "$D" ".ai/hooks/agent/pre-commit-check.sh is a pre-conf copy")" "0" "…named by where it is"
+rm -rf "$D"
 
 echo "--problems-only is silent on a healthy repo:"
 D=$(mkrepo); rm "$D/.flight-rules/conf"; printf 'PROTECTED_BRANCHES=^main$\n' > "$D/.flight-rules/conf"
