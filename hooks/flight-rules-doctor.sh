@@ -140,7 +140,7 @@ else
   # the hooks left in it, drew one `cp … .ai/hooks/` per hook, back into the folder the
   # project left (0.29.0 release review, D3).
   # The pattern in a variable: bash 3.2 keeps the backslash of `\/` in the replacement.
-  _old_named=""; _hp="${HOOKS_DIR%/}"; _dot='/./'; _hp="${_hp//"$_dot"//}"
+  _old_named=""; _old_run=""; _hp="${HOOKS_DIR%/}"; _dot='/./'; _hp="${_hp//"$_dot"//}"
   if [[ "$_hp" == "$ROOT/.ai/hooks" ]]; then
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
       [[ -f "$ROOT/.flight-rules/hooks/$h" ]] && { _old_named=1; break; }
@@ -149,11 +149,14 @@ else
   if [[ -n "$_old_named" ]]; then
     if [[ -d "$HOOKS_DIR" ]]; then
       bad "core.hooksPath=$HOOKS_PATH, the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks"
+      # The copies checked below are the old folder's, which git runs: checked in the
+      # new one, a stub left in the old passed as installed (R1, #160).
+      _old_run=1
     else
       bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"
+      # The copies checked below are the moved ones, which run once the line above is.
+      HOOKS_PATH=.flight-rules/hooks; HOOKS_DIR="$ROOT/.flight-rules/hooks"
     fi
-    # The copies checked below are the moved ones, which run once the line above is.
-    HOOKS_PATH=.flight-rules/hooks; HOOKS_DIR="$ROOT/.flight-rules/hooks"
   fi
   if [[ ! -d "$HOOKS_DIR" ]]; then
     bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
@@ -164,7 +167,11 @@ else
         # A plugin upgrade cannot copy git hooks into a project, so a hook added in a
         # release (pre-commit, 0.23.0) arrives as this line; say where to copy it from.
         # A flight-rules-doctor.sh copied in by hand has no git/ beside it to copy from.
-        if [[ -f "$GIT_HOOKS_SRC/$h" ]]; then
+        # Not one gone from the folder before 0.29.0, the moved set beside it: the move's
+        # ❌ covers it, and a cp would put it back in the folder left (D3, R1).
+        if [[ -n "$_old_run" ]]; then
+          :
+        elif [[ -f "$GIT_HOOKS_SRC/$h" ]]; then
           # Where to run it, as the update line below says: copied in on a protected
           # branch, it could not be committed there (full release review, S5; #99).
           bad "$h missing from $HOOKS_PATH — the gate is half built. On a branch (in a worktree when this checkout is on a protected branch), then commit it. Copy it in from this flight-rules: cp $(shq "$GIT_HOOKS_SRC/$h") $(shq "$HOOKS_PATH/") && chmod +x $(shq "$HOOKS_PATH/$h")"
@@ -242,7 +249,11 @@ else
     # needs it to run the hooks, the sync no longer puts it back unattended, and a
     # project that removed it on purpose would get a warning every day (owner,
     # 2026-10-21).
-    if [[ ! -e "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+    # In the folder before 0.29.0, the moved set beside it, neither is offered: both the
+    # cp and the sync write into the folder core.hooksPath names, the one left (R1).
+    if [[ -n "$_old_run" ]]; then
+      NEEDS_SYNC=0
+    elif [[ ! -e "$HOOKS_DIR/install.sh" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
       # From a worktree whose hooks are in another checkout, the cp lands at the same
       # path in this one: written into that checkout, it was an untracked file there that
       # a later merge bringing install.sh in refused to overwrite (#90 fix review, F9).

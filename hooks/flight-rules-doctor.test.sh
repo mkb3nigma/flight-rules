@@ -988,10 +988,25 @@ say "$(grep -c "core.hooksPath=./.ai/hooks/, $MOVED" <<<"$OUT")" "1" "…spelled
 rm -rf "$D/.ai/hooks"
 OUT=$(run "$D")
 say "$(grep -c 'core.hooksPath=./.ai/hooks/ but that directory does not exist — git runs NO hooks — the hooks moved' <<<"$OUT")" "1" "…and spelled so with the old folder gone: the move said"
+say "$(grep -c 'git runs NO hooks' <<<"$OUT")$(grep -c 'commit-msg installed and executable' <<<"$OUT")" "11" "…once, and the moved hooks checked in the new folder"
 git -C "$D" config core.hooksPath .ai/hooks; mkdir -p "$D/.ai/hooks"
 mv "$D/.flight-rules/hooks/pre-merge-commit" "$D/.flight-rules/hooks/commit-msg" "$D/.ai/hooks/" || die "could not split the hooks in $D"
 OUT=$(run "$D")
-say "$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'pre-merge-commit missing from .flight-rules/hooks' <<<"$OUT")$(grep -c 'missing from .ai/hooks' <<<"$OUT")" "110" "half moved: the move said, and the missing hooks named in the new folder, not the old"
+# Git runs the old folder, so the hooks left there are checked there; the ones gone from
+# it are not named, in either folder: the move's ❌ and its command cover them (R1, #160).
+say "$(head -1 <<<"$OUT")$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'missing from' <<<"$OUT")$(grep -c 'cp .*\.ai/hooks/' <<<"$OUT")" "1100" "half moved: the move said, no hook named missing, and no cp into the old folder"
+say "$(grep -c 'pre-merge-commit installed and executable' <<<"$OUT")$(grep -c 'commit-msg installed and executable' <<<"$OUT")$(grep -c 'pre-rebase installed and executable' <<<"$OUT")" "110" "…the hooks left in the old folder checked there, where git runs them"
+rm -rf "$D"
+# Both folders full, core.hooksPath still on the old one — the documented mid-move
+# state. Checked in the new folder, a stub left in the old one, which git runs, passed as
+# installed (R1, #160).
+D=$(mkrepo); mkdir -p "$D/.ai/hooks"; cp -p "$D"/.flight-rules/hooks/* "$D/.ai/hooks/" || die "could not copy the hooks to the old folder in $D"
+git -C "$D" config core.hooksPath .ai/hooks
+printf '#!/bin/sh\nexit 0\n' > "$D/.ai/hooks/commit-msg"
+echo '# a tweak' >> "$D/.ai/hooks/post-merge"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'commit-msg does not look like the flight-rules hook' <<<"$OUT")$(grep -c 'commit-msg installed and executable' <<<"$OUT")" "1110" "both folders full, still on the old one: the move said, and the stub in the old folder named"
+say "$(grep -c 'post-merge differs from' <<<"$OUT")$(grep -c 'to update:' <<<"$OUT")$(grep -c 'cp .*\.ai/hooks/' <<<"$OUT")" "100" "…a changed copy there named, with no sync and no cp into the old folder offered"
 rm -rf "$D"
 
 echo "The doctor reads the conf as the hooks do (#127):"
