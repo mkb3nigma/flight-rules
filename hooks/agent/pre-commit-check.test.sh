@@ -1130,6 +1130,40 @@ while [ $i -lt ${#WRAP_NAME[@]} ]; do
 done
 printf '  ✅ %s wrapper × core combinations\n' "$(( ${#WRAP_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + ${#SAFE[@]}) ))"
 
+# The way through a stop is the person's (#155): an assistant's command that sets it is
+# refused in every shape and on any branch, a feature branch included — it also passes
+# the secret scan, which no branch turns off.
+GO_DENY=( "FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit"
+          "env FLIGHT_RULES_GO_AHEAD=1 git rebase main"
+          "export FLIGHT_RULES_GO_AHEAD=1"
+          "FLIGHT_RULES_GO_AHEAD='1' git merge --continue"
+          "FLIGHT_RULES_GO_AHEAD=\"1\" git commit -m x" )
+GO_ALLOW=( "FLIGHT_RULES_GO_AHEAD=0 git status --short"
+           "unset FLIGHT_RULES_GO_AHEAD" )
+i=0
+while [ $i -lt ${#WRAP_NAME[@]} ]; do
+  fmt="${WRAP_FMT[$i]}"; wname="${WRAP_NAME[$i]}"
+  for core in "${GO_DENY[@]}"; do
+    gen_check deny feat "go-ahead:$wname" "$(printf "$fmt" "$core")"
+    gen_check deny main "go-ahead:$wname" "$(printf "$fmt" "$core")"
+  done
+  for core in "${GO_ALLOW[@]}"; do
+    gen_check allow feat "go-ahead:$wname" "$(printf "$fmt" "$core")"
+  done
+  i=$((i+1))
+done
+printf '  ✅ %s go-ahead wrapper × core combinations\n' "$(( ${#WRAP_NAME[@]} * (2 * ${#GO_DENY[@]} + ${#GO_ALLOW[@]}) ))"
+echo "The go-ahead refusal holds where the branch policy does not reach:"
+check "with PROTECTED_BRANCHES=off"  deny feature/x "FLIGHT_RULES_GO_AHEAD=1 git commit -m x" FLIGHT_RULES_PROTECTED_BRANCHES=off
+guard_run "$GEN_FEAT" "FLIGHT_RULES_GO_AHEAD=1 git commit -m x"
+verdict "…and says why, and what to give the person" deny \
+        "going ahead is the person's decision" "FLIGHT_RULES_GO_AHEAD=1 <the command that was stopped>"
+GO_SIB=$(make_repo main)
+guard_run "$GEN_FEAT" "git -C $GO_SIB status && FLIGHT_RULES_GO_AHEAD=1 git -C $GO_SIB commit -m x"
+verdict "in a sibling repo the project does not police" deny
+rm -rf "$GO_SIB"
+check "a name that merely starts the same is not it" allow feature/x "FLIGHT_RULES_GO_AHEAD_LATER=1 git status"
+
 echo "A merge in progress waives the commit, and nothing else in the same command:"
 # Committing the merge is the whole point of standing on the branch, so that refusal is
 # waived. The waiver used to be applied to the COMMAND after the scan had already stopped

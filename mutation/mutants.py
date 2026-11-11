@@ -981,6 +981,11 @@ mut('S119', PC, '  [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1', '  :', 'se
 mut('D143', DOC, 'if [[ "${FLIGHT_RULES_GO_AHEAD-}" == 1 ]]; then', 'if false; then', 'install flight-rules-doctor', what='doctor: a way through left set is not said')
 mut('C76', CM, '        git interpret-trailers --in-place --if-exists replace \\\n', '        git interpret-trailers --in-place --if-exists doNothing \\\n', 'merge-gate secret-scan', what='note gate: going ahead keeps a Merge-authorisation line already in the message')
 
+# ---- #155: the agent guard refuses an assistant's command that sets the way through.
+mut('P227', PCC, 'if [[ "$COMMAND" =~ $GO_AHEAD_RE ]]; then', 'if false; then', 'pre-commit-check', what='guard: an assistant may set the way through')
+mut('P228', PCC, "GO_AHEAD_RE='"+'FLIGHT_RULES_GO_AHEAD'+"=([^0[:space:];&|)]|0[^[:space:];&|)])'", "GO_AHEAD_RE='"+'FLIGHT_RULES_GO_AHEAD'+"=1'", 'pre-commit-check', what='guard: only an unquoted =1 is matched')
+mut('P229', PCC, "GO_AHEAD_RE='"+'FLIGHT_RULES_GO_AHEAD'+"=([^0[:space:];&|)]|0[^[:space:];&|)])'", "GO_AHEAD_RE='"+'FLIGHT_RULES_GO_AHEAD'+"'", 'pre-commit-check', what='guard: =0 and unset refused too')
+
 # ---- mutation/mutants.py verify: the release review check's test of the stamp. Each
 # anchor is two literals, so it does not also occur in its own entry here.
 MP = 'mutation/mutants.py'
