@@ -1930,4 +1930,13 @@ OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git commit -m "feature: k, squashed" 2>
 say "$RC$(grep -c "$GA — a squash merge committed on main, a PR-only branch" <<<"$OUT")$([ "$(git -C "$D" rev-parse main)" != "$BEFORE" ] && echo landed)" "01landed" "…which lands it, and says so"
 rm -rf "$D"
 
+echo "Going ahead past the note gate writes its own record over one already in the message:"
+D=$(mkrepo); git -C "$D" checkout -q -b feature/t dev; echo t > "$D/t"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: t" >/dev/null || die "could not commit on feature/t"
+git -C "$D" checkout -q dev
+(cd "$D" && git merge --no-ff feature/t -m "Merge feature/t" -m "Merge-authorisation: explicit (FLIGHT_RULES_MERGE_AUTHORISED)") >/dev/null 2>&1
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit 2>&1); RC=$?
+say "$RC|$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)' dev | sed '/^$/d')" "0|went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)" "a message that came with a Merge-authorisation line: the merge lands with the one line, saying it went ahead"
+rm -rf "$D"
+
 finish
