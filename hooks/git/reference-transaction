@@ -102,12 +102,39 @@ go_ahead() {
     [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1
     echo "⚠️  flight-rules: going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — $1. That is the person's decision, never an assistant's own." >&2
 }
-# go_ahead_rows <command>: the rows a box prints for it.
+# go_ahead_rows <command>…: the rows a box prints for them, one per command, run in turn.
 go_ahead_rows() {
+    local c
     box_row "Going ahead anyway is the person's decision, never an"
     box_row "assistant's own, and it is said when it is used:"
-    box_row "  FLIGHT_RULES_GO_AHEAD=1 $1"
+    for c in "$@"; do box_row "  FLIGHT_RULES_GO_AHEAD=1 $c"; done
     box_row ""
+}
+# same_command <ref>: the command(s) that go ahead with what this refusal stopped, one
+# per line. A refused cherry-pick, revert, `git am` or merge is left half-done, and
+# running it again fails on the unfinished one; what lands it is what finishes it
+# (0.29.0 release review, M2, each one run in ref-gate.test.sh). Read from what the
+# operation left in this worktree's git dir, and only for the branch checked out here,
+# which is the one it moves.
+git_path() { git rev-parse --git-path "$1" 2>/dev/null; }
+same_command() {
+    local d
+    # A rebase detaches HEAD while it runs and names the branch it will move in head-name.
+    for d in rebase-merge rebase-apply; do
+        [ "$(cat "$(git_path "$d")/head-name" 2>/dev/null)" = "$1" ] && { echo "git rebase --continue"; return; }
+    done
+    [ "$(git symbolic-ref -q HEAD 2>/dev/null)" = "$1" ] || { echo "<the same command>"; return; }
+    if [ -e "$(git_path rebase-apply)/applying" ]; then echo "git am --continue"
+    elif [ -e "$(git_path CHERRY_PICK_HEAD)" ]; then echo "git cherry-pick --continue"
+    elif [ -e "$(git_path REVERT_HEAD)" ]; then echo "git revert --continue"
+    # A revert of several leaves no REVERT_HEAD, so `--continue` takes the refused one as
+    # done and fails on the next over its staged changes: commit it, then continue.
+    elif [ -d "$(git_path sequencer)" ]; then printf '%s\n' "git commit --no-edit" "git revert --continue"
+    elif [ -e "$(git_path MERGE_HEAD)" ]; then echo "git commit --no-edit"
+    # A revert of one commit leaves no state but its message.
+    elif grep -q '^This reverts commit [0-9a-f]\{7,\}' "$(git_path MERGE_MSG)" 2>/dev/null; then echo "git commit --no-edit"
+    else echo "<the same command>"
+    fi
 }
 
 # A refusal a broken pattern decided: the pattern named, where it is set, and the
@@ -391,7 +418,9 @@ while read -r _old new ref; do
         box_row "that through review. Editing your working tree copy"
         box_row "will not lift this: the rule is read from the remote."
         box_row ""
-        go_ahead_rows "<the same command>"
+        _same=() _c=""
+        while IFS= read -r _c; do _same+=("$_c"); done < <(same_command "$ref")
+        go_ahead_rows "${_same[@]}"
         box_bot
         echo ""
     } >&2
