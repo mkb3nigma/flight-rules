@@ -51,7 +51,7 @@ for maintaining this guide, not for building: do not load it for a task.
    **not checked**; never pass it silently.
 6. Report (below).
 7. If a token, component or pattern was added or changed, update the record in the same
-   change, and say so.
+   change — or start it, where this is the project's first interface — and say so.
 
 ## When rules pull against each other
 

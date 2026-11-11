@@ -5,7 +5,9 @@ project can raise it in its extension file. Numbers in brackets are the success
 criteria; read the criterion itself when a case is unclear: https://www.w3.org/TR/WCAG22/
 
 These rules are the ones an interface most often fails. They are not the whole standard:
-audio and video captions (1.2.x), for one, are not repeated here.
+no rule here covers 1.2.1–1.2.5 (audio and video), 1.3.2, 1.3.3, 1.4.2, 2.1.4, 2.4.5,
+2.5.2, 2.5.4 or 3.1.2. A report says AA was checked only for the rules it loaded, and
+never that the interface meets WCAG AA.
 
 ## Keyboard and focus
 
@@ -57,9 +59,11 @@ audio and video captions (1.2.x), for one, are not repeated here.
   An icon-only button gets one (`aria-label`, or visually hidden text). (4.1.2)
 - **A19** [standard] A control's visible label is part of its accessible name, so a
   person who speaks the label can operate it. (2.5.3)
-- **A20** [standard] Use the native element for its job — `button`, `a`, `input`,
-  `select`, `label` — before a `div` with a role. A custom widget declares its role and
-  states (expanded, selected, checked) and keeps them current. (4.1.2)
+- **A20** [standard] A custom widget declares its role and states (expanded, selected,
+  checked) and keeps them current. (4.1.2)
+- **A36** [rule of thumb] Use the native element for its job — `button`, `a`, `input`,
+  `select`, `label` — before a `div` with a role: it brings its role, states and
+  keyboard handling with it.
 - **A21** [standard] Headings, lists, tables and form groups are marked up as such, so
   structure seen on screen is structure a screen reader gets. (1.3.1)
 - **A22** [standard] Headings and labels say what follows them. (2.4.6)
@@ -72,14 +76,16 @@ audio and video captions (1.2.x), for one, are not repeated here.
 
 ## Pointer, motion and time
 
-- **A26** [standard] A pointer target is at least 24 by 24 CSS pixels, or has no other
-  target within a 24-pixel circle centred on it. (2.5.8)
+- **A26** [standard] A pointer target is at least 24 by 24 CSS pixels, or is spaced so
+  that a 24-pixel-diameter circle centred on it meets no other target and no other small
+  target's circle. (2.5.8)
 - **A27** [standard] Anything done by dragging can also be done with single clicks or
   taps. (2.5.7)
 - **A28** [standard] Anything done with a multi-point or path gesture (pinch, swipe a
   shape) can also be done with a single pointer. (2.5.1)
 - **A29** [standard] Moving, blinking or scrolling content that starts by itself and
-  lasts more than five seconds can be paused, stopped or hidden. (2.2.2)
+  lasts more than five seconds can be paused, stopped or hidden; content that updates by
+  itself can be paused, hidden, or slowed. (2.2.2)
 - **A30** [standard] Nothing flashes more than three times in any one second. (2.3.1)
 - **A31** [standard] A time limit can be turned off, or adjusted to at least ten times
   its default, or the person is warned before it runs out, given at least 20 seconds to

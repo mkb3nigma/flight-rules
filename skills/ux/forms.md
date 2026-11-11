@@ -39,7 +39,8 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
 - **F11** [rule of thumb] Accept the forms people actually type and normalise them:
   spaces or dashes in a card or phone number, a trailing space after a pasted email,
   upper or lower case in a code. Be strict in what is stored and shown back, not in what
-  is accepted.
+  is accepted (Postel's robustness principle, RFC 761, from network protocols; scoped
+  here to input from people — in protocol design it is now contested).
 - **F12** [rule of thumb] Do not block paste — into a password field, a code field or
   any other.
 - **F13** [standard] Signing in does not require remembering or transcribing something
@@ -72,16 +73,19 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
   then offer "Undo" for some seconds. Where undo is not possible, the confirmation names
   what will be lost ("Delete project Atlas and its 12 files?") and its button repeats
   the action ("Delete project"), not "OK".
-- **F22** [rule of thumb] A destructive action is never the default button and does
-  not sit where the safe action usually is.
+- **F22** [rule of thumb] A destructive action is never the default button, does not
+  sit where the safe action usually is, and is kept away from the control used most
+  often: distance prevents the slip that a large target invites.
 - **F23** [rule of thumb] Leaving a form with unsaved changes warns the person, or the
   form saves a draft as it goes.
 
 ## Long forms
 
-- **F24** [finding] A long form is split into steps, with the steps shown and the
-  current one marked: people work faster as a visible goal gets nearer (the
-  goal-gradient effect, Kivetz, Urminsky and Zheng 2006).
+- **F24** [rule of thumb] A long form is split into steps of related fields, each
+  short enough to finish without scrolling far.
+- **F27** [finding] A form in steps shows the steps and marks the current one: people
+  work faster as a visible goal gets nearer (the goal-gradient effect, Kivetz, Urminsky
+  and Zheng 2006, measured on reward programmes; applied to forms by extrapolation).
 - **F25** [rule of thumb] Each step can be reviewed and changed before the final
   submit, and going back does not lose what was entered.
 - **F26** [rule of thumb] A single column of fields, read top to bottom, unless the

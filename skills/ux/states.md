@@ -38,9 +38,10 @@ https://web.dev/articles/defining-core-web-vitals-thresholds
 - **S9** [finding] Past about 10 seconds, attention is lost: show progress — a
   percent-done bar where the work can be measured, or what is being done now where it
   cannot — and a way to cancel.
-- **S10** [standard] On the web, an interaction's next paint within 200 ms counts as
-  good responsiveness; over 500 ms, as poor. (Core Web Vitals, Interaction to Next
-  Paint, measured at the 75th percentile of real visits)
+- **S10** [rule of thumb] On the web, Google's Core Web Vitals count an interaction's
+  next paint within 200 ms as good responsiveness, and over 500 ms as poor (Interaction
+  to Next Paint, at the 75th percentile of real visits). Google's threshold, not a
+  standard: a page over it is slow, not non-conforming.
 - **S11** [rule of thumb] Show a busy indicator only after a short delay (a few hundred
   milliseconds), so fast responses do not flicker.
 
@@ -67,8 +68,9 @@ https://web.dev/articles/defining-core-web-vitals-thresholds
 
 - **S18** [finding] A flow ends on a clear completion: what was done, and what happens
   next. People judge an experience largely by its most intense moment and its end
-  (Kahneman's peak-end rule); an end that is a blank page or an unexplained redirect
-  costs more than its size suggests.
+  (Kahneman's peak-end rule, measured on experiences of pain and discomfort; applied
+  to interface flows by extrapolation); an end that is a blank page or an unexplained
+  redirect costs more than its size suggests.
 - **S19** [finding] An interrupted task is shown so it can be resumed — "You have an
   unfinished order" — because people tend to return to interrupted work (the Ovsiankina
   effect). It is not used to nag: the claimed memory advantage for unfinished tasks

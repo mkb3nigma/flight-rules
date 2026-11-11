@@ -18,16 +18,16 @@ do not change, but newer work can supersede them, which a release review asks.
 | Nielsen Norman Group, *Response Times: The 3 Important Limits* — https://www.nngroup.com/articles/response-times-3-important-limits/ | living | S7 S8 S9 |
 | Ghibellini and Meier (2025), Zeigarnik and Ovsiankina meta-analysis, *Humanities and Social Sciences Communications* 12 — https://ideas.repec.org/a/pal/palcom/v12y2025i1d10.1057_s41599-025-05000-w.html | fixed | S19 |
 | Kahneman et al., the peak-end rule (1993) | fixed | S18 |
-| Kivetz, Urminsky and Zheng (2006), the goal-gradient effect | fixed | F24 |
+| Kivetz, Urminsky and Zheng (2006), the goal-gradient effect | fixed | F27 |
 | Hick (1952); Hyman (1953) | fixed | P1 |
 | von Restorff (1933), the isolation effect | fixed | P3 |
 | Wertheimer (1923), Gestalt principles | fixed | P8 P9 P12 |
 | Palmer (1992), common region | fixed | P10 |
 | Palmer and Rock (1994), uniform connectedness | fixed | P11 |
-| Fitts (1954); ISO 9241-411 | fixed | P13 |
+| Fitts (1954) | fixed | P13 |
 | Cowan (2001), working-memory capacity — https://www.cambridge.org/core/journals/behavioral-and-brain-sciences/article/magical-number-4-in-shortterm-memory-a-reconsideration-of-mental-storage-capacity/44023F1147D4A1D44BDC0AD226838496 | fixed | P15 |
 | Murdock (1962) and earlier list-recall work, the serial position effect | fixed | P16 |
 | Kurosu and Kashimura (1995), the aesthetic-usability effect | fixed | P18 |
 | Nielsen (2000), Jakob's law | fixed | P6 |
-| RFC 761 (1980), Postel's robustness principle | fixed | P17 |
-| The UX laws in my CLAUDE.md, Adam Hayes, 2026-09-01 — the starting list, concept only | living | P1 P3 P6 P8 P9 P11 P12 P13 P15 P16 P17 S18 S19 F24 |
+| RFC 761 (1980), Postel's robustness principle | fixed | F11 |
+| The UX laws in my CLAUDE.md, Adam Hayes, 2026-09-01 — the starting list, concept only | living | P1 P3 P6 P8 P9 P11 P12 P13 P15 P16 S18 S19 F11 F27 |

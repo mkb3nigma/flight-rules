@@ -43,8 +43,8 @@ From Gestalt psychology (Wertheimer 1923, and later work):
   different one. A link styled like a heading is a finding.
 - **P10** [finding] A shared background or border binds what is inside it into a group
   (common region, Palmer 1992).
-- **P11** [finding] Things joined by a line or connector are seen as related more
-  strongly than by closeness or likeness (uniform connectedness, Palmer and Rock 1994):
+- **P11** [finding] Things joined by a line or connector are seen as one group, often
+  overriding closeness or likeness (uniform connectedness, Palmer and Rock 1994):
   steps in a progress bar, a label linked to its value.
 - **P12** [finding] People read a layout in the simplest shape it can have
   (Prägnanz): aligned edges, a few consistent sizes and a clear grid read as order;
@@ -53,11 +53,9 @@ From Gestalt psychology (Wertheimer 1923, and later work):
 ## Pointing
 
 - **P13** [finding] The time to hit a target grows with its distance and shrinks with
-  its size (Fitts 1954; built into ISO 9241-411): make frequent and primary targets
+  its size (Fitts 1954): make frequent and primary targets
   large, and put them near where the pointer or thumb already is. The edges and corners
   of a screen are easy targets for a mouse, hard ones for a thumb.
-- **P14** [rule of thumb] Keep a destructive control away from the one used most
-  often: distance prevents the slip that size invites.
 
 ## Memory and attention
 
@@ -65,17 +63,10 @@ From Gestalt psychology (Wertheimer 1923, and later work):
   for young adults (Cowan 2001), revising the "seven, plus or minus two" often quoted
   from Miller 1956. Design for recognition over recall: show what the person chose on
   one screen when they need it on the next, and group long numbers and lists into
-  chunks. Never use a number to size a menu.
+  chunks. Never use this number to size a menu.
 - **P16** [finding] People remember the first and last items of a sequence best (the
   serial position effect): put the most important navigation items first and last.
   Applying it to menus is an extrapolation from list recall; treat it as a tiebreaker.
-
-## Input
-
-- **P17** [rule of thumb] Be liberal in what you accept and conservative in what you
-  send (Postel's robustness principle, from network protocols, RFC 761): accept the
-  forms people type, show back one exact form. Scoped to input from people; in protocol
-  design the principle is now contested.
 
 ## Judging your own work
 

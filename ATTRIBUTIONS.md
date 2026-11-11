@@ -119,9 +119,9 @@ Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/)** (W3C Recommendation, 12 
 2024), level AA, citing each success criterion by number; the wording is this skill's
 own summary, not the specification's text, and the thresholds were read from it.
 
-`principles.md` and `states.md` restate published findings in their own words, each
-named with its source: Hick (1952) and Hyman (1953); Fitts (1954); the isolation effect
-(von Restorff 1933); the Gestalt principles, with common region (Palmer 1992) and
+`principles.md`, `states.md` and `forms.md` restate published findings in their own
+words, each named with its source: Hick (1952) and Hyman (1953); Fitts (1954); the
+isolation effect (von Restorff 1933); the Gestalt principles, with common region (Palmer 1992) and
 uniform connectedness (Palmer and Rock 1994); working-memory capacity (Cowan 2001,
 revising Miller 1956); the serial position effect; the aesthetic-usability effect
 (Kurosu and Kashimura 1995); the peak-end rule (Kahneman); the goal-gradient effect
