@@ -290,7 +290,13 @@ the same checks in that tool's hook protocol; the point of keeping them in
   and `git update-ref` create no commit, so no commit hook fires at all; and a
   **conflicted** `git merge` never reaches `pre-merge-commit`, because git stops at the
   conflict and the finishing `git commit` is an ordinary commit. Every one of those
-  reached `main` unguarded before this hook.
+  reached `main` unguarded before this hook. Refused, such an operation is left
+  half-done, so the way through the refusal prints is the command that finishes it,
+  read from what the operation left: `git cherry-pick --continue`, `git am --continue`,
+  `git rebase --continue`, `git revert --continue` — for a revert of several commits,
+  `git commit --no-edit` first, since git keeps no `REVERT_HEAD` then — and
+  `git commit --no-edit` for a merge or a revert of one; anything else, the same
+  command again.
   `git pull --ff-only`, all feature work, `fetch`, and branch creation are unaffected.
   Unlike the agent guard it reads its config from the **upstream's** committed state,
   so editing the working-tree conf — the bypass the agent guard's own block message
