@@ -1830,4 +1830,50 @@ say "$RC" "1" "the note copied onto a later commit: refused"
 say "$(grep -c "not this commit's" <<<"$OUT")" "1" "…its tree is the earlier commit's"
 rm -rf "$d"
 
+echo "The conf where it lived before 0.29.0, .ai/flight-rules.conf, is read until it is moved (#153):"
+# old_conf_on <repo> <branch> <conf line>: conf_on, in the old place.
+old_conf_on() {
+  git -C "$1" checkout -q "$2" || die "no $2 in $1"
+  mkdir -p "$1/.ai"; printf '%s\n' "$3" > "$1/.ai/flight-rules.conf"
+  git -C "$1" add -A >/dev/null; git -C "$1" commit -qm "chore: old conf" --no-verify >/dev/null || die "could not commit the old conf"
+}
+D=$(mkrepo); git -C "$D" branch trunk || die "could not create trunk in $D"
+old_conf_on "$D" trunk 'NOTE_GATED_BRANCHES=^trunk$'
+git -C "$D" checkout -q -b feature/u trunk; echo u > "$D/u"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: u" >/dev/null || die "could not commit on feature/u"
+git -C "$D" checkout -q trunk
+OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
+say "$RC$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "11" "commit-msg: a branch only the old conf note-gates is gated"
+(cd "$D" && git merge --abort) >/dev/null 2>&1
+conf_on "$D" trunk 'NOTE_GATED_BRANCHES=off'
+OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
+say "$RC$(git -C "$D" rev-parse -q --verify trunk^2)" "0$(git -C "$D" rev-parse feature/u)" "…and once a conf is in the new place, that one decides: the merge lands"
+rm -rf "$D"
+D=$(mkrepo); git -C "$D" branch trunk || die "could not create trunk in $D"
+old_conf_on "$D" trunk 'PR_ONLY_BRANCHES=^trunk$'
+git -C "$D" checkout -q -b feature/v trunk; echo v > "$D/v"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: v" >/dev/null || die "could not commit on feature/v"
+git -C "$D" checkout -q trunk
+OUT=$(cd "$D" && git merge --no-ff feature/v -m merge 2>&1); RC=$?
+say "$RC$(grep -c 'trunk IS PR-ONLY — LOCAL MERGE BLOCKED' <<<"$OUT")" "11" "pre-merge-commit: a branch only the old conf makes PR-only refuses a local merge"
+(cd "$D" && git merge --abort) >/dev/null 2>&1
+OUT=$(cd "$D" && git rebase feature/v 2>&1); RC=$?
+say "$RC$(grep -c 'trunk IS PR-ONLY — REBASE BLOCKED' <<<"$OUT")" "11" "pre-rebase: …and a rebase"
+old_conf_on "$D" trunk 'PR_ONLY_BRANCHES=^(trunk'
+OUT=$(cd "$D" && git merge --no-ff feature/v -m merge 2>&1); RC=$?
+say "$RC$(grep -c 'fixes it in .ai/flight-rules.conf, on a' <<<"$OUT")" "11" "…and a pattern in it that does not compile is refused, naming the old conf as the file to fix"
+rm -rf "$D"
+PM=$(mktemp -d)
+git init -q -b main "$PM" || die "git init failed in $PM"
+git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t; git -C "$PM" config merge.ff false
+mkdir -p "$PM/.ai"; printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$PM/.ai/flight-rules.conf"
+echo base > "$PM/f.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: base"
+git -C "$PM" branch dev; git -C "$PM" checkout -qb feature/real
+echo f > "$PM/g.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: feature"
+git -C "$PM" checkout -q dev
+mkdir -p "$PM/hk"; cp "$H/post-merge" "$PM/hk/"; chmod +x "$PM/hk/post-merge"; git -C "$PM" config core.hooksPath "$PM/hk"
+git -C "$PM" merge --no-edit feature/real >/dev/null 2>&1 || die "merge failed (post-merge, old conf)"
+say "$(grep -cE 'git branch -d feature/real( |$)' "$PM/.claude/post-merge-note.md" 2>/dev/null)" "1" "post-merge: the integration branch only the old conf names gets its cleanup note"
+rm -rf "$PM"
+
 finish

@@ -737,4 +737,35 @@ chmod -x "$D/../hooks/pre-push.local"
 OUT=$(git -C "$D" push origin feature/z 2>&1); RC=$?
 say "$RC$(grep -c '^local:' <<<"$OUT")" "00" "…and is skipped when not executable"
 
+echo "The conf where it lived before 0.29.0, .ai/flight-rules.conf, is read until it is moved (#153):"
+# The default keeps main PR-only, so only a conf that is read lets a commit land on it.
+D=$(make_repo none bare); mkdir -p "$D/.ai"; printf 'PR_ONLY_BRANCHES=off\nPROTECTED_BRANCHES=off\n' > "$D/.ai/flight-rules.conf"
+git -C "$D" add -A; git -C "$D" commit -qm "chore: old conf" >/dev/null || die "could not commit the old conf"
+git -C "$D" push -q origin main 2>/dev/null || die "could not push the old conf"
+mkdir -p "$D/../hooks"; cp "$HOOK_SRC" "$(dirname "$HOOK_SRC")/pre-push" "$D/../hooks/" && chmod +x "$D"/../hooks/* || die "could not wire the hooks in $D"
+git -C "$D" config core.hooksPath "$D/../hooks"
+echo x > "$D/x"; git -C "$D" add -A
+OUT=$(git -C "$D" commit -m "chore: direct" 2>&1); RC=$?
+say "$RC$(grep -c 'PROTECTED BRANCH\|Refused' <<<"$OUT")" "00" "reference-transaction: a main only the old conf opens takes a commit, with no word"
+OUT=$(git -C "$D" push origin main 2>&1); RC=$?
+say "$RC$(grep -c 'protected' <<<"$OUT")" "00" "pre-push: …and its push says nothing"
+mkdir -p "$D/.flight-rules"; printf 'PR_ONLY_BRANCHES=^main$\n' > "$D/.flight-rules/conf"
+git -C "$D" add -A; git -C "$D" commit -qm "chore: new conf" >/dev/null || die "could not commit the new conf"
+git -C "$D" push -q origin main 2>/dev/null || die "could not push the new conf"
+BEFORE=$(git -C "$D" rev-parse main)
+echo y > "$D/y"; git -C "$D" add -A
+OUT=$(git -C "$D" commit -m "chore: direct again" 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && git -C "$D" rev-parse main)" "$BEFORE" "…and once a conf is in the new place, that one decides: the commit is refused"
+say "$(grep -c 'PR_ONLY_BRANCHES in .flight-rules/conf and pushes' <<<"$OUT")" "1" "…naming the new conf"
+rm -rf "$(dirname "$D")"
+D=$(make_repo none bare); mkdir -p "$D/.ai"; printf 'PR_ONLY_BRANCHES=^main$\n' > "$D/.ai/flight-rules.conf"
+git -C "$D" add -A; git -C "$D" commit -qm "chore: old conf" >/dev/null || die "could not commit the old conf"
+git -C "$D" push -q origin main 2>/dev/null || die "could not push the old conf"
+mkdir -p "$D/../hooks"; cp "$HOOK_SRC" "$D/../hooks/" && chmod +x "$D"/../hooks/* || die "could not wire the hook in $D"
+git -C "$D" config core.hooksPath "$D/../hooks"
+echo x > "$D/x"; git -C "$D" add -A
+OUT=$(git -C "$D" commit -m "chore: direct" 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && echo refused)$(grep -c 'PR_ONLY_BRANCHES in .ai/flight-rules.conf and pushes' <<<"$OUT")" "refused1" "a refusal under the old conf names it as the file that sets the policy"
+rm -rf "$(dirname "$D")"
+
 finish

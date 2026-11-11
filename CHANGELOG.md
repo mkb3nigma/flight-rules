@@ -20,6 +20,29 @@ branch that is not PR-only is warned of, never refused, at the move and at the p
 and `install.sh` now refuses a set without it. The agent guard and the session-start
 hooks and the doctor arrive with the plugin.
 
+**What flight-rules keeps in a project moved from `.ai/` to `.flight-rules/`** (#153):
+the conf is `.flight-rules/conf`, the committed hook copies are `.flight-rules/hooks/`,
+and the default worktree folder is `.flight-rules/worktrees/`. `.ai/skills/`,
+`.ai/rules/` and `.ai/master-rules.md` stay where they are. Nothing stops working
+before a project moves: every hook reads `.ai/flight-rules.conf` where the new conf is
+absent, `core.hooksPath` goes on naming `.ai/hooks` and the sync updates the copies
+there, and a fresh clone's `install.sh` wires them there. To move:
+
+- **The conf**, on a branch: `mkdir -p .flight-rules && git mv .ai/flight-rules.conf
+  .flight-rules/conf`. Where both exist only the new one is read; the doctor says which
+  it found.
+- **The hooks**, in three steps, so that a merge is never made with no hooks running —
+  `core.hooksPath` is one setting for a clone and all its worktrees. On a branch, `cp
+  -R .ai/hooks .flight-rules/hooks`, commit and merge it; the old folder gates that
+  merge. Then, in every clone, `git config core.hooksPath .flight-rules/hooks`. Then, on
+  a later branch, `git rm -r .ai/hooks`. A clone left naming a folder that is gone runs
+  no hooks: the doctor says so, with the command. A `.claude/settings.json` that
+  `exec`s `.ai/hooks/agent/…` is changed with the copy.
+- **The worktrees**: a project that sets `WORKTREE_DIR` changes nothing. One on the
+  default either sets `WORKTREE_DIR=.ai/worktrees` to stay, or adds
+  `.flight-rules/worktrees/` to `.gitignore`; worktrees already made stay where they
+  are. The doctor says so while the old folder holds any.
+
 **A project with its own `pre-push`** (git-lfs installs one) renames it
 `pre-push.local` first. flight-rules' `pre-push` runs it after its own check, with the
 same arguments and input, and its exit status decides the push — as `pre-commit` runs
@@ -159,6 +182,11 @@ says how.
 
 ### Changed
 
+- **Where flight-rules keeps its own files in a project**: `.flight-rules/`, not `.ai/`
+  (#153) — the conf, the hook copies, the worktrees. `.ai/` is a name another tool, or
+  the developer, may already use; what is left in it is the project's own rules and
+  skill extensions. The hooks, the skills and the docs name the new places; a refusal
+  that says where the policy is set names the conf it read. *Upgrading* has the moves.
 - **`/feature-start`**: step 4 pulls into the local integration branch, as above, and
   step 6 cuts from it. A `hotfix/` branch now needs the person's approval as urgent
   (#143): without it the skill creates nothing and names `fix/` as the route; with it,

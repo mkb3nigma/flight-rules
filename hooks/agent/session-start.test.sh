@@ -1192,4 +1192,20 @@ else
   echo "  (skipped: git merge-tree --write-tree needs git 2.38)"
 fi
 
+echo "The conf where it lived before 0.29.0, .ai/flight-rules.conf, is read until it is moved (#153):"
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.flight-rules/conf"
+mkdir -p "$D/.ai"; mv "$D/.flight-rules/conf" "$D/.ai/flight-rules.conf" || die "could not move the conf to its old place"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "the conf in its old place: exits 0"
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…its limit and its integration branch are read, and it is named as where the limit is set"
+rm -rf "$D"
+# A repo of its own: the limit is said once a day, so a second run of the one above
+# says nothing whichever conf it read.
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b
+mkdir -p "$D/.ai"; { cat "$D/.flight-rules/conf"; printf 'OPEN_BRANCH_LIMIT=2\n'; } > "$D/.ai/flight-rules.conf"
+printf 'OPEN_BRANCH_LIMIT=off\n' >> "$D/.flight-rules/conf"
+J=$(OB)
+say "$(ctx <<<"$J" | grep -c '^rc=0$')$(usr <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT')" "10" "…and once a conf is in the new place, that one decides: its limit is off, and nothing is said"
+rm -rf "$D"
+
 finish

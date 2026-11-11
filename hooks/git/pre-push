@@ -36,6 +36,10 @@ set -uo pipefail
 DEFAULT_PR_ONLY='^main$'
 DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
 CONF_PATH='.flight-rules/conf'
+# Where the conf lived before 0.29.0, read while a project has not moved it (#153).
+if ! git cat-file -e "HEAD:$CONF_PATH" 2>/dev/null && git cat-file -e 'HEAD:.ai/flight-rules.conf' 2>/dev/null; then
+  CONF_PATH='.ai/flight-rules.conf'
+fi
 ZERO='0000000000000000000000000000000000000000'
 LOCAL_HOOK="$(dirname "$0")/pre-push.local"
 

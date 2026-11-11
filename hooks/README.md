@@ -129,7 +129,10 @@ Worked examples:
 
 - **`.flight-rules/conf`** (recommended) — tool-agnostic and committed with the
   project, so every assistant and every contributor gets the same policy. This is the
-  one to use.
+  one to use. Before 0.29.0 it was `.ai/flight-rules.conf`: every hook still reads that
+  one where `.flight-rules/conf` is absent — as committed, for the hooks that read the
+  conf from a commit — and where both exist the new one alone is read. The doctor says
+  which it found, with the move.
 - **`.claude/settings.json` `"env"`** — a Claude-Code-only override, for when a policy
   should apply to Claude sessions but not to the git hooks.
 - **The shell environment** — `export FLIGHT_RULES_PROTECTED_BRANCHES='^main$'`. Useful
@@ -166,7 +169,7 @@ all**, and without `session-start.sh` there is no install health check.
 }
 ```
 
-(Equivalently, `.claude/hooks/*.sh` can be two-line shims that `exec` the `.ai`
+(Equivalently, `.claude/hooks/*.sh` can be two-line shims that `exec` the `.flight-rules/hooks`
 scripts — useful when migrating an existing setup without touching settings.json.)
 
 The scripts read Claude Code's hook protocol — tool input as JSON on stdin, a

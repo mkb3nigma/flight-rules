@@ -881,4 +881,12 @@ say "$(head -1 <<<"$OUT")" "0" "a global hooks path that is .flight-rules/hooks 
 say "$(grep -c '^⚠️ git runs these hooks from' <<<"$OUT")" "0" "…and no warning that those hooks stop running"
 rm -rf "$D"
 
+echo "A project whose hooks were committed in .ai/hooks, before 0.29.0 (#153):"
+D=$(mkrepo); git -C "$D" config --unset core.hooksPath; git -C "$D" config --unset merge.ff
+mkdir -p "$D/.ai"; mv "$D/.flight-rules/hooks" "$D/.ai/hooks" || die "could not move the hooks to their old place"; rmdir "$D/.flight-rules" 2>/dev/null
+say "$(rc "$D" .ai/hooks/install.sh)" "0" "a fresh clone's install.sh exits 0"
+say "$(git -C "$D" config core.hooksPath)" ".ai/hooks" "…wires the committed copies where they are"
+say "$([ -e "$D/.flight-rules" ] && echo made || echo none)" "none" "…and starts no second set in .flight-rules/"
+rm -rf "$D"
+
 finish

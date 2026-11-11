@@ -924,4 +924,35 @@ say "$(grep -c 'shadows flight-rules' <<<"$OUT")" "0" "plugin off: nothing repor
 say "$(grep -c 'warning(s)' <<<"$OUT")" "1" "…and doctor ran to its summary"
 rm -rf "$D"
 
+echo "What a project still on .ai/ is told (#153):"
+D=$(mkrepo); mkdir -p "$D/.ai"; mv "$D/.flight-rules/conf" "$D/.ai/flight-rules.conf" || die "could not move the conf to its old place"
+printf 'PROTECTD_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+OUT=$(run "$D")
+say "$(grep -c 'the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf' <<<"$OUT")" "1" "the conf in its old place: said, with the move"
+say "$(grep -c ".ai/flight-rules.conf: unknown key 'PROTECTD_BRANCHES'" <<<"$OUT")" "1" "…and it is the file that is checked"
+printf 'PROTECTED_BRANCHES=^main$\n' > "$D/.flight-rules/conf"
+OUT=$(run "$D")
+say "$(grep -c '.ai/flight-rules.conf is not read: .flight-rules/conf is there, and wins' <<<"$OUT")$(grep -c 'unknown key' <<<"$OUT")" "10" "a conf in both places: the old one is said not to be read, and is not"
+rm "$D/.ai/flight-rules.conf"
+OUT=$(run "$D")
+# By its sentences, not by ".ai/": a path the doctor prints may hold that itself.
+say "$(head -1 <<<"$OUT")$(grep -c 'flight-rules\.conf\|WORKTREE_DIR is not set\|the hooks moved' <<<"$OUT")" "00" "a project on the new places: exit 0, and no word of the old ones"
+mkdir -p "$D/.ai/worktrees/x"
+OUT=$(run "$D")
+say "$(grep -c 'WORKTREE_DIR is not set and .ai/worktrees/ holds worktrees: the default is now .flight-rules/worktrees/' <<<"$OUT")" "1" "worktrees in the old default folder, WORKTREE_DIR unset: said, with both ways on"
+printf 'WORKTREE_DIR=.ai/worktrees\n' >> "$D/.flight-rules/conf"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…and nothing once WORKTREE_DIR is set"
+rm -rf "$D"
+# The hook copies: committed in the old folder, a fresh clone is pointed at those; a
+# clone that pulled the move still names the old folder, and git then runs no hooks.
+D=$(mkrepo); mv "$D/.flight-rules/hooks" "$D/.ai-hooks-tmp"; mkdir -p "$D/.ai"; mv "$D/.ai-hooks-tmp" "$D/.ai/hooks" || die "could not move the hooks to their old place"
+git -C "$D" config --unset core.hooksPath
+OUT=$(run "$D")
+say "$(grep -c 'not running the hooks committed in .ai/hooks/' <<<"$OUT")" "1" "hooks committed in .ai/hooks, core.hooksPath unset: named as the ones to wire"
+git -C "$D" config core.hooksPath .ai/hooks; mkdir -p "$D/.flight-rules"; mv "$D/.ai/hooks" "$D/.flight-rules/hooks" || die "could not move the hooks to their new place"
+OUT=$(run "$D")
+say "$(grep -c 'core.hooksPath=.ai/hooks but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks' <<<"$OUT")" "1" "core.hooksPath still naming .ai/hooks after the move: said, with the command"
+rm -rf "$D"
+
 finish

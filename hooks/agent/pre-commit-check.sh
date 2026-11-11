@@ -16,11 +16,9 @@
 #   2. .flight-rules/conf   PROTECTED_BRANCHES=^(main|dev)$       (the normal home)
 #   3. The defaults below
 #
-# Put the policy in .flight-rules/conf. It sits beside the rules in the
-# tool-agnostic .ai/ directory, so a git hook, a Claude Code hook and any other
-# assistant's adapter read one list instead of each restating it in its own settings
-# file — the same reason the policy sits in .ai/ rather than inside one tool's
-# settings. (Where this SCRIPT lives varies: the plugin directory with the plugin,
+# Put the policy in .flight-rules/conf, a file no one tool owns, so a git hook, a
+# Claude Code hook and any other assistant's adapter read one list instead of each
+# restating it in its own settings. (Where this SCRIPT lives varies: the plugin directory with the plugin,
 # .flight-rules/hooks/agent/ hand-wired, hooks/agent/ in the playbook repo itself.)
 # The environment is for a one-off, or a policy meant for one tool only.
 #
@@ -514,7 +512,13 @@ resolve_target() {
   GIT=(git); [[ -n "$dir" ]] && GIT=(git -C "$dir")
   CURRENT_BRANCH=$("${GIT[@]}" branch --show-current 2>/dev/null)
   target_root=$("${GIT[@]}" rev-parse --show-toplevel 2>/dev/null)
-  CONF_FILE="${target_root:-${CLAUDE_PROJECT_DIR:-.}}/.flight-rules/conf"
+  # .ai/flight-rules.conf is where the conf lived before 0.29.0, read while a project
+  # has not moved it (#153).
+  CONF_NAME='.flight-rules/conf'
+  CONF_FILE="${target_root:-${CLAUDE_PROJECT_DIR:-.}}/$CONF_NAME"
+  if [[ ! -f "$CONF_FILE" && -f "${CONF_FILE%/$CONF_NAME}/.ai/flight-rules.conf" ]]; then
+    CONF_FILE="${CONF_FILE%/$CONF_NAME}/.ai/flight-rules.conf"; CONF_NAME='.ai/flight-rules.conf'
+  fi
   PROTECTED_RE="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$CONF_FILE")}"
   PROTECTED_RE="${PROTECTED_RE:-$DEFAULT_PROTECTED}"
   WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF_FILE")}"
@@ -752,7 +756,7 @@ if [[ -n "$PATTERN_BAD" && "$IS_PROTECTED" == "1" && "$BLOCKED_BRANCH" != "every
   [[ -n "$BLOCKED_BRANCH" ]] && _every="every branch, \"$BLOCKED_BRANCH\" included,"
   deny "⛔ BLOCKED: PROTECTED_BRANCHES ($PATTERN_BAD) is not a pattern bash can read, so $_every is treated as protected until it is fixed.
 
-The pattern is set in .flight-rules/conf, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."
+The pattern is set in $CONF_NAME, or in FLIGHT_RULES_PROTECTED_BRANCHES. Tell the project owner what is wrong with it; fixing it is their call — do not edit it yourself to get past this block."
   exit 0
 elif [[ "$ACTION" == "branch-create" ]]; then
   deny "⛔ BLOCKED: branches are created as worktrees, not with checkout -b / switch -c.
@@ -764,7 +768,7 @@ $(worktree_route "<prefix>/<name>")
 
 Prefixes: feature/ fix/ refactor/ test/ docs/ chore/ hotfix/.
 
-If this project does not use the worktree workflow, the owner can set PROTECTED_BRANCHES=off in .flight-rules/conf. That is the owner's call — do not add it yourself to get past this block; ask."
+If this project does not use the worktree workflow, the owner can set PROTECTED_BRANCHES=off in $CONF_NAME. That is the owner's call — do not add it yourself to get past this block; ask."
   exit 0
 elif [[ "$IS_PROTECTED" == "1" ]]; then
   case "$ACTION" in
@@ -774,7 +778,7 @@ elif [[ "$IS_PROTECTED" == "1" ]]; then
     branch-delete) VERB="This command would delete it locally. If a cleanup note offered this branch as \"safe to delete\", that note is wrong — report it rather than following it."
                    [[ -n "$PRONLY_BAD" ]] && VERB="$VERB
 
-PR_ONLY_BRANCHES ($PRONLY_BAD) is not a pattern bash can read, so every branch is kept from deletion until it is fixed. It is set in .flight-rules/conf, or in FLIGHT_RULES_PR_ONLY_BRANCHES. Tell the project owner; fixing it is their call." ;;
+PR_ONLY_BRANCHES ($PRONLY_BAD) is not a pattern bash can read, so every branch is kept from deletion until it is fixed. It is set in $CONF_NAME, or in FLIGHT_RULES_PR_ONLY_BRANCHES. Tell the project owner; fixing it is their call." ;;
   esac
   # The message names the opt-out so a project that never wanted the worktree
   # workflow can find the way out without reading hooks/README.md — but it is
@@ -799,7 +803,7 @@ $VERB
 
 $REMEDY
 
-If this project deliberately works on \"$BLOCKED_BRANCH\" and does not use the worktree workflow, the project owner can turn the branch policy off with PROTECTED_BRANCHES=off in .flight-rules/conf (the secret scan stays on). That is the owner's call — do not add it yourself to get past this block; ask."
+If this project deliberately works on \"$BLOCKED_BRANCH\" and does not use the worktree workflow, the project owner can turn the branch policy off with PROTECTED_BRANCHES=off in $CONF_NAME (the secret scan stays on). That is the owner's call — do not add it yourself to get past this block; ask."
   exit 0
 fi
 

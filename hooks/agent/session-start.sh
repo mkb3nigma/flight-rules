@@ -51,7 +51,14 @@ read_conf() {
 # conf_get <key>: read_conf on this project's conf. It had its own sed, which kept
 # single quotes: INTEGRATION_BRANCH='dev' counted open branches against a branch named
 # 'dev', quotes and all, while doctor showed ✅ (0.27.0 release review).
-conf_get() { read_conf "$1" "$PROJECT_ROOT/.flight-rules/conf"; }
+conf_get() { read_conf "$1" "$PROJECT_ROOT/$CONF_REL"; }
+# conf_rel <root>: the conf's path under it — .flight-rules/conf, or .ai/flight-rules.conf,
+# its home before 0.29.0, while a project has not moved it (#153).
+conf_rel() {
+  if [ ! -f "$1/.flight-rules/conf" ] && [ -f "$1/.ai/flight-rules.conf" ]; then printf '.ai/flight-rules.conf'
+  else printf '.flight-rules/conf'; fi
+}
+CONF_REL=$(conf_rel "$PROJECT_ROOT")
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
 # leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
@@ -166,7 +173,7 @@ fi
 # Protected as pre-commit-check.sh decides it: the environment first, then the conf
 # read by the same read_conf, the same default (session-start.test.sh compares them).
 # Read once, for the sync and the open-branch count below.
-PROT="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.flight-rules/conf")}"
+PROT="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(conf_get PROTECTED_BRANCHES)}"
 PROT="${PROT:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
 
 # A headless session (`claude -p`, observed; other callers only if they set the variable
@@ -297,7 +304,7 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   fi
   if [ -n "$_check" ] && [ "$SYNC_RC" -eq 3 ]; then
     if [ -n "$_bad" ]; then
-      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. It is the project owner's to fix, in .flight-rules/conf (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it. Behind or missing:"
+      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. It is the project owner's to fix, in $CONF_REL (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it. Behind or missing:"
     else
       echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: this checkout is on \"$_br\", a protected branch, where the change could not be committed. Behind or missing:"
     fi
@@ -380,7 +387,7 @@ if [ -n "$DOCTOR_SCREEN" ]; then
   case "$HP" in ""|/*) HP_DIR="$HP" ;; *) HP_DIR="$TOP/$HP" ;; esac
   if [ -z "$TOP" ]; then
     DOCTOR_SCREEN=""
-  elif [ -f "$TOP/.flight-rules/conf" ] || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
+  elif [ -f "$TOP/$(conf_rel "$TOP")" ] || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
     :   # adopted: shown daily
   elif [ -n "$HP" ]; then
     DOCTOR_SCREEN=""   # another tool's hooks; adopting flight-rules there is a choice
@@ -409,10 +416,10 @@ fi
 # "?" lines split off below: a missed reminder, but never one that reads as "under
 # the limit".
 OPEN_MSG=$(
-  [ -f "$PROJECT_ROOT/.flight-rules/conf" ] || exit 0
-  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(read_conf OPEN_BRANCH_LIMIT "$PROJECT_ROOT/.flight-rules/conf")}"
+  [ -f "$PROJECT_ROOT/$CONF_REL" ] || exit 0
+  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(conf_get OPEN_BRANCH_LIMIT)}"
   # Where it came from, said: raising it in the conf does nothing when the environment set it.
-  _src="in .flight-rules/conf"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
+  _src="in $CONF_REL"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
   [ "$_lim" = off ] && exit 0
   [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
   _base=""; _into=""

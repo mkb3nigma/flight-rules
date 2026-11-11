@@ -59,6 +59,16 @@ ships with the plugin; the git hooks are copied in once per clone. Both read
 straight from `hooks/` with no copy in between, so the rules repo obeys its own rules
 and cannot drift from them (CI runs the hook suites on macOS and Linux).
 
+**In a project that adopts it**, flight-rules keeps what is its own in one folder,
+`.flight-rules/`: `conf`, the branch policy every hook and skill reads; `hooks/`, the
+git hooks, committed, which `core.hooksPath` points at; and `worktrees/`, the feature
+worktrees, git-ignored (`WORKTREE_DIR` moves it). The project's own rules and its
+deltas to a skill live in `.ai/`, the tool-neutral folder
+[`multi-ai-setup`](rules/multi-ai-setup.md) lays out. Before 0.29.0 the conf, the hooks
+and the worktrees were in `.ai/` as well; a project that has not moved them is still
+read there, and `flight-rules-doctor` prints each move (CHANGELOG → 0.29.0 →
+*Upgrading*).
+
 ## Rules
 
 Always-on principles a project's rules entry point points at.

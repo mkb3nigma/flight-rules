@@ -1746,4 +1746,15 @@ guard_run "$N" "git init -q r && cd r && git commit --allow-empty -m x"
 verdict "a commit in a repo the command creates, from outside any repo, is allowed" allow
 rm -rf "$N" "$SHIM"
 
+echo "The conf where it lived before 0.29.0, .ai/flight-rules.conf, is read until it is moved (#153):"
+D=$(make_repo trunk)
+mkdir -p "$D/.ai"; echo 'PROTECTED_BRANCHES=^trunk$' > "$D/.ai/flight-rules.conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null); RC=$?
+say "$RC$(grep -c '"permissionDecision": *"deny"' <<<"$OUT")" "01" "a branch only the old conf protects is protected"
+say "$(grep -c 'PROTECTED_BRANCHES=off in .ai/flight-rules.conf' <<<"$OUT")" "1" "…and the refusal names the old conf as where the policy is set"
+mkdir -p "$D/.flight-rules"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.flight-rules/conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null); RC=$?
+say "$RC$(grep -c 'permissionDecision' <<<"$OUT")" "00" "…and once a conf is in the new place, that one decides: allowed"
+rm -rf "$D"
+
 finish
