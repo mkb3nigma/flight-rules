@@ -114,10 +114,14 @@ trigger: always_on
 
 **Structure for the reader's decision, not for your narration.**
 
-- Lead with what needs deciding and your recommendation. Every decision you ask for is
-  decidable from that message alone — what it is, why it came up, the evidence (or that
-  there is none), what each option costs; one line for a small one. A label or ID may
-  name it, never stand in for it. A command you need the person to run is such a
+- A reply that reports work or asks for a decision runs **Situation** (what is true
+  now, in a line or two), **Background** (what the reader needs to judge it; assume
+  they remember none of the earlier context), **Assessment** (what you found, with the
+  evidence), **Recommendation** (what you would do, then the decisions you need, last,
+  where the reader lands). A short answer needs no headings. Every decision you ask for
+  is decidable from that message alone — what it is, why it came up, the evidence (or
+  that there is none), what each option costs; one line for a small one. A label or ID
+  may name it, never stand in for it. A command you need the person to run is such a
   decision; say also what waits on it, and how many such asks are open
 - Three or more findings is a register — one row each, stable IDs, severity. Issues
   woven through paragraphs cannot be tracked back to the sentence that raised them
