@@ -37,11 +37,11 @@
 # Install: commit this file into the project's hooks dir (e.g. .flight-rules/hooks/) and run
 # install.sh once per clone.
 #
-# No bypass is printed. The note gate is what keeps unreviewed work out of the branch,
-# and a refusal that hands the reader a working skip — an assistant included, which no
-# guard stops from running it — undoes it; the one it used to print, `git merge
-# --no-verify`, failed mid-merge anyway (owner, 2026-10-26). Someone who means to
-# bypass a hook knows --no-verify (hooks/README.md, "What these hooks are").
+# The refusal prints its way through, FLIGHT_RULES_GO_AHEAD=1 in front of the command
+# that finishes what was refused — the person's to run, and said, and recorded in the
+# trailer, when it is used (#151). The agent guard refuses an assistant command that sets
+# it. The skip this used to print, `git merge --no-verify`, failed mid-merge (owner,
+# 2026-10-26), and is not printed.
 
 set -euo pipefail
 

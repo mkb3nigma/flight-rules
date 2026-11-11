@@ -33,7 +33,9 @@
 # skills/pre-merge-check/SKILL.md; skills/catalogue.test.sh fails until all three
 # match.
 #
-# Bypass — the owner's call, for a reviewed false positive:  git commit --no-verify
+# Way through — the person's call, for a reviewed false positive: the refusal prints
+# FLIGHT_RULES_GO_AHEAD=1 <the same command> (#151). `git commit --no-verify` also skips
+# this hook, and every other one with it.
 
 set -uo pipefail
 # Bytes, not characters: a staged binary or Latin-1 file must not make grep stop at

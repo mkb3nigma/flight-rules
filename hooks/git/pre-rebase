@@ -22,10 +22,11 @@
 # Install: commit this file into the project's hooks dir (e.g. .flight-rules/hooks/) and run
 # install.sh once per clone.
 #
-# No bypass is printed. `git rebase --no-verify` skips this hook, but where origin has
-# the branch the ref gate (reference-transaction) still refuses the rewrite, and
-# --no-verify does not reach that hook (fix review, 2026-10-26, as S4 found in
-# pre-merge-commit).
+# The refusal prints its way through, FLIGHT_RULES_GO_AHEAD=1 <the same command>, the
+# person's to run (#151). `git rebase --no-verify` is not one: it skips this hook, but
+# where origin has the branch the ref gate (reference-transaction) still refuses the
+# rewrite, and --no-verify does not reach that hook (fix review, 2026-10-26, as S4
+# found in pre-merge-commit).
 
 set -euo pipefail
 
