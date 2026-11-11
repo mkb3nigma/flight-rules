@@ -72,3 +72,17 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    git hooks are still copy-in — no plugin can set `core.hooksPath`. A project that
    hand-wires everything does use `.flight-rules/hooks/`; one that uses the plugin copies only
    `hooks/git/`.
+6. **Planning models plan and review; implementation is handed over** — where a project
+   names which of its models plan and review (the most capable, and costliest, tier)
+   and which implement, in its master rules, that is the regular course of work. A
+   planning model stops at the plan and hands the work over; it reviews what comes
+   back. The handover is an issue in the project's tracker carrying the plan — what
+   changes and where, the tests that must fail first, what is decided and what is still
+   open — or a handover file where an issue does not fit; a plan left only in a chat or
+   a model's memory is not one. Where the design is uncertain (a test may change it),
+   the planning model may run a short spike first and hands over with what it found.
+   The implementing model reports where it departed from the plan, and why, so the
+   review knows where to look. The person can override this for any task, and a small
+   direct ask — a doc line, filing an issue — is done by whoever is asked. The rule
+   names roles, not models: model names change within months, and the project names
+   its own. Advisory: a hook cannot tell planning from implementing.
