@@ -33,7 +33,7 @@ and the default worktree folder is `.flight-rules/worktrees/`. `.ai/skills/`,
 `.ai/rules/` and `.ai/master-rules.md` stay where they are. The conf and the hooks
 keep working before a project moves: every hook and skill reads `.ai/flight-rules.conf`
 where the new conf is absent, `core.hooksPath` goes on naming `.ai/hooks` and the sync
-updates the copies there, and a fresh clone's `install.sh` wires them there. The
+updates the copies there until the moved set exists beside them, and a fresh clone's `install.sh` wires them there. The
 worktree folder does not fall back: a project on the default puts its next worktree in
 `.flight-rules/worktrees/` (below). To move:
 

@@ -231,6 +231,19 @@ in_progress() {
 SYNC_MSG=$(
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
    && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ]; then
+  # Moved, and this clone still names the old folder: install.sh writes where
+  # core.hooksPath points, so each update landed in the folder the project left, a diff
+  # to commit there (owner, 2026-11-11, #162). Nothing run, nothing said, in any mode
+  # below: doctor's ❌ on this run gives the git config line. The state as doctor's
+  # `_old_named` decides it, so the two agree; the pattern in a variable for bash 3.2.
+  _ohp=$(git config --path core.hooksPath 2>/dev/null)
+  [ "${_ohp#/}" != "$_ohp" ] || _ohp="$PROJECT_ROOT/$_ohp"
+  _ohp="${_ohp%/}"; _dot='/./'; _ohp="${_ohp//"$_dot"//}"
+  if [ "$_ohp" = "$PROJECT_ROOT/.ai/hooks" ]; then
+    for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
+      [ -f "$PROJECT_ROOT/.flight-rules/hooks/$_h" ] && exit 0
+    done
+  fi
   # On a protected branch nothing is written: the diff could not be committed there,
   # and `git restore` to clear it is refused as discarding work, so it sat in the
   # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
