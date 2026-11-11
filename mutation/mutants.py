@@ -945,6 +945,11 @@ mut('D137', DOC, "   && ! grep -qE '^[[:space:]]*WORKTREE_DIR[[:space:]]*=' \"$C
 mut('D138', DOC, '; [[ ! -d "$ROOT/$_hd" && -d "$ROOT/.ai/hooks" ]] && _hd=.ai/hooks', '', 'install flight-rules-doctor', what='doctor: hooks committed in .ai/hooks are not named')
 mut('D139', DOC, '&& _mv=" — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"', '&& _mv=""', 'install flight-rules-doctor', what='doctor: a core.hooksPath left on .ai/hooks gets no command')
 
+# ---- #127: the doctor reads the conf with the hooks' reader.
+mut('D140', DOC, 'if [[ -z "$_prot" || "$_prot" == "off" || "$_prot" == "none" ]]; then', 'if [[ -z "$_prot" || "$_prot" == "off" ]]; then', 'install flight-rules-doctor', what='doctor: none derives a note gate')
+mut('D141', DOC, '_prot=$(read_conf PROTECTED_BRANCHES "$CONF")', '_prot=$(grep PROTECTED_BRANCHES "$CONF" | cut -d= -f2-)', 'install flight-rules-doctor', what='doctor: the protected set read raw, quotes and comment kept')
+mut('D142', DOC, '_pronly=$(read_conf PR_ONLY_BRANCHES "$CONF")', '_pronly=$(grep PR_ONLY_BRANCHES "$CONF" | cut -d= -f2-)', 'install flight-rules-doctor', what='doctor: the PR-only set read raw')
+
 # ---- mutation/mutants.py verify: the release review check's test of the stamp. Each
 # anchor is two literals, so it does not also occur in its own entry here.
 MP = 'mutation/mutants.py'

@@ -955,4 +955,23 @@ OUT=$(run "$D")
 say "$(grep -c 'core.hooksPath=.ai/hooks but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks' <<<"$OUT")" "1" "core.hooksPath still naming .ai/hooks after the move: said, with the command"
 rm -rf "$D"
 
+echo "The doctor reads the conf as the hooks do (#127):"
+say "$(sed -n '/^read_conf() {/,/^}/p' "$DOCTOR")" "$(sed -n '/^read_conf() {/,/^}/p' "$H/agent/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"
+while IFS='%' read -r desc line; do
+  D=$(mkrepo); printf '%s\nINTEGRATION_BRANCH=dev\n' "$line" > "$D/.flight-rules/conf"
+  OUT=$(run "$D")
+  say "$(grep -c 'PROTECTED_BRANCHES=.* — no protected branches in the agent guard' <<<"$OUT")" "1" "$desc: said to be off"
+  say "$(grep -c 'NOTE_GATED_BRANCHES unset — nothing is note-gated (no protected set)' <<<"$OUT")$(grep -c 'derived: protected' <<<"$OUT")" "10" "…with no derived note gate beside it"
+  rm -rf "$D"
+done <<'CASES'
+off with a comment after it%PROTECTED_BRANCHES=off  # trunk only
+off in single quotes%PROTECTED_BRANCHES='off'
+none%PROTECTED_BRANCHES=none
+CASES
+# A quoted protected set equal to the PR-only one, quoted otherwise, is the same set.
+D=$(mkrepo); printf 'PROTECTED_BRANCHES="^main$"\nPR_ONLY_BRANCHES='"'"'^main$'"'"'  # one branch\n' > "$D/.flight-rules/conf"
+OUT=$(run "$D")
+say "$(grep -c 'nothing is note-gated (every protected branch is PR-only)' <<<"$OUT")" "1" "the same pattern quoted two ways: every protected branch is PR-only"
+rm -rf "$D"
+
 finish
