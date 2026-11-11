@@ -979,6 +979,7 @@ mut('S117', PC, '  go_ahead "a commit the secret scan could not read ($what exit
 mut('S118', PC, 'is is the person\'s decision, never an assistant\'s own, and it is said when it is used:\n  FLIGHT_RULES_GO_AHEAD=1 <the same command>\n', 'is is the person\'s decision.\n', 'secret-scan merge-gate', what='secret scan: the refusal does not print the way through')
 mut('S119', PC, '  [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1', '  :', 'secret-scan merge-gate', what='secret scan: every stop goes ahead unasked')
 mut('D143', DOC, 'if [[ "${FLIGHT_RULES_GO_AHEAD-}" == 1 ]]; then', 'if false; then', 'install flight-rules-doctor', what='doctor: a way through left set is not said')
+mut('C76', CM, '        git interpret-trailers --in-place --if-exists replace \\\n', '        git interpret-trailers --in-place --if-exists doNothing \\\n', 'merge-gate secret-scan', what='note gate: going ahead keeps a Merge-authorisation line already in the message')
 
 # ---- mutation/mutants.py verify: the release review check's test of the stamp. Each
 # anchor is two literals, so it does not also occur in its own entry here.

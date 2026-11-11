@@ -488,8 +488,10 @@ _up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
 # so, where it can be found later. One command, where the route for a person working
 # alone was a note written by hand, tree hash and all (#149).
 if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, with no pre-merge-check note the gate takes"; then
-    if [ -n "${1:-}" ] && [ -f "$1" ] && [ -z "$(grep '^Merge-authorisation:' "$1")" ]; then
-        git interpret-trailers --in-place \
+    # Replacing one the message already carries: kept, a line written by hand ahead of
+    # the merge ("explicit") stood where this one belongs (commit security review, 2026-11-11).
+    if [ -n "${1:-}" ] && [ -f "$1" ]; then
+        git interpret-trailers --in-place --if-exists replace \
             --trailer "Merge-authorisation: went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)" "$1"
     fi
     exit 0
