@@ -324,11 +324,20 @@ if [[ ! -f "$CONF" && -f .ai/flight-rules.conf ]]; then
 elif [[ -f "$CONF" && -f .ai/flight-rules.conf ]]; then
   warn ".ai/flight-rules.conf is not read: .flight-rules/conf is there, and wins. Once nothing in it is missing from the new one, on a branch: git rm .ai/flight-rules.conf"
 fi
-# The default worktree folder moved with it. A project that never set WORKTREE_DIR and
-# has worktrees in the old one is told: the next would land in the new one, un-ignored.
-if [[ -n "$(ls -A .ai/worktrees 2>/dev/null)" && -z "${FLIGHT_RULES_WORKTREE_DIR-}" ]] \
+# The default worktree folder moved with it, and has no fallback (owner, 2026-11-11). A
+# project that never set WORKTREE_DIR puts its next worktree in .flight-rules/worktrees/;
+# un-ignored, that checkout shows in `git status` and goes in with a `git add -A`. Said
+# whenever the folder is not ignored — not only while .ai/worktrees/ held worktrees,
+# which left a project that had none untold (0.29.0 release review, D1).
+if [[ -z "${FLIGHT_RULES_WORKTREE_DIR-}" ]] \
    && ! grep -qE '^[[:space:]]*WORKTREE_DIR[[:space:]]*=' "$CONF" 2>/dev/null; then
-  warn "WORKTREE_DIR is not set and .ai/worktrees/ holds worktrees: the default is now .flight-rules/worktrees/. To go on using the old folder, set WORKTREE_DIR=.ai/worktrees in $CONF; to use the new one, add .flight-rules/worktrees/ to .gitignore"
+  git check-ignore -q .flight-rules/worktrees/x 2>/dev/null; _ig=$?
+  if [[ $_ig -eq 1 ]]; then
+    _old=""; [[ -n "$(ls -A .ai/worktrees 2>/dev/null)" ]] && _old=" The worktrees in .ai/worktrees/ stay where they are until they are removed."
+    warn "WORKTREE_DIR is not set, so new worktrees go to .flight-rules/worktrees/, which .gitignore does not cover. On a branch, add the line .flight-rules/worktrees/ to .gitignore — or set WORKTREE_DIR in $CONF to use another folder.$_old"
+  elif [[ $_ig -ne 0 ]]; then
+    warn "could not ask git whether .flight-rules/worktrees/ is ignored (git check-ignore exited $_ig)"
+  fi
 fi
 KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC OPEN_BRANCH_LIMIT DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
 if [[ ! -f "$CONF" ]]; then

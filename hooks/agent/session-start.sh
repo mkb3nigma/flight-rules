@@ -474,14 +474,16 @@ FOR_USER="$FOR_USER${FOR_USER:+${OPEN_MSG:+
 
 WORKTREES_DIR="$PROJECT_ROOT/$WORKTREE_DIR"
 
-REMINDER=$(
-if [ ! -d "$WORKTREES_DIR" ]; then
-  exit 0
-fi
+# .ai/worktrees/ was the default before 0.29.0, with no fallback after it: the worktrees
+# left there are still read, until they are gone, or they would be reminded of nowhere
+# (0.29.0 release review, D1).
+OLD_WORKTREE_DIR=.ai/worktrees
+[ "${WORKTREE_DIR%/}" = "$OLD_WORKTREE_DIR" ] && OLD_WORKTREE_DIR=""
 
+REMINDER=$(
 # Find worktrees whose branches have been merged into the integration branch
 STALE=""
-for WORKTREE_PATH in "$WORKTREES_DIR"/*/; do
+for WORKTREE_PATH in "$WORKTREES_DIR"/*/ ${OLD_WORKTREE_DIR:+"$PROJECT_ROOT/$OLD_WORKTREE_DIR"/*/}; do
   [ -d "$WORKTREE_PATH" ] || continue
 
   BRANCH=$(git -C "$WORKTREE_PATH" branch --show-current 2>/dev/null)
@@ -498,8 +500,8 @@ for WORKTREE_PATH in "$WORKTREES_DIR"/*/; do
   # reason: a bare name there resolves to the tag. (Found by review, 2026-09-12.)
   if git for-each-ref --format='%(refname:lstrip=2)' --merged "refs/heads/$INTEGRATION_BRANCH" refs/heads 2>/dev/null \
        | grep -qxF "$BRANCH"; then
-    WORKTREE_NAME=$(basename "$WORKTREE_PATH")
-    STALE="$STALE\n  Branch: $BRANCH  →  $WORKTREE_DIR/$WORKTREE_NAME"
+    WORKTREE_REL="${WORKTREE_PATH#"$PROJECT_ROOT"/}"
+    STALE="$STALE\n  Branch: $BRANCH  →  ${WORKTREE_REL%/}"
   fi
 done
 
@@ -508,7 +510,7 @@ if [ -n "$STALE" ]; then
   echo -e "$STALE"
   echo ""
   echo "Clean up with:"
-  echo "  git worktree remove $WORKTREE_DIR/<name>"
+  echo "  git worktree remove <the folder named above>"
   echo "  git branch -d <branch-name>"
 fi
 )

@@ -22,6 +22,7 @@ mkrepo() {
   git -C "$d" config core.hooksPath .flight-rules/hooks
   git -C "$d" config merge.ff false
   printf 'PROTECTED_BRANCHES=^main$\n' > "$d/.flight-rules/conf"
+  printf '.flight-rules/worktrees/\n' > "$d/.gitignore"   # as a healthy project has it (D1)
   # What every assertion assumes: a repo, and seven hooks that are there to be broken.
   [ -d "$d/.git" ] || die "no .git in the fixture at $d"
   for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
@@ -937,12 +938,21 @@ rm "$D/.ai/flight-rules.conf"
 OUT=$(run "$D")
 # By its sentences, not by ".ai/": a path the doctor prints may hold that itself.
 say "$(head -1 <<<"$OUT")$(grep -c 'flight-rules\.conf\|WORKTREE_DIR is not set\|the hooks moved' <<<"$OUT")" "00" "a project on the new places: exit 0, and no word of the old ones"
+# The new default folder has no fallback (owner, 2026-11-11): said whenever .gitignore
+# does not cover it, not only while .ai/worktrees/ held worktrees (D1).
+NOT_IGNORED='WORKTREE_DIR is not set, so new worktrees go to .flight-rules/worktrees/, which .gitignore does not cover. On a branch, add the line .flight-rules/worktrees/ to .gitignore'
+rm "$D/.gitignore"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c "$NOT_IGNORED" <<<"$OUT")$(grep -c 'stay where they are' <<<"$OUT")" "010" "the new worktree folder not ignored, and no old one: said, with the line to add"
 mkdir -p "$D/.ai/worktrees/x"
 OUT=$(run "$D")
-say "$(grep -c 'WORKTREE_DIR is not set and .ai/worktrees/ holds worktrees: the default is now .flight-rules/worktrees/' <<<"$OUT")" "1" "worktrees in the old default folder, WORKTREE_DIR unset: said, with both ways on"
-printf 'WORKTREE_DIR=.ai/worktrees\n' >> "$D/.flight-rules/conf"
+say "$(grep -c "$NOT_IGNORED" <<<"$OUT")$(grep -c 'The worktrees in .ai/worktrees/ stay where they are until they are removed' <<<"$OUT")" "11" "…with worktrees in the old folder: said, and that those stay"
+printf '.flight-rules/\n' > "$D/.gitignore"
 OUT=$(run "$D")
-say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…and nothing once WORKTREE_DIR is set"
+say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…and nothing once .gitignore covers it, here through its parent"
+rm "$D/.gitignore"; printf 'WORKTREE_DIR=.ai/worktrees\n' >> "$D/.flight-rules/conf"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…nor once WORKTREE_DIR is set"
 rm -rf "$D"
 # The hook copies: committed in the old folder, a fresh clone is pointed at those; a
 # clone that pulled the move still names the old folder, and git then runs no hooks.
