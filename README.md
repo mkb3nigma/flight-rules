@@ -82,6 +82,7 @@ Always-on principles a project's rules entry point points at.
 ## Skills
 
 Invocable workflows. In Claude Code they're slash commands; in any other tool they read as plain Markdown procedures.
+A **guide** is a skill with topic files beside it, read on demand: `/ux` loads only the topics a task needs.
 
 | Skill | Does | Reach for it when |
 |---|---|---|
@@ -89,6 +90,7 @@ Invocable workflows. In Claude Code they're slash commands; in any other tool th
 | [`/diagnose`](skills/diagnose/SKILL.md) | Structured debugging — reproduce, minimise, fix, verify | A bug you can't one-shot |
 | [`/feature-start`](skills/feature-start/SKILL.md) | Open a new branch as an isolated git worktree | Starting any unit of work |
 | [`/pre-merge-check`](skills/pre-merge-check/SKILL.md) | Automated pre-merge checklist — tests, secrets, docs-match-the-change, and more; stamps a git note the merge-gate verifies | Before merging a branch |
+| [`/ux`](skills/ux/SKILL.md) | Interface guidance — accessibility, states, forms and the basic UX principles, plus the project's design record; loads only the topics a task needs | Building or changing anything a person sees or operates |
 | [`/pr-create`](skills/pr-create/SKILL.md) | Push the branch and open a GitHub PR with the checklist in the body | Ready to raise a PR |
 | [`/commit`](skills/commit/SKILL.md) | Guarded commit — protected-branch, secret-scan, and test-coverage checks | Every commit |
 | [`/docs-lint`](skills/docs-lint/SKILL.md) | Health-check living docs for drift, contradictions, and stale claims | Docs start to rot |
