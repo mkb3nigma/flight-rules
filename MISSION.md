@@ -18,14 +18,14 @@ many projects and any assistant that reads Markdown. That is the whole job.
 The standard is one; the restraint is not. flight-rules reminds the developer and
 restrains the assistant. A hygiene slip is reminded of, never stopped. A catastrophe is
 stopped once, and the stop prints the one command that goes ahead anyway: a stop with
-its way through printed is not a block, and flight-rules never blocks the developer
-(owner, 2026-11-11, #152). The person takes the way through when they mean it; an
-assistant takes it only when the person says so.
+its way through printed is not a block, and flight-rules never blocks the developer.
+The person takes the way through when they mean it; an assistant takes it only when
+the person says so.
 
 It is not a security boundary (principle 1), and not a project's CI or its own checks:
-those live in that project — its pipeline, its `.ai/` extensions (#65). What it finds
+those live in that project — its pipeline, its `.ai/` extensions. What it finds
 left behind that it did not make — a container testing started — it names, and does not
-stop (#109).
+stop.
 
 ## What it holds to
 
@@ -64,7 +64,7 @@ stop (#109).
    and checks say nothing: a notice that repeats on every healthy run is noise, and
    noise hides the warning that matters. flight-rules' own automation — the sync, the
    doctor — makes no branch, worktree or file write for the developer to get round a
-   stop (#99). The assistant takes the legitimate route, and the way through only when
+   stop. The assistant takes the legitimate route, and the way through only when
    the person says so — going ahead is the person's decision — and pushes nothing
    unasked.
 
@@ -119,7 +119,7 @@ locally, the commit message of the change itself.
    cause, print the legitimate route where one exists, and print the one command that
    goes ahead anyway — each one a person can take without an assistant? What does the
    stop cost the person working alone, each time they meet it? An assistant's shortcut
-   warrants restraining the assistant, not a cost the person pays on every run (#149).
+   warrants restraining the assistant, not a cost the person pays on every run.
    When nothing needs doing, do its hooks and checks stay quiet, run after healthy run?
    A new or stricter stop on a plausible everyday command is the owner's call — name the
    commands it would stop, then ask.
