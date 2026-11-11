@@ -768,4 +768,19 @@ OUT=$(git -C "$D" commit -m "chore: direct" 2>&1); RC=$?
 say "$([ "$RC" -ne 0 ] && echo refused)$(grep -c 'PR_ONLY_BRANCHES in .ai/flight-rules.conf and pushes' <<<"$OUT")" "refused1" "a refusal under the old conf names it as the file that sets the policy"
 rm -rf "$(dirname "$D")"
 
+echo "A fetch that brings a PR-only branch to origin's new commit, in one transaction (#145):"
+D=$(make_repo default); git -C "$D" checkout -q feature/x
+o=$(dirname "$D")/o; git clone -q "$(dirname "$D")/up.git" "$o" 2>/dev/null || die "could not clone into $o"
+git -C "$o" config user.email t@t.t; git -C "$o" config user.name t
+echo up > "$o/up.txt"; git -C "$o" add -A; git -C "$o" commit -qm "chore: reviewed upstream" || die "could not commit in $o"
+git -C "$o" push -q origin main 2>/dev/null || die "could not push from $o"
+OUT=$(git -C "$D" fetch origin main:main 2>&1); RC=$?
+say "$RC$(grep -c 'PROTECTED BRANCH\|reference-transaction' <<<"$OUT")$(git -C "$D" log -1 --format=%s main)" "00chore: reviewed upstream" "fetch origin main:main, origin ahead and not yet fetched: not refused, and main brought up"
+say "$(git -C "$D" rev-parse main)" "$(git -C "$D" rev-parse origin/main)" "…to origin's commit exactly"
+# The upstream moving in the same transaction excuses only a commit on its new value.
+BEFORE=$(git -C "$D" rev-parse main); OFF=$(git -C "$D" rev-parse feature/x); UP=$(git -C "$D" rev-parse origin/main~1)
+OUT=$(printf 'update refs/remotes/origin/main %s\nupdate refs/heads/main %s\n' "$UP" "$OFF" | git -C "$D" update-ref --stdin 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && echo refused)$(git -C "$D" rev-parse main)" "refused$BEFORE" "…and one transaction moving both, main onto a commit origin's new value lacks: refused"
+rm -rf "$(dirname "$D")"
+
 finish

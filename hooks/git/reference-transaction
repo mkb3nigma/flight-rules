@@ -245,6 +245,11 @@ while read -r _old new ref; do
 
     # THE RULE.
     git merge-base --is-ancestor "$new" "$upstream" 2>/dev/null && continue
+    # …and where this transaction moves the upstream too, the upstream's new value:
+    # `git fetch origin main:main` updates both at once, and read before it lands,
+    # origin/main lacked the very commit main was brought to (#145). As warn_direct reads it.
+    _up=$(printf '%s\n' "$TX" | awk -v r="$upstream" '$3 == r { n = $2 } END { print n }')
+    [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 2>/dev/null && continue
 
     if [ "$_rc" -ne 0 ]; then
         {
