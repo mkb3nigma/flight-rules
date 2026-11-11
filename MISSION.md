@@ -13,7 +13,9 @@ overlook — a check not run, a doc left describing the old behaviour, a claim o
 with nothing behind it, a worktree left behind — and four catastrophes: a leaked key, a
 commit on a protected branch, a protected branch moved without review, work destroyed or
 history rewritten, either on a protected branch. It is one source of truth, consumed by
-many projects and any assistant that reads Markdown. That is the whole job.
+many projects and any assistant that reads Markdown. That is the core of the job.
+Beside it sit guides, loaded only when the work calls for one, which cost nothing to a
+project that never calls them.
 
 The standard is one; the restraint is not. flight-rules reminds the developer and
 restrains the assistant. A hygiene slip is reminded of, never stopped. A catastrophe is

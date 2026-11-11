@@ -111,3 +111,29 @@ contradiction/staleness checks by the LLM that maintains them is his.
 The skill-file conventions echo Anthropic's Claude Code skill/plugin format so the
 files double as plugin skills; the workflows themselves are original or attributed
 above.
+
+## skills/ux/ — interface guidance
+
+`accessibility.md` and part of `forms.md` follow the **[Web Content Accessibility
+Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/)** (W3C Recommendation, 12 December
+2024), level AA, citing each success criterion by number; the wording is this skill's
+own summary, not the specification's text, and the thresholds were read from it.
+
+`principles.md` and `states.md` restate published findings in their own words, each
+named with its source: Hick (1952) and Hyman (1953); Fitts (1954); the isolation effect
+(von Restorff 1933); the Gestalt principles, with common region (Palmer 1992) and
+uniform connectedness (Palmer and Rock 1994); working-memory capacity (Cowan 2001,
+revising Miller 1956); the serial position effect; the aesthetic-usability effect
+(Kurosu and Kashimura 1995); the peak-end rule (Kahneman); the goal-gradient effect
+(Kivetz, Urminsky and Zheng 2006); the Zeigarnik and Ovsiankina effects as weighed by
+Ghibellini and Meier (2025); response-time limits as given by Nielsen Norman Group;
+the Core Web Vitals responsiveness threshold (web.dev); Jakob's law (Nielsen);
+Tesler's law; Postel's robustness principle (RFC 761).
+
+The starting list was **[The UX laws in my CLAUDE.md](https://adamhayes.xyz/blog/the-ux-laws-in-my-claude-md)**
+by Adam Hayes (2026-09-01), which states no licence; no text is taken from it. What
+changed in the taking: accessibility, states and forms added; each rule labelled as a
+standard, a finding or a rule of thumb, with its limit; Miller's seven replaced by
+Cowan's three to five; the 0.4 s response figure replaced by the 0.1 / 1 / 10 s limits
+and the web's 200 ms threshold; the Zeigarnik effect kept only as resumption;
+Parkinson's law and Occam's razor left out as not interface findings.
