@@ -950,6 +950,10 @@ mut('D140', DOC, 'if [[ -z "$_prot" || "$_prot" == "off" || "$_prot" == "none" ]
 mut('D141', DOC, '_prot=$(read_conf PROTECTED_BRANCHES "$CONF")', '_prot=$(grep PROTECTED_BRANCHES "$CONF" | cut -d= -f2-)', 'install flight-rules-doctor', what='doctor: the protected set read raw, quotes and comment kept')
 mut('D142', DOC, '_pronly=$(read_conf PR_ONLY_BRANCHES "$CONF")', '_pronly=$(grep PR_ONLY_BRANCHES "$CONF" | cut -d= -f2-)', 'install flight-rules-doctor', what='doctor: the PR-only set read raw')
 
+# ---- #145: a fetch that moves a PR-only branch and its upstream in one transaction.
+mut('T80', RT, '    [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 2>/dev/null && continue', '    :', 'ref-gate merge-gate', what='ref gate: fetch origin main:main refused when origin is ahead')
+mut('T81', RT, '    [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 2>/dev/null && continue', '    [ -n "$_up" ] && continue', 'ref-gate merge-gate', what='ref gate: any move beside an upstream update is let through')
+
 # ---- mutation/mutants.py verify: the release review check's test of the stamp. Each
 # anchor is two literals, so it does not also occur in its own entry here.
 MP = 'mutation/mutants.py'
