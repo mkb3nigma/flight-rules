@@ -55,7 +55,7 @@ gates merges into protected branches and refuses a commit that stages a key,
 `hooks/agent/` stops the assistant committing,
 destroying or force-pushing a protected branch, or committing secrets. The agent guard
 ships with the plugin; the git hooks are copied in once per clone. Both read
-`.ai/flight-rules.conf` — see `hooks/README.md`. This repo runs those hooks on itself,
+`.flight-rules/conf` — see `hooks/README.md`. This repo runs those hooks on itself,
 straight from `hooks/` with no copy in between, so the rules repo obeys its own rules
 and cannot drift from them (CI runs the hook suites on macOS and Linux).
 
@@ -97,7 +97,7 @@ changes to fold in. It lives in this repo's `.claude/skills/` and does not ship.
 
 Then start a new session in the project. The first one shows a `flight-rules doctor`
 message with the command that installs the git hooks (the merge gate and the secret
-scan) into `.ai/hooks/`; run it and commit `.ai/hooks/`. A plugin cannot do this step
+scan) into `.flight-rules/hooks/`; run it and commit `.flight-rules/hooks/`. A plugin cannot do this step
 itself: the hooks are the project's own committed files, and Claude Code has no install
 event for a plugin to act on. Every other clone needs them wired once, because git config is
 per clone: its first session's doctor message prints the command (the plugin's
@@ -113,7 +113,7 @@ only when one starts. After `/reload-plugins` instead, your next prompt says the
 is on the new version and that a new session is what loads its rules and runs the checks. If a git hook is behind the new release, that session's doctor
 message prints the sync command with `--stale-only`: it replaces only copies identical
 to an older release, and leaves a hook you changed alone and names it. To have the sync run on its own,
-set `HOOK_SYNC=auto` in `.ai/flight-rules.conf` (see [Parameters](#parameters)). Each
+set `HOOK_SYNC=auto` in `.flight-rules/conf` (see [Parameters](#parameters)). Each
 release's
 [CHANGELOG](CHANGELOG.md) entry starts with anything the update needs from you.
 
@@ -137,8 +137,8 @@ skips an untrusted hook without a word. Or add the
 rules pointer below to the project's `AGENTS.md`. Neither tool runs
 flight-rules' agent hooks, so no doctor reminds you to wire the git hooks — the merge
 gate and the secret scan. Do it yourself: the first time in a project,
-`bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git` and commit `.ai/hooks/`;
-in every other clone, `bash .ai/hooks/install.sh`; after a plugin update, the first command again
+`bash <plugin>/hooks/git/install.sh --from <plugin>/hooks/git` and commit `.flight-rules/hooks/`;
+in every other clone, `bash .flight-rules/hooks/install.sh`; after a plugin update, the first command again
 (not `--stale-only`, which knows only Claude Code's plugin cache), then review the diff before
 committing: this form also replaces a hook you marked `# flight-rules: adapted`. `<plugin>` is
 `~/.codex/plugins/cache/flight-rules/flight-rules/<version>` or
@@ -167,7 +167,7 @@ the pattern [`multi-ai-setup`](rules/multi-ai-setup.md) principle 4 describes.
 ## Parameters
 
 Skills refer to placeholders rather than hardcoding a project's setup. The branch
-policy has **one home, `.ai/flight-rules.conf`**, the file the hooks read —
+policy has **one home, `.flight-rules/conf`**, the file the hooks read —
 `PROTECTED_BRANCHES`, `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`,
 `WORKTREE_DIR`, `MERGE_NEEDS_INSTRUCTION` — so the skills and the enforcement never disagree about which
 branches are protected. The rest lives in the skill's `EXTENSIONS.md`. The conf's other
@@ -180,7 +180,7 @@ settings — the hook sync, the open-branch limit, `/dg`'s — are in the
 | `{PR_ONLY_BRANCHES}` | branches that move only through a reviewed PR — no local merges | `^main$` | conf |
 | `{NOTE_GATED_BRANCHES}` | branches a merge into which needs a passing pre-merge-check note | `^(dev\|staging)$` | conf |
 | `{INTEGRATION_BRANCH}` | where feature branches merge | `dev` | conf |
-| `{WORKTREE_DIR}` | where feature worktrees live | `.ai/worktrees` | conf |
+| `{WORKTREE_DIR}` | where feature worktrees live | `.flight-rules/worktrees` | conf |
 | `{TEST_COMMANDS}` | the project's suites | `pytest` / `npm run test:run` | `EXTENSIONS.md` |
 | `{PLAYBOOK_PATH}`, `{LOCAL_RULES_DIRS}` | where `/rules-sync` finds the playbook and the project's local copies | `~/Projects/flight-rules`, `.ai/rules/` | `EXTENSIONS.md` |
 

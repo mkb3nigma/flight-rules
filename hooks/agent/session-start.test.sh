@@ -42,22 +42,22 @@ mkrepo() {
   git -C "$d" init -q -b trunk || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
   git -C "$d" config merge.ff false
-  mkdir -p "$d/.ai/hooks" "$d/.ai/worktrees"
+  mkdir -p "$d/.flight-rules/hooks" "$d/.flight-rules/worktrees"
   cp "$H/../git/pre-merge-commit" "$H/../git/commit-msg" "$H/../git/pre-rebase" \
-     "$H/../git/post-merge" "$H/../git/reference-transaction" "$H/../git/pre-commit" "$H/../git/pre-push" "$d/.ai/hooks/"
-  chmod +x "$d"/.ai/hooks/*
-  git -C "$d" config core.hooksPath .ai/hooks
-  printf 'INTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.ai/worktrees\nPROTECTED_BRANCHES=^trunk$\n' \
-    > "$d/.ai/flight-rules.conf"
+     "$H/../git/post-merge" "$H/../git/reference-transaction" "$H/../git/pre-commit" "$H/../git/pre-push" "$d/.flight-rules/hooks/"
+  chmod +x "$d"/.flight-rules/hooks/*
+  git -C "$d" config core.hooksPath .flight-rules/hooks
+  printf 'INTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.flight-rules/worktrees\nPROTECTED_BRANCHES=^trunk$\n' \
+    > "$d/.flight-rules/conf"
   mkdir -p "$d/.claude"
-  printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash .ai/hooks/agent/pre-commit-check.sh"}]}]}}' \
+  printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash .flight-rules/hooks/agent/pre-commit-check.sh"}]}]}}' \
     > "$d/.claude/settings.json"
-  mkdir -p "$d/.ai/hooks/agent"; cp "$H/pre-commit-check.sh" "$d/.ai/hooks/agent/"
+  mkdir -p "$d/.flight-rules/hooks/agent"; cp "$H/pre-commit-check.sh" "$d/.flight-rules/hooks/agent/"
   echo base > "$d/f.txt"; git -C "$d" add -A
   git -C "$d" commit -qm "chore: base" >/dev/null || die "the base commit failed in $d"
   # What every assertion assumes: trunk exists, and there is a worktree dir to scan.
   git -C "$d" rev-parse --verify -q trunk >/dev/null || die "no trunk in the fixture"
-  [ -d "$d/.ai/worktrees" ] || die "no worktree directory in the fixture"
+  [ -d "$d/.flight-rules/worktrees" ] || die "no worktree directory in the fixture"
   printf '%s' "$d"
 }
 # branch <dir> <name> [merge]  — create a branch with a commit; merge it if asked.
@@ -91,14 +91,14 @@ echo "Stale-worktree reminder names the worktrees that are actually merged:"
 D=$(mkrepo)
 branch "$D" fix/merged merge
 branch "$D" fix/open
-git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
-git -C "$D" worktree add -q "$D/.ai/worktrees/open" fix/open
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/merged" fix/merged
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/open" fix/open
 OUT=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "a merged branch's worktree is reported"
 say "$(grep -c 'Branch: fix/open' <<<"$OUT")"   "0" "an unmerged branch's worktree is not"
 rm -rf "$D"
 # FLIGHT_RULES_WORKTREE_DIR first, as the guard reads it: read from the conf alone, the
-# reminder looked in .ai/worktrees while the guard sent worktrees elsewhere (full
+# reminder looked in .flight-rules/worktrees while the guard sent worktrees elsewhere (full
 # release review, S6).
 D=$(mkrepo); branch "$D" fix/merged merge
 git -C "$D" worktree add -q "$D/elsewhere/merged" fix/merged
@@ -114,8 +114,8 @@ echo "A longer branch name is not the merged one (regression 2026-09-12):"
 D=$(mkrepo)
 branch "$D" fix/auth-tokens merge
 branch "$D" fix/auth
-git -C "$D" worktree add -q "$D/.ai/worktrees/tokens" fix/auth-tokens
-git -C "$D" worktree add -q "$D/.ai/worktrees/auth" fix/auth
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/tokens" fix/auth-tokens
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/auth" fix/auth
 OUT=$(run "$D")
 # Paired: an "X is absent" assertion is also satisfied by a hook that printed nothing,
 # so each one runs beside a "Y is present" assertion over the same output.
@@ -128,8 +128,8 @@ echo "A branch name is a name, not a pattern:"
 D=$(mkrepo)
 branch "$D" fix/axb merge
 branch "$D" fix/a.b
-git -C "$D" worktree add -q "$D/.ai/worktrees/axb" fix/axb
-git -C "$D" worktree add -q "$D/.ai/worktrees/dotted" fix/a.b
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/axb" fix/axb
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/dotted" fix/a.b
 OUT=$(run "$D")
 say "$(grep -c 'fix/axb' <<<"$OUT")" "1" "the merged fix/axb is reported"
 say "$(grep -c 'fix/a\.b' <<<"$OUT")" "0" "fix/a.b is not matched by the merged fix/axb"
@@ -148,7 +148,7 @@ branch "$D" fix/merged merge
 git -C "$D" tag fix/merged
 # trunk~1, before the merge: a `--merged` that resolved to the tag would then not see it.
 git -C "$D" tag trunk trunk~1
-git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/merged" fix/merged
 OUT=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "a merged worktree is still reported when tags shadow the branch names"
 say "$(grep -c 'heads/' <<<"$OUT")" "0" "no \`heads/\` prefix appears in the reminder"
@@ -160,7 +160,7 @@ echo "Nothing to say, nothing said:"
 quiet() { { raw "$1"; echo "rc=$?"; } | grep -vc '^rc=0$'; }
 D=$(mkrepo)
 branch "$D" fix/open
-git -C "$D" worktree add -q "$D/.ai/worktrees/open" fix/open
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/open" fix/open
 say "$(quiet "$D")" "0" "no merged worktrees → no output at all"
 rm -rf "$D"
 
@@ -168,14 +168,14 @@ D=$(mkrepo)
 say "$(quiet "$D")" "0" "an empty worktree directory → no output"
 rm -rf "$D"
 
-D=$(mkrepo); rmdir "$D/.ai/worktrees"
+D=$(mkrepo); rmdir "$D/.flight-rules/worktrees"
 say "$(quiet "$D")" "0" "no worktree directory at all → no output"
 rm -rf "$D"
 
 echo "Once a day, per project:"
 D=$(mkrepo)
 branch "$D" fix/merged merge
-git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/merged" fix/merged
 FIRST=$(run "$D")
 SECOND=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$FIRST")" "1" "the first run of the day reports"
@@ -184,7 +184,7 @@ say "$(grep -c . <<<"$SECOND" | tr -d ' ')" "0" "the second run of the day is si
 # reminder for every other project too.
 E=$(mkrepo)
 branch "$E" fix/merged merge
-git -C "$E" worktree add -q "$E/.ai/worktrees/merged" fix/merged
+git -C "$E" worktree add -q "$E/.flight-rules/worktrees/merged" fix/merged
 # deliberately the FIRST project's HOME, so the flag is the one already touched
 OTHER=$( (cd "$E" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) ); OTHER_RC=$?; OTHER=$(ctx <<<"$OTHER")
 [ $OTHER_RC -ne 0 ] && OTHER="HARNESS: the hook exited $OTHER_RC"
@@ -244,19 +244,19 @@ mkplugin() {
 stale() {
   mkdir -p "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git"
   { cat "$H/../git/$2"; echo "# flight-rules 0.0.1"; } > "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/$2"
-  cp "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/$2" "$1/.ai/hooks/$2"
+  cp "$1/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/$2" "$1/.flight-rules/hooks/$2"
 }
 PRUN() { { (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx; }
-T=$(mkplugin); D=$(mkrepo); stale "$D" commit-msg; echo "# own" >> "$D/.ai/hooks/post-merge"
-printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+T=$(mkplugin); D=$(mkrepo); stale "$D" commit-msg; echo "# own" >> "$D/.flight-rules/hooks/post-merge"
+printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 OUT=$(ctx <<<"$J")
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "the hook exits 0"
 say "$(grep -c 'HOOK_SYNC=auto updated git hooks' <<<"$OUT")" "1" "says it updated hooks"
 say "$(usr <<<"$J" | grep -c 'synced commit-msg')" "1" "…on the user's screen too, since the diff is theirs to commit"
 say "$(grep -c 'synced commit-msg (flight-rules 9.9.9)' <<<"$OUT")" "1" "…names the hook and the release"
-say "$(cmp -s "$D/.ai/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "the stale commit-msg is now the plugin's"
-say "$(grep -c '# own' "$D/.ai/hooks/post-merge")" "1" "the adapted post-merge is untouched"
+say "$(cmp -s "$D/.flight-rules/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "the stale commit-msg is now the plugin's"
+say "$(grep -c '# own' "$D/.flight-rules/hooks/post-merge")" "1" "the adapted post-merge is untouched"
 say "$(grep -c 'git hooks have uncommitted changes' <<<"$OUT")" "0" "…and the sync's own notice is not repeated as uncommitted changes"
 say "$(grep -c 'post-merge differs from this' <<<"$OUT")" "1" "…and doctor names it on the same run"
 say "$(grep -c 'commit-msg is the flight-rules' <<<"$OUT")" "0" "doctor no longer reports the synced hook stale"
@@ -264,14 +264,14 @@ rm -rf "$D"
 # Quoted, as doctor accepts it: doctor said ✅ auto and the hook only reported (0.27.0
 # release review).
 T2=$(mkplugin); D2=$(mkrepo); stale "$D2" commit-msg
-printf "HOOK_SYNC='auto'\nPROTECTED_BRANCHES=^main\$\n" >> "$D2/.ai/flight-rules.conf"
+printf "HOOK_SYNC='auto'\nPROTECTED_BRANCHES=^main\$\n" >> "$D2/.flight-rules/conf"
 J=$( (cd "$D2" && HOME="$D2/fakehome" bash "$T2/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(ctx <<<"$J" | grep -c 'HOOK_SYNC=auto updated git hooks')" "1" "HOOK_SYNC='auto', quoted, syncs as doctor reads it"
 rm -rf "$D2" "$T2"
 # A headless session syncs (the clone is protected at once) but its notice reaches no
 # screen, and the next attended session found the hooks current and said nothing of the
 # uncommitted diff (final release /dg, 2026-10-17). It now says so, on screen.
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
 OUT=$( { (cd "$D" && CLAUDE_CODE_SESSION_ATTENDED=0 HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
 say "$(grep -c 'synced commit-msg' <<<"$OUT")" "1" "headless, auto: the stale hook is synced"
@@ -280,8 +280,8 @@ J=$( (cd "$D" && env -u CLAUDE_CODE_SESSION_ATTENDED HOME="$D/fakehome" bash "$T
 say "$(ctx <<<"$J" | grep -c 'rc=0')" "1" "the attended session after it exits 0"
 say "$(ctx <<<"$J" | grep -c 'updated git hooks')" "0" "…finds nothing left to sync"
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…and says on screen the hooks have uncommitted changes"
-say "$(usr <<<"$J" | grep -c 'M .ai/hooks/commit-msg')" "1" "…naming the file"
-git -C "$D" add .ai/hooks && git -C "$D" commit -qm "chore: synced" --no-verify
+say "$(usr <<<"$J" | grep -c 'M .flight-rules/hooks/commit-msg')" "1" "…naming the file"
+git -C "$D" add .flight-rules/hooks && git -C "$D" commit -qm "chore: synced" --no-verify
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "…and once committed, says nothing"
@@ -295,7 +295,7 @@ say "$(grep -c 'updated git hooks' <<<"$OUT")" "0" "unset: nothing is synced"
 say "$(grep -c 'commit-msg is the flight-rules 0.0.1 copy' <<<"$OUT")" "1" "…and doctor reports the stale hook instead"
 rm -rf "$D"
 # auto with no hooks installed at all: that is the owner's install step, not a sync.
-D=$(mkrepo); git -C "$D" config --unset core.hooksPath; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); git -C "$D" config --unset core.hooksPath; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 OUT=$(PRUN)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, no core.hooksPath: the hook exits 0"
 say "$(grep -c 'updated git hooks\|could not update' <<<"$OUT")" "0" "…syncs nothing and reports no failure"
@@ -303,7 +303,7 @@ say "$(grep -c 'core.hooksPath is not set' <<<"$OUT")" "1" "…doctor says the h
 rm -rf "$D"
 # A GLOBAL core.hooksPath only: `git config core.hooksPath` said "set", and the sync
 # wrote the hooks into ~/.githooks (review, 2026-10-12). Local config is the gate.
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" config --unset core.hooksPath; mkdir -p "$D/fakehome/githooks"
 printf '[core]\n\thooksPath = %s\n' "$D/fakehome/githooks" > "$D/fakehome/.gitconfig"
 OUT=$(PRUN)
@@ -318,25 +318,25 @@ rm -rf "$D"
 # the main checkout, shared by every worktree. Not synced from here, and said as such
 # with the command for the main checkout — it read "outside this repository; sync it by
 # hand", and a downstream project's worktree sessions never synced (#87, 2026-10-18).
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
-git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
-git -C "$D" config core.hooksPath "$D/.ai/hooks"
-OUT=$( { (cd "$D/.ai/worktrees/wt" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/wt" -b fix/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.flight-rules/hooks"
+OUT=$( { (cd "$D/.flight-rules/worktrees/wt" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "auto, in a worktree, hooks in the main checkout: the hook exits 0"
 say "$(grep -c 'could not update the git hooks' <<<"$OUT")" "1" "…says it did not sync"
 say "$(grep -cF "is in the main checkout, $D," <<<"$OUT")" "1" "…because the hooks are the main checkout's"
 say "$(grep -c 'outside this repository' <<<"$OUT")" "0" "…not because they are outside the repository"
 say "$(grep -E '^[[:space:]]+bash ' <<<"$OUT" | grep -cF "bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks/git") --stale-only --this-checkout")" "1" "…and gives the command for this worktree's copy, its paths shell-quoted"
-say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" && echo stale)" "stale" "…leaving the main checkout's copy as it was"
+say "$(cmp -s "$D/.flight-rules/hooks/commit-msg" "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg" && echo stale)" "stale" "…leaving the main checkout's copy as it was"
 rm -rf "$D"
 # …and with every copy there current, nothing to say: the warning came every day
 # regardless (#93, 2026-10-21).
-D=$(mkrepo); cp "$H/../git/install.sh" "$D/.ai/hooks/"; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); cp "$H/../git/install.sh" "$D/.flight-rules/hooks/"; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
-git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
-git -C "$D" config core.hooksPath "$D/.ai/hooks"
-WT() { (cd "$D/.ai/worktrees/wt" && rm -f "$D"/fakehome/.claude/hooks/.worktree-check-* && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; }
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/wt" -b fix/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.flight-rules/hooks"
+WT() { (cd "$D/.flight-rules/worktrees/wt" && rm -f "$D"/fakehome/.claude/hooks/.worktree-check-* && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; }
 J=$(WT)
 say "$(grep -c 'could not update the git hooks\|main checkout' <<<"$J")" "0" "auto, in a worktree, current hooks in the main checkout: says nothing about the sync"
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "…exiting 0"
@@ -348,15 +348,15 @@ say "$(WT | usr | grep -c 'is in the main checkout')" "1" "…while one stale co
 # A worktree session asked `git status` about a path in the main checkout, which git
 # refuses (exit 128); 2>/dev/null made that "no uncommitted changes" (#93 batch review,
 # B8). It now asks from the directory that holds the hooks.
-cp "$H/../git/commit-msg" "$D/.ai/hooks/commit-msg"; git -C "$D" commit -qam "chore: current" --no-verify
-echo '# flight-rules: adapted' >> "$D/.ai/hooks/post-merge"
+cp "$H/../git/commit-msg" "$D/.flight-rules/hooks/commit-msg"; git -C "$D" commit -qam "chore: current" --no-verify
+echo '# flight-rules: adapted' >> "$D/.flight-rules/hooks/post-merge"
 J=$(WT)
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…an uncommitted change to a hook in the main checkout: said on screen from the worktree"
-say "$(usr <<<"$J" | grep -c 'M .ai/hooks/post-merge')" "1" "…naming the file"
+say "$(usr <<<"$J" | grep -c 'M .flight-rules/hooks/post-merge')" "1" "…naming the file"
 say "$(usr <<<"$J" | grep -cF "in $D")" "1" "…and the checkout it is in"
 # A status git cannot answer is said, with git's reason, not read as clean (second
 # review, C3): the main checkout's index corrupted, asked from the worktree.
-git -C "$D" checkout -q -- .ai/hooks/post-merge; cp "$D/.git/index" "$D/index.bak"; printf 'x' > "$D/.git/index"
+git -C "$D" checkout -q -- .flight-rules/hooks/post-merge; cp "$D/.git/index" "$D/index.bak"; printf 'x' > "$D/.git/index"
 J=$(WT)
 mv "$D/index.bak" "$D/.git/index"
 say "$(usr <<<"$J" | grep -c "could not fully check the git hooks in $D for uncommitted changes")" "1" "…a status that fails: said on screen as not checked, naming the checkout"
@@ -365,10 +365,10 @@ say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "…and 
 rm -rf "$D"
 # No install.sh in the main checkout at all — nothing needs it, and doctor does not
 # name it — was a "could not update" every day from every worktree (second review, C1).
-D=$(mkrepo); rm -f "$D/.ai/hooks/install.sh"; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); rm -f "$D/.flight-rules/hooks/install.sh"; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
-git -C "$D" worktree add -q "$D/.ai/worktrees/wt" -b fix/wt || die "could not add the worktree"
-git -C "$D" config core.hooksPath "$D/.ai/hooks"
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/wt" -b fix/wt || die "could not add the worktree"
+git -C "$D" config core.hooksPath "$D/.flight-rules/hooks"
 J=$(WT)
 say "$(grep -c 'could not update the git hooks\|main checkout\|install.sh: missing' <<<"$J")" "0" "auto, in a worktree, no install.sh in the main checkout, hooks current: says nothing about the sync"
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "…exiting 0"
@@ -381,21 +381,21 @@ rm -rf "$D"
 # check that did not see everything: said as such, with the warning. Read with stdout it
 # was shown as "uncommitted changes" (second review, C2); dropped, it was silence the
 # suite pinned (third review, E1). Root reads a mode-000 directory, so git never warns.
-D=$(mkrepo); cp "$H/../git/install.sh" "$D/.ai/hooks/"; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); cp "$H/../git/install.sh" "$D/.flight-rules/hooks/"; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: auto" --no-verify
-mkdir -p "$D/.ai/hooks/sub"; : > "$D/.ai/hooks/sub/x"; chmod 000 "$D/.ai/hooks/sub"
-if [ -r "$D/.ai/hooks/sub" ]; then
-  chmod 755 "$D/.ai/hooks/sub"
+mkdir -p "$D/.flight-rules/hooks/sub"; : > "$D/.flight-rules/hooks/sub/x"; chmod 000 "$D/.flight-rules/hooks/sub"
+if [ -r "$D/.flight-rules/hooks/sub" ]; then
+  chmod 755 "$D/.flight-rules/hooks/sub"
   echo "  ⏭️  a status that warns: skipped — running as root, a mode-000 directory is readable"
 else
   J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?" )
-  chmod 755 "$D/.ai/hooks/sub"
+  chmod 755 "$D/.flight-rules/hooks/sub"
   say "$(grep -c '^rc=0$' <<<"$J")" "1" "a status that warns but succeeds: session-start exits 0"
   say "$(usr <<<"$J" | grep -c 'could not fully check the git hooks for uncommitted changes')" "1" "…and says the hooks could not be fully checked"
   say "$(usr <<<"$J" | grep -c 'warning:')" "1" "…with git's warning"
   say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "0" "…not as uncommitted changes"
 fi
-rm -rf "$D/.ai/hooks/sub"; echo '# flight-rules: adapted' >> "$D/.ai/hooks/post-merge"
+rm -rf "$D/.flight-rules/hooks/sub"; echo '# flight-rules: adapted' >> "$D/.flight-rules/hooks/post-merge"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1) | usr | grep -c 'git hooks have uncommitted changes')" "1" "…while a real uncommitted change, same fixture, is still said"
 # status.branch=true adds a `## trunk` line to --short: taken for git saying something,
@@ -408,35 +408,35 @@ say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…stil
 say "$(usr <<<"$J" | grep -c 'could not fully check')" "0" "…and not that the hooks could not be checked"
 # status.showUntrackedFiles=no hid an untracked file there — a hook the sync copied in
 # (group A fix review, F12).
-git -C "$D" config status.branch false; git -C "$D" checkout -q -- .ai/hooks/post-merge
-git -C "$D" config status.showUntrackedFiles no; : > "$D/.ai/hooks/post-checkout"
+git -C "$D" config status.branch false; git -C "$D" checkout -q -- .flight-rules/hooks/post-merge
+git -C "$D" config status.showUntrackedFiles no; : > "$D/.flight-rules/hooks/post-checkout"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?" )
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "status.showUntrackedFiles=no: session-start exits 0"
 say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…still says the hooks directory has changes"
-say "$(usr <<<"$J" | grep -c '?? .ai/hooks/post-checkout')" "1" "…naming the untracked file"
+say "$(usr <<<"$J" | grep -c '?? .flight-rules/hooks/post-checkout')" "1" "…naming the untracked file"
 rm -rf "$D"
 # On a protected branch nothing is written: the diff could not be committed there, and
 # `git restore` was refused as discarding work, so it blocked the merge that would land
 # it (AppliHawk, 2026-10-21, #99). Compared only; behind is said, with the command for a
 # branch; current is silent. The fixture's trunk is protected (PROTECTED_BRANCHES=^trunk$).
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
-BEFORE=$(cksum < "$D/.ai/hooks/commit-msg")
+BEFORE=$(cksum < "$D/.flight-rules/hooks/commit-msg")
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "auto on a protected branch, a stale hook: exits 0"
 say "$(usr <<<"$J" | grep -c 'did not update the git hooks: this checkout is on "trunk", a protected branch')" "1" "…says on screen it did not update them, and why"
 say "$(usr <<<"$J" | grep -c 'commit-msg: the flight-rules 0.0.1 copy — stale')" "1" "…naming the stale hook"
 say "$(usr <<<"$J" | grep -c -- '--stale-only --this-checkout$')" "1" "…with the command for a worktree's branch"
-say "$(cksum < "$D/.ai/hooks/commit-msg")" "$BEFORE" "…writing nothing"
-say "$(git -C "$D" status --porcelain -- .ai/hooks | grep -c .)" "0" "…so the hooks have no uncommitted change"
-cp "$T/hooks/git/commit-msg" "$D/.ai/hooks/commit-msg"; git -C "$D" commit -qam "chore: current" --no-verify
+say "$(cksum < "$D/.flight-rules/hooks/commit-msg")" "$BEFORE" "…writing nothing"
+say "$(git -C "$D" status --porcelain -- .flight-rules/hooks | grep -c .)" "0" "…so the hooks have no uncommitted change"
+cp "$T/hooks/git/commit-msg" "$D/.flight-rules/hooks/commit-msg"; git -C "$D" commit -qam "chore: current" --no-verify
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "…every hook current: exits 0"
 say "$(grep -c 'HOOK_SYNC' <<<"$J")" "0" "…and says nothing about the sync"
 rm -rf "$D"
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=off\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=off\n' >> "$D/.flight-rules/conf"
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(ctx <<<"$J" | grep -c 'HOOK_SYNC=auto updated git hooks')" "1" "PROTECTED_BRANCHES=off: the branch policy is off, and the sync writes"
 rm -rf "$D"
@@ -456,14 +456,14 @@ say "$(sed -n '/^read_conf() {/,/^}/p' "$H/../git/post-merge")" \
 NCASE=0
 while IFS='%' read -r desc line br envv; do
   NCASE=$((NCASE+1))
-  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n%s\n' "$line" >> "$D/.ai/flight-rules.conf"
+  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\n%s\n' "$line" >> "$D/.flight-rules/conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
   [ "$br" = trunk ] || git -C "$D" checkout -qb "$br"
-  BEFORE=$(cksum < "$D/.ai/hooks/commit-msg")
+  BEFORE=$(cksum < "$D/.flight-rules/hooks/commit-msg")
   J=$( (cd "$D" && env $envv HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
   say "$(grep -c '^rc=0$' <<<"$J")" "1" "$desc: session-start exits 0"
   say "$(usr <<<"$J" | grep -c "this checkout is on \"$br\", a protected branch")" "1" "…the sync says the branch is protected"
-  say "$(cksum < "$D/.ai/hooks/commit-msg")" "$BEFORE" "…and writes nothing"
+  say "$(cksum < "$D/.flight-rules/hooks/commit-msg")" "$BEFORE" "…and writes nothing"
   G=$(cd "$D" && env $envv CLAUDE_PROJECT_DIR="$D" bash "$H/pre-commit-check.sh" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
   say "$(grep -c '"permissionDecision": *"deny"' <<<"$G")" "1" "…as the guard refuses a commit there"
   rm -rf "$D"
@@ -476,21 +476,21 @@ CASES
 say "$NCASE" "4" "…all four protected-branch cases ran"
 # A pattern bash cannot compile protects nothing to =~; the sync takes the branch as
 # protected and says the pattern is broken, rather than writing (fix review, F5).
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(trunk\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(trunk\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
-BEFORE=$(cksum < "$D/.ai/hooks/commit-msg")
+BEFORE=$(cksum < "$D/.flight-rules/hooks/commit-msg")
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(grep -c '^rc=0$' <<<"$J")" "1" "a pattern that does not compile: session-start exits 0"
 say "$(usr <<<"$J" | grep -c 'PROTECTED_BRANCHES (^(trunk) is not a pattern bash can read, so "trunk" is taken as protected')" "1" "…says the pattern is broken and the branch taken as protected"
-say "$(cksum < "$D/.ai/hooks/commit-msg")" "$BEFORE" "…and writes nothing"
+say "$(cksum < "$D/.flight-rules/hooks/commit-msg")" "$BEFORE" "…and writes nothing"
 # The fix is the owner's, as the guard says: "fix the pattern" told the assistant to edit
 # the setting the guard tells it not to (group A fix review, F10).
-say "$(usr <<<"$J" | grep -c "It is the project owner's to fix, in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it")" "1" "…leaves the fix to the project owner, in words that read right to them on screen"
+say "$(usr <<<"$J" | grep -c "It is the project owner's to fix, in .flight-rules/conf (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it")" "1" "…leaves the fix to the project owner, in words that read right to them on screen"
 say "$(usr <<<"$J" | grep -c 'Fix the pattern')" "0" "…not to the assistant"
 rm -rf "$D"
 # Behind is stale or missing; what the command leaves alone is listed apart, not as
 # behind beside a command that will not touch it (fix review, F3).
-D=$(mkrepo); stale "$D" commit-msg; echo "# own" >> "$D/.ai/hooks/post-merge"; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; echo "# own" >> "$D/.flight-rules/hooks/post-merge"; printf 'HOOK_SYNC=auto\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: stale" --no-verify
 J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 SEC=$(usr <<<"$J" | sed -n '/Behind or missing:$/,/^To update them/p')
@@ -500,10 +500,10 @@ say "$(usr <<<"$J" | sed -n '/^Left alone/,$p' | grep -c 'post-merge: differs')"
 rm -rf "$D"
 # A hook the sync could not read, nothing else to say: said, not silence that reads as
 # "current" (fix review, F4; Codex P2). Root reads a mode-000 file: skipped there.
-D=$(mkrepo); echo "# own" >> "$D/.ai/hooks/post-merge"; printf 'HOOK_SYNC=auto\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); echo "# own" >> "$D/.flight-rules/hooks/post-merge"; printf 'HOOK_SYNC=auto\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: own" --no-verify
-chmod 000 "$D/.ai/hooks/post-merge"
-if [ -r "$D/.ai/hooks/post-merge" ]; then
+chmod 000 "$D/.flight-rules/hooks/post-merge"
+if [ -r "$D/.flight-rules/hooks/post-merge" ]; then
   echo "  ⏭️  an unreadable hook: skipped — running as root, a mode-000 file is readable"
 else
   for br in trunk feature/x; do
@@ -516,16 +516,16 @@ else
   done
   # …and the uncommitted-changes check still runs beside it: an elif in the same chain,
   # the notice hid it (group A fix review, F2).
-  : > "$D/.ai/hooks/notes.txt"
+  : > "$D/.flight-rules/hooks/notes.txt"
   rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
   J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
   say "$(grep -c '^rc=0$' <<<"$J")" "1" "an unreadable hook and an uncommitted file: session-start exits 0"
   say "$(usr <<<"$J" | grep -c 'HOOK_SYNC=auto could not check every git hook')" "1" "…says a hook could not be checked"
   say "$(usr <<<"$J" | grep -c 'git hooks have uncommitted changes')" "1" "…and the uncommitted change too"
 fi
-chmod 644 "$D/.ai/hooks/post-merge"; rm -rf "$D"
+chmod 644 "$D/.flight-rules/hooks/post-merge"; rm -rf "$D"
 # Mid-merge: an unattended write to a tracked file is what makes --continue refuse.
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
 git -C "$D" checkout -qb feature/c; echo c > "$D/f.txt"; git -C "$D" commit -qam "chore: c" --no-verify
 git -C "$D" checkout -q trunk; echo t > "$D/f.txt"; git -C "$D" commit -qam "chore: t" --no-verify
@@ -550,7 +550,7 @@ say "$(grep -cxF "  bash $(shq "$T/hooks/git/install.sh") --from $(shq "$T/hooks
 # Mid-bisect HEAD is detached, so the current branch reads as none and the plain command
 # came back on a protected branch: the branch is read from git's own state (fix review,
 # 2026-10-26, G2). Its own repo; the mid-merge one above is used below.
-MD=$D; D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(main|trunk)$\n' >> "$D/.ai/flight-rules.conf"
+MD=$D; D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^(main|trunk)$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
 for i in 1 2 3; do git -C "$D" commit -q --allow-empty -m "chore: $i" --no-verify; done
 git -C "$D" bisect start trunk trunk~3 >/dev/null 2>&1 || die "could not start a bisect"
@@ -602,13 +602,13 @@ rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 OUT=$( { (cd "$D" && LC_ALL=$U8 FLIGHT_RULES_PROTECTED_BRANCHES='^(main|trunk)$' HOME="$D/fakehome" bash "$U/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
 CMD=$(grep -E '^  bash .*--stale-only --this-checkout$' <<<"$OUT" | head -1)
 say "$(bash() { printf '%s|' "$@"; }; eval "$CMD")" "$U/hooks/git/install.sh|--from|$U/hooks/git|--stale-only|--this-checkout|" "…the mid-merge worktree form, pasted, too"
-P2=$(mkrepo); stale "$P2" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$P2/.ai/flight-rules.conf"
+P2=$(mkrepo); stale "$P2" commit-msg; printf 'HOOK_SYNC=auto\n' >> "$P2/.flight-rules/conf"
 git -C "$P2" add -A >/dev/null; git -C "$P2" commit -qm "chore: stale" --no-verify
 CMD=$( (cd "$P2" && LC_ALL=$U8 HOME="$P2/fakehome" bash "$U/hooks/agent/session-start.sh" 2>&1) | usr | grep -E '^  bash .*--stale-only --this-checkout$' | head -1)
 say "$(bash() { printf '%s|' "$@"; }; eval "$CMD")" "$U/hooks/git/install.sh|--from|$U/hooks/git|--stale-only|--this-checkout|" "…and the protected-branch form"
 rm -rf "$D" "$P2" "$(dirname "$U")"
 # Mid-cherry-pick too, not only merge and rebase (release review, 2026-10-12).
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
 git -C "$D" checkout -qb feature/p; echo p > "$D/f.txt"; git -C "$D" commit -qam "chore: p" --no-verify
 git -C "$D" checkout -q trunk; echo t > "$D/f.txt"; git -C "$D" commit -qam "chore: t" --no-verify
@@ -623,7 +623,7 @@ rm -rf "$D"
 # stopped on a conflict, and the rebase directories git leaves — rebase-merge is the
 # interactive stop REBASE_HEAD misses, rebase-apply the am/apply one.
 for state in revert rebase-merge rebase-apply am sequencer bisect; do
-  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
   case "$state" in
     revert)
@@ -663,7 +663,7 @@ done
 # A REBASE_HEAD with no rebase directory is not a rebase: git leaves the file behind,
 # and one from March 2026 kept AppliHawk's hooks at 0.22.0 under 0.24.1, unsynced and
 # unsaid (2026-10-17). git status calls that state clean, and so does the sync.
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" rev-parse HEAD > "$(git -C "$D" rev-parse --absolute-git-dir)/REBASE_HEAD"
 [ -n "$(git -C "$D" rev-parse -q --verify REBASE_HEAD)" ] || die "could not leave a REBASE_HEAD"
 OUT=$(PRUN)
@@ -675,7 +675,7 @@ rm -rf "$D"
 # in progress: rev-parse --verify resolved them and the sync skipped (AppliHawk review,
 # 2026-10-17). The markers are files.
 for ref in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
-  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+  D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
   git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: hooks" --no-verify
   git -C "$D" branch "$ref" >/dev/null 2>&1; git -C "$D" rev-parse -q --verify "$ref" >/dev/null || die "no branch $ref"
   OUT=$(PRUN)
@@ -685,7 +685,7 @@ for ref in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
 done
 # A session-start.sh copied in by hand has no git/ beside it: silent on sync, still runs doctor.
 L=$(tmpd); mkdir -p "$L/hooks/agent"; cp "$HOOK" "$L/hooks/agent/"; cp "$H/../flight-rules-doctor.sh" "$L/hooks/"
-D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"; git -C "$D" config --unset merge.ff
+D=$(mkrepo); stale "$D" commit-msg; printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"; git -C "$D" config --unset merge.ff
 OUT=$( { (cd "$D" && HOME="$D/fakehome" bash "$L/hooks/agent/session-start.sh" 2>&1); echo "rc=$?"; } | ctx)
 say "$(grep -c 'rc=0' <<<"$OUT")" "1" "hand-wired, auto: the hook exits 0"
 say "$(grep -c 'updated git hooks\|could not update' <<<"$OUT")" "0" "…and says nothing about syncing"
@@ -705,20 +705,20 @@ say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: doc
 rm -rf "$D"
 # A ⚠️ alone stays off the screen: no conf is a choice in a main-only project, and a
 # warning only the project can silence would repeat every day (review, 2026-10-13).
-D=$(mkrepo); rm "$D/.ai/flight-rules.conf"
+D=$(mkrepo); rm "$D/.flight-rules/conf"
 J=$(raw "$D")
 say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "a ⚠️ warning reaches the assistant"
 say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on the user's screen for it"
 rm -rf "$D"
 # Beside a ❌, the ⚠️ is still kept off the screen.
-D=$(mkrepo); rm "$D/.ai/flight-rules.conf"; git -C "$D" config --unset merge.ff
+D=$(mkrepo); rm "$D/.flight-rules/conf"; git -C "$D" config --unset merge.ff
 J=$(raw "$D")
 say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "with a ❌ as well: the ❌ is on screen"
 say "$(usr <<<"$J" | grep -c 'flight-rules.conf absent')" "0" "…the ⚠️ is not"
 say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "…and the assistant has both"
 rm -rf "$D"
 D=$(mkrepo); branch "$D" fix/merged merge
-git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/merged" fix/merged
 J=$(raw "$D")
 say "$(ctx <<<"$J" | grep -c 'Branch: fix/merged')" "1" "the worktree reminder is in the assistant's context"
 say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on the user's screen for it"
@@ -770,16 +770,16 @@ for scope in local global; do
 done
 # flight-rules' hooks at core.hooksPath = ~/…: read raw, the path was joined to the repo
 # root, the gate was not found there, and an adopted project got no screen.
-F=$(mkrepo); rm "$F/.ai/flight-rules.conf"; git -C "$F" config --unset merge.ff
-mkdir -p "$F/fakehome/hk"; cp "$F"/.ai/hooks/pre-* "$F"/.ai/hooks/commit-msg "$F"/.ai/hooks/post-merge "$F"/.ai/hooks/reference-transaction "$F/fakehome/hk/"
+F=$(mkrepo); rm "$F/.flight-rules/conf"; git -C "$F" config --unset merge.ff
+mkdir -p "$F/fakehome/hk"; cp "$F"/.flight-rules/hooks/pre-* "$F"/.flight-rules/hooks/commit-msg "$F"/.flight-rules/hooks/post-merge "$F"/.flight-rules/hooks/reference-transaction "$F/fakehome/hk/"
 git -C "$F" config core.hooksPath '~/hk'
 J=$(raw "$F")
 say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "flight-rules' hooks at ~/hk: adopted, the ❌ is on screen"
 say "$(ctx <<<"$J" | grep -c 'does not exist')" "0" "…and the assistant is not told the path is missing"
 rm -rf "$F"
 # Committed flight-rules hooks beside another tool's GLOBAL hooksPath: counting
-# .ai/hooks/ as adoption put a daily `cp` into that tool's directory on screen.
-F=$(mkrepo); git -C "$F" config --unset core.hooksPath; rm "$F/.ai/flight-rules.conf"
+# .flight-rules/hooks/ as adoption put a daily `cp` into that tool's directory on screen.
+F=$(mkrepo); git -C "$F" config --unset core.hooksPath; rm "$F/.flight-rules/conf"
 mkdir -p "$F/fakehome/githooks"; printf '[core]\n\thooksPath = %s\n' "$F/fakehome/githooks" > "$F/fakehome/.gitconfig"
 J=$( (cd "$F" && HOME="$F/fakehome" bash "$HOOK" 2>/dev/null) )
 say "$(ctx <<<"$J" | grep -c 'missing from')" "7" "committed hooks + a foreign global hooksPath: the assistant is told"
@@ -795,13 +795,13 @@ rm -rf "$F"
 echo "The sync command reaches the screen only beside a ❌ about a hook copy:"
 # The ⚠️ that also asks for it is not shown, and a command next to an unrelated ❌ read
 # as an instruction with no reason (fix review, 2026-10-13).
-D=$(mkrepo); git -C "$D" config --unset merge.ff; echo "# my own tweak" >> "$D/.ai/hooks/post-merge"
+D=$(mkrepo); git -C "$D" config --unset merge.ff; echo "# my own tweak" >> "$D/.flight-rules/hooks/post-merge"
 J=$(raw "$D")
 say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "unrelated ❌ beside an adapted ⚠️: the ❌ is on screen"
 say "$(usr <<<"$J" | grep -c 'to update:')" "0" "…the sync command is not"
 say "$(ctx <<<"$J" | grep -c 'to update:')" "1" "…the assistant has it"
 rm -rf "$D"
-D=$(mkrepo); rm "$D/.ai/hooks/pre-commit"
+D=$(mkrepo); rm "$D/.flight-rules/hooks/pre-commit"
 say "$(raw "$D" | usr | grep -c 'to update: .*--stale-only')" "1" "a missing hook: the --stale-only sync command is on screen"
 rm -rf "$D"
 # The stale copy is the case this exists for (AppliHawk); the filter matches doctor's
@@ -860,8 +860,8 @@ rm -rf "$D" "$NJ"
 echo "A detached-HEAD worktree has no branch and is skipped:"
 D=$(mkrepo)
 branch "$D" fix/merged merge
-git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
-git -C "$D" worktree add -q --detach "$D/.ai/worktrees/detached"
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/merged" fix/merged
+git -C "$D" worktree add -q --detach "$D/.flight-rules/worktrees/detached"
 OUT=$(run "$D")
 say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "the merged worktree beside it is reported"
 say "$(grep -c 'detached' <<<"$OUT")" "0" "a detached worktree is not reported stale"
@@ -875,7 +875,7 @@ echo "After /reload-plugins, the next prompt says the session's version changed 
 # else (batch review, 2026-10-24: a prompt that ran the sync downgraded hooks from an
 # older session, and re-ran everything from a subdirectory).
 T=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T/.claude-plugin/plugin.json"
-D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify
 SF="$D/fakehome/.claude/hooks/.session-version-"
 # SS <session id> [dir] [plugin] [flag, default --plugin; "" for a hand-wired run]:
@@ -893,7 +893,7 @@ say "$(body "$J")" "0" "…saying nothing"
 say "$(cat "${SF}s-a" 2>/dev/null)" "1.0.0" "…and leaving the record as it was"
 # The update and reload: this session's hooks are now 1.0.1's; a git hook is behind.
 printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T/.claude-plugin/plugin.json"; stale "$D" commit-msg
-cp "$D/.ai/hooks/commit-msg" "$D/before-commit-msg"
+cp "$D/.flight-rules/hooks/commit-msg" "$D/before-commit-msg"
 J=$(UP s-a)
 say "$(rc "$J")" "rc=0" "the first prompt after the reload exits 0"
 say "$(grep -v '^rc=' <<<"$J" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit" "…answering as UserPromptSubmit"
@@ -901,7 +901,7 @@ say "$(usr <<<"$J" | grep -c 'flight-rules is now 1.0.1 in this session (it was 
 say "$(usr <<<"$J" | grep -c 'Start a new session to get both')" "1" "…and that a new session loads the rules and runs the checks"
 say "$(ctx <<<"$J" | grep -c 'its rules are not')" "1" "…telling the assistant too"
 say "$(ctx <<<"$J" | grep -c "Already on the user's screen with this prompt")" "1" "…which is told the user saw it"
-say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/before-commit-msg" && echo same)" "same" "…and syncs nothing: the stale hook waits for the new session"
+say "$(cmp -s "$D/.flight-rules/hooks/commit-msg" "$D/before-commit-msg" && echo same)" "same" "…and syncs nothing: the stale hook waits for the new session"
 say "$(usr <<<"$J" | grep -c 'merge.ff\|synced')" "0" "…nor runs doctor or the sync"
 say "$(cat "${SF}s-a" 2>/dev/null)" "1.0.1" "…and records the new version"
 J=$(UP s-a)
@@ -918,23 +918,23 @@ rm -rf "$D" "$T"
 # its prompts, on any day, change nothing and say nothing (it used to sync back down).
 T0=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.0" }\n' > "$T0/.claude-plugin/plugin.json"
 T1=$(mkplugin); printf '{ "name": "flight-rules", "version": "1.0.1" }\n' > "$T1/.claude-plugin/plugin.json"
-D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify
 SF="$D/fakehome/.claude/hooks/.session-version-"
 SS old "$D" "$T0" >/dev/null; SS new "$D" "$T1" >/dev/null
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*   # the next day: no daily flag
-before=$(git -C "$D" status --porcelain; find "$D/.ai/hooks" -type f -exec cksum {} + | sort)
+before=$(git -C "$D" status --porcelain; find "$D/.flight-rules/hooks" -type f -exec cksum {} + | sort)
 J=$(UP old "$D" "$T0")
 say "$(rc "$J")" "rc=0" "an older session's prompt the next day exits 0"
 say "$(body "$J")" "0" "…saying nothing: its own version has not changed"
-say "$( [ "$(git -C "$D" status --porcelain; find "$D/.ai/hooks" -type f -exec cksum {} + | sort)" = "$before" ] && echo same)" "same" "…and writing nothing in the project"
+say "$( [ "$(git -C "$D" status --porcelain; find "$D/.flight-rules/hooks" -type f -exec cksum {} + | sort)" = "$before" ] && echo same)" "same" "…and writing nothing in the project"
 say "$(ls -a "$D"/fakehome/.claude/hooks/ | grep -c '^\.worktree-check-')" "0" "…nor running the day's checks"
 # From a subdirectory or a worktree: the session is the same, and so is the answer.
-mkdir -p "$D/sub"; git -C "$D" worktree add -q "$D/.ai/worktrees/w" -b feat/w 2>/dev/null
+mkdir -p "$D/sub"; git -C "$D" worktree add -q "$D/.flight-rules/worktrees/w" -b feat/w 2>/dev/null
 J=$(UP new "$D/sub" "$T1")
 say "$(rc "$J")" "rc=0" "a prompt from a subdirectory exits 0"
 say "$(body "$J")" "0" "…saying nothing, running nothing"
-J=$(UP new "$D/.ai/worktrees/w" "$T1")
+J=$(UP new "$D/.flight-rules/worktrees/w" "$T1")
 say "$(rc "$J")" "rc=0" "a prompt from a worktree exits 0"
 say "$(body "$J")" "0" "…saying nothing, running nothing"
 say "$(ls -a "$D"/fakehome/.claude/hooks/ | grep -c '^\.worktree-check-')" "0" "…neither one spending a day's flag"
@@ -1010,20 +1010,20 @@ echo "OPEN_BRANCH_LIMIT warns when that many branches are open, and never blocks
 # open <repo> <name>: a worktree on a new branch off trunk, with a commit made there —
 # not branch(), whose `add -A` in the main checkout would commit the conf edits below.
 open() {
-  local w="$1/.ai/worktrees/${2//\//_}"
+  local w="$1/.flight-rules/worktrees/${2//\//_}"
   git -C "$1" worktree add -q -b "$2" "$w" trunk 2>/dev/null || die "could not add a worktree for $2"
   echo "$2" > "$w/open.txt"; git -C "$w" add open.txt
   git -C "$w" commit -qm "chore: on $2" --no-verify >/dev/null || die "could not commit on $2"
 }
 OB() { (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?"; }
-D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.flight-rules/conf"
 git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/a tree:$(git -C "$D" rev-parse 'fix/a^{tree}')" \
   -m "ran: ./test.sh → exit 0, 3 passed" fix/a || die "could not stamp fix/a"
 # A bare passed: is what the gate refuses (#107), so it is not waiting either.
 git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/b" fix/b || die "could not stamp fix/b"
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "at the limit: exits 0"
-say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…warns on screen, with the count, the limit and where it is set"
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .flight-rules/conf)')" "1" "…warns on screen, with the count, the limit and where it is set"
 say "$(usr <<<"$J" | grep -c '/feature-start asks before it opens another')" "1" "…saying /feature-start asks before opening more"
 say "$(usr <<<"$J" | grep -c 'waiting to merge: fix/a$')" "1" "…naming the stamped one as waiting to merge"
 say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/b$')" "1" "…and the other, whose bare passed: note the gate refuses, as not yet passed"
@@ -1033,7 +1033,7 @@ say "$(ctx <<<"$J" | grep -c "Already on the user's screen at session start: the
 # went with nothing said (full release review, S2).
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*; mkdir -p "$D/sub"
 J=$( (cd "$D/sub" && HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
-say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .ai/flight-rules.conf)')" "1" "…the same warning from a subdirectory of the project"
+say "$(usr <<<"$J" | grep -c '2 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 2, in .flight-rules/conf)')" "1" "…the same warning from a subdirectory of the project"
 # Set from the environment, it says so: raising the conf's value would change nothing.
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=2 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
@@ -1041,7 +1041,7 @@ say "$(usr <<<"$J" | grep -c '(OPEN_BRANCH_LIMIT is 2, from FLIGHT_RULES_OPEN_BR
 rm -rf "$D"
 # Waiting needs both halves of what the gate takes (#107): a note on the tip's tree with no
 # ran: line, and a ran: line on a note for an older tree, are each not yet passed.
-D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.flight-rules/conf"
 git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/a tree:$(git -C "$D" rev-parse 'fix/a^{tree}')" fix/a || die "could not stamp fix/a"
 git -C "$D" notes --ref=pre-merge-check add -m "passed: 2026-10-24T00:00:00Z branch:fix/b tree:$(git -C "$D" rev-parse 'trunk^{tree}')" \
   -m "ran: ./test.sh → exit 0, 3 passed" fix/b || die "could not stamp fix/b"
@@ -1050,48 +1050,48 @@ say "$(usr <<<"$J" | grep -c 'Not yet passed: fix/a fix/b$')" "1" "no ran: line,
 rm -rf "$D"
 # Below the limit, nothing — paired with the exit status and with the same run's
 # reminder, so a hook that died cannot pass it. A merged branch is not open.
-D=$(mkrepo); branch "$D" fix/m merge; git -C "$D" worktree add -q "$D/.ai/worktrees/m" fix/m
-open "$D" fix/a; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); branch "$D" fix/m merge; git -C "$D" worktree add -q "$D/.flight-rules/worktrees/m" fix/m
+open "$D" fix/a; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.flight-rules/conf"
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "one open and one merged, limit 2: exits 0"
 say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports (the merged worktree's reminder)"
 say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-branch warning"
 # The default is 5; the environment comes first; off stands it down.
 open "$D" fix/b; open "$D" fix/c; open "$D" fix/d
-sed -i.bak '/OPEN_BRANCH_LIMIT/d' "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+sed -i.bak '/OPEN_BRANCH_LIMIT/d' "$D/.flight-rules/conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "four open, no setting: exits 0"
 say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports (the merged worktree's reminder)"
 say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no warning (default 5)"
 open "$D" fix/e; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
-say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 5, in .ai/flight-rules.conf)')" "1" "…five: the warning"
+say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 5, in .flight-rules/conf)')" "1" "…five: the warning"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$( (cd "$D" && FLIGHT_RULES_OPEN_BRANCH_LIMIT=9 HOME="$D/fakehome" bash "$HOOK" 2>/dev/null); echo "rc=$?")
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "…FLIGHT_RULES_OPEN_BRANCH_LIMIT=9: exits 0"
 say "$(ctx <<<"$J" | grep -c 'Branch: fix/m')" "1" "…the run reports"
 say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and the environment overrides the default"
-printf 'OPEN_BRANCH_LIMIT=off\n' >> "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+printf 'OPEN_BRANCH_LIMIT=off\n' >> "$D/.flight-rules/conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "OPEN_BRANCH_LIMIT=off: exits 0"
 say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no warning"
-sed -i.bak 's/OPEN_BRANCH_LIMIT=off/OPEN_BRANCH_LIMIT=lots/' "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+sed -i.bak 's/OPEN_BRANCH_LIMIT=off/OPEN_BRANCH_LIMIT=lots/' "$D/.flight-rules/conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$(OB | usr | grep -c 'OPEN_BRANCH_LIMIT is 5,')" "1" "…a value that is not a number is taken as 5"
 # Quoted, as doctor accepts it: doctor said ✅ 2 and the hook ran at 5 (batch review).
-sed -i.bak "s/OPEN_BRANCH_LIMIT=lots/OPEN_BRANCH_LIMIT='3'/" "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+sed -i.bak "s/OPEN_BRANCH_LIMIT=lots/OPEN_BRANCH_LIMIT='3'/" "$D/.flight-rules/conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 3,')" "1" "…a quoted '3' is read as 3, as doctor reads it"
 # …and so is a quoted INTEGRATION_BRANCH: kept with its quotes, it named no branch, and
 # the count was "not made" while doctor showed ✅ (0.27.0 release review).
-printf "INTEGRATION_BRANCH='trunk'\n" >> "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+printf "INTEGRATION_BRANCH='trunk'\n" >> "$D/.flight-rules/conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 say "$(OB | usr | grep -c '5 branches are open and not yet merged into trunk (OPEN_BRANCH_LIMIT is 3,')" "1" "…a quoted INTEGRATION_BRANCH is read as doctor reads it"
 # A protected branch is not open work: main ahead of trunk after a release is not.
-printf 'PROTECTED_BRANCHES=^(trunk|rel)$\nOPEN_BRANCH_LIMIT=5\n' >> "$D/.ai/flight-rules.conf"; open "$D" rel
+printf 'PROTECTED_BRANCHES=^(trunk|rel)$\nOPEN_BRANCH_LIMIT=5\n' >> "$D/.flight-rules/conf"; open "$D" rel
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$(OB)
 say "$(usr <<<"$J" | grep -c '5 branches are open')" "1" "a protected branch is not counted: five open, not six"
 say "$(usr <<<"$J" | grep -cE ' rel( |$)')" "0" "…and it is not named"
 # A protected pattern that does not compile protects, as the sync takes it; doctor's ❌
 # says so on the same run.
-sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.ai/flight-rules.conf"; printf 'PROTECTED_BRANCHES=^(trunk\n' >> "$D/.ai/flight-rules.conf"
+sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.flight-rules/conf"; printf 'PROTECTED_BRANCHES=^(trunk\n' >> "$D/.flight-rules/conf"
 rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "PROTECTED_BRANCHES that does not compile: exits 0"
@@ -1101,7 +1101,7 @@ say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT: the protected pattern does not 
 # Without the conf, the project does not use flight-rules: not told how to run branches.
 # A main for the default INTEGRATION_BRANCH to find, so it is the conf that silences it.
 git -C "$D" branch main trunk || die "could not make main"
-rm "$D/.ai/flight-rules.conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+rm "$D/.flight-rules/conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "no conf: exits 0"
 say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "…the run reports (doctor's warning)"
@@ -1109,7 +1109,7 @@ say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-bra
 rm -rf "$D"
 # A clone with no local integration branch counts against origin's; with neither, the
 # assistant is told the count was not made — never silence that reads as "under".
-D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.flight-rules/conf"
 git -C "$D" update-ref refs/remotes/origin/trunk trunk; git -C "$D" checkout -q -b elsewhere
 git -C "$D" branch -D trunk >/dev/null || die "could not drop the local trunk"
 J=$(OB)
@@ -1149,7 +1149,7 @@ fs_count() {   # fs_count <repo> <{PROTECTED_BRANCHES} as substituted>: the bran
   (cd "$1" && unset FLIGHT_RULES_PROTECTED_BRANCHES && in_shells "$s") | sort | tr '\n' ' '
 }
 D=$(mkrepo); open "$D" fix/domain-model; open "$D" staging; open "$D" fix/turn-off-x
-sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.ai/flight-rules.conf"; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.ai/flight-rules.conf"
+sed -i.bak '/^PROTECTED_BRANCHES=/d' "$D/.flight-rules/conf"; printf 'OPEN_BRANCH_LIMIT=2\n' >> "$D/.flight-rules/conf"
 say "$(fs_count "$D" '')" "fix/domain-model fix/turn-off-x " "unset: the hooks' anchored default leaves out staging, and only staging"
 J=$(OB)
 say "$(usr <<<"$J" | grep -c '2 branches are open')" "1" "…the two session-start counts"
@@ -1158,7 +1158,7 @@ rm -rf "$D"
 # Merged by PR: in origin's integration branch, not yet in the local one, which
 # /feature-start fetches past and never moves. Counted against local trunk alone, every
 # such branch stayed open, and five of them stopped /feature-start (full release review, A2).
-D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=1\n' >> "$D/.ai/flight-rules.conf"
+D=$(mkrepo); open "$D" fix/a; open "$D" fix/b; printf 'OPEN_BRANCH_LIMIT=1\n' >> "$D/.flight-rules/conf"
 PR=$(git -C "$D" commit-tree -p trunk -p fix/a -m "Merge pull request #1" 'fix/a^{tree}') || die "could not make the PR merge"
 git -C "$D" update-ref refs/remotes/origin/trunk "$PR" || die "could not set origin/trunk"
 J=$(OB)

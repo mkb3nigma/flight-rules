@@ -140,7 +140,7 @@ jobs:
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          route="from a clean worktree of it — git worktree add --detach .ai/worktrees/mutation $HEAD_SHA (one left from an earlier run: git worktree remove .ai/worktrees/mutation first), then mutation/run.sh -j 4 there — and push the stamp it writes: git push origin refs/notes/mutation. A pushed note starts no check, so then re-run this one (Re-run jobs, on the PR's Checks tab) or edit the PR body, which re-runs it"
+          route="from a clean worktree of it — git worktree add --detach .flight-rules/worktrees/mutation $HEAD_SHA (one left from an earlier run: git worktree remove .flight-rules/worktrees/mutation first), then mutation/run.sh -j 4 there — and push the stamp it writes: git push origin refs/notes/mutation. A pushed note starts no check, so then re-run this one (Re-run jobs, on the PR's Checks tab) or edit the PR body, which re-runs it"
           if ! git fetch -q origin refs/notes/mutation:refs/notes/mutation; then
             echo "::error::no mutation stamps on origin (refs/notes/mutation not pushed, or not fetched: git's message is above) — run the kit $route"
             exit 1

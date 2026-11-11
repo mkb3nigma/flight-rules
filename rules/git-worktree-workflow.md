@@ -5,7 +5,7 @@ Branch discipline for AI-assisted development. Parameterized: a project defines
 through a reviewed PR), `{NOTE_GATED_BRANCHES}` (a local merge needs a passing
 `pre-merge-check` note — unset, this is *protected but not PR-only*),
 `{INTEGRATION_BRANCH}` (where feature work merges), and `{WORKTREE_DIR}`
-(e.g. `.ai/worktrees/`). All five live in `.ai/flight-rules.conf`.
+(e.g. `.flight-rules/worktrees/`). All five live in `.flight-rules/conf`.
 
 ## Why worktrees
 
@@ -181,11 +181,11 @@ git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR
 ## Enforcement (optional but recommended)
 
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
-Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
+Commit the hooks into the project (e.g. `.flight-rules/hooks/`) and point git at them once per clone:
 
 - The git hooks in `hooks/git/` — install all of them: `install.sh` refuses an incomplete
   set, then sets `core.hooksPath` and `merge.ff false` (a fast-forward creates no merge
-  commit, so without it no gate hook fires). They read `.ai/flight-rules.conf` from a
+  commit, so without it no gate hook fires). They read `.flight-rules/conf` from a
   state the incoming branch cannot edit, so a branch cannot relax the rule judging it.
   One entry per hook: `hooks/README.md` → *Git hooks*.
 - `hooks/agent/pre-commit-check.sh`, the assistant-side guard — commits, tree

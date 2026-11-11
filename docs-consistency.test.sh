@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Do this repo's DOCUMENTS agree with each other, with .ai/flight-rules.conf, and with CI?
+# Do this repo's DOCUMENTS agree with each other, with .flight-rules/conf, and with CI?
 #
 # Every other suite tests code. Three findings in the 0.22.0 release candidate were not
 # code — they were prose in CLAUDE.md, skills/pr-create/SKILL.md and
@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT" || exit 1
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hooks/test-lib.sh" || exit 2
 
-CONF=.ai/flight-rules.conf
+CONF=.flight-rules/conf
 [ -r "$CONF" ] || { printf '  ❌ harness: %s is not readable — nothing below was tested\n' "$CONF" >&2; exit 2; }
 conf() { sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\"[:space:]#]+)\"?.*$/\1/p" "$CONF" | tail -1; }
 
@@ -327,7 +327,7 @@ NOPE	killed	suite"                                                              
   H=$HS; stamp "$(clean "$HS")" >"$SD/good"; stamp "$(clean "$HS")" "/^$FIRST	/d" >"$SD/short"
   "${G[@]}" -C "$ORG" commit -q --allow-empty -m later && "${G[@]}" -C "$ORG" notes --ref=mutation add -F "$SD/good" HEAD || die "could not stamp the later commit"
   OUT=$(mstep); RC=$?
-  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q "worktree add --detach .ai/worktrees/mutation $HS" <<<"$OUT" && ok "…fails when only another commit is stamped, printing the run" || bad "the stamp step passes another commit's stamp (exit $RC: $OUT)"
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q "worktree add --detach .flight-rules/worktrees/mutation $HS" <<<"$OUT" && ok "…fails when only another commit is stamped, printing the run" || bad "the stamp step passes another commit's stamp (exit $RC: $OUT)"
   "${G[@]}" -C "$ORG" notes --ref=mutation add -f -F "$SD/short" "$HS" || die "could not stamp the head"
   OUT=$(mstep); RC=$?
   [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q "$FIRST: no row" <<<"$OUT" && ok "…fails a stamp that does not hold, naming why" || bad "the stamp step passes a short stamp (exit $RC: $OUT)"

@@ -11,7 +11,7 @@ Read `.ai/skills/pre-merge-check/EXTENSIONS.md` first if the project has one: ex
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
+come **only** from `.flight-rules/conf`, the file the hooks read — an extension
 restating one is invisible to enforcement, so the conf wins.
 
 Run every automated check before merging a feature branch into its destination
@@ -55,7 +55,7 @@ locally with no PR, its commit messages.
    begins `++ ` (#77). Prefer the guard's live source: the first of
    `${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh`,
    `~/.claude/plugins/cache/*/flight-rules/*/hooks/agent/pre-commit-check.sh` (highest
-   version), `.ai/hooks/agent/pre-commit-check.sh`, `hooks/agent/pre-commit-check.sh`
+   version), `.flight-rules/hooks/agent/pre-commit-check.sh`, `hooks/agent/pre-commit-check.sh`
    that exists — the `hit '…'` lines, the `.env` rule, the credential-literal grep.
    **If none exists, scan with the list below rather than skipping the check** — in a
    plugin install `CLAUDE_PLUGIN_ROOT` is not exported to your shell and none of the

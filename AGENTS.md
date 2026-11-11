@@ -10,7 +10,7 @@ file is for every assistant; `CLAUDE.md` and `GEMINI.md` import it.
 
 ## Parameters
 
-`.ai/flight-rules.conf` is the single home for the branch policy. It also sets
+`.flight-rules/conf` is the single home for the branch policy. It also sets
 `DG_COMIC_PR=always`: this repo's release PRs carry the `/dg` comic, to show it in use
 (the default elsewhere is `never` — `hooks/README.md` → Configuration). Summary:
 
@@ -20,12 +20,12 @@ file is for every assistant; `CLAUDE.md` and `GEMINI.md` import it.
 | `{PR_ONLY_BRANCHES}` | `main` — no local merges; it moves only through a reviewed PR |
 | `{NOTE_GATED_BRANCHES}` | `dev` — a local merge needs a `pre-merge-check` note on the branch being merged |
 | `{INTEGRATION_BRANCH}` | `dev` — work integrates here; `main` is the released state |
-| `{WORKTREE_DIR}` | `.ai/worktrees/` (git-ignored) |
+| `{WORKTREE_DIR}` | `.flight-rules/worktrees/` (git-ignored) |
 | `{TEST_COMMANDS}` | `hooks/agent/pre-commit-check.test.sh`, `hooks/agent/session-start.test.sh`, `hooks/git/merge-gate.test.sh`, `hooks/git/ref-gate.test.sh`, `hooks/git/secret-scan.test.sh`, `hooks/git/install.test.sh`, `hooks/flight-rules-doctor.test.sh`, `hooks/wiring.test.sh`, `skills/catalogue.test.sh`, `docs-consistency.test.sh` — no arguments, no network |
 
 Every change: `/feature-start <prefix>/<slug>` — `git fetch origin`, origin pulled into
 local `dev`, the open-branch count (`OPEN_BRANCH_LIMIT`, asked at the limit), then `git
-worktree add .ai/worktrees/<slug> -b <prefix>/<slug> dev`; a raw `worktree add` skips the
+worktree add .flight-rules/worktrees/<slug> -b <prefix>/<slug> dev`; a raw `worktree add` skips the
 count — and commit there; the owner pushes it. Then, **as the owner** (the assistant
 too, under the standing OK below), merge it into `dev` locally — stamp the
 `pre-merge-check` note on the branch tip and `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge`
@@ -100,7 +100,7 @@ The hooks this repo ships are the hooks it runs — the agent hooks are wired fr
 git config core.hooksPath hooks/git && git config merge.ff false
 ```
 
-There is deliberately no `.ai/hooks/` copy: a copy drifted once (it was the pre-conf,
+There is deliberately no `.flight-rules/hooks/` copy: a copy drifted once (it was the pre-conf,
 commit-only guard for weeks) and the rules repo cannot afford to run stale rules on
 itself. If a change to a hook needs a matching change to what this repo runs, it
 happens in the same commit, because they are the same file.

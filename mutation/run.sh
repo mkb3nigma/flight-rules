@@ -102,7 +102,7 @@ if [ "$REPO" -eq 1 ]; then
     (cd "$ROOT" && python3 -I -c 'import os, sys
 sys.stdout.write("".join(f + "\0" for f in sys.stdin.read().split("\0") if f and os.path.lexists(f)))' <"$W/tracked" | tar --null -T - -cf -)
 else
-    (cd "$ROOT" && tar -cf - --exclude ./.git --exclude ./.ai/worktrees .)
+    (cd "$ROOT" && tar -cf - --exclude ./.git --exclude ./.flight-rules/worktrees .)
 fi | (cd "$W/base" && tar -xf -) || { echo "❌ could not copy $ROOT" >&2; exit 2; }
 python3 -I "$W/base/mutation/mutants.py" list "$@" >"$W/list" || { echo "❌ mutants.py list failed" >&2; exit 2; }
 N=$(wc -l <"$W/list" | tr -d ' ')
@@ -136,7 +136,7 @@ echo "mutation: $N mutant(s) from $FROM, -j $J, work in $W"
 if [ -n "$DIRTY" ]; then
     printf '%s\n' "⚠️  these differ from the commit, so the release review check will not take this run:" "$DIRTY" \
         "   for a release, run it from a clean worktree of the commit (mutation/README.md):" \
-        "   git worktree add --detach .ai/worktrees/mutation $(git -C "$ROOT" rev-parse HEAD)"
+        "   git worktree add --detach .flight-rules/worktrees/mutation $(git -C "$ROOT" rev-parse HEAD)"
 fi
 
 # Baseline: every suite the selection uses must pass on the unmutated copy.

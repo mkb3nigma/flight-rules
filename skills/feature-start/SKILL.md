@@ -12,12 +12,12 @@ Read `.ai/skills/feature-start/EXTENSIONS.md` first if the project has one: extr
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
+come **only** from `.flight-rules/conf`, the file the hooks read — an extension
 restating one is invisible to enforcement, so the conf wins.
 
 Create a new branch as a git worktree per `rules/git-worktree-workflow.md`.
 Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`
-(defaults: the hooks' anchored list, `^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)` / `main` / `.ai/worktrees/`).
+(defaults: the hooks' anchored list, `^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)` / `main` / `.flight-rules/worktrees/`).
 
 ## Rules (non-negotiable)
 - NEVER `git checkout -b` / `git switch -c` — always `git worktree add`
@@ -111,7 +111,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      `{INTEGRATION_BRANCH}`, skip fetch and reconcile, say so.
 5. **Count the open branches — past the limit, ask.** The limit is
    `FLIGHT_RULES_OPEN_BRANCH_LIMIT` if set, else `OPEN_BRANCH_LIMIT` in
-   `.ai/flight-rules.conf` (unset or not a positive whole number: 5; `off`: skip this
+   `.flight-rules/conf` (unset or not a positive whole number: 5; `off`: skip this
    step) — as `session-start` reads it. Open means a branch checked out in a worktree
    with commits in neither the local `{INTEGRATION_BRANCH}` nor
    `origin/{INTEGRATION_BRANCH}` — against the local one alone, every branch merged by PR
@@ -147,7 +147,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    review, 2026-10-24). At or over the limit, show the person how many are open and
    which, which of them have a passing note (`git notes --ref=pre-merge-check show
    <branch>`: `passed:` with the tip's `tree:`, and a `ran:` line) and only wait to merge, and say where the limit is set:
-   *"OPEN_BRANCH_LIMIT is <n> in .ai/flight-rules.conf — raise it, or set it to off,
+   *"OPEN_BRANCH_LIMIT is <n> in .flight-rules/conf — raise it, or set it to off,
    there"* (or that `FLIGHT_RULES_OPEN_BRANCH_LIMIT` set it). Create the branch only once
    they say it is okay. Under the limit, say nothing. With no one to ask, create
    nothing and report the count as the blocker — a question that cannot be put is not

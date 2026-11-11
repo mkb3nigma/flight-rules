@@ -266,8 +266,8 @@ echo "The notice names the commit coming in and prescribes no command (final rel
 CM_SRC="$(dirname "$HOOK_SRC")/commit-msg"
 gated() {   # gated <repo>: the real commit-msg, and the branch note-gated in the committed conf
   cp "$CM_SRC" "$1/.hooks/commit-msg" && chmod +x "$1/.hooks/commit-msg" || die "could not install commit-msg"
-  mkdir -p "$1/.ai" && printf 'PROTECTED_BRANCHES=^feature$\nNOTE_GATED_BRANCHES=^feature$\n' > "$1/.ai/flight-rules.conf"
-  git -C "$1" add .ai && git -C "$1" commit -qm conf --no-verify || die "could not commit the conf"
+  mkdir -p "$1/.flight-rules" && printf 'PROTECTED_BRANCHES=^feature$\nNOTE_GATED_BRANCHES=^feature$\n' > "$1/.flight-rules/conf"
+  git -C "$1" add .flight-rules && git -C "$1" commit -qm conf --no-verify || die "could not commit the conf"
 }
 for how in leftover refused leftover-gated; do
   R=$(make_repo armed)

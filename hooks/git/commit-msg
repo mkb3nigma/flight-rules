@@ -16,11 +16,11 @@
 # Configuration — first match wins:
 #   1. Environment              FLIGHT_RULES_NOTE_GATED_BRANCHES='^(dev|staging)$'
 #                               FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
-#   2. .ai/flight-rules.conf **as committed on the merge target** (see below)
+#   2. .flight-rules/conf **as committed on the merge target** (see below)
 #   3. The defaults below
 # Parsed as data, never sourced, so a cloned repo cannot execute code here.
 #
-# ⚠️ The conf is read from `HEAD:.ai/flight-rules.conf` — the merge TARGET's committed
+# ⚠️ The conf is read from `HEAD:.flight-rules/conf` — the merge TARGET's committed
 #    state — NOT from the working tree. During a merge git updates the working tree
 #    before this hook runs, so a working-tree read would hand the incoming branch
 #    control over the gate that judges it: a branch shipping
@@ -34,7 +34,7 @@
 #    uncommitted config edit SHOULD take effect immediately. Only the merge gate has
 #    to resist the thing it is gating.
 #
-# Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
+# Install: commit this file into the project's hooks dir (e.g. .flight-rules/hooks/) and run
 # install.sh once per clone.
 #
 # No bypass is printed. The note gate is what keeps unreviewed work out of the branch,
@@ -54,7 +54,7 @@ set -euo pipefail
 # derived rather than named. An explicit NOTE_GATED_BRANCHES still wins.
 DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
 DEFAULT_PR_ONLY='^main$'
-CONF_PATH='.ai/flight-rules.conf'   # repo-relative
+CONF_PATH='.flight-rules/conf'   # repo-relative
 
 read_conf_at_head() {
   local key="$1" path="$2" content
@@ -123,7 +123,7 @@ broken_box() {
     box_row "  $2"
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
-    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "The project owner fixes it in .flight-rules/conf, on a"
     box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
     box_row "has landed, and if $4 is not a branch it means,"
     box_row "give the pattern meant in front of this command:"
@@ -417,7 +417,7 @@ if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then
         box_row ""
         box_row "If this project does not want the check, its owner"
         box_row "sets MERGE_NEEDS_INSTRUCTION=off in"
-        box_row "  .ai/flight-rules.conf"
+        box_row "  .flight-rules/conf"
         box_row "That is the owner's call — do not set it yourself."
         box_row ""
         box_row "Undo this half-finished merge:   git merge --abort"
@@ -486,7 +486,7 @@ if [ -n "$BROKEN" ]; then
     # (#103 review): a sync merge into a feature branch had no route here at all.
     box_row "Gated because $BROKEN ($BROKEN_RE)"
     box_row "does not compile: every branch is taken as gated until"
-    box_row "the project owner fixes it (.ai/flight-rules.conf, or"
+    box_row "the project owner fixes it (.flight-rules/conf, or"
     box_row "FLIGHT_RULES_$BROKEN in the environment). If"
     box_row "$CURRENT_BRANCH is not a branch it means, give the pattern"
     box_row "meant in front of the command:"

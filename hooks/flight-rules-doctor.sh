@@ -110,17 +110,17 @@ if [[ -z "$HOOKS_PATH" ]]; then
   # commit any script under that name, and this line is on the user's screen in
   # flight-rules' voice (security review, 2026-10-13). core.hooksPath and merge.ff are
   # per-clone config.
-  if [[ -f "$ROOT/.ai/hooks/pre-merge-commit" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
+  if [[ -f "$ROOT/.flight-rules/hooks/pre-merge-commit" && -f "$GIT_HOOKS_SRC/install.sh" ]]; then
     # install.sh refuses a set missing any of the seven (a 0.22.0 one has no pre-commit),
     # so name the copy first rather than print a command that fails (fix review).
     _cp=""
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
-      [[ -f "$ROOT/.ai/hooks/$h" ]] || _cp="$_cp$(printf 'cp %s %s/ && ' "$(shq "$GIT_HOOKS_SRC/$h")" "$(shq "$ROOT/.ai/hooks")")"
+      [[ -f "$ROOT/.flight-rules/hooks/$h" ]] || _cp="$_cp$(printf 'cp %s %s/ && ' "$(shq "$GIT_HOOKS_SRC/$h")" "$(shq "$ROOT/.flight-rules/hooks")")"
     done
     [[ -n "$_cp" ]] && _cp_note=" Commit the hooks it copies in, so the next clone has them."
-    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .ai/hooks/. To wire them up: %sbash %s   (git config is per clone; it also sets merge.ff false.%s Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$_cp" "$(shq "$GIT_HOOKS_SRC/install.sh")" "${_cp_note:-}")"
+    bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in .flight-rules/hooks/. To wire them up: %sbash %s   (git config is per clone; it also sets merge.ff false.%s Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$_cp" "$(shq "$GIT_HOOKS_SRC/install.sh")" "${_cp_note:-}")"
   elif [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
-    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .ai/hooks/: bash %s --from %s   (it also sets merge.ff false; then commit .ai/hooks/)' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")")"
+    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .flight-rules/hooks/: bash %s --from %s   (it also sets merge.ff false; then commit .flight-rules/hooks/)' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")")"
   else
     bad "core.hooksPath is not set — the merge gate is not installed (flight-rules' hooks/git/install.sh, or: git config core.hooksPath <dir>)"
   fi
@@ -267,7 +267,7 @@ else
       # --this-checkout and "on a branch": the plain form, run in a main checkout on a
       # protected branch, left a diff that could not be committed or cleared there, and
       # from a worktree it sent the user back to that checkout (#99, 2026-10-21).
-      printf '     to update: bash %s --from %s --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in .ai/flight-rules.conf runs this in the first session each day and after an update)\n' \
+      printf '     to update: bash %s --from %s --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in .flight-rules/conf runs this in the first session each day and after an update)\n' \
         "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"
     fi
     # pre-commit and pre-push run their .local only if it is executable, and skip it
@@ -292,7 +292,7 @@ elif command -v python3 >/dev/null 2>&1; then ok "python3 on PATH (jq fallback)"
 else bad "neither jq nor python3 on PATH — the agent guard will deny every git command"; fi
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
-CONF=".ai/flight-rules.conf"
+CONF=".flight-rules/conf"
 KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC OPEN_BRANCH_LIMIT DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
 if [[ ! -f "$CONF" ]]; then
   warn "$CONF absent — every hook and skill is on its built-in default (fine for main-only trunk; otherwise create it)"
@@ -467,8 +467,8 @@ if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
 elif [[ $PLUGIN_ON -eq 1 ]]; then ok "agent guard via the plugin"
 elif [[ $LOCAL_WIRED -eq 1 ]]; then
   ok "agent guard via .claude/settings.json"
-  if [[ -f .ai/hooks/agent/pre-commit-check.sh ]] && ! grep -q 'read_conf' .ai/hooks/agent/pre-commit-check.sh; then
-    bad ".ai/hooks/agent/pre-commit-check.sh is a pre-conf copy of the guard — it matches 'git commit' as a substring and knows no other command; replace it with the current hooks/agent/ version"
+  if [[ -f .flight-rules/hooks/agent/pre-commit-check.sh ]] && ! grep -q 'read_conf' .flight-rules/hooks/agent/pre-commit-check.sh; then
+    bad ".flight-rules/hooks/agent/pre-commit-check.sh is a pre-conf copy of the guard — it matches 'git commit' as a substring and knows no other command; replace it with the current hooks/agent/ version"
   fi
 else
   warn "no agent guard wired: neither the plugin nor .claude/settings.json runs pre-commit-check.sh — only the git hooks are protecting you"

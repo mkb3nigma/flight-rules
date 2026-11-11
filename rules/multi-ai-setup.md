@@ -67,5 +67,5 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    **with the plugin the agent hooks are already
    live from the plugin directory, and a local copy makes the guard run twice.** The
    git hooks are still copy-in — no plugin can set `core.hooksPath`. A project that
-   hand-wires everything does use `.ai/hooks/`; one that uses the plugin copies only
+   hand-wires everything does use `.flight-rules/hooks/`; one that uses the plugin copies only
    `hooks/git/`.

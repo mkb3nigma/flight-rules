@@ -12,12 +12,12 @@ Read `.ai/skills/pr-create/EXTENSIONS.md` first if the project has one: extra or
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
+come **only** from `.flight-rules/conf`, the file the hooks read — an extension
 restating one is invisible to enforcement, so the conf wins.
 
 Open a GitHub PR for the current feature branch. Project parameters:
 `{INTEGRATION_BRANCH}`, `{PROTECTED_BRANCHES}`, `{WORKTREE_DIR}`, `{TEST_COMMANDS}`
-(defaults: `main` / `main` / `.ai/worktrees/` / the project's test commands).
+(defaults: `main` / `main` / `.flight-rules/worktrees/` / the project's test commands).
 
 ## Constraints
 - Never open a PR from one of `{PROTECTED_BRANCHES}` — **except the release PR**, whose

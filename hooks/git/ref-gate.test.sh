@@ -29,11 +29,11 @@ make_repo() {
     git -C "$d" config user.name t
     git -C "$d" config merge.ff false
     if [ "$conf" != "none" ]; then
-        mkdir -p "$d/.ai"
+        mkdir -p "$d/.flight-rules"
         if [ "$conf" = "default" ]; then
-            printf 'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^main$\n' > "$d/.ai/flight-rules.conf"
+            printf 'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^main$\n' > "$d/.flight-rules/conf"
         else
-            printf '%s\n' "$conf" > "$d/.ai/flight-rules.conf"
+            printf '%s\n' "$conf" > "$d/.flight-rules/conf"
         fi
     fi
     echo base > "$d/f.txt"; git -C "$d" add -A; git -C "$d" commit -qm "chore: base"
@@ -300,7 +300,7 @@ conf_case "no conf at all falls back to ^main\$"   "none"                      b
 # The working-tree conf must NOT lift the gate: editing it is the bypass the agent
 # guard's own block message advertises, and this hook is the backstop for that.
 D=$(make_repo default armed); off_main "$D"
-printf 'PR_ONLY_BRANCHES=^nothing$\n' > "$D/.ai/flight-rules.conf"
+printf 'PR_ONLY_BRANCHES=^nothing$\n' > "$D/.flight-rules/conf"
 git -C "$D" branch -f main "$(git -C "$D" rev-parse feature/x)" >/dev/null 2>&1
 if escaped "$D"; then
     FAIL=$((FAIL+1)); printf '  ❌ a working-tree conf edit lifted the gate\n'
@@ -358,7 +358,7 @@ offline() {
 cd_row() { grep -A1 'Do this instead' <<<"$1" | sed -n '2s/^║ *//p' | sed 's/ *║$//'; }
 echo "The refusal's route starts where the guard and /feature-start start (full release review, S3; 0.29.0 R-1):"
 # With no start point the suggested worktree branch was cut from HEAD, the PR-only
-# branch itself, into a fixed .ai/worktrees whatever WORKTREE_DIR said.
+# branch itself, into a fixed .flight-rules/worktrees whatever WORKTREE_DIR said.
 d=$(make_repo "$(printf 'PR_ONLY_BRANCHES=^main$\nPROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\nWORKTREE_DIR=wt')" armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1); RC=$?
 say "$([ "$RC" -ne 0 ] && ! escaped "$d" && echo refused)" "refused" "a commit on main is refused, and main stays on origin/main"
@@ -453,7 +453,7 @@ say "$(route "$OUT") $(grep -c 'which is gone: moved' <<<"$OUT")" "$CHAIN 1" "�
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the fetch runs"
 d=$(make_repo default armed)
 OUT=$(cd "$d" && git commit -q --allow-empty -m "chore: direct" 2>&1)
-say "$(route "$OUT")" "git pull --ff --no-rebase origin main && \\ git worktree add .ai/worktrees/<name> \\ -b <prefix>/<name> main" "…with neither set: .ai/worktrees, off the local main, pulled where the root holds it"
+say "$(route "$OUT")" "git pull --ff --no-rebase origin main && \\ git worktree add .flight-rules/worktrees/<name> \\ -b <prefix>/<name> main" "…with neither set: .flight-rules/worktrees, off the local main, pulled where the root holds it"
 say "$(offline "$d" "$OUT")" "refused none" "…offline, nothing past the pull runs"
 # The `cd` failing — the repo moved, a slip — stops the rows too: unchained, the pull and
 # the add ran in whatever repo the shell was in, and cut a branch there (T-1).

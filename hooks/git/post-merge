@@ -8,7 +8,7 @@
 #
 # Adapt the parameters below, commit into the repo, install via install.sh.
 
-# Parameters from .ai/flight-rules.conf when it has them (the working tree is fine
+# Parameters from .flight-rules/conf when it has them (the working tree is fine
 # here — this hook reports, it gates nothing), else the values below.
 # read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
 # so a key reads here as the guard and doctor read it (session-start.test.sh compares).
@@ -22,7 +22,7 @@ read_conf() {
     | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
-_conf() { read_conf "$1" "$(git rev-parse --show-toplevel)/.ai/flight-rules.conf"; }
+_conf() { read_conf "$1" "$(git rev-parse --show-toplevel)/.flight-rules/conf"; }
 INTEGRATION_BRANCH=$(_conf INTEGRATION_BRANCH)
 INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # project parameter: {INTEGRATION_BRANCH}
 # {PROTECTED_BRANCHES}: which branches must never be offered for deletion. This used
