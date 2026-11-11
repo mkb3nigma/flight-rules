@@ -173,7 +173,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    failed by step 2's check, and the dependency scan has reported. A pre-reviewer
    left running in the background while the debate went on finished after the verdict,
    and its findings reached no round (2026-10-18). The wait has a limit,
-   `DG_WAIT_MINUTES` in `.flight-rules/conf` (default 15; read like step 6's keys):
+   `DG_WAIT_MINUTES` in the conf (default 15; read like step 6's keys):
    a run with no result that long after it started is stopped and counts as failed —
    step 2's fallback, then `⚠️ unavailable — no result in <n>m` (for the scan, `⚠️ not
    run — no result in <n>m`). A timeout an extension gives its own pre-reviewer is an
@@ -196,7 +196,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    different order. The 0.25.0 release review went straight from the debate to fixes:
    the verdict reached only the PR body, and the comic was never offered (2026-10-17).
 
-6. **Comic strip, first** — two settings in `.flight-rules/conf`, read like every
+6. **Comic strip, first** — two settings in the conf (`.flight-rules/conf`, or
+   `.ai/flight-rules.conf` where that is absent), read like every
    other key there (unset, no conf, or any other value: the default — `flight-rules-doctor.sh`
    warns about the value):
    - `DG_COMIC` — `always` (default) or `never`. With `always` the reply carries the

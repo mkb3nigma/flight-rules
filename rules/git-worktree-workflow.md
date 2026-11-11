@@ -5,7 +5,8 @@ Branch discipline for AI-assisted development. Parameterized: a project defines
 through a reviewed PR), `{NOTE_GATED_BRANCHES}` (a local merge needs a passing
 `pre-merge-check` note — unset, this is *protected but not PR-only*),
 `{INTEGRATION_BRANCH}` (where feature work merges), and `{WORKTREE_DIR}`
-(e.g. `.flight-rules/worktrees/`). All five live in `.flight-rules/conf`.
+(e.g. `.flight-rules/worktrees/`). All five live in `.flight-rules/conf` — or, where that is
+absent, in `.ai/flight-rules.conf`, the hooks reading it as well.
 
 ## Why worktrees
 

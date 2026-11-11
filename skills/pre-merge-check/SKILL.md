@@ -11,8 +11,9 @@ Read `.ai/skills/pre-merge-check/EXTENSIONS.md` first if the project has one: ex
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.flight-rules/conf`, the file the hooks read — an extension
-restating one is invisible to enforcement, so the conf wins.
+come **only** from the conf the hooks read — `.flight-rules/conf`, or, where that is
+absent, `.ai/flight-rules.conf` (a project not yet moved) — an extension restating one
+is invisible to enforcement, so the conf wins.
 
 Run every automated check before merging a feature branch into its destination
 (default: `{INTEGRATION_BRANCH}`). Prints a pass/fail report and stamps a git note when
