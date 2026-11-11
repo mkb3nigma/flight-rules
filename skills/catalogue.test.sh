@@ -187,4 +187,16 @@ for s in $(grep -oE '/[a-z-]+' .claude-plugin/plugin.json | tr -d / | sort -u); 
 done
 ok "plugin.json mentions only shipped skills"
 
+# The hooks read .ai/flight-rules.conf where .flight-rules/conf is absent; a skill or rule
+# naming only the new path ran on built-in defaults in a project not yet moved, while its
+# hooks kept the project's policy (0.29.0 release review, M1).
+echo "Every skill or rule that names the conf names the old path it falls back to:"
+n=0
+for f in $(grep -rl '\.flight-rules/conf' skills rules); do
+  n=$((n+1))
+  grep -q '\.ai/flight-rules\.conf' "$f" || bad "$f names .flight-rules/conf but not the .ai/flight-rules.conf fallback"
+done
+[ "$n" -gt 0 ] || bad "no skill or rule names .flight-rules/conf — the check above read nothing"
+ok "$n files name both"
+
 finish

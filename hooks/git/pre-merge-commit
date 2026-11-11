@@ -35,10 +35,11 @@
 #    to the default (not the working tree) when HEAD has no conf keeps that closed.
 #    See the longer note in the commit-msg hook alongside this one.
 #
-# No bypass is printed. `git merge --no-verify` skips this hook, but where origin has
-# the branch the ref gate (reference-transaction) still refuses the move it makes, and
-# --no-verify does not reach that hook; mid-merge it fails outright (full release
-# review, S4).
+# The refusal prints its way through, FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit,
+# which concludes the merge it leaves open — the person's to run (#151). `git merge
+# --no-verify` is not one: it skips this hook, but where origin has the branch the ref
+# gate (reference-transaction) still refuses the move it makes, and --no-verify does not
+# reach that hook; mid-merge it fails outright (full release review, S4).
 
 set -euo pipefail
 

@@ -73,19 +73,20 @@ whitespace, so a `#` inside a value (`^feature#1$`) is kept.
 | Setting | conf key | Environment variable | Read by | Controls |
 |---|---|---|---|---|
 | Protected branches | `PROTECTED_BRANCHES` | `FLIGHT_RULES_PROTECTED_BRANCHES` | agent guard, `session-start.sh`, git hooks, doctor | Branches the guard defends. POSIX ERE, matched case-insensitively, as `PR_ONLY_BRANCHES` and `NOTE_GATED_BRANCHES` are, by every hook — anchor it. To the agent guard and the `HOOK_SYNC=auto` sync, a pattern that does not compile protects every branch until it is fixed, and the guard's block names it — except on a mirror push, which any pattern refuses (#103: it used to protect none). The git hooks do the same: to `commit-msg`, every branch but a PR-only one is note-gated while it is broken (with `NOTE_GATED_BRANCHES` unset), and the refusal names it and prints the way past it. `off` (or `none`) disables six things at once: the guard's branch policy, the `checkout -b` rule, the ref gate, the warnings of a direct change (the ref gate's and `pre-push`'s), `pre-rebase`'s refusal of a branch that is not PR-only, and — if `NOTE_GATED_BRANCHES` is unset — the note gate, whose default set is derived from this key. The secret scan stays on. |
-| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks, agent guard | No local merge or rebase; moves only through a PR. Default `^main$`. Protected for deletion too: the guard refuses `git branch -d` of one and `post-merge` never offers one, whatever `PROTECTED_BRANCHES` names (#128). `off` is honoured by every hook that reads it — the ref gate, the local merge gate, the rebase gate and `commit-msg`'s squash guard stand down, and no merge counts as a back-merge — while `PROTECTED_BRANCHES` still applies, so a direct change to a branch it protects is warned of, not refused. A pattern that does not compile makes every branch PR-only until it is fixed (#103: it used to make none): no local merge commit or rebase, and no pushed branch moves off its upstream. The refusal names the pattern and prints the way past it, for a branch the pattern does not mean: the command that finishes or repeats what it refused, with the pattern meant in `FLIGHT_RULES_PR_ONLY_BRANCHES`. Where a match grants an exemption — a back-merge needs no note, a PR-only branch is outside the derived note-gated set — it takes the pattern's exact case, so `^MAIN$` gates `main` without exempting it. Where a match only quiets a warning — commits already on `origin/main` are not a direct change to `dev` — it is case-insensitive, as the gating is. |
+| PR-only branches | `PR_ONLY_BRANCHES` | `FLIGHT_RULES_PR_ONLY_BRANCHES` | git hooks, agent guard | No local merge or rebase; moves only through a PR. Default `^main$`. Protected for deletion too: the guard refuses `git branch -d` of one and `post-merge` never offers one, whatever `PROTECTED_BRANCHES` names (#128) — short of `off`, which stands the guard's branch policy down, this refusal with it. `off` is honoured by every hook that reads it — the ref gate, the local merge gate, the rebase gate and `commit-msg`'s squash guard stand down, and no merge counts as a back-merge — while `PROTECTED_BRANCHES` still applies, so a direct change to a branch it protects is warned of, not refused. A pattern that does not compile makes every branch PR-only until it is fixed (#103: it used to make none): no local merge commit or rebase, and no pushed branch moves off its upstream. The refusal names the pattern and prints the way past it, for a branch the pattern does not mean: the command that finishes or repeats what it refused, with the pattern meant in `FLIGHT_RULES_PR_ONLY_BRANCHES`. Where a match grants an exemption — a back-merge needs no note, a PR-only branch is outside the derived note-gated set — it takes the pattern's exact case, so `^MAIN$` gates `main` without exempting it. Where a match only quiets a warning — commits already on `origin/main` are not a direct change to `dev` — it is case-insensitive, as the gating is. |
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. A pattern that does not compile gates every branch until it is fixed, and the refusal names it and prints the way past it (#103). Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Go ahead | — | `FLIGHT_RULES_GO_AHEAD` (per-command) | every git hook that stops | The way through every stop: `FLIGHT_RULES_GO_AHEAD=1` in front of the stopped command passes that stop, and the hook says, on the screen, what was passed. A merge taken past the note gate or the instruction check records it in its `Merge-authorisation:` trailer. Only the value `1` counts. It is the person's decision, and they type it: the agent guard refuses an assistant's command that sets it. Left set in the environment it passes every stop, which the doctor reports as a ❌. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills; the routes the guard prints (the working-tree conf), and `pre-merge-commit` and the ref gate (the conf at `HEAD`) | Where features merge. Default `main` everywhere. |
 | Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, ref gate's message, skills (the conf only) | Where worktrees live; suggested in the block message. Default `.flight-rules/worktrees`. |
 | Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones (not a missing `install.sh`: nothing needs it to run the hooks, so doctor names it with the `cp` that restores it), then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the checkout the session runs in is touched — from a linked worktree, hooks in the main checkout are not synced (the write would land in that checkout's working tree); when one there is stale or missing the session says so and prints the command that updates this worktree's own copy instead (`--this-checkout`), to commit on its branch and merge, and when all are current it says nothing — never during a merge, rebase, `git am`, cherry-pick, revert or bisect — that skip is said, with the command to run once it is finished — nor on a protected branch, where the diff could not be committed — protected as the agent guard decides it, `FLIGHT_RULES_PROTECTED_BRANCHES` first and case-insensitively, and a `PROTECTED_BRANCHES` pattern that does not compile counts as protected, said as such: there it only compares, names what is behind or missing, lists apart what the command leaves alone, and prints the command to run in a worktree on a branch (silent when all are current); with `--this-checkout` it updates that worktree's copy even when git runs the hooks from the main checkout (without `--stale-only`, replacing what differs there too), and the merge brings it there — and the config is never rewritten. A headless session (`CLAUDE_CODE_SESSION_ATTENDED=0`) syncs until an attended session has run that day, spending no flag, and its notice reaches no screen — so an attended session says on screen when the hook directory has uncommitted changes, whoever made them, and when git cannot fully tell (it shows what git said). A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted; one the sync cannot read is said to be unreadable and left alone, on screen even when nothing else was synced. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
-| Open-branch limit | `OPEN_BRANCH_LIMIT` | `FLIGHT_RULES_OPEN_BRANCH_LIMIT` | `session-start.sh`, `feature-start` | When this many branches are open at once — checked out in a worktree, with commits not yet in `INTEGRATION_BRANCH`, a protected one aside — the session's first run each day warns, on screen and to the assistant, naming which have passed `pre-merge-check` and wait to merge and which have not, and where the limit is set; when it cannot count (no integration branch, local or `origin/`; a git failure) it tells the assistant so. `session-start` only warns and never blocks; `/feature-start` asks before opening another (step 5) and opens it only once you say it is okay — with no one to ask, it reports the count and creates nothing. Merged means in the local `INTEGRATION_BRANCH` or in `origin/`'s as last fetched — so a branch merged by PR stops counting once fetched, while a squash-merged one counts until its worktree goes. Default `5`; `off` stands it down; any other value is taken as 5 (doctor says so). Only in a project with `.flight-rules/conf`. |
+| Open-branch limit | `OPEN_BRANCH_LIMIT` | `FLIGHT_RULES_OPEN_BRANCH_LIMIT` | `session-start.sh`, `feature-start` | When this many branches are open at once — checked out in a worktree, with commits not yet in `INTEGRATION_BRANCH`, a protected one aside — the session's first run each day warns, on screen and to the assistant, naming which have passed `pre-merge-check` and wait to merge and which have not, and where the limit is set; when it cannot count (no integration branch, local or `origin/`; a git failure) it tells the assistant so. `session-start` only warns and never blocks; `/feature-start` asks before opening another (step 5) and opens it only once you say it is okay — with no one to ask, it reports the count and creates nothing. Merged means in the local `INTEGRATION_BRANCH` or in `origin/`'s as last fetched — so a branch merged by PR stops counting once fetched, while a squash-merged one counts until its worktree goes. Default `5`; `off` stands it down; any other value is taken as 5 (doctor says so). Only in a project with a conf (`.flight-rules/conf`, or `.ai/flight-rules.conf`). |
 | `/dg` comic | `DG_COMIC` | — | `/dg` (an instruction, not a hook) | `always` (default): every verdict carries an ASCII comic of the best banter, with the banter score, right after its header — the decisions close the reply. `never`: no comic and no score. |
 | `/dg` comic in PRs | `DG_COMIC_PR` | — | `/dg`, `pr-create` (instructions, not hooks) | Whether a review that is for a PR puts the comic, banter score included, in it. Strictly opt-in: `never` (default) keeps it out without asking, `ask` asks at the end of the verdict, `always` adds it. Ignored with `DG_COMIC=never`. |
 | `/dg` round-2 wait | `DG_WAIT_MINUTES` | — | `/dg` (an instruction, not a hook) | Round 2 of the debate waits for the pre-review and the dependency scan; a run with no result after this many minutes counts as failed. A positive whole number; default `15`. |
 
-Resolution order is **environment → `.flight-rules/conf` → built-in default**, and
+Resolution order is **environment → `.flight-rules/conf` (or, where it is absent,
+`.ai/flight-rules.conf`, its place before 0.29.0) → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
 repos gets each project's own policy.
 
@@ -175,8 +176,8 @@ scripts — useful when migrating an existing setup without touching settings.js
 
 The scripts read Claude Code's hook protocol — tool input as JSON on stdin, a
 structured `permissionDecision` on stdout. To use them with another assistant, wrap
-the same checks in that tool's hook protocol; the point of keeping them in `.ai/` is
-that the logic has exactly one home.
+the same checks in that tool's hook protocol; the point of keeping them in
+`.flight-rules/hooks/` is that the logic has exactly one home.
 
 ## Git hooks (`git/`)
 
@@ -289,7 +290,13 @@ that the logic has exactly one home.
   and `git update-ref` create no commit, so no commit hook fires at all; and a
   **conflicted** `git merge` never reaches `pre-merge-commit`, because git stops at the
   conflict and the finishing `git commit` is an ordinary commit. Every one of those
-  reached `main` unguarded before this hook.
+  reached `main` unguarded before this hook. Refused, such an operation is left
+  half-done, so the way through the refusal prints is the command that finishes it,
+  read from what the operation left: `git cherry-pick --continue`, `git am --continue`,
+  `git rebase --continue`, `git revert --continue` — for a revert of several commits,
+  `git commit --no-edit` first, since git keeps no `REVERT_HEAD` then — and
+  `git commit --no-edit` for a merge or a revert of one; anything else, the same
+  command again.
   `git pull --ff-only`, all feature work, `fetch`, and branch creation are unaffected.
   Unlike the agent guard it reads its config from the **upstream's** committed state,
   so editing the working-tree conf — the bypass the agent guard's own block message
@@ -338,8 +345,10 @@ that the logic has exactly one home.
   `MERGE_HEAD` left behind shows instead of narrowing the scan unseen; a `merge --squash` is an
   ordinary commit and is scanned. A clean `cherry-pick`/`revert` does not run
   `pre-commit`; one that stopped on a conflict and is finished with `--continue` does.
-  Override for a checked false positive: `--no-verify`, the owner's call — the refusal
-  does not print it, because an agent reads it too. Concluding a merge, it skips
+  For a checked false positive the refusal prints its way through,
+  `FLIGHT_RULES_GO_AHEAD=1 <the same command>` — the person's to run, never an
+  assistant's: it goes past the scan, says so, and still runs `pre-commit.local`.
+  `--no-verify` skips the scan too, with every other hook: concluding a merge, it skips
   `commit-msg` as well, so the merge lands with no note check and no
   `Merge-authorisation` trailer. **Already have a `pre-commit`** (a linter,
   lint-staged)? Rename yours `pre-commit.local` beside this one: it runs after a clean
@@ -497,7 +506,10 @@ Guards that fire on the assistant's own events, before git ever runs:
   skill of the user's or project's own, named like a plugin skill, runs in its place
   (⚠️; a file with a line starting ``Read and follow `…skills/<name>/SKILL.md` `` or
   ``Use the `flight-rules:<name>` skill`` is a pointer, not a shadow) — every one a state that has
-  failed silently before. `session-start.sh` runs it daily and prints only problems.
+  failed silently before. Since 0.29.0 it also checks the move out of `.ai/`: a conf or
+  hooks left in the old place (still read, with the move printed), `core.hooksPath` left
+  naming `.ai/hooks`, a worktree folder `.gitignore` does not cover, and
+  `FLIGHT_RULES_GO_AHEAD` left set in the environment (❌: it passes every stop). `session-start.sh` runs it daily and prints only problems.
   Tests: `flight-rules-doctor.test.sh`.
 - **`session-start.sh`** — SessionStart banner: once a day per project (a headless session spends no
   flag, so it runs until an attended one has that day), and again after a plugin update, runs `flight-rules-doctor.sh` and lists worktrees whose branches are already merged
@@ -509,13 +521,14 @@ Guards that fire on the assistant's own events, before git ever runs:
   no plugin to reload, so the snippet above does not wire it, and without `--plugin` a
   copy records nothing. Doctor's ❌ problems, the command that fixes them, and a hook sync
   are printed as `systemMessage`, so they appear on the user's screen — in a project
-  that uses flight-rules (`.flight-rules/conf` at the root, or flight-rules' hooks
-  installed). A repo with no `core.hooksPath` is shown the install hint
+  that uses flight-rules (a conf at the root, `.flight-rules/conf` or
+  `.ai/flight-rules.conf`, or flight-rules' hooks installed). A repo with no `core.hooksPath` is shown the install hint
   once; one running another tool's hooks (husky), or a directory outside a repo, nothing.
   ⚠️ warnings never go on screen, since some are true by choice and would repeat daily.
   Everything goes to the assistant as `additionalContext` (with neither `jq` nor `python3`, plain stdout, which only the
   assistant sees). Reads
-  `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.flight-rules/conf` when present.
+  `INTEGRATION_BRANCH` and `WORKTREE_DIR` from the conf when present, and lists merged
+  worktrees left in `.ai/worktrees/`, the default before 0.29.0, as well.
   A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
   reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.
   Tests: `session-start.test.sh`.
@@ -583,16 +596,29 @@ no branch or worktree for them (#99) — and it adds no block for a mistake a co
 developer would not make (owner, 2026-10-21).
 
 **A stop is not a block: every one prints its way through** (owner, 2026-11-11, #151).
-The secret scan, the PR-only gates, the rebase gate, the note gate and the instruction
-check each print `FLIGHT_RULES_GO_AHEAD=1 <the command>`, and with it in front the
-command goes ahead — said on the screen every time, and written into the merge commit
-where there is one. A git hook cannot tell a person from an assistant, so the stop is
+The secret scan, the PR-only gates, the rebase gate and the note gate each print
+`FLIGHT_RULES_GO_AHEAD=1 <the command>`, and with it in front the command goes ahead —
+said on the screen every time, and written into the merge commit's
+`Merge-authorisation` trailer where the note gate or the instruction check was the stop
+(a merge past a PR-only gate gets no trailer). The instruction check prints
+`FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit`, for a merge the person asked
+for; it takes `FLIGHT_RULES_GO_AHEAD=1` as well. A git hook cannot tell a person from an assistant, so the stop is
 the same for both and the way through is the person's: the developer takes it when
 they mean it. The agent guard refuses an assistant's command that sets the variable,
 even when the person told it to go ahead (#155): the assistant prints the command and
 the person runs it (`engineering-principles.md`, Stops). Where the guard is not wired
 the rule alone holds the assistant back, and the use is still said and recorded. What the refusal offers besides — a PR, a
 worktree, `/pre-merge-check` — is still the route that leaves the work checked.
+
+**Known gap, recorded and not fixed: a PR-only branch with no `origin` copy.** The ref
+gate judges a PR-only branch against `refs/remotes/origin/<branch>`. Where there is none
+— a repo with no remote, a branch never pushed — a local merge into it that
+`pre-merge-commit` refused can be finished with a plain `git commit --no-edit`: no
+stop and no `Merge-authorisation` trailer — only the secret scan's line naming the merge
+it concludes. Measured on 2026-11-11 in a repo with no remote (0.29.0 release review, D6). The gap is
+older than the way through; the box that prints `git commit --no-edit` is newer. A
+PR-only branch with no remote has no PR to go through, so the owner's call
+(2026-11-11) is to record it rather than add a stop.
 
 ### With the plugin alone, a protected branch is only half guarded
 

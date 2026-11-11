@@ -12,8 +12,9 @@ Read `.ai/skills/feature-start/EXTENSIONS.md` first if the project has one: extr
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.flight-rules/conf`, the file the hooks read — an extension
-restating one is invisible to enforcement, so the conf wins.
+come **only** from the conf the hooks read — `.flight-rules/conf`, or, where that is
+absent, `.ai/flight-rules.conf` (a project not yet moved) — an extension restating one
+is invisible to enforcement, so the conf wins.
 
 Create a new branch as a git worktree per `rules/git-worktree-workflow.md`.
 Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`
@@ -30,7 +31,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    that's fine (worktree creation never commits to it). If it has uncommitted edits,
    say in one line that they stay there and do not come into the new worktree, and go
    on: edits there are usually work begun on the wrong branch.
-2. *Retired (#119); numbered so later steps keep theirs.*
+2. *Retired; numbered so later steps keep theirs.*
 3. **Validate the branch name** — ask if not provided; verify the prefix. A `hotfix/`
    name goes straight to `main`, skipping `{INTEGRATION_BRANCH}` and its review
    (`git-worktree-workflow.md` → *Merge flow*), so ask the person to approve it as
@@ -111,7 +112,7 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      `{INTEGRATION_BRANCH}`, skip fetch and reconcile, say so.
 5. **Count the open branches — past the limit, ask.** The limit is
    `FLIGHT_RULES_OPEN_BRANCH_LIMIT` if set, else `OPEN_BRANCH_LIMIT` in
-   `.flight-rules/conf` (unset or not a positive whole number: 5; `off`: skip this
+   the conf (unset or not a positive whole number: 5; `off`: skip this
    step) — as `session-start` reads it. Open means a branch checked out in a worktree
    with commits in neither the local `{INTEGRATION_BRANCH}` nor
    `origin/{INTEGRATION_BRANCH}` — against the local one alone, every branch merged by PR
@@ -147,13 +148,13 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    review, 2026-10-24). At or over the limit, show the person how many are open and
    which, which of them have a passing note (`git notes --ref=pre-merge-check show
    <branch>`: `passed:` with the tip's `tree:`, and a `ran:` line) and only wait to merge, and say where the limit is set:
-   *"OPEN_BRANCH_LIMIT is <n> in .flight-rules/conf — raise it, or set it to off,
+   *"OPEN_BRANCH_LIMIT is <n> in <the conf> — raise it, or set it to off,
    there"* (or that `FLIGHT_RULES_OPEN_BRANCH_LIMIT` set it). Create the branch only once
    they say it is okay. Under the limit, say nothing. With no one to ask, create
    nothing and report the count as the blocker — a question that cannot be put is not
    a yes. A pile of open branches is
    how this repo's own work came to depend on itself: more than ten sat unmerged
-   (2026-10-20 to 10-23), and the owner saw it only once they did (#108).
+   (2026-10-20 to 10-23), and the owner saw it only once they did.
 6. **Create the worktree** from the local `{INTEGRATION_BRANCH}` (step 4; repo root, absolute paths):
    ```bash
    git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> {INTEGRATION_BRANCH}

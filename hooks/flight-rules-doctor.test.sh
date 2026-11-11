@@ -22,6 +22,7 @@ mkrepo() {
   git -C "$d" config core.hooksPath .flight-rules/hooks
   git -C "$d" config merge.ff false
   printf 'PROTECTED_BRANCHES=^main$\n' > "$d/.flight-rules/conf"
+  printf '.flight-rules/worktrees/\n' > "$d/.gitignore"   # as a healthy project has it (D1)
   # What every assertion assumes: a repo, and seven hooks that are there to be broken.
   [ -d "$d/.git" ] || die "no .git in the fixture at $d"
   for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
@@ -399,6 +400,12 @@ cp "$D/fakehome/.claude/plugins/cache/mp/flight-rules/0.0.1/hooks/git/commit-msg
 say "$(rc "$D")" "1" "a copy identical to a cached older release → problem"
 say "$(has "$D" "commit-msg is the flight-rules 0.0.1 copy")" "0" "…naming the release it came from"
 say "$(has "$D" "to update: bash")" "0" "…and printing the sync command"
+say "$(has "$D" "HOOK_SYNC=auto in .flight-rules/conf runs this")" "0" "…naming the conf HOOK_SYNC goes in"
+# A project on the old conf: the hint named the new path, and following it made a
+# one-line conf that hid the whole old one (D4).
+mkdir -p "$D/.ai"; mv "$D/.flight-rules/conf" "$D/.ai/flight-rules.conf" || die "could not move the conf in $D"
+say "$(has "$D" "HOOK_SYNC=auto in .ai/flight-rules.conf runs this")$(has "$D" "HOOK_SYNC=auto in .flight-rules/conf")" "01" "…the old conf, where the project's is still there"
+mv "$D/.ai/flight-rules.conf" "$D/.flight-rules/conf" || die "could not move the conf back in $D"
 SYNC=$(run "$D" | grep -o 'to update: bash .*--from [^ ]* --stale-only' | sed 's/^to update: //' | head -1)
 say "$([ -n "$SYNC" ] && echo yes)" "yes" "…which can be lifted from the output, in its --stale-only form"
 (cd "$D" && HOME="$D/fakehome" eval "$SYNC") >/dev/null 2>&1
@@ -863,6 +870,13 @@ printf '#!/bin/bash\n[[ "$COMMAND" == *"git commit"* ]]\n' > "$D/.flight-rules/h
 say "$(rc "$D")" "1" "pre-conf copy of the guard → problem"
 say "$(has "$D" "pre-conf copy")" "0" "…identified as such"
 rm -rf "$D"
+# Where such a copy actually is: it predates 0.29.0, so it was committed in .ai/ (D2).
+D=$(mkrepo); mkdir -p "$D/.claude/" "$D/.ai/hooks/agent"
+printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash .ai/hooks/agent/pre-commit-check.sh"}]}]}}' > "$D/.claude/settings.json"
+printf '#!/bin/bash\n[[ "$COMMAND" == *"git commit"* ]]\n' > "$D/.ai/hooks/agent/pre-commit-check.sh"
+say "$(rc "$D")" "1" "pre-conf copy of the guard in .ai/hooks/agent/ → problem"
+say "$(has "$D" ".ai/hooks/agent/pre-commit-check.sh is a pre-conf copy")" "0" "…named by where it is"
+rm -rf "$D"
 
 echo "--problems-only is silent on a healthy repo:"
 D=$(mkrepo); rm "$D/.flight-rules/conf"; printf 'PROTECTED_BRANCHES=^main$\n' > "$D/.flight-rules/conf"
@@ -937,12 +951,21 @@ rm "$D/.ai/flight-rules.conf"
 OUT=$(run "$D")
 # By its sentences, not by ".ai/": a path the doctor prints may hold that itself.
 say "$(head -1 <<<"$OUT")$(grep -c 'flight-rules\.conf\|WORKTREE_DIR is not set\|the hooks moved' <<<"$OUT")" "00" "a project on the new places: exit 0, and no word of the old ones"
+# The new default folder has no fallback (owner, 2026-11-11): said whenever .gitignore
+# does not cover it, not only while .ai/worktrees/ held worktrees (D1).
+NOT_IGNORED='WORKTREE_DIR is not set, so new worktrees go to .flight-rules/worktrees/, which .gitignore does not cover. On a branch, add the line .flight-rules/worktrees/ to .gitignore'
+rm "$D/.gitignore"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c "$NOT_IGNORED" <<<"$OUT")$(grep -c 'stay where they are' <<<"$OUT")" "010" "the new worktree folder not ignored, and no old one: said, with the line to add"
 mkdir -p "$D/.ai/worktrees/x"
 OUT=$(run "$D")
-say "$(grep -c 'WORKTREE_DIR is not set and .ai/worktrees/ holds worktrees: the default is now .flight-rules/worktrees/' <<<"$OUT")" "1" "worktrees in the old default folder, WORKTREE_DIR unset: said, with both ways on"
-printf 'WORKTREE_DIR=.ai/worktrees\n' >> "$D/.flight-rules/conf"
+say "$(grep -c "$NOT_IGNORED" <<<"$OUT")$(grep -c 'The worktrees in .ai/worktrees/ stay where they are until they are removed' <<<"$OUT")" "11" "…with worktrees in the old folder: said, and that those stay"
+printf '.flight-rules/\n' > "$D/.gitignore"
 OUT=$(run "$D")
-say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…and nothing once WORKTREE_DIR is set"
+say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…and nothing once .gitignore covers it, here through its parent"
+rm "$D/.gitignore"; printf 'WORKTREE_DIR=.ai/worktrees\n' >> "$D/.flight-rules/conf"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…nor once WORKTREE_DIR is set"
 rm -rf "$D"
 # The hook copies: committed in the old folder, a fresh clone is pointed at those; a
 # clone that pulled the move still names the old folder, and git then runs no hooks.
@@ -953,6 +976,22 @@ say "$(grep -c 'not running the hooks committed in .ai/hooks/' <<<"$OUT")" "1" "
 git -C "$D" config core.hooksPath .ai/hooks; mkdir -p "$D/.flight-rules"; mv "$D/.ai/hooks" "$D/.flight-rules/hooks" || die "could not move the hooks to their new place"
 OUT=$(run "$D")
 say "$(grep -c 'core.hooksPath=.ai/hooks but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks' <<<"$OUT")" "1" "core.hooksPath still naming .ai/hooks after the move: said, with the command"
+# Not only when the old folder is gone and spelled exactly: a stray file keeping it, or
+# half the hooks left there, drew a `cp … .ai/hooks/` per hook (D3).
+MOVED='the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks'
+mkdir -p "$D/.ai/hooks"; : > "$D/.ai/hooks/.DS_Store"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'missing from\|\.ai/hooks/ &&\|\.ai/hooks/'"'"' &&' <<<"$OUT")" "110" "the old folder still there with only a stray file: the move said, and no copy back into it"
+git -C "$D" config core.hooksPath ./.ai/hooks/
+OUT=$(run "$D")
+say "$(grep -c "core.hooksPath=./.ai/hooks/, $MOVED" <<<"$OUT")" "1" "…spelled ./.ai/hooks/: the same"
+rm -rf "$D/.ai/hooks"
+OUT=$(run "$D")
+say "$(grep -c 'core.hooksPath=./.ai/hooks/ but that directory does not exist — git runs NO hooks — the hooks moved' <<<"$OUT")" "1" "…and spelled so with the old folder gone: the move said"
+git -C "$D" config core.hooksPath .ai/hooks; mkdir -p "$D/.ai/hooks"
+mv "$D/.flight-rules/hooks/pre-merge-commit" "$D/.flight-rules/hooks/commit-msg" "$D/.ai/hooks/" || die "could not split the hooks in $D"
+OUT=$(run "$D")
+say "$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'pre-merge-commit missing from .flight-rules/hooks' <<<"$OUT")$(grep -c 'missing from .ai/hooks' <<<"$OUT")" "110" "half moved: the move said, and the missing hooks named in the new folder, not the old"
 rm -rf "$D"
 
 echo "The doctor reads the conf as the hooks do (#127):"

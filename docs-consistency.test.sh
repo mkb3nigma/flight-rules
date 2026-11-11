@@ -506,6 +506,16 @@ RL=$(awk 'index($0, "2. Branch names prefixed") { f = 1 } f { printf "%s ", $0 }
 FL=$(printf '%s\n' "$BL" | grep -oE '`[a-z]+/`' | tr -d '`' | sort -u | tr '\n' ' ')
 [ -n "$RL" ] && [ "$RL" = "$FL" ] && ok "the rule's Required 2 lists feature-start's branch prefixes ($RL)" || bad "Required 2 lists '$RL', feature-start '$FL'"
 
+echo "Shipped rules and skills cite no issue of this repo's:"
+# They are read in adopters' projects, where `#125` reads as the adopter's own issue
+# (owner, 2026-11-11, 0.29.0 release review D7). The date and the event stay; code and
+# test comments keep their numbers. Two lines are not this repo's: `#123` is an example
+# of a tracker reference, and AppliHawk's release PR #191 names its project.
+N=$(grep -rln . rules skills --include='*.md' | wc -l | tr -d ' ')
+HITS=$(grep -rnE '#[0-9]{2,}\b' rules skills --include='*.md' | grep -vF '(`#123`, a key, a URL)' | grep -vF "AppliHawk's" | grep -vF 'release PR #191')
+[ "$N" -gt 10 ] || bad "read $N Markdown files under rules/ and skills/ — the check below read nothing"
+[ -z "$HITS" ] && ok "none in $N files" || bad "issue numbers in shipped text: $(head -3 <<<"$HITS" | tr '\n' ' ')"
+
 echo "Every mutation mutant's anchor occurs exactly once:"
 # A hook edit that moved an anchor and not its mutant passed every suite, and surfaced
 # only hours into the release's mutation run, unstamped (0.29.0 release review, R-2). In

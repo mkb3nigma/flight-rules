@@ -41,7 +41,8 @@ there, and a fresh clone's `install.sh` wires them there. To move:
 - **The worktrees**: a project that sets `WORKTREE_DIR` changes nothing. One on the
   default either sets `WORKTREE_DIR=.ai/worktrees` to stay, or adds
   `.flight-rules/worktrees/` to `.gitignore`; worktrees already made stay where they
-  are. The doctor says so while the old folder holds any.
+  are, and the session-start reminder still lists the merged ones there. The doctor
+  says so until `.gitignore` covers the new folder or `WORKTREE_DIR` is set.
 
 **A project with its own `pre-push`** (git-lfs installs one) renames it
 `pre-push.local` first. flight-rules' `pre-push` runs it after its own check, with the

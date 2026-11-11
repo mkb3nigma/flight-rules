@@ -105,6 +105,18 @@ git -C "$D" worktree add -q "$D/elsewhere/merged" fix/merged
 OUT=$( (cd "$D" && FLIGHT_RULES_WORKTREE_DIR=elsewhere HOME="$D/fakehome" bash "$HOOK" 2>/dev/null) | ctx)
 say "$(grep -c 'Branch: fix/merged  →  elsewhere/merged' <<<"$OUT")" "1" "FLIGHT_RULES_WORKTREE_DIR: the merged worktree there is reported"
 rm -rf "$D"
+# .ai/worktrees/, the default before 0.29.0, with none after: a worktree left there was
+# reminded of nowhere once the default moved (0.29.0 release review, D1).
+D=$(mkrepo); sed -i.bak '/^WORKTREE_DIR=/d' "$D/.flight-rules/conf" && rm "$D/.flight-rules/conf.bak"
+branch "$D" fix/merged merge; branch "$D" fix/new merge
+git -C "$D" worktree add -q "$D/.ai/worktrees/merged" fix/merged
+git -C "$D" worktree add -q "$D/.flight-rules/worktrees/new" fix/new
+OUT=$(run "$D")
+say "$(grep -c 'Branch: fix/merged  →  .ai/worktrees/merged$' <<<"$OUT")$(grep -c 'Branch: fix/new  →  .flight-rules/worktrees/new$' <<<"$OUT")" "11" "WORKTREE_DIR unset: a merged worktree left in .ai/worktrees/ is reported, beside one in the new folder"
+printf 'WORKTREE_DIR=.ai/worktrees\n' >> "$D/.flight-rules/conf"; rm -rf "$D/fakehome"   # the once-a-day flag
+OUT=$(run "$D")
+say "$(grep -c 'Branch: fix/merged' <<<"$OUT")" "1" "…and WORKTREE_DIR=.ai/worktrees: reported once, not twice"
+rm -rf "$D"
 
 echo "A longer branch name is not the merged one (regression 2026-09-12):"
 # The hook looks for the WORKTREE's branch inside the merged list, and the match was

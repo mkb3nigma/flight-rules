@@ -43,6 +43,11 @@ SRC_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 
   "$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { bad "not inside a git repository"; exit 1; }
 cd "$ROOT" || exit 1
+# The conf the hooks read: .flight-rules/conf, or .ai/flight-rules.conf, its place before
+# 0.29.0, where the new one is absent (#153). Set here, before any line names it: the
+# update hint below named the new path in a project on the old one, and following it
+# made a one-line conf that hid the whole old one (0.29.0 release review, D4).
+CONF=".flight-rules/conf"; [[ ! -f "$CONF" && -f .ai/flight-rules.conf ]] && CONF=".ai/flight-rules.conf"
 
 # Which flight-rules release shipped this exact file? Searches the plugin cache and
 # prints the version directory's name, or nothing. The same function sits in
@@ -129,13 +134,31 @@ if [[ -z "$HOOKS_PATH" ]]; then
   fi
 else
   HOOKS_DIR="$HOOKS_PATH"; [[ "$HOOKS_DIR" = /* ]] || HOOKS_DIR="$ROOT/$HOOKS_DIR"
+  # The folder moved in 0.29.0, and git config is per clone: a clone that pulls the move
+  # still names the old one (#153). Read as written — `./.ai/hooks`, `.ai/hooks/` — and
+  # whether or not the old folder is still there: a stray file keeping it alive, or half
+  # the hooks left in it, drew one `cp … .ai/hooks/` per hook, back into the folder the
+  # project left (0.29.0 release review, D3).
+  # The pattern in a variable: bash 3.2 keeps the backslash of `\/` in the replacement.
+  _old_named=""; _hp="${HOOKS_DIR%/}"; _dot='/./'; _hp="${_hp//"$_dot"//}"
+  if [[ "$_hp" == "$ROOT/.ai/hooks" ]]; then
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
+      [[ -f "$ROOT/.flight-rules/hooks/$h" ]] && { _old_named=1; break; }
+    done
+  fi
+  if [[ -n "$_old_named" ]]; then
+    if [[ -d "$HOOKS_DIR" ]]; then
+      bad "core.hooksPath=$HOOKS_PATH, the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks"
+    else
+      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"
+    fi
+    # The copies checked below are the moved ones, which run once the line above is.
+    HOOKS_PATH=.flight-rules/hooks; HOOKS_DIR="$ROOT/.flight-rules/hooks"
+  fi
   if [[ ! -d "$HOOKS_DIR" ]]; then
-    # The folder moved in 0.29.0, and git config is per clone: a clone that pulls the
-    # move still names the old one (#153).
-    _mv=""; [[ "${HOOKS_DIR%/}" == "$ROOT/.ai/hooks" && -d "$ROOT/.flight-rules/hooks" ]] && _mv=" — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"
-    bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks$_mv"
+    bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
   else
-    ok "core.hooksPath=$HOOKS_PATH"
+    [[ -n "$_old_named" ]] || ok "core.hooksPath=$HOOKS_PATH"
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
         # A plugin upgrade cannot copy git hooks into a project, so a hook added in a
@@ -273,8 +296,8 @@ else
       # --this-checkout and "on a branch": the plain form, run in a main checkout on a
       # protected branch, left a diff that could not be committed or cleared there, and
       # from a worktree it sent the user back to that checkout (#99, 2026-10-21).
-      printf '     to update: bash %s --from %s --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in .flight-rules/conf runs this in the first session each day and after an update)\n' \
-        "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")"
+      printf '     to update: bash %s --from %s --stale-only --this-checkout   (run it on a branch — in a worktree when this checkout is on a protected branch — then commit and merge it; replaces only copies identical to an older release, and copies in missing ones; a hook that differs is left alone and named — diff it, then mark it '"'"'# flight-rules: adapted'"'"' or re-run without --stale-only to replace every copy that differs, adapted ones included. HOOK_SYNC=auto in %s runs this in the first session each day and after an update)\n' \
+        "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")" "$CONF"
     fi
     # pre-commit and pre-push run their .local only if it is executable, and skip it
     # without a word otherwise — a project's linter, or git-lfs, would stop unnoticed.
@@ -315,20 +338,27 @@ read_conf() {
     | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
     | tail -1
 }
-CONF=".flight-rules/conf"
-# Before 0.29.0 it was .ai/flight-rules.conf, which every hook still reads where the
-# new one is absent (#153). The move is a commit, so it is made on a branch.
-if [[ ! -f "$CONF" && -f .ai/flight-rules.conf ]]; then
-  CONF=".ai/flight-rules.conf"
+# The conf in its place before 0.29.0 ($CONF, set at the top). The move is a commit, so
+# it is made on a branch.
+if [[ "$CONF" == .ai/flight-rules.conf ]]; then
   warn "the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf"
-elif [[ -f "$CONF" && -f .ai/flight-rules.conf ]]; then
+elif [[ -f .ai/flight-rules.conf ]]; then
   warn ".ai/flight-rules.conf is not read: .flight-rules/conf is there, and wins. Once nothing in it is missing from the new one, on a branch: git rm .ai/flight-rules.conf"
 fi
-# The default worktree folder moved with it. A project that never set WORKTREE_DIR and
-# has worktrees in the old one is told: the next would land in the new one, un-ignored.
-if [[ -n "$(ls -A .ai/worktrees 2>/dev/null)" && -z "${FLIGHT_RULES_WORKTREE_DIR-}" ]] \
+# The default worktree folder moved with it, and has no fallback (owner, 2026-11-11). A
+# project that never set WORKTREE_DIR puts its next worktree in .flight-rules/worktrees/;
+# un-ignored, that checkout shows in `git status` and goes in with a `git add -A`. Said
+# whenever the folder is not ignored — not only while .ai/worktrees/ held worktrees,
+# which left a project that had none untold (0.29.0 release review, D1).
+if [[ -z "${FLIGHT_RULES_WORKTREE_DIR-}" ]] \
    && ! grep -qE '^[[:space:]]*WORKTREE_DIR[[:space:]]*=' "$CONF" 2>/dev/null; then
-  warn "WORKTREE_DIR is not set and .ai/worktrees/ holds worktrees: the default is now .flight-rules/worktrees/. To go on using the old folder, set WORKTREE_DIR=.ai/worktrees in $CONF; to use the new one, add .flight-rules/worktrees/ to .gitignore"
+  git check-ignore -q .flight-rules/worktrees/x 2>/dev/null; _ig=$?
+  if [[ $_ig -eq 1 ]]; then
+    _old=""; [[ -n "$(ls -A .ai/worktrees 2>/dev/null)" ]] && _old=" The worktrees in .ai/worktrees/ stay where they are until they are removed."
+    warn "WORKTREE_DIR is not set, so new worktrees go to .flight-rules/worktrees/, which .gitignore does not cover. On a branch, add the line .flight-rules/worktrees/ to .gitignore — or set WORKTREE_DIR in $CONF to use another folder.$_old"
+  elif [[ $_ig -ne 0 ]]; then
+    warn "could not ask git whether .flight-rules/worktrees/ is ignored (git check-ignore exited $_ig)"
+  fi
 fi
 KNOWN='PROTECTED_BRANCHES PR_ONLY_BRANCHES NOTE_GATED_BRANCHES INTEGRATION_BRANCH WORKTREE_DIR MERGE_NEEDS_INSTRUCTION HOOK_SYNC OPEN_BRANCH_LIMIT DG_COMIC DG_COMIC_PR DG_WAIT_MINUTES'
 if [[ ! -f "$CONF" ]]; then
@@ -504,9 +534,13 @@ if [[ $PLUGIN_ON -eq 1 && $LOCAL_WIRED -eq 1 ]]; then
 elif [[ $PLUGIN_ON -eq 1 ]]; then ok "agent guard via the plugin"
 elif [[ $LOCAL_WIRED -eq 1 ]]; then
   ok "agent guard via .claude/settings.json"
-  if [[ -f .flight-rules/hooks/agent/pre-commit-check.sh ]] && ! grep -q 'read_conf' .flight-rules/hooks/agent/pre-commit-check.sh; then
-    bad ".flight-rules/hooks/agent/pre-commit-check.sh is a pre-conf copy of the guard — it matches 'git commit' as a substring and knows no other command; replace it with the current hooks/agent/ version"
-  fi
+  # Both folders: such a copy predates 0.29.0, so it sits in .ai/hooks/agent/; checked
+  # in the new folder alone, the check could not fire (0.29.0 release review, D2).
+  for _g in .ai/hooks/agent/pre-commit-check.sh .flight-rules/hooks/agent/pre-commit-check.sh; do
+    if [[ -f "$_g" ]] && ! grep -q 'read_conf' "$_g"; then
+      bad "$_g is a pre-conf copy of the guard — it matches 'git commit' as a substring and knows no other command; replace it with the current hooks/agent/ version"
+    fi
+  done
 else
   warn "no agent guard wired: neither the plugin nor .claude/settings.json runs pre-commit-check.sh — only the git hooks are protecting you"
 fi

@@ -795,4 +795,57 @@ OUT=$(FLIGHT_RULES_GO_AHEAD=1 git -C "$D" fetch origin 2>&1); RC=$?
 say "$RC$(grep -c 'going ahead' <<<"$OUT")" "00" "with the variable set and nothing to pass, nothing is said"
 rm -rf "$(dirname "$D")"
 
+# A refused cherry-pick, revert or `git am` is left half-done, and the same command
+# again fails on it; the box prints the one that finishes it (0.29.0 release review, M2).
+# finishes <desc> <expected first printed command> <expected subject on main> <command…>
+# FINISH_SETUP, if set, runs in the repo first; main may move there, before the refusal.
+finishes() {
+    local desc="$1" want="$2" subj="$3" D BEFORE OUT RC printed; shift 3
+    D=$(make_repo default)
+    (cd "$D" && ${FINISH_SETUP:-true}) >/dev/null 2>&1 || die "setup for '$desc' failed"
+    BEFORE=$(git -C "$D" rev-parse main)
+    OUT=$(cd "$D" && "$@" 2>&1); RC=$?
+    say "$([ "$RC" -ne 0 ] && echo refused)$(git -C "$D" rev-parse main)$(grep -c "^║   FLIGHT_RULES_GO_AHEAD=1 $want  *║$" <<<"$OUT")" "refused${BEFORE}1" "$desc: refused, and the box prints $want"
+    printed=$(sed -n 's/^║   FLIGHT_RULES_GO_AHEAD=1 \(.*[^ ]\)  *║$/\1/p' <<<"$OUT")
+    RC=0
+    while IFS= read -r c; do
+        # shellcheck disable=SC2086 # the printed command, word-split as a person types it
+        (cd "$D" && GIT_EDITOR=true FLIGHT_RULES_GO_AHEAD=1 $c) >/dev/null 2>&1 || RC=$?
+    done <<<"$printed"
+    say "$RC|$(git -C "$D" log -1 --format=%s main)|$(git -C "$D" status --porcelain=v1 --untracked-files=no | wc -l | tr -d ' ')|$(git -C "$D" status 2>&1 | grep -c 'in progress\|You are in the middle')" "0|$subj|0|0" "…which, run as printed, lands it on main and leaves nothing in progress"
+    rm -rf "$(dirname "$D")"
+}
+patch_dir=$(mktemp -d "$TMPROOT/p.XXXXXX")
+am_patch() { git format-patch -q -1 feature/x -o "$patch_dir" && git am "$patch_dir"/*.patch; }
+# Two commits, so git keeps a sequencer: feature/x gains a second one first.
+range_pick() {
+    git checkout -q feature/x && echo y > y.txt && git add -A && git commit -qm "feature: y" \
+        && git checkout -q main && git cherry-pick main..feature/x
+}
+echo "A refused operation left half-done: the printed way through finishes it (M2):"
+finishes "a cherry-pick of one commit" "git cherry-pick --continue" "feature: x" git cherry-pick feature/x
+finishes "a cherry-pick of two" "git cherry-pick --continue" "feature: y" range_pick
+finishes "a revert of one commit" "git commit --no-edit" 'Revert "chore: second"' git revert --no-edit HEAD
+finishes "a revert of two" "git commit --no-edit" 'Revert "chore: base"' git revert --no-edit HEAD HEAD~1
+finishes "a git am" "git am --continue" "feature: x" am_patch
+# main with a commit of its own (made past the hook), and origin/main moved on by
+# another clone: the rebase replays it, and moving main at its end is refused.
+local_and_upstream() {
+    local o; o=$(mktemp -d "$TMPROOT/o.XXXXXX")
+    git clone -q "$(git config remote.origin.url)" "$o/c" 2>/dev/null && (cd "$o/c" \
+        && git config user.email t@t.t && git config user.name t && echo u > u.txt \
+        && git add -A && git commit -qm "chore: upstream" && git push -q origin main) \
+        && git fetch -q origin && echo m > m.txt && git add -A \
+        && git -c core.hooksPath=/dev/null commit -qm "chore: local"
+}
+# `pre-rebase` refuses this first in a full install. `--apply` is not run: refused here,
+# it leaves rebase-apply without its head-name, and git can neither continue nor abort.
+FINISH_SETUP=local_and_upstream finishes "a rebase of main" "git rebase --continue" "chore: local" git rebase origin/main
+D=$(make_repo default); git -C "$D" checkout -q feature/x; BEFORE=$(git -C "$D" rev-parse main)
+mkdir -p "$D/$(git -C "$D" rev-parse --git-path sequencer)" || die "no sequencer in $D"   # an operation in progress on feature/x
+[ -d "$D/.git/sequencer" ] || die "the sequencer is not where git looks for it"
+OUT=$(git -C "$D" branch -f main feature/x 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && echo refused)$(git -C "$D" rev-parse main)$(grep -c '^║   FLIGHT_RULES_GO_AHEAD=1 <the same command>  *║$' <<<"$OUT")" "refused${BEFORE}1" "main moved from another branch, an operation in progress there: the same command, not that operation's"
+rm -rf "$(dirname "$D")"
+
 finish

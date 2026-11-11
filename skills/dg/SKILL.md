@@ -173,12 +173,12 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    failed by step 2's check, and the dependency scan has reported. A pre-reviewer
    left running in the background while the debate went on finished after the verdict,
    and its findings reached no round (2026-10-18). The wait has a limit,
-   `DG_WAIT_MINUTES` in `.flight-rules/conf` (default 15; read like step 6's keys):
+   `DG_WAIT_MINUTES` in the conf (default 15; read like step 6's keys):
    a run with no result that long after it started is stopped and counts as failed —
    step 2's fallback, then `⚠️ unavailable — no result in <n>m` (for the scan, `⚠️ not
    run — no result in <n>m`). A timeout an extension gives its own pre-reviewer is an
    inner limit under this one, so the extension need not read the key: a shorter one
-   fails that run sooner, a longer one is cut off here (#95). Round 2's table then
+   fails that run sooner, a longer one is cut off here. Round 2's table then
    answers each pre-review finding by its ID and each scan finding by its
    `<package>@<version>` and CVE, and Gilfoyle's harshest finding → Dinesh defends or
    concedes. Further rounds alternate who leads. Converge early when concessions leave
@@ -196,7 +196,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    different order. The 0.25.0 release review went straight from the debate to fixes:
    the verdict reached only the PR body, and the comic was never offered (2026-10-17).
 
-6. **Comic strip, first** — two settings in `.flight-rules/conf`, read like every
+6. **Comic strip, first** — two settings in the conf (`.flight-rules/conf`, or
+   `.ai/flight-rules.conf` where that is absent), read like every
    other key there (unset, no conf, or any other value: the default — `flight-rules-doctor.sh`
    warns about the value):
    - `DG_COMIC` — `always` (default) or `never`. With `always` the reply carries the
@@ -315,7 +316,7 @@ other, and a reviewer who cannot fill it has said something weaker than it sound
 Adapt to the subject. For code, look for each class below that the diff gives a reason
 to. A finding names its place (`file:line`) and, where a test should have caught it,
 the test that would fail. A class with nothing found is not reported: the table holds
-findings, not a checklist (the classes and their warrant: #96).
+findings, not a checklist.
 
 - **Security** — *object-level authorization*: a record id a caller supplies (path,
   body, nested arrays, tool or RPC arguments) with no ownership check, or an ownership
