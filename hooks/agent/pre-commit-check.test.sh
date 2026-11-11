@@ -1137,7 +1137,9 @@ GO_DENY=( "FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit"
           "env FLIGHT_RULES_GO_AHEAD=1 git rebase main"
           "export FLIGHT_RULES_GO_AHEAD=1"
           "FLIGHT_RULES_GO_AHEAD='1' git merge --continue"
-          "FLIGHT_RULES_GO_AHEAD=\"1\" git commit -m x" )
+          "FLIGHT_RULES_GO_AHEAD=\"1\" git commit -m x"
+          "FLIGHT_RULES_GO_AHEAD+=1 git commit -m x"
+          "declare -x FLIGHT_RULES_GO_AHEAD=1" )
 GO_ALLOW=( "FLIGHT_RULES_GO_AHEAD=0 git status --short"
            "unset FLIGHT_RULES_GO_AHEAD" )
 i=0
