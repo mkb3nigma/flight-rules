@@ -280,6 +280,38 @@ printf "HOOK_SYNC='auto'\nPROTECTED_BRANCHES=^main\$\n" >> "$D2/.flight-rules/co
 J=$( (cd "$D2" && HOME="$D2/fakehome" bash "$T2/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
 say "$(ctx <<<"$J" | grep -c 'HOOK_SYNC=auto updated git hooks')" "1" "HOOK_SYNC='auto', quoted, syncs as doctor reads it"
 rm -rf "$D2" "$T2"
+# Moved, but this clone's core.hooksPath still names .ai/hooks, the folder before
+# 0.29.0: the sync wrote each update into the folder the project left, a diff to commit
+# there (owner, 2026-11-11, #162). Left alone and unsaid; doctor's ❌ on the same run
+# gives the git config line, and is asserted so that silence is not a dead hook.
+# oldnamed <repo> <core.hooksPath>: both folders hold the hooks, a stale commit-msg in .ai/hooks.
+oldnamed() {
+  stale "$1" commit-msg; mkdir -p "$1/.ai/hooks"
+  cp "$1/.flight-rules/hooks/commit-msg" "$1/.ai/hooks/" && cp "$H/../git/commit-msg" "$1/.flight-rules/hooks/" \
+    && cp "$H"/../git/pre-merge-commit "$H"/../git/pre-rebase "$H"/../git/post-merge "$H"/../git/reference-transaction \
+          "$H"/../git/pre-commit "$H"/../git/pre-push "$1/.ai/hooks/" && chmod +x "$1"/.ai/hooks/* \
+    || die "could not lay out .ai/hooks in $1"
+  git -C "$1" config core.hooksPath "$2"
+  printf 'HOOK_SYNC=auto\nPROTECTED_BRANCHES=^main$\n' >> "$1/.flight-rules/conf"
+}
+for hp in .ai/hooks ./.ai/hooks/; do
+  D=$(mkrepo); oldnamed "$D" "$hp"; cp "$D/.ai/hooks/commit-msg" "$D/fakehome/commit-msg.before"
+  J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+  say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "core.hooksPath=$hp, the moved set beside it, auto: the hook exits 0"
+  say "$(cmp -s "$D/.ai/hooks/commit-msg" "$D/fakehome/commit-msg.before" && echo same)" "same" "…the stale copy in .ai/hooks is byte-identical after"
+  say "$(ctx <<<"$J" | grep -c '🔁\|HOOK_SYNC=auto')" "0" "…and the sync says nothing"
+  say "$(usr <<<"$J" | grep -cF "core.hooksPath=$hp, the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/")" "1" "…while doctor's ❌ for the move is on screen"
+  rm -rf "$D"
+done
+# Control: nothing moved — the seven hooks are not in .flight-rules/hooks/ (the folder
+# itself is, holding agent/) — and the sync updates .ai/hooks as before.
+D=$(mkrepo); oldnamed "$D" .ai/hooks
+for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do rm -f "$D/.flight-rules/hooks/$h"; done
+J=$( (cd "$D" && HOME="$D/fakehome" bash "$T/hooks/agent/session-start.sh" 2>&1); echo "rc=$?")
+say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "core.hooksPath=.ai/hooks, nothing moved, auto: the hook exits 0"
+say "$(cmp -s "$D/.ai/hooks/commit-msg" "$T/hooks/git/commit-msg" && echo same)" "same" "…the stale copy in .ai/hooks is updated"
+say "$(ctx <<<"$J" | grep -c 'synced commit-msg (flight-rules 9.9.9)')" "1" "…and the sync says so"
+rm -rf "$D"
 # A headless session syncs (the clone is protected at once) but its notice reaches no
 # screen, and the next attended session found the hooks current and said nothing of the
 # uncommitted diff (final release /dg, 2026-10-17). It now says so, on screen.

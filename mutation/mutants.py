@@ -328,7 +328,7 @@ mut('S060', SS, 'elif [ -n "$_changed" ]; then', 'elif false; then', 'session-st
 mut('S062', SS, '[ -n "$PROBLEMS" ] && ', 'false && ', 'session-start', what='doctor output not passed to assistant')
 mut('S064', SS, "grep -qE '❌ .*(copy —|missing from)'", 'true', 'session-start', what='sync command beside any ❌')
 mut('S063', SS, "&& _show='❌|^[[:space:]]+to update:'", '', 'session-start', what='sync command never on screen')
-mut('S072', SS, 'git config --path core.hooksPath', 'git config core.hooksPath', 'session-start', what='hooksPath ~ not expanded')
+mut('S072', SS, 'HP=$(git config --path core.hooksPath', 'HP=$(git config core.hooksPath', 'session-start', what='hooksPath ~ not expanded')
 mut('S071', SS, 'case "$HP" in ""|/*) HP_DIR="$HP" ;; *) HP_DIR="$TOP/$HP" ;; esac', 'HP_DIR="$TOP/$HP"', 'session-start', what='hooksPath absolute joined to top')
 mut('S065', SS, 'if [ -z "$TOP" ]; then', 'if false; then', 'session-start', what='no repo: screen not cleared')
 mut('S066', SS, 'elif [ -f "$TOP/$(conf_rel "$TOP")" ] || ', 'elif ', 'session-start', what='conf not adoption')
@@ -955,6 +955,7 @@ mut('D150', DOC, '      _old_run=1\n', '      HOOKS_PATH=.flight-rules/hooks; HO
 mut('D151', DOC, '        if [[ -n "$_old_run" ]]; then\n          :\n        elif', '        if false; then\n          :\n        elif', 'flight-rules-doctor', what='doctor: a hook gone from the old folder is copied back into it')
 mut('D152', DOC, '    if [[ -n "$_old_run" ]]; then\n      NEEDS_SYNC=0\n    elif', '    if false; then\n      NEEDS_SYNC=0\n    elif', 'flight-rules-doctor', what='doctor: on the old folder, install.sh is offered into it')
 mut('D153', DOC, '      NEEDS_SYNC=0\n', '      :\n', 'flight-rules-doctor', what='doctor: on the old folder, the sync is offered into it')
+mut('S121', SS, '      [ -f "$PROJECT_ROOT/.flight-rules/hooks/$_h" ] && exit 0', '      :', 'session-start', what='session start: with the hooks moved, the sync still writes into .ai/hooks (#162)')
 
 # ---- #127: the doctor reads the conf with the hooks' reader.
 mut('D140', DOC, 'if [[ -z "$_prot" || "$_prot" == "off" || "$_prot" == "none" ]]; then', 'if [[ -z "$_prot" || "$_prot" == "off" ]]; then', 'install flight-rules-doctor', what='doctor: none derives a note gate')

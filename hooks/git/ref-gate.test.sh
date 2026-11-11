@@ -828,6 +828,19 @@ finishes "a cherry-pick of two" "git cherry-pick --continue" "feature: y" range_
 finishes "a revert of one commit" "git commit --no-edit" 'Revert "chore: second"' git revert --no-edit HEAD
 finishes "a revert of two" "git commit --no-edit" 'Revert "chore: base"' git revert --no-edit HEAD HEAD~1
 finishes "a git am" "git am --continue" "feature: x" am_patch
+# Stopped on a conflict first, resolved, and refused at `--continue` (#161, R4). A side
+# branch off main~1 adds s.txt, which main holds with other content: picking it is an
+# add/add conflict and reverting it a modify/delete one, main and origin unmoved. A box
+# for the pick itself prints the same command, so the conflict is checked, not assumed.
+side_s() { git checkout -q -b side main~1 && echo side > s.txt && git add -A && git commit -qm "side: s" && git checkout -q main; }
+resolve_continue() {
+    git ls-files -u | grep -q . || die "the $1 did not stop on a conflict"
+    echo resolved > s.txt && git add s.txt && GIT_EDITOR=true git "$1" --continue
+}
+pick_conflict() { git cherry-pick side; resolve_continue cherry-pick; }
+revert_conflict() { git revert --no-edit side; resolve_continue revert; }
+FINISH_SETUP=side_s finishes "a cherry-pick resolved after a conflict" "git cherry-pick --continue" "side: s" pick_conflict
+FINISH_SETUP=side_s finishes "a revert resolved after a conflict" "git revert --continue" 'Revert "side: s"' revert_conflict
 # main with a commit of its own (made past the hook), and origin/main moved on by
 # another clone: the rebase replays it, and moving main at its end is refused.
 local_and_upstream() {
