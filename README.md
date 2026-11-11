@@ -179,7 +179,7 @@ the pattern [`multi-ai-setup`](rules/multi-ai-setup.md) principle 4 describes.
 ## Parameters
 
 Skills refer to placeholders rather than hardcoding a project's setup. The branch
-policy has **one home, `.flight-rules/conf`**, the file the hooks read —
+policy has **one home, `.flight-rules/conf`** (`.ai/flight-rules.conf` where a project has not moved it yet), the file the hooks read —
 `PROTECTED_BRANCHES`, `PR_ONLY_BRANCHES`, `NOTE_GATED_BRANCHES`, `INTEGRATION_BRANCH`,
 `WORKTREE_DIR`, `MERGE_NEEDS_INSTRUCTION` — so the skills and the enforcement never disagree about which
 branches are protected. The rest lives in the skill's `EXTENSIONS.md`. The conf's other
