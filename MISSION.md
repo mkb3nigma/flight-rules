@@ -19,8 +19,8 @@ The standard is one; the restraint is not. flight-rules reminds the developer an
 restrains the assistant. A hygiene slip is reminded of, never stopped. A catastrophe is
 stopped once, and the stop prints the one command that goes ahead anyway: a stop with
 its way through printed is not a block, and flight-rules never blocks the developer.
-The person takes the way through when they mean it; an assistant takes it only when
-the person says so.
+The person takes the way through when they mean it, and runs it themselves; an
+assistant leaves it to them.
 
 It is not a security boundary (principle 1), and not a project's CI or its own checks:
 those live in that project — its pipeline, its `.ai/` extensions. What it finds
@@ -64,9 +64,9 @@ stop.
    and checks say nothing: a notice that repeats on every healthy run is noise, and
    noise hides the warning that matters. flight-rules' own automation — the sync, the
    doctor — makes no branch, worktree or file write for the developer to get round a
-   stop. The assistant takes the legitimate route, and the way through only when
-   the person says so — going ahead is the person's decision — and pushes nothing
-   unasked.
+   stop. The assistant takes the legitimate route and leaves the way through to the
+   person — going ahead is the person's decision, and they run it themselves — and
+   pushes nothing unasked.
 
 ## The five questions
 

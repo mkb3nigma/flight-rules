@@ -102,6 +102,26 @@ if ! COMMAND=$(printf '%s' "$INPUT" | json_command); then
   exit 0
 fi
 
+# ── The way through every stop is the person's (#155) ─────────────────────────
+# Every git hook that stops prints `FLIGHT_RULES_GO_AHEAD=1 <the command>`, and an assistant
+# reads the same box. Going ahead is the person's decision (MISSION.md): an assistant
+# that sets the variable is refused, wherever the command is aimed and whatever the
+# branch policy, since it also passes the secret scan, which stays on everywhere. The
+# person runs the command themselves. Matched anywhere in the command, as an assignment
+# of anything but nothing or 0 — after `env`, `export`, or in front of a command alike
+# — so text that names it with a value is refused too: the prose trade the guard
+# already accepts (hooks/README.md). A name built at run time is reached only on purpose.
+GO_AHEAD_RE='FLIGHT_RULES_GO_AHEAD=([^0[:space:];&|)]|0[^[:space:];&|)])'
+if [[ "$COMMAND" =~ $GO_AHEAD_RE ]]; then
+  deny "⛔ BLOCKED: this command sets FLIGHT_RULES_GO_AHEAD.
+
+That variable is the way through a flight-rules stop, and going ahead is the person's decision, not an assistant's — even when they tell you to go ahead. Tell them what the stop said and what it would pass, and give them the command to run themselves:
+  FLIGHT_RULES_GO_AHEAD=1 <the command that was stopped>
+
+Or take the route the stop printed instead (a worktree, a PR, /pre-merge-check), which leaves the work checked."
+  exit 0
+fi
+
 # ── What kind of command is this? ────────────────────────────────────────────
 # `git -C <dir>` and `git -c key=val` (both repeatable) sit between `git` and its
 # verb. Normalise them away once so every matcher below sees `git <verb>`. The
