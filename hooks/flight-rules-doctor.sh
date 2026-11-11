@@ -129,13 +129,31 @@ if [[ -z "$HOOKS_PATH" ]]; then
   fi
 else
   HOOKS_DIR="$HOOKS_PATH"; [[ "$HOOKS_DIR" = /* ]] || HOOKS_DIR="$ROOT/$HOOKS_DIR"
+  # The folder moved in 0.29.0, and git config is per clone: a clone that pulls the move
+  # still names the old one (#153). Read as written — `./.ai/hooks`, `.ai/hooks/` — and
+  # whether or not the old folder is still there: a stray file keeping it alive, or half
+  # the hooks left in it, drew one `cp … .ai/hooks/` per hook, back into the folder the
+  # project left (0.29.0 release review, D3).
+  # The pattern in a variable: bash 3.2 keeps the backslash of `\/` in the replacement.
+  _old_named=""; _hp="${HOOKS_DIR%/}"; _dot='/./'; _hp="${_hp//"$_dot"//}"
+  if [[ "$_hp" == "$ROOT/.ai/hooks" ]]; then
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
+      [[ -f "$ROOT/.flight-rules/hooks/$h" ]] && { _old_named=1; break; }
+    done
+  fi
+  if [[ -n "$_old_named" ]]; then
+    if [[ -d "$HOOKS_DIR" ]]; then
+      bad "core.hooksPath=$HOOKS_PATH, the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks"
+    else
+      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"
+    fi
+    # The copies checked below are the moved ones, which run once the line above is.
+    HOOKS_PATH=.flight-rules/hooks; HOOKS_DIR="$ROOT/.flight-rules/hooks"
+  fi
   if [[ ! -d "$HOOKS_DIR" ]]; then
-    # The folder moved in 0.29.0, and git config is per clone: a clone that pulls the
-    # move still names the old one (#153).
-    _mv=""; [[ "${HOOKS_DIR%/}" == "$ROOT/.ai/hooks" && -d "$ROOT/.flight-rules/hooks" ]] && _mv=" — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"
-    bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks$_mv"
+    bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
   else
-    ok "core.hooksPath=$HOOKS_PATH"
+    [[ -n "$_old_named" ]] || ok "core.hooksPath=$HOOKS_PATH"
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
         # A plugin upgrade cannot copy git hooks into a project, so a hook added in a

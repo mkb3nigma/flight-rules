@@ -970,6 +970,22 @@ say "$(grep -c 'not running the hooks committed in .ai/hooks/' <<<"$OUT")" "1" "
 git -C "$D" config core.hooksPath .ai/hooks; mkdir -p "$D/.flight-rules"; mv "$D/.ai/hooks" "$D/.flight-rules/hooks" || die "could not move the hooks to their new place"
 OUT=$(run "$D")
 say "$(grep -c 'core.hooksPath=.ai/hooks but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks' <<<"$OUT")" "1" "core.hooksPath still naming .ai/hooks after the move: said, with the command"
+# Not only when the old folder is gone and spelled exactly: a stray file keeping it, or
+# half the hooks left there, drew a `cp … .ai/hooks/` per hook (D3).
+MOVED='the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks'
+mkdir -p "$D/.ai/hooks"; : > "$D/.ai/hooks/.DS_Store"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'missing from\|\.ai/hooks/ &&\|\.ai/hooks/'"'"' &&' <<<"$OUT")" "110" "the old folder still there with only a stray file: the move said, and no copy back into it"
+git -C "$D" config core.hooksPath ./.ai/hooks/
+OUT=$(run "$D")
+say "$(grep -c "core.hooksPath=./.ai/hooks/, $MOVED" <<<"$OUT")" "1" "…spelled ./.ai/hooks/: the same"
+rm -rf "$D/.ai/hooks"
+OUT=$(run "$D")
+say "$(grep -c 'core.hooksPath=./.ai/hooks/ but that directory does not exist — git runs NO hooks — the hooks moved' <<<"$OUT")" "1" "…and spelled so with the old folder gone: the move said"
+git -C "$D" config core.hooksPath .ai/hooks; mkdir -p "$D/.ai/hooks"
+mv "$D/.flight-rules/hooks/pre-merge-commit" "$D/.flight-rules/hooks/commit-msg" "$D/.ai/hooks/" || die "could not split the hooks in $D"
+OUT=$(run "$D")
+say "$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'pre-merge-commit missing from .flight-rules/hooks' <<<"$OUT")$(grep -c 'missing from .ai/hooks' <<<"$OUT")" "110" "half moved: the move said, and the missing hooks named in the new folder, not the old"
 rm -rf "$D"
 
 echo "The doctor reads the conf as the hooks do (#127):"
