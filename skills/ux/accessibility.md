@@ -93,5 +93,5 @@ audio and video captions (1.2.x), for one, are not repeated here.
   itself submit a form, open a new window or move the person elsewhere. (3.2.1, 3.2.2)
 - **A34** [standard] Navigation repeated across pages stays in the same order, and a
   component that does the same thing has the same name everywhere. (3.2.3, 3.2.4)
-- **A35** [standard] Help — contact details, a help link, a chat — sits in the same
-  place on every page that has it. (3.2.6)
+- **A35** [standard] Help — contact details, a help link, a chat — that repeats across
+  pages comes in the same order relative to the rest of the page on each. (3.2.6)
