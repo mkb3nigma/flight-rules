@@ -21,11 +21,16 @@ trigger: always_on
 - A blocked command is information, not an obstacle: read the reason, do what it says,
   re-run. Never slip past a guard by editing it or its config, adding `--no-verify`,
   reshaping the command to dodge it, or taking the way through its message prints for
-  the person — that one is theirs to take, or to tell you to. A person may still run it, told that it was
-  refused, by what and why: that is a decision you are asking for (§7). Never one that
-  writes a `pre-merge-check` note by hand: the note says the check ran, and only
-  running it may write one. If the block is wrong, or refuses a step the project's own
-  workflow requires, stop and say so; that is a finding, and the owner decides
+  the person — that one is theirs to take, or to tell you to. A person may still run
+  it, told that it was refused, by what and why: that is a decision you are asking for
+  (§7). Never one that writes a `pre-merge-check` note by hand: the note says the check
+  ran, and only running it may write one. If the block is wrong, or refuses a step the
+  project's own workflow requires, stop and say so; that is a finding, and the owner
+  decides
+- A push to a branch the project protects — its main line, the branch work integrates
+  on — is the person's to ask for, in this session: it publishes, and undoing it here
+  does not unpublish it. Not asked, print the command and say what it would move.
+  Nothing checks this: to a hook, a push that was asked for looks like one that was not
 - An action nothing can undo — force-pushing or rewriting shared history, deleting an
   unmerged branch, discarding uncommitted or stashed work you did not make, dropping
   data — needs a person's yes first; a request that names the action is that yes. With
