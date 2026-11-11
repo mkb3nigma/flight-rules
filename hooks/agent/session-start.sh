@@ -40,7 +40,8 @@ PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=$(pwd)
 # Parameters: .flight-rules/conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
 # read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
-# so a key reads here as the guard and doctor read it (session-start.test.sh compares).
+# so a key reads here as the guard and the doctor read it (session-start.test.sh and
+# flight-rules-doctor.test.sh compare).
 read_conf() {
   local key="$1" file="$2"
   [ -r "$file" ] || return 1

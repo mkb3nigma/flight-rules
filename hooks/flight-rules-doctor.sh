@@ -298,6 +298,17 @@ elif command -v python3 >/dev/null 2>&1; then ok "python3 on PATH (jq fallback)"
 else bad "neither jq nor python3 on PATH — the agent guard will deny every git command"; fi
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
+# read_conf <key> <file>: pre-commit-check.sh's, verbatim (flight-rules-doctor.test.sh
+# compares), so a value reads here as the hooks read it. Three sed parsers of this
+# script's own took `off  # trunk only` and 'off' for patterns, and printed a ✅ about a
+# note gate beside the ⚠️ that said protection was off (#127).
+read_conf() {
+  local key="$1" file="$2"
+  [ -r "$file" ] || return 1
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
 CONF=".flight-rules/conf"
 # Before 0.29.0 it was .ai/flight-rules.conf, which every hook still reads where the
 # new one is absent (#153). The move is a commit, so it is made on a branch.
@@ -343,10 +354,10 @@ else
               # nothing said a word. Only worth saying when the project actually
               # integrates somewhere other than the branch it releases from; a
               # trunk-only project has no note-gated branch either way.
-              _ib=$(sed -n -E 's/^[[:space:]]*INTEGRATION_BRANCH[[:space:]]*=[[:space:]]*"?([^"[:space:]#]+)"?.*$/\1/p' "$CONF" | tail -1)
+              _ib=$(read_conf INTEGRATION_BRANCH "$CONF")
               # …unless the integration branch is itself PR-only, in which case local
               # merges into it are refused outright and there is no note gate to lose.
-              _pr=$(sed -n -E 's/^[[:space:]]*PR_ONLY_BRANCHES[[:space:]]*=[[:space:]]*"?([^"[:space:]#]+)"?.*$/\1/p' "$CONF" | tail -1)
+              _pr=$(read_conf PR_ONLY_BRANCHES "$CONF")
               _ib_is_pr_only=0
               if [[ -n "$_pr" && "$_pr" != "off" && "$_pr" != "none" && -n "$_ib" ]]; then
                 ( shopt -s nocasematch; [[ "$_ib" =~ $_pr ]] ) 2>/dev/null && _ib_is_pr_only=1
@@ -398,9 +409,9 @@ else
   # stamp. Silence about a rule that IS in force is the "looks installed" failure
   # this script exists to catch, so say what the derivation came to.
   if ! grep -qE '^[[:space:]]*NOTE_GATED_BRANCHES[[:space:]]*=' "$CONF"; then
-    _prot=$(sed -n -E 's/^[[:space:]]*PROTECTED_BRANCHES[[:space:]]*=[[:space:]]*"?([^"]*)"?[[:space:]]*$/\1/p' "$CONF" | tail -1)
-    _pronly=$(sed -n -E 's/^[[:space:]]*PR_ONLY_BRANCHES[[:space:]]*=[[:space:]]*"?([^"]*)"?[[:space:]]*$/\1/p' "$CONF" | tail -1)
-    if [[ -z "$_prot" || "$_prot" == "off" ]]; then
+    _prot=$(read_conf PROTECTED_BRANCHES "$CONF")
+    _pronly=$(read_conf PR_ONLY_BRANCHES "$CONF")
+    if [[ -z "$_prot" || "$_prot" == "off" || "$_prot" == "none" ]]; then
       ok "NOTE_GATED_BRANCHES unset — nothing is note-gated (no protected set)"
     elif [[ "$_prot" == "$_pronly" ]]; then
       ok "NOTE_GATED_BRANCHES unset — nothing is note-gated (every protected branch is PR-only)"
