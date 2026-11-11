@@ -285,10 +285,10 @@ The `## Comic` section is absent with `DG_COMIC=never`, and the last line appear
 with `DG_COMIC_PR=ask` on a review that is for a PR. The decisions are the reply's last
 section — only that optional line follows them — where a reader in a terminal lands; a numbered list, not a table, because each one is
 sentences, and a table of sentences wrapped past reading at terminal width
-(2026-10-24). With none, the section says so: `## Decisions waiting (0)`. This is the
-one place the order departs from `engineering-principles.md` §7, which leads with what
-needs deciding: a verdict runs to screens, and its first screen is the one scrolled
-past. Each decision is still decidable from its item alone, as §7 asks.
+(2026-10-24). With none, the section says so: `## Decisions waiting (0)`. Last, as
+`engineering-principles.md` §7 puts them: a verdict runs to screens, and its first
+screen is the one scrolled past. Each decision is decidable from its item alone, as §7
+asks.
 
 `## Verdict` ends at Recommended Actions, so wherever a PR body takes "the verdict", it
 takes neither the comic, nor the round tables' BANTER lines, nor the decisions (the PR
