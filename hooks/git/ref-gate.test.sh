@@ -842,7 +842,8 @@ local_and_upstream() {
 # it leaves rebase-apply without its head-name, and git can neither continue nor abort.
 FINISH_SETUP=local_and_upstream finishes "a rebase of main" "git rebase --continue" "chore: local" git rebase origin/main
 D=$(make_repo default); git -C "$D" checkout -q feature/x; BEFORE=$(git -C "$D" rev-parse main)
-mkdir -p "$(git -C "$D" rev-parse --git-path sequencer)"   # an operation in progress on feature/x
+mkdir -p "$D/$(git -C "$D" rev-parse --git-path sequencer)" || die "no sequencer in $D"   # an operation in progress on feature/x
+[ -d "$D/.git/sequencer" ] || die "the sequencer is not where git looks for it"
 OUT=$(git -C "$D" branch -f main feature/x 2>&1); RC=$?
 say "$([ "$RC" -ne 0 ] && echo refused)$(git -C "$D" rev-parse main)$(grep -c '^║   FLIGHT_RULES_GO_AHEAD=1 <the same command>  *║$' <<<"$OUT")" "refused${BEFORE}1" "main moved from another branch, an operation in progress there: the same command, not that operation's"
 rm -rf "$(dirname "$D")"
