@@ -108,10 +108,11 @@ fi
 # that sets the variable is refused, wherever the command is aimed and whatever the
 # branch policy, since it also passes the secret scan, which stays on everywhere. The
 # person runs the command themselves. Matched anywhere in the command, as an assignment
-# of anything but nothing or 0 — after `env`, `export`, or in front of a command alike
+# of anything but nothing or 0, `+=` as `=` — after `env`, `export`, `declare`, or in
+# front of a command alike
 # — so text that names it with a value is refused too: the prose trade the guard
 # already accepts (hooks/README.md). A name built at run time is reached only on purpose.
-GO_AHEAD_RE='FLIGHT_RULES_GO_AHEAD=([^0[:space:];&|)]|0[^[:space:];&|)])'
+GO_AHEAD_RE='FLIGHT_RULES_GO_AHEAD[+]?=([^0[:space:];&|)]|0[^[:space:];&|)])'
 if [[ "$COMMAND" =~ $GO_AHEAD_RE ]]; then
   deny "⛔ BLOCKED: this command sets FLIGHT_RULES_GO_AHEAD.
 
