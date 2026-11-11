@@ -71,8 +71,11 @@ fi
 
 echo "{TEST_COMMANDS} lists every suite that exists, and only those:"
 # session-start.test.sh was written on 2026-09-12 and had to be added here, to CI and to
-# hooks/README.md by hand. A suite nobody runs is a suite that rots.
-ON_DISK=$(find . -name '*.test.sh' -not -path './.ai/*' | sed 's|^\./||' | sort)
+# hooks/README.md by hand. A suite nobody runs is a suite that rots. Not a worktree's
+# copies: the worktrees moved to .flight-rules/ in 0.29.0 and only .ai/ was left out, so
+# from a main checkout holding a worktree every suite in it read as unlisted (found at
+# the release's full run, 2026-11-11).
+ON_DISK=$(find . -name '*.test.sh' -not -path './.ai/*' -not -path './.flight-rules/*' | sed 's|^\./||' | sort)
 LISTED=$(sed -n -E 's/^\| `\{TEST_COMMANDS\}` \| (.*)$/\1/p' AGENTS.md \
          | grep -oE '[A-Za-z0-9_./-]+\.test\.sh' | sort -u)
 for f in $ON_DISK; do
