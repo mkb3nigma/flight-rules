@@ -15,7 +15,7 @@ flight-rules plugin registers it as a `PreToolUse` hook — no copying, no wirin
 does not want that, opt out rather than uninstalling:
 
 ```ini
-# .ai/flight-rules.conf
+# .flight-rules/conf
 PROTECTED_BRANCHES=off
 ```
 
@@ -24,8 +24,8 @@ too — and never the secret scan: the *Protected branches* row of the
 [Configuration table](#configuration) lists exactly what it stands down.
 
 The **git hooks in `git/`** are still **files to copy**: git finds them through
-`core.hooksPath`, which no plugin can set for you. Copy them to `.ai/hooks/` and run
-`install.sh`. No editing — they read their branches from `.ai/flight-rules.conf`, the
+`core.hooksPath`, which no plugin can set for you. Copy them to `.flight-rules/hooks/` and run
+`install.sh`. No editing — they read their branches from `.flight-rules/conf`, the
 one channel git hooks, agent hooks and skills all share.
 
 > **What these are for.** They catch the workflow slip — a fix committed straight to a
@@ -55,11 +55,11 @@ before you rely on them.
 ## Configuration
 
 Every hook is configured per project **without forking it**, from
-`.ai/flight-rules.conf` — beside the rules, not inside any one tool's settings, so
+`.flight-rules/conf` — beside the rules, not inside any one tool's settings, so
 every layer reads one list:
 
 ```ini
-# .ai/flight-rules.conf
+# .flight-rules/conf
 PROTECTED_BRANCHES=^(main|release/.*)$
 WORKTREE_DIR=.worktrees
 ```
@@ -77,14 +77,14 @@ whitespace, so a `#` inside a value (`^feature#1$`) is kept.
 | Note-gated branches | `NOTE_GATED_BRANCHES` | `FLIGHT_RULES_NOTE_GATED_BRANCHES` | `commit-msg` | Merging in needs a passing `pre-merge-check` note. **No default names**: unset, the gated set is *protected but not PR-only*, so a project gets the gate on whatever it calls its branches. Set it to override, or to `off`. A pattern that does not compile gates every branch until it is fixed, and the refusal names it and prints the way past it (#103). Because the default is derived, `PROTECTED_BRANCHES=off` empties it — name this key if the note gate should survive that. |
 | Merge needs instruction | `MERGE_NEEDS_INSTRUCTION` | `FLIGHT_RULES_MERGE_AUTHORISED` (per-merge) | `commit-msg` | A merge into a protected branch is refused unless `FLIGHT_RULES_MERGE_AUTHORISED=1` is set on that merge. Default on. Set to `off` to drop the check. Either way the merge commit gets a `Merge-authorisation:` trailer. |
 | Integration branch | `INTEGRATION_BRANCH` | — | `post-merge`, `session-start.sh`, skills; the routes the guard prints (the working-tree conf), and `pre-merge-commit` and the ref gate (the conf at `HEAD`) | Where features merge. Default `main` everywhere. |
-| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, ref gate's message, skills (the conf only) | Where worktrees live; suggested in the block message. Default `.ai/worktrees`. |
+| Worktree path | `WORKTREE_DIR` | `FLIGHT_RULES_WORKTREE_DIR` | agent guard, `session-start.sh`, ref gate's message, skills (the conf only) | Where worktrees live; suggested in the block message. Default `.flight-rules/worktrees`. |
 | Git-hook sync | `HOOK_SYNC` | — | `session-start.sh` | `auto`: the first session each day, and the first after a plugin update, runs `install.sh --from <plugin>/hooks/git --stale-only`, replacing hooks that are byte-identical to an older cached release and copying in missing ones (not a missing `install.sh`: nothing needs it to run the hooks, so doctor names it with the `cp` that restores it), then leaves the diff for you to commit. Only a **local** `core.hooksPath` inside the checkout the session runs in is touched — from a linked worktree, hooks in the main checkout are not synced (the write would land in that checkout's working tree); when one there is stale or missing the session says so and prints the command that updates this worktree's own copy instead (`--this-checkout`), to commit on its branch and merge, and when all are current it says nothing — never during a merge, rebase, `git am`, cherry-pick, revert or bisect — that skip is said, with the command to run once it is finished — nor on a protected branch, where the diff could not be committed — protected as the agent guard decides it, `FLIGHT_RULES_PROTECTED_BRANCHES` first and case-insensitively, and a `PROTECTED_BRANCHES` pattern that does not compile counts as protected, said as such: there it only compares, names what is behind or missing, lists apart what the command leaves alone, and prints the command to run in a worktree on a branch (silent when all are current); with `--this-checkout` it updates that worktree's copy even when git runs the hooks from the main checkout (without `--stale-only`, replacing what differs there too), and the merge brings it there — and the config is never rewritten. A headless session (`CLAUDE_CODE_SESSION_ATTENDED=0`) syncs until an attended session has run that day, spending no flag, and its notice reaches no screen — so an attended session says on screen when the hook directory has uncommitted changes, whoever made them, and when git cannot fully tell (it shows what git said). A hook you adapted on purpose carries a line `# flight-rules: adapted` and is left alone and accepted; one the sync cannot read is said to be unreadable and left alone, on screen even when nothing else was synced. Default `report`: `flight-rules-doctor.sh` names each stale or missing hook and prints the sync command, and nothing is written. |
-| Open-branch limit | `OPEN_BRANCH_LIMIT` | `FLIGHT_RULES_OPEN_BRANCH_LIMIT` | `session-start.sh`, `feature-start` | When this many branches are open at once — checked out in a worktree, with commits not yet in `INTEGRATION_BRANCH`, a protected one aside — the session's first run each day warns, on screen and to the assistant, naming which have passed `pre-merge-check` and wait to merge and which have not, and where the limit is set; when it cannot count (no integration branch, local or `origin/`; a git failure) it tells the assistant so. `session-start` only warns and never blocks; `/feature-start` asks before opening another (step 5) and opens it only once you say it is okay — with no one to ask, it reports the count and creates nothing. Merged means in the local `INTEGRATION_BRANCH` or in `origin/`'s as last fetched — so a branch merged by PR stops counting once fetched, while a squash-merged one counts until its worktree goes. Default `5`; `off` stands it down; any other value is taken as 5 (doctor says so). Only in a project with `.ai/flight-rules.conf`. |
+| Open-branch limit | `OPEN_BRANCH_LIMIT` | `FLIGHT_RULES_OPEN_BRANCH_LIMIT` | `session-start.sh`, `feature-start` | When this many branches are open at once — checked out in a worktree, with commits not yet in `INTEGRATION_BRANCH`, a protected one aside — the session's first run each day warns, on screen and to the assistant, naming which have passed `pre-merge-check` and wait to merge and which have not, and where the limit is set; when it cannot count (no integration branch, local or `origin/`; a git failure) it tells the assistant so. `session-start` only warns and never blocks; `/feature-start` asks before opening another (step 5) and opens it only once you say it is okay — with no one to ask, it reports the count and creates nothing. Merged means in the local `INTEGRATION_BRANCH` or in `origin/`'s as last fetched — so a branch merged by PR stops counting once fetched, while a squash-merged one counts until its worktree goes. Default `5`; `off` stands it down; any other value is taken as 5 (doctor says so). Only in a project with `.flight-rules/conf`. |
 | `/dg` comic | `DG_COMIC` | — | `/dg` (an instruction, not a hook) | `always` (default): every verdict carries an ASCII comic of the best banter, with the banter score, right after its header — the decisions close the reply. `never`: no comic and no score. |
 | `/dg` comic in PRs | `DG_COMIC_PR` | — | `/dg`, `pr-create` (instructions, not hooks) | Whether a review that is for a PR puts the comic, banter score included, in it. Strictly opt-in: `never` (default) keeps it out without asking, `ask` asks at the end of the verdict, `always` adds it. Ignored with `DG_COMIC=never`. |
 | `/dg` round-2 wait | `DG_WAIT_MINUTES` | — | `/dg` (an instruction, not a hook) | Round 2 of the debate waits for the pre-review and the dependency scan; a run with no result after this many minutes counts as failed. A positive whole number; default `15`. |
 
-Resolution order is **environment → `.ai/flight-rules.conf` → built-in default**, and
+Resolution order is **environment → `.flight-rules/conf` → built-in default**, and
 the conf file is read from the repo the command targets, so a session spanning several
 repos gets each project's own policy.
 
@@ -92,7 +92,7 @@ repos gets each project's own policy.
 > merge git updates the working tree *before* the hooks run, so a working-tree read
 > would let the incoming branch configure the gate that judges it — a branch shipping
 > `NOTE_GATED_BRANCHES=^nothing$` would wave itself through. They read
-> `HEAD:.ai/flight-rules.conf` (the merge target's committed policy) and fall back to
+> `HEAD:.flight-rules/conf` (the merge target's committed policy) and fall back to
 > the built-in default, never to the working tree. Practical consequence: **a conf
 > change only takes effect on the merge gate once it is committed on the target
 > branch.** `pre-commit-check.sh` still reads the working tree on purpose — it guards
@@ -127,16 +127,19 @@ Worked examples:
 
 ### Where to set it
 
-- **`.ai/flight-rules.conf`** (recommended) — tool-agnostic and committed with the
+- **`.flight-rules/conf`** (recommended) — tool-agnostic and committed with the
   project, so every assistant and every contributor gets the same policy. This is the
-  one to use.
+  one to use. Before 0.29.0 it was `.ai/flight-rules.conf`: every hook still reads that
+  one where `.flight-rules/conf` is absent — as committed, for the hooks that read the
+  conf from a commit — and where both exist the new one alone is read. The doctor says
+  which it found, with the move.
 - **`.claude/settings.json` `"env"`** — a Claude-Code-only override, for when a policy
   should apply to Claude sessions but not to the git hooks.
 - **The shell environment** — `export FLIGHT_RULES_PROTECTED_BRANCHES='^main$'`. Useful
   for a one-off; not durable.
 
 The hook does **not** read a `.env` file. If your project keeps settings there, put the
-branch policy in `.ai/flight-rules.conf` instead — `.env` is for secrets and
+branch policy in `.flight-rules/conf` instead — `.env` is for secrets and
 per-machine values, and this policy is neither.
 
 ## Wiring (Claude Code)
@@ -147,7 +150,7 @@ filenames.
 
 **With the plugin, nothing to wire** — `hooks/hooks.json` registers all three agent
 hooks; pointing `settings.json` at a copy too runs the guard twice. **Without it**, keep
-the scripts in `.ai/hooks/` and point `.claude/settings.json` at them:
+the scripts in `.flight-rules/hooks/` and point `.claude/settings.json` at them:
 
 Register all **three**: without `session-start-rules.sh` **no rules are injected at
 all**, and without `session-start.sh` there is no install health check.
@@ -157,16 +160,16 @@ all**, and without `session-start.sh` there is no install health check.
   "hooks": {
     "SessionStart": [{ "hooks": [
       { "type": "command",
-        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/session-start-rules.sh\"'" },
+        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.flight-rules/hooks/session-start-rules.sh\"'" },
       { "type": "command",
-        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/session-start.sh\"'" }] }],
+        "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.flight-rules/hooks/agent/session-start.sh\"'" }] }],
     "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command",
-      "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.ai/hooks/agent/pre-commit-check.sh\"'" }] }]
+      "command": "bash -c 'exec \"$(git rev-parse --show-toplevel)/.flight-rules/hooks/agent/pre-commit-check.sh\"'" }] }]
   }
 }
 ```
 
-(Equivalently, `.claude/hooks/*.sh` can be two-line shims that `exec` the `.ai`
+(Equivalently, `.claude/hooks/*.sh` can be two-line shims that `exec` the `.flight-rules/hooks`
 scripts — useful when migrating an existing setup without touching settings.json.)
 
 The scripts read Claude Code's hook protocol — tool input as JSON on stdin, a
@@ -369,7 +372,7 @@ that the logic has exactly one home.
 - **`install.sh`** — one-time per clone: `chmod` the hooks, set
   `core.hooksPath`, and set `merge.ff false` so the merge gate always fires
   (a fast-forward merge would silently skip `pre-merge-commit`). It installs into
-  the directory the **local** `core.hooksPath` names, else `.ai/hooks/`, and writes
+  the directory the **local** `core.hooksPath` names, else `.flight-rules/hooks/`, and writes
   the path once, relative to the repo root, so every worktree resolves its own copy;
   a path already set is never rewritten (an absolute one written from a worktree
   outlived the worktree and left every checkout running no hooks). Setting it moves git
@@ -502,13 +505,13 @@ Guards that fire on the assistant's own events, before git ever runs:
   no plugin to reload, so the snippet above does not wire it, and without `--plugin` a
   copy records nothing. Doctor's ❌ problems, the command that fixes them, and a hook sync
   are printed as `systemMessage`, so they appear on the user's screen — in a project
-  that uses flight-rules (`.ai/flight-rules.conf` at the root, or flight-rules' hooks
+  that uses flight-rules (`.flight-rules/conf` at the root, or flight-rules' hooks
   installed). A repo with no `core.hooksPath` is shown the install hint
   once; one running another tool's hooks (husky), or a directory outside a repo, nothing.
   ⚠️ warnings never go on screen, since some are true by choice and would repeat daily.
   Everything goes to the assistant as `additionalContext` (with neither `jq` nor `python3`, plain stdout, which only the
   assistant sees). Reads
-  `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.ai/flight-rules.conf` when present.
+  `INTEGRATION_BRANCH` and `WORKTREE_DIR` from `.flight-rules/conf` when present.
   A branch is matched by its whole name: `grep -w` counted `-` as a word boundary and
   reported a worktree on `fix/auth` as merged because `fix/auth-tokens` was.
   Tests: `session-start.test.sh`.

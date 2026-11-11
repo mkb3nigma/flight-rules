@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wire the repo's committed git hooks into git — and, with --from, bring them up to
 # date first. Run from anywhere inside the repo:
-#   bash .ai/hooks/install.sh                               # one-time setup
+#   bash .flight-rules/hooks/install.sh                               # one-time setup
 #   bash <flight-rules>/hooks/git/install.sh --from <flight-rules>/hooks/git
 #                                                           # after a plugin update
 #                                                           # (a worktree: --this-checkout)
@@ -79,7 +79,10 @@ done
 # because git expands a leading ~: read raw, ~/x was joined to the repo root and an
 # install wrote the hooks into a literal "~" directory there.
 HOOKS_PATH=$(git config --local --path core.hooksPath 2>/dev/null || true)
-HOOKS_DIR="$REPO_ROOT/.ai/hooks"; PATH_IS_SET=0
+HOOKS_DIR="$REPO_ROOT/.flight-rules/hooks"; PATH_IS_SET=0
+# A project that committed its copies before 0.29.0 has them in .ai/hooks: a fresh clone
+# of it wires those, and does not start a second set beside them (#153).
+if [ ! -d "$HOOKS_DIR" ] && [ -d "$REPO_ROOT/.ai/hooks" ]; then HOOKS_DIR="$REPO_ROOT/.ai/hooks"; fi
 if [ -n "$HOOKS_PATH" ]; then
     PATH_IS_SET=1
     case "$HOOKS_PATH" in /*) HOOKS_DIR="$HOOKS_PATH" ;; *) HOOKS_DIR="$REPO_ROOT/$HOOKS_PATH" ;; esac

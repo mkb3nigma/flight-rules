@@ -8,12 +8,15 @@ every assistant reaches them through a small pointer file.
 
 ```
 .ai/
-├── flight-rules.conf        # Branch policy — the one file every hook and skill reads
 ├── master-rules.md          # The project's rules (tech stack, patterns, workflow)
 ├── rules/                   # Focused rule files (security, testing, …)
-├── skills/                  # Reusable AI workflows (plain Markdown, tool-agnostic)
-│   └── <name>/EXTENSIONS.md # This project's deltas to a shared skill
-└── hooks/                   # Git hooks (core.hooksPath); agent/ only when hand-wired
+└── skills/                  # Reusable AI workflows (plain Markdown, tool-agnostic)
+    └── <name>/EXTENSIONS.md # This project's deltas to a shared skill
+
+.flight-rules/               # What flight-rules itself keeps in the project
+├── conf                     # Branch policy — the one file every hook and skill reads
+├── hooks/                   # Git hooks (core.hooksPath); agent/ only when hand-wired
+└── worktrees/               # Feature worktrees, git-ignored (WORKTREE_DIR moves it)
 
 Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 ├── CLAUDE.md                        # Claude Code
@@ -67,5 +70,5 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    **with the plugin the agent hooks are already
    live from the plugin directory, and a local copy makes the guard run twice.** The
    git hooks are still copy-in — no plugin can set `core.hooksPath`. A project that
-   hand-wires everything does use `.ai/hooks/`; one that uses the plugin copies only
+   hand-wires everything does use `.flight-rules/hooks/`; one that uses the plugin copies only
    `hooks/git/`.

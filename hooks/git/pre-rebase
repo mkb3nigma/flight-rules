@@ -16,10 +16,10 @@
 # Configuration — first match wins, for each of the two keys:
 #   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
 #                             FLIGHT_RULES_PROTECTED_BRANCHES='^(main|dev)$'
-#   2. .ai/flight-rules.conf **as committed on HEAD** (read as data, never sourced)
+#   2. .flight-rules/conf **as committed on HEAD** (read as data, never sourced)
 #   3. The default below
 #
-# Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
+# Install: commit this file into the project's hooks dir (e.g. .flight-rules/hooks/) and run
 # install.sh once per clone.
 #
 # No bypass is printed. `git rebase --no-verify` skips this hook, but where origin has
@@ -31,7 +31,11 @@ set -euo pipefail
 
 DEFAULT_PR_ONLY='^main$'
 DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
-CONF_PATH='.ai/flight-rules.conf'   # repo-relative
+CONF_PATH='.flight-rules/conf'   # repo-relative
+# Where the conf lived before 0.29.0, read while a project has not moved it (#153).
+if ! git cat-file -e "HEAD:$CONF_PATH" 2>/dev/null && git cat-file -e 'HEAD:.ai/flight-rules.conf' 2>/dev/null; then
+  CONF_PATH='.ai/flight-rules.conf'
+fi
 
 read_conf_at_head() {
   local key="$1" path="$2" content
@@ -105,7 +109,7 @@ broken_box() {
     box_row "  $2"
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
-    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "The project owner fixes it in $CONF_PATH, on a"
     box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
     box_row "has landed, and if $4 is not a branch it means,"
     box_row "give the pattern meant in front of this command:"

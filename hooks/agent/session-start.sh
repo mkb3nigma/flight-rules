@@ -15,8 +15,8 @@
 # live 2.1.296 session, 2026-10-13: a plain-stdout marker reached the model and not the
 # screen, a systemMessage the screen and not the model).
 #
-# The screen is for projects that use flight-rules — a .ai/flight-rules.conf at the
-# repo root, or flight-rules' gate where git runs hooks from. (Committed .ai/hooks/ alone
+# The screen is for projects that use flight-rules — a .flight-rules/conf at the
+# repo root, or flight-rules' gate where git runs hooks from. (Committed .flight-rules/hooks/ alone
 # is not adoption: beside another tool's global hooksPath it put a daily `cp` into that
 # tool's directory on screen — fix review, 2026-10-13. A clone of that kind has no
 # hooksPath and gets the once-ever hint, which is where its wire-up command belongs.) A plugin
@@ -37,7 +37,7 @@ unset CDPATH
 # branch parameters went quietly to their defaults (full release review, S2).
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=$(pwd)
 
-# Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
+# Parameters: .flight-rules/conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
 # read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
 # so a key reads here as the guard and doctor read it (session-start.test.sh compares).
@@ -51,7 +51,14 @@ read_conf() {
 # conf_get <key>: read_conf on this project's conf. It had its own sed, which kept
 # single quotes: INTEGRATION_BRANCH='dev' counted open branches against a branch named
 # 'dev', quotes and all, while doctor showed ✅ (0.27.0 release review).
-conf_get() { read_conf "$1" "$PROJECT_ROOT/.ai/flight-rules.conf"; }
+conf_get() { read_conf "$1" "$PROJECT_ROOT/$CONF_REL"; }
+# conf_rel <root>: the conf's path under it — .flight-rules/conf, or .ai/flight-rules.conf,
+# its home before 0.29.0, while a project has not moved it (#153).
+conf_rel() {
+  if [ ! -f "$1/.flight-rules/conf" ] && [ -f "$1/.ai/flight-rules.conf" ]; then printf '.ai/flight-rules.conf'
+  else printf '.flight-rules/conf'; fi
+}
+CONF_REL=$(conf_rel "$PROJECT_ROOT")
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
 # leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
@@ -70,7 +77,7 @@ shq() {
 INTEGRATION_BRANCH="$(conf_get INTEGRATION_BRANCH)"; INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # {INTEGRATION_BRANCH}
 # The environment first, as the guard reads it: the conf alone, the stale-worktree
 # reminder looked where the guard did not send them (full release review, S6).
-WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(conf_get WORKTREE_DIR)}"; WORKTREE_DIR="${WORKTREE_DIR:-.ai/worktrees}"     # {WORKTREE_DIR}
+WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(conf_get WORKTREE_DIR)}"; WORKTREE_DIR="${WORKTREE_DIR:-.flight-rules/worktrees}"     # {WORKTREE_DIR}
 
 # Once a day PER PROJECT. The flag used to carry only the date, so the first
 # project opened each day took the reminder for all of them; and nothing pruned
@@ -166,7 +173,7 @@ fi
 # Protected as pre-commit-check.sh decides it: the environment first, then the conf
 # read by the same read_conf, the same default (session-start.test.sh compares them).
 # Read once, for the sync and the open-branch count below.
-PROT="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+PROT="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(conf_get PROTECTED_BRANCHES)}"
 PROT="${PROT:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
 
 # A headless session (`claude -p`, observed; other callers only if they set the variable
@@ -297,7 +304,7 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   fi
   if [ -n "$_check" ] && [ "$SYNC_RC" -eq 3 ]; then
     if [ -n "$_bad" ]; then
-      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. It is the project owner's to fix, in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it. Behind or missing:"
+      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. It is the project owner's to fix, in $CONF_REL (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it. Behind or missing:"
     else
       echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: this checkout is on \"$_br\", a protected branch, where the change could not be committed. Behind or missing:"
     fi
@@ -380,7 +387,7 @@ if [ -n "$DOCTOR_SCREEN" ]; then
   case "$HP" in ""|/*) HP_DIR="$HP" ;; *) HP_DIR="$TOP/$HP" ;; esac
   if [ -z "$TOP" ]; then
     DOCTOR_SCREEN=""
-  elif [ -f "$TOP/.ai/flight-rules.conf" ] || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
+  elif [ -f "$TOP/$(conf_rel "$TOP")" ] || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
     :   # adopted: shown daily
   elif [ -n "$HP" ]; then
     DOCTOR_SCREEN=""   # another tool's hooks; adopting flight-rules there is a choice
@@ -409,10 +416,10 @@ fi
 # "?" lines split off below: a missed reminder, but never one that reads as "under
 # the limit".
 OPEN_MSG=$(
-  [ -f "$PROJECT_ROOT/.ai/flight-rules.conf" ] || exit 0
-  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(read_conf OPEN_BRANCH_LIMIT "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+  [ -f "$PROJECT_ROOT/$CONF_REL" ] || exit 0
+  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(conf_get OPEN_BRANCH_LIMIT)}"
   # Where it came from, said: raising it in the conf does nothing when the environment set it.
-  _src="in .ai/flight-rules.conf"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
+  _src="in $CONF_REL"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
   [ "$_lim" = off ] && exit 0
   [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
   _base=""; _into=""

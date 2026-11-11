@@ -13,11 +13,11 @@ mkrepo() {
   local d; d=$(tmpd)
   git -C "$d" init -q -b main || die "git init failed in $d"
   git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
-  mkdir -p "$d/.ai/hooks"
-  cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$d/.ai/hooks/" \
+  mkdir -p "$d/.flight-rules/hooks"
+  cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$d/.flight-rules/hooks/" \
     || die "could not copy the hooks under test from $H"
-  chmod +x "$d"/.ai/hooks/*
-  git -C "$d" config core.hooksPath "$d/.ai/hooks"
+  chmod +x "$d"/.flight-rules/hooks/*
+  git -C "$d" config core.hooksPath "$d/.flight-rules/hooks"
   git -C "$d" config merge.ff false
   echo base > "$d/f"; git -C "$d" add -A
   git -C "$d" commit -qm "base" >/dev/null || die "the base commit failed in $d"
@@ -25,7 +25,7 @@ mkrepo() {
   # What every assertion assumes: both branches, and hooks that are actually wired.
   git -C "$d" rev-parse --verify -q main >/dev/null || die "no main in the fixture"
   git -C "$d" rev-parse --verify -q dev  >/dev/null || die "no dev in the fixture"
-  [ -x "$d/.ai/hooks/pre-merge-commit" ] || die "pre-merge-commit not executable in the fixture"
+  [ -x "$d/.flight-rules/hooks/pre-merge-commit" ] || die "pre-merge-commit not executable in the fixture"
   printf '%s' "$d"
 }
 
@@ -85,7 +85,7 @@ echo "Self-disabling — the gate must not be configurable by the thing it gates
 # A) branch un-gates dev in the conf, then merges itself into dev unstamped
 D=$(mkrepo)
 git -C "$D" checkout -q -b feature/sneaky dev
-printf 'NOTE_GATED_BRANCHES=^nothing$\n' > "$D/.ai/flight-rules.conf"
+printf 'NOTE_GATED_BRANCHES=^nothing$\n' > "$D/.flight-rules/conf"
 echo y > "$D/h"; git -C "$D" add -A; git -C "$D" commit -qm "feature: sneaky"
 git -C "$D" checkout -q dev
 OUT=$(git -C "$D" merge --no-ff feature/sneaky -m m 2>&1); RC=$?
@@ -95,7 +95,7 @@ git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 # B) branch relaxes PR_ONLY, then merges itself into main
 D=$(mkrepo)
 git -C "$D" checkout -q -b feature/sneaky2 main
-printf 'PR_ONLY_BRANCHES=^nothing$\n' > "$D/.ai/flight-rules.conf"
+printf 'PR_ONLY_BRANCHES=^nothing$\n' > "$D/.flight-rules/conf"
 echo y > "$D/h2"; git -C "$D" add -A; git -C "$D" commit -qm "feature: sneaky2"
 git -C "$D" checkout -q main
 OUT=$(git -C "$D" merge --no-ff feature/sneaky2 -m m 2>&1); RC=$?
@@ -105,7 +105,7 @@ git -C "$D" merge --abort 2>/dev/null; rm -rf "$D"
 # C) the legitimate path must still work: a conf committed on the TARGET is honoured
 D=$(mkrepo)
 git -C "$D" checkout -q dev
-printf 'NOTE_GATED_BRANCHES=^nothing$\n' > "$D/.ai/flight-rules.conf"
+printf 'NOTE_GATED_BRANCHES=^nothing$\n' > "$D/.flight-rules/conf"
 git -C "$D" add -A; git -C "$D" commit -qm "chore: conf"
 git -C "$D" checkout -q -b feature/legit dev
 echo y > "$D/h3"; git -C "$D" add -A; git -C "$D" commit -qm "feature: legit"
@@ -119,7 +119,7 @@ echo "A back-merge needs no note, but the incoming branch cannot make itself one
 # that land, and forged ones, are under "an exemption takes the pattern's exact case".)
 D=$(mkrepo)
 git -C "$D" checkout -q -b feature/sneaky3 dev
-printf 'PR_ONLY_BRANCHES=^feature/sneaky3$\n' > "$D/.ai/flight-rules.conf"
+printf 'PR_ONLY_BRANCHES=^feature/sneaky3$\n' > "$D/.flight-rules/conf"
 echo y > "$D/s3"; git -C "$D" add -A; git -C "$D" commit -qm "feature: sneaky3"
 git -C "$D" checkout -q dev
 OUT=$(git -C "$D" merge --no-ff feature/sneaky3 -m m 2>&1); RC=$?
@@ -180,12 +180,12 @@ while IFS='%' read -r desc conf envv; do
   PM=$(mktemp -d)
   git init -q -b main "$PM" || die "git init failed in $PM"
   git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t; git -C "$PM" config merge.ff false
-  mkdir -p "$PM/.ai"; printf "$conf\n" > "$PM/.ai/flight-rules.conf"
+  mkdir -p "$PM/.flight-rules"; printf "$conf\n" > "$PM/.flight-rules/conf"
   echo base > "$PM/f.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: base"
   git -C "$PM" branch dev; git -C "$PM" checkout -qb feature/real
   echo f > "$PM/g.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: feature"
   git -C "$PM" checkout -q dev
-  mkdir -p "$PM/.ai/hooks"; cp "$H/post-merge" "$PM/.ai/hooks/"; chmod +x "$PM/.ai/hooks/post-merge"; git -C "$PM" config core.hooksPath "$PM/.ai/hooks"
+  mkdir -p "$PM/.flight-rules/hooks"; cp "$H/post-merge" "$PM/.flight-rules/hooks/"; chmod +x "$PM/.flight-rules/hooks/post-merge"; git -C "$PM" config core.hooksPath "$PM/.flight-rules/hooks"
   ( [ -z "$envv" ] || export FLIGHT_RULES_PROTECTED_BRANCHES="$envv"; git -C "$PM" merge --no-edit feature/real >/dev/null 2>&1 ) || die "merge failed ($desc)"
   NOTE="$PM/.claude/post-merge-note.md"
   say "$(grep -cE 'git branch -d feature/real( |$)' "$NOTE" 2>/dev/null)" "1" "$desc: the note offers the merged branch"
@@ -212,8 +212,8 @@ WTB=$(mktemp -d); WT="$WTB/repo"
 git init -q -b trunk "$WT" || die "git init failed (git init -q -b trunk "$WT")"
 git -C "$WT" config user.email t@t.t; git -C "$WT" config user.name t
 git -C "$WT" config merge.ff false
-mkdir -p "$WT/.ai"
-printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$WT/.ai/flight-rules.conf"
+mkdir -p "$WT/.flight-rules"
+printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$WT/.flight-rules/conf"
 echo base > "$WT/f.txt"; git -C "$WT" add -A; git -C "$WT" commit -qm "chore: base"
 # Three merged branches. fix/ab exists because the substring filter dropped the longer
 # name from the "previously merged" list whenever the shorter one was just merged;
@@ -224,9 +224,9 @@ for b in fix/ab fix/c fix/a; do
   echo "$b" > "$WT/${b//\//_}.txt"; git -C "$WT" add -A; git -C "$WT" commit -qm "chore: on $b"
   git -C "$WT" checkout -q trunk
 done
-mkdir -p "$WT/.ai/hooks"
-cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$WT/.ai/hooks/"
-chmod +x "$WT"/.ai/hooks/*; git -C "$WT" config core.hooksPath "$WT/.ai/hooks"
+mkdir -p "$WT/.flight-rules/hooks"
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$WT/.flight-rules/hooks/"
+chmod +x "$WT"/.flight-rules/hooks/*; git -C "$WT" config core.hooksPath "$WT/.flight-rules/hooks"
 for b in fix/ab fix/c; do git -C "$WT" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
 # a worktree on a merged branch → git marks that branch `+`; and a detached one, which
 # has no branch at all. A failure here is reported, not silenced: hidden by `2>&1` it
@@ -269,17 +269,17 @@ AM=$(mktemp -d); AMR="$AM/repo"
 git init -q -b trunk "$AMR" || die "git init failed (git init -q -b trunk "$AMR")"
 git -C "$AMR" config user.email t@t.t; git -C "$AMR" config user.name t
 git -C "$AMR" config merge.ff false
-mkdir -p "$AMR/.ai"
-printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$AMR/.ai/flight-rules.conf"
+mkdir -p "$AMR/.flight-rules"
+printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$AMR/.flight-rules/conf"
 echo base > "$AMR/f.txt"; git -C "$AMR" add -A; git -C "$AMR" commit -qm "chore: base"
 for b in fix/old fix/new; do
   git -C "$AMR" checkout -qb "$b" 2>/dev/null
   echo "$b" > "$AMR/${b//\//_}.txt"; git -C "$AMR" add -A; git -C "$AMR" commit -qm "chore: on $b"
   git -C "$AMR" checkout -q trunk
 done
-mkdir -p "$AMR/.ai/hooks"
-cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$AMR/.ai/hooks/"
-chmod +x "$AMR"/.ai/hooks/*; git -C "$AMR" config core.hooksPath "$AMR/.ai/hooks"
+mkdir -p "$AMR/.flight-rules/hooks"
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$AMR/.flight-rules/hooks/"
+chmod +x "$AMR"/.flight-rules/hooks/*; git -C "$AMR" config core.hooksPath "$AMR/.flight-rules/hooks"
 git -C "$AMR" merge --no-verify --no-edit fix/old >/dev/null 2>&1
 git -C "$AMR" tag trunk        # the ambiguity
 git -C "$AMR" merge --no-verify --no-edit fix/new >/dev/null 2>&1
@@ -312,15 +312,15 @@ QB=$(mktemp -d); QR="$QB/repo"
 git init -q -b trunk "$QR" || die "git init failed (git init -q -b trunk "$QR")"
 git -C "$QR" config user.email t@t.t; git -C "$QR" config user.name t
 git -C "$QR" config merge.ff false
-mkdir -p "$QR/.ai"
-printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QR/.ai/flight-rules.conf"
+mkdir -p "$QR/.flight-rules"
+printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QR/.flight-rules/conf"
 echo base > "$QR/f.txt"; git -C "$QR" add -A; git -C "$QR" commit -qm "chore: base"
 git -C "$QR" checkout -qb 'fix/a&b' 2>/dev/null
 echo x > "$QR/x.txt"; git -C "$QR" add -A; git -C "$QR" commit -qm "chore: x"
 git -C "$QR" checkout -q trunk
-mkdir -p "$QR/.ai/hooks"
-cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$QR/.ai/hooks/"
-chmod +x "$QR"/.ai/hooks/*; git -C "$QR" config core.hooksPath "$QR/.ai/hooks"
+mkdir -p "$QR/.flight-rules/hooks"
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$QR/.flight-rules/hooks/"
+chmod +x "$QR"/.flight-rules/hooks/*; git -C "$QR" config core.hooksPath "$QR/.flight-rules/hooks"
 git -C "$QR" merge --no-verify --no-edit 'fix/a&b' >/dev/null 2>&1
 QNOTE="$QR/.claude/post-merge-note.md"
 # The header too: pasted into an interactive zsh, which has comments off, `name` in
@@ -346,22 +346,22 @@ EVIL="x';touch\${IFS}PWNED;'"
 git check-ref-format --branch "$EVIL" >/dev/null 2>&1 || die "git no longer allows the hostile branch name"
 git init -q -b trunk "$HR" || die "git init failed in $HR"
 git -C "$HR" config user.email t@t.t; git -C "$HR" config user.name t; git -C "$HR" config merge.ff false
-mkdir -p "$HR/.ai/hooks"
-printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.ai/worktrees\n' > "$HR/.ai/flight-rules.conf"
+mkdir -p "$HR/.flight-rules/hooks"
+printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nWORKTREE_DIR=.flight-rules/worktrees\n' > "$HR/.flight-rules/conf"
 echo base > "$HR/f.txt"; git -C "$HR" add -A; git -C "$HR" commit -qm "chore: base"
 git -C "$HR" branch "$EVIL" || die "could not make the hostile branch"
 # Merged branches named `just` and `merged`, protected so the note does not offer them:
 # a pasted "git branch -d fix/q  ← just merged" deleted both (fix review, 2026-10-24).
-printf 'PROTECTED_BRANCHES=^(trunk|just|merged)$\n' >> "$HR/.ai/flight-rules.conf"
+printf 'PROTECTED_BRANCHES=^(trunk|just|merged)$\n' >> "$HR/.flight-rules/conf"
 git -C "$HR" branch just && git -C "$HR" branch merged || die "could not make just and merged"
 # Non-ASCII: macOS bash 3.2's printf %q split ß and left a raw byte (fix review, D1).
-UWT="$HR/.ai/worktrees/straße"
+UWT="$HR/.flight-rules/worktrees/straße"
 git -C "$HR" worktree add -q -b 'fix/ü-ß' "$UWT" trunk 2>/dev/null || die "could not add the non-ASCII worktree"
-QWT="$HR/.ai/worktrees/it's"
+QWT="$HR/.flight-rules/worktrees/it's"
 git -C "$HR" worktree add -q -b fix/q "$QWT" trunk 2>/dev/null || die "could not add a worktree whose path holds a quote"
 echo q > "$QWT/q.txt"; git -C "$QWT" add q.txt; git -C "$QWT" commit -qm "chore: q" --no-verify >/dev/null
-cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$HR/.ai/hooks/"
-chmod +x "$HR"/.ai/hooks/*; git -C "$HR" config core.hooksPath .ai/hooks
+cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$HR/.flight-rules/hooks/"
+chmod +x "$HR"/.flight-rules/hooks/*; git -C "$HR" config core.hooksPath .flight-rules/hooks
 # The rest of the note carries names too, not only its commands: the upstream of a
 # merged branch that does not have it yet, a process run from a worktree, a Compose
 # container — each holding `;`, and a whole note gets pasted (security review,
@@ -411,15 +411,17 @@ say "$_bad" "0" "…each parses as one command"
 say "$([ -e "$SB/PWNED" ] || [ -e "$HR/PWNED" ] && echo ran || echo clean)" "clean" "…and pasting them runs nothing but git"
 say "$_argc" "3 3 3 3 3 3 " "…each hands git exactly three arguments, no annotation among them"
 say "$(grep -cxF "$EVIL" <<<"$_got")" "1" "…git is handed the hostile branch name exactly"
-say "$(grep -cxF ".ai/worktrees/it's" <<<"$_got")" "1" "…and the worktree path exactly"
+say "$(grep -cxF ".flight-rules/worktrees/it's" <<<"$_got")" "1" "…and the worktree path exactly"
 say "$(grep -cxF 'fix/ü-ß' <<<"$_got")" "1" "…and the ß branch exactly"
-say "$(grep -cxF '.ai/worktrees/straße' <<<"$_got")" "1" "…and the ß worktree path exactly"
+say "$(grep -cxF '.flight-rules/worktrees/straße' <<<"$_got")" "1" "…and the ß worktree path exactly"
 iconv -f UTF-8 -t UTF-8 "$HNOTE" >/dev/null 2>&1; say "$?" "0" "…the note file is valid UTF-8"
 printf '%s\n' "$OUT" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; say "$?" "0" "…and so is what was printed"
-say "$(grep -cE "^  (Branch: 'fix/ü-ß'  →  |git worktree remove )'\.ai/worktrees/straße'$" "$HNOTE")" "2" "…which names the ß worktree as it is (its line and its command)"
+say "$(grep -cE "^  (Branch: 'fix/ü-ß'  →  |git worktree remove )'\.flight-rules/worktrees/straße'$" "$HNOTE")" "2" "…which names the ß worktree as it is (its line and its command)"
 say "$(after "$HNOTE" "  git branch -d fix/q")" "    ↑ just merged" "…and says 'just merged' on the line below the command"
 say "$(after "$HNOTE" "  git branch -d fix/up")" "    ↑ refused until 'origin/$EUP' has it — push that first" "…and names an upstream it is refused until, quoted"
-say "$(grep -cF ": 'srv;touch\${IFS}PWNED3 $UWT" "$HNOTE")" "1" "…names the process run from the worktree, its command line quoted"
+# $HR, not $UWT: the note prints a command line's first 120 characters, and under a long
+# temp directory the worktree's path runs past them.
+say "$(grep -cF ": 'srv;touch\${IFS}PWNED3 $HR/" "$HNOTE")" "1" "…names the process run from the worktree, its command line quoted"
 say "$(grep -cF "container c9 ('web;touch\${IFS}PWNED4')" "$HNOTE")" "1" "…and the container, its name quoted"
 # Every line of the note, printed and written, pasted into bash and into zsh — with git
 # and docker stubbed, since pasting the commands is meant to run them.
@@ -450,8 +452,8 @@ NG=$(mktemp -d)
 git init -q -b trunk "$NG" || die "git init failed (git init -q -b trunk "$NG")"
 git -C "$NG" config user.email t@t.t; git -C "$NG" config user.name t
 git -C "$NG" config merge.ff false
-mkdir -p "$NG/.ai"
-cat > "$NG/.ai/flight-rules.conf" <<'CONF'
+mkdir -p "$NG/.flight-rules"
+cat > "$NG/.flight-rules/conf" <<'CONF'
 PROTECTED_BRANCHES=^(trunk|qa)$
 PR_ONLY_BRANCHES=^trunk$
 INTEGRATION_BRANCH=trunk
@@ -461,7 +463,7 @@ git -C "$NG" checkout -qb qa 2>/dev/null; git -C "$NG" checkout -q trunk
 git -C "$NG" checkout -qb feature/w 2>/dev/null
 echo w > "$NG/w.txt"; git -C "$NG" add -A; git -C "$NG" commit -qm "feature: w"
 git -C "$NG" checkout -q qa
-mkdir -p "$NG/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$NG/.ai/hooks/"; chmod +x "$NG"/.ai/hooks/*; git -C "$NG" config core.hooksPath "$NG/.ai/hooks"
+mkdir -p "$NG/.flight-rules/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$NG/.flight-rules/hooks/"; chmod +x "$NG"/.flight-rules/hooks/*; git -C "$NG" config core.hooksPath "$NG/.flight-rules/hooks"
 OUT=$(git -C "$NG" merge --no-edit feature/w 2>&1)
 if grep -q 'PRE-MERGE CHECK REQUIRED' <<<"$OUT"; then
   PASS=$((PASS+1)); printf '  ✅ "qa" is note-gated without being named in the conf\n'
@@ -491,7 +493,7 @@ echo "A stamped merge still has to say who asked for it:"
 mkauth() {  # $1 = extra conf line; echoes the repo dir, on dev, feature/x stamped
   local d; d=$(mkrepo)
   { printf 'PROTECTED_BRANCHES=^(main|dev)$\nPR_ONLY_BRANCHES=^main$\nINTEGRATION_BRANCH=dev\n'
-    [ -n "${1:-}" ] && printf '%s\n' "$1"; } > "$d/.ai/flight-rules.conf"
+    [ -n "${1:-}" ] && printf '%s\n' "$1"; } > "$d/.flight-rules/conf"
   git -C "$d" add -A >/dev/null 2>&1; git -C "$d" commit -qm "chore: conf" >/dev/null 2>&1
   # dev is branched before the conf commit in mkrepo, and the hook reads the conf
   # from HEAD of the MERGE TARGET — so dev must actually carry it.
@@ -520,7 +522,7 @@ say "$?" "0" "…and dev did not move"
 # progress — every time the box fired (#100).
 # With the secret scan installed as a project has it: git commit runs pre-commit on a
 # merge being concluded, which a hook-less fixture never exercised (fix review, F10).
-cp "$H/pre-commit" "$D/.ai/hooks/" && chmod +x "$D/.ai/hooks/pre-commit" || die "could not copy pre-commit into $D"
+cp "$H/pre-commit" "$D/.flight-rules/hooks/" && chmod +x "$D/.flight-rules/hooks/pre-commit" || die "could not copy pre-commit into $D"
 CMD=$(grep -o 'FLIGHT_RULES_MERGE_AUTHORISED=1 git [^║]*' <<<"$OUT" | sed 's/[[:space:]]*$//')
 say "$CMD" "FLIGHT_RULES_MERGE_AUTHORISED=1 git commit --no-edit" "…and prints the command that concludes it"
 CONC=$(cd "$D" && eval "$CMD" 2>&1); RC=$?
@@ -656,7 +658,7 @@ git -C "$D" branch -q tagged feature/x && git -C "$D" branch -q --set-upstream-t
   && git -C "$D" tag origin/dev main || die "could not make the tag that shadows origin/dev"
 FLIGHT_RULES_MERGE_AUTHORISED=1 git -C "$D" merge --no-edit feature/x >/dev/null 2>&1
 git -C "$D" push -q origin dev 2>/dev/null || die "could not push dev"
-(cd "$D" && .ai/hooks/post-merge 0) >/dev/null 2>&1 || die "post-merge failed when run directly"
+(cd "$D" && .flight-rules/hooks/post-merge 0) >/dev/null 2>&1 || die "post-merge failed when run directly"
 NOTE="$D/.claude/post-merge-note.md"
 say "$(after "$NOTE" "  git branch -d feature/x")" "    ↑ just merged" "an upstream gone from the remote: no annotation"
 grep -qxF "  git branch -d tagged" "$NOTE" 2>/dev/null
@@ -683,7 +685,7 @@ echo "A pattern that does not compile matches every branch, not none (#103):"
 # read it from (HEAD of the branch merged into).
 conf_on() {
   git -C "$1" checkout -q "$2" || die "no $2 in $1"
-  mkdir -p "$1/.ai"; printf '%s\n' "$3" > "$1/.ai/flight-rules.conf"
+  mkdir -p "$1/.flight-rules"; printf '%s\n' "$3" > "$1/.flight-rules/conf"
   git -C "$1" add -A >/dev/null; git -C "$1" commit -qm "chore: conf" --no-verify >/dev/null || die "could not commit the conf"
 }
 # route <output> <key>: the two-line route a refusal prints, its frame stripped.
@@ -806,7 +808,7 @@ E=$(tmpd); D="$E/w"
 git init -q --bare -b main "$E/up.git" || die "git init --bare failed in $E"
 git clone -q "$E/up.git" "$D" 2>/dev/null || die "git clone failed in $E"
 git -C "$D" config user.email t@t.t; git -C "$D" config user.name t; git -C "$D" config merge.ff false
-mkdir -p "$D/.ai"; printf 'PR_ONLY_BRANCHES=^(main\n' > "$D/.ai/flight-rules.conf"
+mkdir -p "$D/.flight-rules"; printf 'PR_ONLY_BRANCHES=^(main\n' > "$D/.flight-rules/conf"
 echo base > "$D/f"; git -C "$D" add -A; git -C "$D" commit -qm base >/dev/null || die "the base commit failed in $D"
 git -C "$D" branch dev || die "could not create dev in $D"
 git -C "$D" push -q origin main dev 2>/dev/null || die "could not push main and dev to $E/up.git"
@@ -816,7 +818,7 @@ cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$H/ref
 chmod +x "$E"/hooks/*; git -C "$D" config core.hooksPath "$E/hooks"
 git -C "$D" fetch -q origin
 git -C "$D" checkout -q -b fix/conf dev
-printf 'PR_ONLY_BRANCHES=^main$\n' > "$D/.ai/flight-rules.conf"
+printf 'PR_ONLY_BRANCHES=^main$\n' > "$D/.flight-rules/conf"
 git -C "$D" commit -qam "fix: conf" >/dev/null || die "could not commit the conf fix"
 stamp "$D" HEAD fix/conf
 git -C "$D" checkout -q dev
@@ -863,7 +865,7 @@ say "$(grep -cE 'gh pr create --base main *║' <<<"$OUT")" "1" "…and one PR l
 git -C "$D" merge --abort 2>/dev/null
 # With dev integrating, a feature's PR goes to dev, and only a promotion to main: one
 # line for both sent feature PRs around dev (full release review, S3).
-printf 'PR_ONLY_BRANCHES=^MAIN$\nINTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+printf 'PR_ONLY_BRANCHES=^MAIN$\nINTEGRATION_BRANCH=dev\n' > "$D/.flight-rules/conf"
 git -C "$D" add -A >/dev/null; git -C "$D" commit -qm "chore: conf" --no-verify >/dev/null || die "could not commit the conf"
 OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
 say "$RC" "1" "INTEGRATION_BRANCH=dev: the local merge into main is still refused"
@@ -984,14 +986,14 @@ rm -rf "$D"
 PM=$(mktemp -d)
 git init -q -b trunk "$PM" || die "git init failed in $PM"
 git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t; git -C "$PM" config merge.ff false
-mkdir -p "$PM/.ai"; printf 'PROTECTED_BRANCHES=^(TRUNK|QA)$\nPR_ONLY_BRANCHES=^TRUNK$\nINTEGRATION_BRANCH=trunk\n' > "$PM/.ai/flight-rules.conf"
+mkdir -p "$PM/.flight-rules"; printf 'PROTECTED_BRANCHES=^(TRUNK|QA)$\nPR_ONLY_BRANCHES=^TRUNK$\nINTEGRATION_BRANCH=trunk\n' > "$PM/.flight-rules/conf"
 echo base > "$PM/f.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: base"
 for b in qa feature/real; do
   git -C "$PM" checkout -qb "$b" trunk; echo "$b" > "$PM/${b//\//_}.txt"; git -C "$PM" add -A
   git -C "$PM" commit -qm "chore: on $b"
 done
 git -C "$PM" checkout -q trunk
-mkdir -p "$PM/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PM/.ai/hooks/"; chmod +x "$PM"/.ai/hooks/*; git -C "$PM" config core.hooksPath "$PM/.ai/hooks"
+mkdir -p "$PM/.flight-rules/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PM/.flight-rules/hooks/"; chmod +x "$PM"/.flight-rules/hooks/*; git -C "$PM" config core.hooksPath "$PM/.flight-rules/hooks"
 for b in qa feature/real; do git -C "$PM" merge --no-verify --no-edit "$b" >/dev/null 2>&1; done
 say "$(grep -cE "git branch -d '?qa'?( |$)" "$PM/.claude/post-merge-note.md" 2>/dev/null)" "0" "post-merge with PROTECTED_BRANCHES=^(TRUNK|QA)\$: qa is not offered for deletion"
 say "$(grep -cE "git branch -d feature/real( |$)" "$PM/.claude/post-merge-note.md" 2>/dev/null)" "1" "…while a merged feature branch is"
@@ -1025,15 +1027,15 @@ trap 'kill ${S1:-} ${S2:-} ${S3:-} ${S4:-} ${S5:-} 2>/dev/null' EXIT
 PB=$(tmpd); PR="$PB/repo"
 git init -q -b trunk "$PR" || die "git init failed in $PR"
 git -C "$PR" config user.email t@t.t; git -C "$PR" config user.name t; git -C "$PR" config merge.ff false
-mkdir -p "$PR/.ai"; printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$PR/.ai/flight-rules.conf"
+mkdir -p "$PR/.flight-rules"; printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$PR/.flight-rules/conf"
 echo base > "$PR/f.txt"; git -C "$PR" add -A; git -C "$PR" commit -qm "chore: base"
 for b in fix/srv fix/db fix/quiet fix/last; do
   git -C "$PR" branch "$b" trunk && git -C "$PR" worktree add -q "$PB/wt-${b#fix/}" "$b" || die "could not add a worktree for $b"
   echo "$b" > "$PB/wt-${b#fix/}/${b#fix/}.txt"; git -C "$PB/wt-${b#fix/}" add -A; git -C "$PB/wt-${b#fix/}" commit -qm "chore: $b" || die "could not commit on $b"
 done
 git -C "$PR" branch fix/srvx trunk && git -C "$PR" worktree add -q "$PB/wt-srvx" fix/srvx || die "could not add wt-srvx"
-mkdir -p "$PR/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PR/.ai/hooks/"
-chmod +x "$PR"/.ai/hooks/*; git -C "$PR" config core.hooksPath "$PR/.ai/hooks"
+mkdir -p "$PR/.flight-rules/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$PR/.flight-rules/hooks/"
+chmod +x "$PR"/.flight-rules/hooks/*; git -C "$PR" config core.hooksPath "$PR/.flight-rules/hooks"
 (cd "$PB/wt-srv" && exec sleep 3001) & S1=$!
 (cd / && exec -a "dbserver -D $PB/wt-db/data" sleep 3002) & S2=$!
 (cd "$PB/wt-srvx" && exec sleep 3003) & S3=$!
@@ -1089,7 +1091,7 @@ shims() {   # shims <dir> <ps: log|fail> <docker: list|fail|hang|empty>
   esac
   chmod +x "$1"/*
 }
-rerun() { (cd "$PR" && PATH="$1:$PATH" "$PR/.ai/hooks/post-merge" 0 2>&1); }
+rerun() { (cd "$PR" && PATH="$1:$PATH" "$PR/.flight-rules/hooks/post-merge" 0 2>&1); }
 
 shims "$PB/a" log list; OUT=$(rerun "$PB/a"); RC=$?
 say "$RC" "0" "with Compose containers: the hook still exits 0"
@@ -1136,7 +1138,7 @@ for t in bash sh env git awk sed grep tr head tail wc cut cat mktemp sleep readl
   _p=$(command -v "$t") && ln -s "$_p" "$NB/$t"
 done
 [ -x "$NB/git" ] && [ -x "$NB/bash" ] || die "could not build a PATH without docker"
-OUT=$(cd "$PR" && PATH="$NB" "$PR/.ai/hooks/post-merge" 0 2>&1); RC=$?
+OUT=$(cd "$PR" && PATH="$NB" "$PR/.flight-rules/hooks/post-merge" 0 2>&1); RC=$?
 say "$RC" "0" "with no docker installed: the hook exits 0"
 say "$(grep -c -e '^    container ' -e 'docker exited' "$PNOTE")" "0" "…and says nothing about containers"
 say "$(section fix/srv | grep -c "pid $S1, up ")" "1" "…while still listing the processes"
@@ -1150,19 +1152,19 @@ echo "post-merge prints its note only when there is something to do, and at most
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 git -C "$QQ" checkout -qb fix/a && echo a > "$QQ/a" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: a" && git -C "$QQ" checkout -q trunk || die "could not build fix/a"
 git -C "$QQ" merge --no-edit fix/a >/dev/null 2>&1 && git -C "$QQ" branch -qd fix/a || die "could not merge and delete fix/a"
 mkdir -p "$PQ/s"; printf '#!/bin/sh\necho x >> %q/ps.log\nexec %q "$@"\n' "$PQ/s" "$(command -v ps)" > "$PQ/s/ps"; chmod +x "$PQ/s/ps"
-OUT=$(cd "$QQ" && PATH="$PQ/s:$PATH" .ai/hooks/post-merge 0 2>&1); RC=$?
+OUT=$(cd "$QQ" && PATH="$PQ/s:$PATH" .flight-rules/hooks/post-merge 0 2>&1); RC=$?
 say "$RC" "0" "nothing to do: the hook exits 0"
 say "$(grep -c . <<<"$OUT")" "0" "…and prints nothing at all (MISSION.md principle 5)"
 say "$([ -f "$QQ/.claude/post-merge-note.md" ] && echo written)" "written" "…while the note is still written"
 say "$([ -f "$PQ/s/ps.log" ] && echo ran || echo not-run)" "not-run" "…and reading no process list"
 for i in $(seq 1 50); do git -C "$QQ" branch "old/b$i" trunk; done
-OUT=$(cd "$QQ" && .ai/hooks/post-merge 0 2>&1); RC=$?
+OUT=$(cd "$QQ" && .flight-rules/hooks/post-merge 0 2>&1); RC=$?
 say "$RC" "0" "fifty merged branches: the hook exits 0"
 say "$(grep -c "git branch -d old/b" "$QQ/.claude/post-merge-note.md")" "50" "…the note file has every one"
 say "$(grep -c "git branch -d old/b" <<<"$OUT")" "0" "…none printed: they were not this merge's (hooks review H21)"
@@ -1173,8 +1175,8 @@ echo "The note is not left as an untracked file (hooks review H20):"
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 for b in fix/a fix/b; do
   git -C "$QQ" checkout -qb "$b" trunk && echo "$b" > "$QQ/${b#fix/}" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: $b" \
@@ -1188,8 +1190,8 @@ rm -rf "$PQ"
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 printf '.claude/\n' > "$QQ/.gitignore"; echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 EXB=$(cksum < "$QQ/.git/info/exclude")
 git -C "$QQ" checkout -qb fix/a trunk && echo a > "$QQ/a" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: a" \
@@ -1200,8 +1202,8 @@ rm -rf "$PQ"
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 mkdir -p "$QQ/.git/info"; printf '*.log' > "$QQ/.git/info/exclude"
 git -C "$QQ" checkout -qb fix/a trunk && echo a > "$QQ/a" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: a" \
@@ -1214,8 +1216,8 @@ echo "A back-merge of a released branch not called main prints nothing (mission 
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^(trunk|production)$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^(trunk|production)$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 git -C "$QQ" branch old/x trunk && git -C "$QQ" checkout -qb production trunk && echo p > "$QQ/p" && git -C "$QQ" add -A \
   && git -C "$QQ" commit -qm "fix: hotfix on production" && git -C "$QQ" checkout -q trunk || die "could not build production"
@@ -1233,8 +1235,8 @@ echo "A main the project does not protect is a branch like any other (hook sweep
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=off\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nPR_ONLY_BRANCHES=off\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 git -C "$QQ" checkout -qb main trunk && echo m > "$QQ/m" && git -C "$QQ" add -A \
   && git -C "$QQ" commit -qm "feature: on main" && git -C "$QQ" checkout -q trunk || die "could not build main"
@@ -1250,8 +1252,8 @@ PQ=$(tmpd); U="$PQ/up"
 git init -q -b trunk "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one || die "could not build the upstream"
 git clone -q "$U" "$PQ/r" 2>/dev/null || die "could not clone"; QQ="$PQ/r"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\nNOTE_GATED_BRANCHES=off\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 git -C "$QQ" branch old/x trunk || die "could not leave an earlier merged branch"
 # A fast-forward over a plain commit: no merge commit, so not a feature merge (hooks
 # review H21). Paired with the note it writes, so a hook that never ran cannot pass.
@@ -1265,13 +1267,13 @@ say "$(git -C "$QQ" rev-parse -q --verify HEAD^2 >/dev/null && echo merge)" "mer
 say "$(grep -c -e 'Earlier merges left' -e 'Post-merge to' -e 'cleanup note written' <<<"$OUT")" "0" "…and post-merge prints nothing for it"
 # git ignores post-merge's exit status and this path writes no note to pair with, so a
 # hook that died passed the line above: run it again by hand, where its status shows.
-OUT=$(cd "$QQ" && .ai/hooks/post-merge 0 2>&1); RC=$?
+OUT=$(cd "$QQ" && .flight-rules/hooks/post-merge 0 2>&1); RC=$?
 say "$RC$(grep -c . <<<"$OUT")" "00" "…and, run by hand on that merge, it exits 0 having printed nothing"
 # A sync merge of the integration branch into a feature branch is no merge into it.
 git -C "$QQ" checkout -q -b fix/s HEAD~1 && git -C "$QQ" commit -q --allow-empty -m s || die "could not build fix/s"
 OUT=$(cd "$QQ" && git merge --no-edit trunk 2>&1); RC=$?
 say "$RC$(grep -c -e 'Earlier merges left' -e 'Post-merge to' -e 'cleanup note written' <<<"$OUT")" "00" "a merge of trunk into fix/s lands, and post-merge prints nothing for it"
-OUT=$(cd "$QQ" && .ai/hooks/post-merge 0 2>&1); RC=$?
+OUT=$(cd "$QQ" && .flight-rules/hooks/post-merge 0 2>&1); RC=$?
 say "$RC$(grep -c . <<<"$OUT")" "00" "…and, run by hand on that merge, it exits 0 having printed nothing"
 rm -rf "$PQ"
 
@@ -1285,8 +1287,8 @@ git init -q -b main "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commi
   && git -C "$U" branch dev || die "could not build the upstream"
 git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone the upstream"
 R="$PU/r"; git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
-mkdir -p "$R/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.ai/hooks/" || die "could not copy the hooks"
-chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"; git -C "$R" config merge.ff false
+mkdir -p "$R/.flight-rules/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.flight-rules/hooks/" || die "could not copy the hooks"
+chmod +x "$R"/.flight-rules/hooks/*; git -C "$R" config core.hooksPath "$R/.flight-rules/hooks"; git -C "$R" config merge.ff false
 git -C "$R" checkout -q -b dev origin/dev || die "no dev in the clone"
 for b in main dev; do git -C "$U" checkout -q "$b" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m "$b two" || die "could not advance $b"; done
 for b in main dev; do
@@ -1386,8 +1388,8 @@ PQ=$(tmpd); U="$PQ/up"
 git init -q -b dev "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m one || die "could not build the upstream"
 git clone -q "$U" "$PQ/r" 2>/dev/null || die "could not clone"; R="$PQ/r"
 git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
-mkdir -p "$R/.ai/hooks"; cp "$H/pre-rebase" "$R/.ai/hooks/" && chmod +x "$R/.ai/hooks/pre-rebase" || die "could not copy pre-rebase"
-git -C "$R" config core.hooksPath "$R/.ai/hooks"
+mkdir -p "$R/.flight-rules/hooks"; cp "$H/pre-rebase" "$R/.flight-rules/hooks/" && chmod +x "$R/.flight-rules/hooks/pre-rebase" || die "could not copy pre-rebase"
+git -C "$R" config core.hooksPath "$R/.flight-rules/hooks"
 git -C "$U" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m two || die "could not advance the upstream"
 OUT=$(cd "$R" && git -c pull.rebase=true pull -q 2>&1); RC=$?
 say "$RC" "0" "only behind: the pull fast-forwards and pre-rebase never runs"
@@ -1408,8 +1410,8 @@ git init -q -b main "$U" && git -C "$U" -c user.email=t@t.t -c user.name=t commi
   && git -C "$U" branch dev && git -C "$U" branch other || die "could not build the upstream"
 git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone the upstream"
 R="$PU/r"; git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
-mkdir -p "$R/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.ai/hooks/" || die "could not copy the hooks"
-chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"; git -C "$R" config merge.ff false
+mkdir -p "$R/.flight-rules/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.flight-rules/hooks/" || die "could not copy the hooks"
+chmod +x "$R"/.flight-rules/hooks/*; git -C "$R" config core.hooksPath "$R/.flight-rules/hooks"; git -C "$R" config merge.ff false
 git -C "$R" checkout -q -b dev origin/dev || die "no dev in the clone"
 feature "$R" fix/x dev; git -C "$R" checkout -q dev
 (cd "$R" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/x >/dev/null 2>&1) || die "could not merge fix/x into dev"
@@ -1439,8 +1441,8 @@ echo "A merge whose subject names no branch is named by the branch at the merged
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 git -C "$QQ" checkout -qb fix/x trunk && echo x > "$QQ/x" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: x" \
   && git -C "$QQ" checkout -q trunk || die "could not build fix/x"
@@ -1454,8 +1456,8 @@ echo "A note file the project tracks: info/exclude is not written (0.28.0 releas
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b trunk "$QQ" || die "git init failed in $QQ"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks" "$QQ/.claude"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks" "$QQ/.claude"; printf 'PROTECTED_BRANCHES=^trunk$\nINTEGRATION_BRANCH=trunk\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 echo old > "$QQ/.claude/post-merge-note.md"; echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
 for b in fix/a fix/b fix/c; do
   git -C "$QQ" checkout -qb "$b" trunk && echo "$b" > "$QQ/${b#fix/}" && git -C "$QQ" add -A && git -C "$QQ" commit -qm "chore: $b" \
@@ -1475,8 +1477,8 @@ own_up() {
   git -C "$U" add -A && git -C "$U" -c user.email=t@t.t -c user.name=t commit -qm one && git -C "$U" branch dev || die "could not commit the upstream"
   git clone -q "$U" "$PU/r" 2>/dev/null || die "could not clone"; R="$PU/r"
   git -C "$R" config user.email t@t.t; git -C "$R" config user.name t; git -C "$R" config merge.ff false
-  mkdir -p "$R/.ai/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.ai/hooks/" || die "could not copy the hooks"
-  chmod +x "$R"/.ai/hooks/*; git -C "$R" config core.hooksPath "$R/.ai/hooks"
+  mkdir -p "$R/.flight-rules/hooks"; cp "$H/pre-merge-commit" "$H/post-merge" "$H/commit-msg" "$H/pre-rebase" "$R/.flight-rules/hooks/" || die "could not copy the hooks"
+  chmod +x "$R"/.flight-rules/hooks/*; git -C "$R" config core.hooksPath "$R/.flight-rules/hooks"
   git -C "$R" checkout -q -b dev origin/dev && git -C "$R" checkout -q -b fix/l dev || die "no dev in the clone"
   echo local >> "$R/x"; git -C "$R" add -A; git -C "$R" commit -qm "fix: l" >/dev/null || die "could not commit fix/l"
   stamp "$R" HEAD fix/l
@@ -1669,7 +1671,7 @@ echo "A fast-forward onto a merge made elsewhere is not a feature merge (#131):"
 # the PR merged on the host.
 for how in "merge --ff-only host" "pull --ff --no-rebase . host"; do
   d=$(mkrepo); git -C "$d" checkout -q dev
-  printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$d/.ai/flight-rules.conf"
+  printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$d/.flight-rules/conf"
   git -C "$d" branch fix/old || die "could not make fix/old"
   git -C "$d" checkout -q -b fix/q && echo q > "$d/q" && git -C "$d" add -A && git -C "$d" commit -qm "fix: q" || die "could not commit on fix/q"
   git -C "$d" checkout -q dev
@@ -1692,7 +1694,7 @@ done
 # second parent, and the reflog does not say Fast-forward — it prints nothing, by the
 # HEAD^2 test alone (M04, which the reflog test above stands in for on a fast-forward).
 d=$(mkrepo); git -C "$d" checkout -q dev
-printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$d/.ai/flight-rules.conf"
+printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$d/.flight-rules/conf"
 git -C "$d" branch fix/old || die "could not make fix/old"
 git -C "$d" checkout -q -b fix/s && echo s > "$d/s" && git -C "$d" add -A && git -C "$d" commit -qm "fix: s" || die "could not commit on fix/s"
 git -C "$d" checkout -q dev
@@ -1707,8 +1709,8 @@ for how in "-m sync" "--no-edit"; do
   PQ=$(tmpd); QQ="$PQ/repo"
   git init -q -b main "$QQ" || die "git init failed"
   git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-  mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$QQ/.ai/flight-rules.conf"
-  cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+  mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$QQ/.flight-rules/conf"
+  cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
   echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
   git -C "$QQ" branch dev && git -C "$QQ" branch old/x || die "could not branch"
   echo h > "$QQ/h"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "fix: hotfix" || die "could not move main"
@@ -1727,8 +1729,8 @@ for pro in "" "PR_ONLY_BRANCHES=^main\$" "PR_ONLY_BRANCHES=^MAIN\$" "PR_ONLY_BRA
   PQ=$(tmpd); QQ="$PQ/repo"
   git init -q -b main "$QQ" || die "git init failed"
   git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-  mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^dev$\nINTEGRATION_BRANCH=dev\n%s\n' "$pro" > "$QQ/.ai/flight-rules.conf"
-  cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+  mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^dev$\nINTEGRATION_BRANCH=dev\n%s\n' "$pro" > "$QQ/.flight-rules/conf"
+  cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
   echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"
   git -C "$QQ" branch dev && git -C "$QQ" branch old/x || die "could not branch"
   echo h > "$QQ/h"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "fix: hotfix" || die "could not move main"
@@ -1743,8 +1745,8 @@ done
 PQ=$(tmpd); QQ="$PQ/repo"
 git init -q -b main "$QQ" || die "git init failed"
 git -C "$QQ" config user.email t@t.t; git -C "$QQ" config user.name t; git -C "$QQ" config merge.ff false
-mkdir -p "$QQ/.ai/hooks"; printf 'PROTECTED_BRANCHES=^dev$\nPR_ONLY_BRANCHES=off\nINTEGRATION_BRANCH=dev\n' > "$QQ/.ai/flight-rules.conf"
-cp "$H/post-merge" "$QQ/.ai/hooks/"; chmod +x "$QQ/.ai/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.ai/hooks"
+mkdir -p "$QQ/.flight-rules/hooks"; printf 'PROTECTED_BRANCHES=^dev$\nPR_ONLY_BRANCHES=off\nINTEGRATION_BRANCH=dev\n' > "$QQ/.flight-rules/conf"
+cp "$H/post-merge" "$QQ/.flight-rules/hooks/"; chmod +x "$QQ/.flight-rules/hooks/post-merge"; git -C "$QQ" config core.hooksPath "$QQ/.flight-rules/hooks"
 echo base > "$QQ/f"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "chore: base"; git -C "$QQ" branch dev || die "could not branch"
 echo h > "$QQ/h"; git -C "$QQ" add -A; git -C "$QQ" commit -qm "fix: hotfix" || die "could not move main"
 git -C "$QQ" checkout -q dev && (cd "$QQ" && git merge -q --no-edit main >/dev/null 2>&1) || die "could not merge main"
@@ -1827,5 +1829,51 @@ git -C "$d" merge --abort 2>/dev/null
 say "$RC" "1" "the note copied onto a later commit: refused"
 say "$(grep -c "not this commit's" <<<"$OUT")" "1" "…its tree is the earlier commit's"
 rm -rf "$d"
+
+echo "The conf where it lived before 0.29.0, .ai/flight-rules.conf, is read until it is moved (#153):"
+# old_conf_on <repo> <branch> <conf line>: conf_on, in the old place.
+old_conf_on() {
+  git -C "$1" checkout -q "$2" || die "no $2 in $1"
+  mkdir -p "$1/.ai"; printf '%s\n' "$3" > "$1/.ai/flight-rules.conf"
+  git -C "$1" add -A >/dev/null; git -C "$1" commit -qm "chore: old conf" --no-verify >/dev/null || die "could not commit the old conf"
+}
+D=$(mkrepo); git -C "$D" branch trunk || die "could not create trunk in $D"
+old_conf_on "$D" trunk 'NOTE_GATED_BRANCHES=^trunk$'
+git -C "$D" checkout -q -b feature/u trunk; echo u > "$D/u"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: u" >/dev/null || die "could not commit on feature/u"
+git -C "$D" checkout -q trunk
+OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
+say "$RC$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "11" "commit-msg: a branch only the old conf note-gates is gated"
+(cd "$D" && git merge --abort) >/dev/null 2>&1
+conf_on "$D" trunk 'NOTE_GATED_BRANCHES=off'
+OUT=$(cd "$D" && git merge --no-ff feature/u -m merge 2>&1); RC=$?
+say "$RC$(git -C "$D" rev-parse -q --verify trunk^2)" "0$(git -C "$D" rev-parse feature/u)" "…and once a conf is in the new place, that one decides: the merge lands"
+rm -rf "$D"
+D=$(mkrepo); git -C "$D" branch trunk || die "could not create trunk in $D"
+old_conf_on "$D" trunk 'PR_ONLY_BRANCHES=^trunk$'
+git -C "$D" checkout -q -b feature/v trunk; echo v > "$D/v"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: v" >/dev/null || die "could not commit on feature/v"
+git -C "$D" checkout -q trunk
+OUT=$(cd "$D" && git merge --no-ff feature/v -m merge 2>&1); RC=$?
+say "$RC$(grep -c 'trunk IS PR-ONLY — LOCAL MERGE BLOCKED' <<<"$OUT")" "11" "pre-merge-commit: a branch only the old conf makes PR-only refuses a local merge"
+(cd "$D" && git merge --abort) >/dev/null 2>&1
+OUT=$(cd "$D" && git rebase feature/v 2>&1); RC=$?
+say "$RC$(grep -c 'trunk IS PR-ONLY — REBASE BLOCKED' <<<"$OUT")" "11" "pre-rebase: …and a rebase"
+old_conf_on "$D" trunk 'PR_ONLY_BRANCHES=^(trunk'
+OUT=$(cd "$D" && git merge --no-ff feature/v -m merge 2>&1); RC=$?
+say "$RC$(grep -c 'fixes it in .ai/flight-rules.conf, on a' <<<"$OUT")" "11" "…and a pattern in it that does not compile is refused, naming the old conf as the file to fix"
+rm -rf "$D"
+PM=$(mktemp -d)
+git init -q -b main "$PM" || die "git init failed in $PM"
+git -C "$PM" config user.email t@t.t; git -C "$PM" config user.name t; git -C "$PM" config merge.ff false
+mkdir -p "$PM/.ai"; printf 'PROTECTED_BRANCHES=^(main|dev)$\nINTEGRATION_BRANCH=dev\n' > "$PM/.ai/flight-rules.conf"
+echo base > "$PM/f.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: base"
+git -C "$PM" branch dev; git -C "$PM" checkout -qb feature/real
+echo f > "$PM/g.txt"; git -C "$PM" add -A; git -C "$PM" commit -qm "chore: feature"
+git -C "$PM" checkout -q dev
+mkdir -p "$PM/hk"; cp "$H/post-merge" "$PM/hk/"; chmod +x "$PM/hk/post-merge"; git -C "$PM" config core.hooksPath "$PM/hk"
+git -C "$PM" merge --no-edit feature/real >/dev/null 2>&1 || die "merge failed (post-merge, old conf)"
+say "$(grep -cE 'git branch -d feature/real( |$)' "$PM/.claude/post-merge-note.md" 2>/dev/null)" "1" "post-merge: the integration branch only the old conf names gets its cleanup note"
+rm -rf "$PM"
 
 finish

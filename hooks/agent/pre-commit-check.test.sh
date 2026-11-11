@@ -73,18 +73,18 @@ check() {
 }
 
 # check_wt <description> <expect> <main-checkout branch> <worktree branch> <command>
-# The same assertion, but run from a worktree at .ai/worktrees/x — where the
+# The same assertion, but run from a worktree at .flight-rules/worktrees/x — where the
 # workflow says all work happens, and where the branch policy used to switch
 # itself off because a worktree's toplevel is never CLAUDE_PROJECT_DIR.
 check_wt() {
   local desc="$1" expect="$2" branch="$3" wt_branch="$4" cmd="$5" dir
   dir=$(make_repo "$branch")
-  if ! git -C "$dir" worktree add -q "$dir/.ai/worktrees/x" -b "$wt_branch" >/dev/null 2>&1; then
+  if ! git -C "$dir" worktree add -q "$dir/.flight-rules/worktrees/x" -b "$wt_branch" >/dev/null 2>&1; then
     FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: worktree add failed — nothing was tested\n' "$desc"
     rm -rf "$dir"; return
   fi
-  guard_run "$dir/.ai/worktrees/x" "$cmd" CLAUDE_PROJECT_DIR="$dir"; verdict "$desc" "$expect"
-  git -C "$dir" worktree remove --force "$dir/.ai/worktrees/x" >/dev/null 2>&1
+  guard_run "$dir/.flight-rules/worktrees/x" "$cmd" CLAUDE_PROJECT_DIR="$dir"; verdict "$desc" "$expect"
+  git -C "$dir" worktree remove --force "$dir/.flight-rules/worktrees/x" >/dev/null 2>&1
   rm -rf "$dir"
 }
 
@@ -201,7 +201,7 @@ check "valid pattern: a branch it does not name" allow feature/x 'git commit -m 
 # <command> <verdict> <text the output must hold> <text it must not> [env…].
 broken_conf() {
   local desc="$1" branch="$2" cmd="$3" want="$4" has="$5" hasnt="$6" D OUT RC got; shift 6
-  D=$(make_repo "$branch"); mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.ai/flight-rules.conf"
+  D=$(make_repo "$branch"); mkdir -p "$D/.flight-rules"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.flight-rules/conf"
   OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" env "$@" bash "$HOOK" \
         <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); RC=$?
   if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then got=deny; else got=allow; fi
@@ -239,12 +239,12 @@ else
 fi
 rm -rf "$D"
 
-echo "Config file (.ai/flight-rules.conf) — the tool-agnostic home:"
+echo "Config file (.flight-rules/conf) — the tool-agnostic home:"
 # conf_check <desc> <expect> <branch> <command> <conf-contents>
 conf_check() {
   local desc="$1" expect="$2" branch="$3" cmd="$4" conf="$5" dir
   dir=$(make_repo "$branch")
-  mkdir -p "$dir/.ai"; printf '%s\n' "$conf" > "$dir/.ai/flight-rules.conf"
+  mkdir -p "$dir/.flight-rules"; printf '%s\n' "$conf" > "$dir/.flight-rules/conf"
   guard_run "$dir" "$cmd"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
@@ -338,7 +338,7 @@ rm -rf "$D"
 
 echo "Precedence — environment beats the conf file:"
 D=$(make_repo dev)
-mkdir -p "$D/.ai"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.ai/flight-rules.conf"
+mkdir -p "$D/.flight-rules"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.flight-rules/conf"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null)
 if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
@@ -593,14 +593,14 @@ check "switch -c"                         deny  main      'git switch -c feature
 check "switch -C"                         deny  main      'git switch -C feature/y'
 check "switch --create"                   deny  main      'git switch --create feature/y'
 check "switch --force-create"             deny  main      'git switch --force-create feature/y'
-check "worktree add -b is the right way"  allow main      'git worktree add .ai/worktrees/y -b feature/y origin/main'
+check "worktree add -b is the right way"  allow main      'git worktree add .flight-rules/worktrees/y -b feature/y origin/main'
 check "checkout <existing branch>"        allow main      'git checkout feature/x'
 check "checkout -b with the guard off"    allow main      'git checkout -b feature/y' \
       FLIGHT_RULES_PROTECTED_BRANCHES=off
 check "branch <name> (no switch) is not gated" allow main 'git branch feature/y'
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
-if grep -q 'git worktree add .ai/worktrees/<name> -b' <<<"$OUT"; then
+if grep -q 'git worktree add .flight-rules/worktrees/<name> -b' <<<"$OUT"; then
   PASS=$((PASS+1)); printf '  ✅ block message shows the worktree command\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ block message lacks the worktree command\n'
@@ -657,10 +657,10 @@ check_wt "commit on a feature branch in a worktree" allow scratch feature/x 'git
 check_wt "push a feature branch from a worktree"    allow scratch feature/x 'git push --force origin feature/x'
 
 D=$(make_repo main); O=$(make_repo main)
-if ! git -C "$O" worktree add -q "$O/.ai/worktrees/x" -b feature/x >/dev/null 2>&1; then
+if ! git -C "$O" worktree add -q "$O/.flight-rules/worktrees/x" -b feature/x >/dev/null 2>&1; then
   FAIL=$((FAIL+1)); printf '  ❌ harness: worktree add failed — the sibling-worktree case proved nothing\n'
 fi
-OUT=$(cd "$O/.ai/worktrees/x" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+OUT=$(cd "$O/.flight-rules/worktrees/x" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
       <<<'{"tool_input":{"command":"git push --force origin main"}}' 2>/dev/null); RC=$?
 if [[ $RC -ne 0 ]]; then
   FAIL=$((FAIL+1)); printf '  ❌ harness: the hook exited %s — the sibling-worktree case proved nothing\n' "$RC"
@@ -669,7 +669,7 @@ elif grep -q '"deny"' <<<"$OUT"; then
 else
   PASS=$((PASS+1)); printf '  ✅ a sibling repo'"'"'s worktree is still not ours to police\n'
 fi
-git -C "$O" worktree remove --force "$O/.ai/worktrees/x" >/dev/null 2>&1
+git -C "$O" worktree remove --force "$O/.flight-rules/worktrees/x" >/dev/null 2>&1
 rm -rf "$D" "$O"
 
 echo "A push names its target; the branch you stand on is only the fallback:"
@@ -793,11 +793,11 @@ reason_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSp
 route_rows() { reason_of "$1" | sed -n '/^  cd /,/^    cd .*<name>$/p'; }
 route_lines() { route_rows "$1" | sed '1d;$d'; }
 route_of() { route_lines "$1" | tr '\n' '|'; }
-CHAIN="    git fetch origin && \\|    { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|"
-D=$(make_repo main); mkdir -p "$D/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.ai/flight-rules.conf"
+CHAIN="    git fetch origin && \\|    { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\|"
+D=$(make_repo main); mkdir -p "$D/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.flight-rules/conf"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say "$(route_of "$OUT")" "    git fetch origin && \\|    git branch --track dev origin/dev && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
-say "$(route_rows "$OUT" | sed -n '1p;$p' | sed "s|^  cd '*$D'* |  cd <root> |" | tr '\n' '|')" "  cd <root> && \\|    cd .ai/worktrees/<name>|" "…the first cd chained to the rest, the last after the add (T-1)"
+say "$(route_of "$OUT")" "    git fetch origin && \\|    git branch --track dev origin/dev && \\|    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
+say "$(route_rows "$OUT" | sed -n '1p;$p' | sed "s|^  cd '*$D'* |  cd <root> |" | tr '\n' '|')" "  cd <root> && \\|    cd .flight-rules/worktrees/<name>|" "…the first cd chained to the rest, the last after the add (T-1)"
 git -C "$D" branch dev || die "could not make dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
 say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, the fetch and the add chained"
@@ -806,7 +806,7 @@ say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's co
 say "$(reason_of "$OUT" | grep -c '^dev is checked out in no live worktree\. .*stop and ask\.$') $(route_lines "$OUT" | grep -c "[#']")" "1 0" "…said in a prose line above the commands, which carry no # or apostrophe"
 git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
-say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .ai/worktrees/<name> -b <prefix>/<name> dev && \\|" "…dev held by a linked worktree: the pull runs there, by path"
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .flight-rules/worktrees/<name> -b <prefix>/<name> dev && \\|" "…dev held by a linked worktree: the pull runs there, by path"
 # A pull in a checkout merges a diverged dev, and a conflict leaves the merge in progress,
 # where git says to fix and commit: the prose says to stop and ask (T-2), and to abort
 # nothing, since a merge there may be the person's: each way tried to tell one the pull
@@ -816,7 +816,7 @@ say "$(reason_of "$OUT" | grep -c "^dev is checked out at '$D/dev wt', so the pu
 # Named with git -C from outside the repo, as assistants write it: the lookup reads the
 # target repo, not the shell's (W-4).
 O=$(tmpd); OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<"$(jq -n --arg c "git -C $D commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
-say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .ai/worktrees/<name> -b feature/<name> dev && \\|" "…the same, named with git -C from outside the repo"
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\|" "…the same, named with git -C from outside the repo"
 rm -rf "$O"
 # Moved, with work staged in it: the rows, run whole, leave it for git worktree repair,
 # which a prune they once ran first had put past (B-1). The prose names the pull to run
@@ -851,7 +851,7 @@ U=$(tmpd)
 git init -q --bare -b main "$U/up.git" && git clone -q "$U/up.git" "$U/r" 2>/dev/null && git clone -q "$U/up.git" "$U/o" 2>/dev/null || die "could not make the clones in $U"
 for r in r o; do git -C "$U/$r" config user.email t@t.t; git -C "$U/$r" config user.name t; done
 git -C "$U/r" commit -q --allow-empty -m a && git -C "$U/r" push -q origin main main:dev || die "could not seed $U/up.git"
-mkdir -p "$U/r/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$U/r/.ai/flight-rules.conf"
+mkdir -p "$U/r/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$U/r/.flight-rules/conf"
 git -C "$U/r" fetch -q && git -C "$U/r" branch -q --track dev origin/dev || die "could not make dev in $U/r"
 git -C "$U/o" fetch -q && git -C "$U/o" checkout -q -b dev origin/dev || die "could not check out dev in $U/o"
 origin_moves() { git -C "$U/o" commit -q --allow-empty -m "o$1" && git -C "$U/o" push -q origin dev || die "could not move origin/dev"; }
@@ -905,7 +905,7 @@ layout_case() {   # <root|linked|missing> <online|offline|merging|merging-open>:
   git init -q --bare -b main "$F/up.git" && git clone -q "$F/up.git" "$r" 2>/dev/null || die "could not make the clone in $F"
   git -C "$r" config user.email t@t.t; git -C "$r" config user.name t
   git -C "$r" commit -q --allow-empty -m a && git -C "$r" push -q origin main main:dev && git -C "$r" fetch -q || die "could not seed $F/up.git"
-  mkdir -p "$r/.ai"; printf 'INTEGRATION_BRANCH=dev\n' > "$r/.ai/flight-rules.conf"
+  mkdir -p "$r/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$r/.flight-rules/conf"
   case "$1" in
     root)    git -C "$r" checkout -q -b dev origin/dev ;;
     linked)  git -C "$r" branch -q --track dev origin/dev && git -C "$r" worktree add -q "$F/dw" dev ;;
@@ -1157,20 +1157,20 @@ echo "…and the merge is the one in the -C target, not in the hook's own cwd (#
 # repo's protected branch was waived. Each case runs with cwd ≠ the target.
 mgc() { guard_run "$3" "$5" CLAUDE_PROJECT_DIR="$4"; verdict "$2" "$1"; }   # mgc <expect> <desc> <cwd> <project dir> <command>
 MR=$(make_repo main)
-git -C "$MR" worktree add -q "$MR/.ai/worktrees/x" -b feature/x >/dev/null 2>&1 \
+git -C "$MR" worktree add -q "$MR/.flight-rules/worktrees/x" -b feature/x >/dev/null 2>&1 \
   || die "could not add a worktree to $MR"
 printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$MR/.git/MERGE_HEAD"
 mgc allow "from a worktree, finishing the main checkout's merge is waived" \
-    "$MR/.ai/worktrees/x" "$MR" "git -C $MR commit --no-edit"
+    "$MR/.flight-rules/worktrees/x" "$MR" "git -C $MR commit --no-edit"
 # A linked worktree keeps its MERGE_HEAD in its own gitdir (.git/worktrees/<name>), so
 # the main checkout's .git is the wrong place to look for it, from either side.
-git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 \
+git -C "$MR" worktree add -q "$MR/.flight-rules/worktrees/d" -b dev >/dev/null 2>&1 \
   || die "could not add a dev worktree to $MR"
 mgc deny  "from the main checkout, a merge there does not waive a commit in a worktree on dev" \
-    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
-printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$(git -C "$MR/.ai/worktrees/d" rev-parse --absolute-git-dir)/MERGE_HEAD"
+    "$MR" "$MR" "git -C $MR/.flight-rules/worktrees/d commit -m x"
+printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$(git -C "$MR/.flight-rules/worktrees/d" rev-parse --absolute-git-dir)/MERGE_HEAD"
 mgc allow "from the main checkout, finishing a merge in a worktree on dev is waived" \
-    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit --no-edit"
+    "$MR" "$MR" "git -C $MR/.flight-rules/worktrees/d commit --no-edit"
 NM=$(make_repo main)
 # git -C walks a path as the kernel does: lnk/.. is the parent of where lnk leads, not
 # the cwd. The guard already judged this as git does; pinned when install.sh's plain
@@ -1200,9 +1200,9 @@ rm -rf "$LA" "$LB"
 # never matched and the branch policy was off — for a worktree on dev committed to from
 # the main checkout, among others.
 MR=$(make_repo main)
-git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 || die "could not add a dev worktree to $MR"
+git -C "$MR" worktree add -q "$MR/.flight-rules/worktrees/d" -b dev >/dev/null 2>&1 || die "could not add a dev worktree to $MR"
 CDPATH=.:/usr mgc deny "CDPATH=.:/usr exported: a commit in a worktree on dev is still refused" \
-    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
+    "$MR" "$MR" "git -C $MR/.flight-rules/worktrees/d commit -m x"
 # …and with the project dir a subdirectory of its repo, committing on main from the top:
 # the target's `.git` is the relative answer CDPATH bent. The case before this one, with
 # target_root == the project dir, short-circuited before the compare and could not fail
@@ -1249,7 +1249,7 @@ for pair in "git status|echo main" \
             "git branch -d feature/old|echo \"=== main now ===\"" \
             "git branch -d feature/old|git log --oneline main -1" \
             "git push --force origin feature/x|echo main" \
-            "git worktree remove .ai/worktrees/x|git branch -d fix/x"; do
+            "git worktree remove .flight-rules/worktrees/x|git branch -d fix/x"; do
   a="${pair%%|*}"; b="${pair##*|}"
   gen_check allow main "harmless-pair" "$a && $b"
 done
@@ -1745,5 +1745,16 @@ N=$(tmpd)
 guard_run "$N" "git init -q r && cd r && git commit --allow-empty -m x"
 verdict "a commit in a repo the command creates, from outside any repo, is allowed" allow
 rm -rf "$N" "$SHIM"
+
+echo "The conf where it lived before 0.29.0, .ai/flight-rules.conf, is read until it is moved (#153):"
+D=$(make_repo trunk)
+mkdir -p "$D/.ai"; echo 'PROTECTED_BRANCHES=^trunk$' > "$D/.ai/flight-rules.conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null); RC=$?
+say "$RC$(grep -c '"permissionDecision": *"deny"' <<<"$OUT")" "01" "a branch only the old conf protects is protected"
+say "$(grep -c 'PROTECTED_BRANCHES=off in .ai/flight-rules.conf' <<<"$OUT")" "1" "…and the refusal names the old conf as where the policy is set"
+mkdir -p "$D/.flight-rules"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.flight-rules/conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null); RC=$?
+say "$RC$(grep -c 'permissionDecision' <<<"$OUT")" "00" "…and once a conf is in the new place, that one decides: allowed"
+rm -rf "$D"
 
 finish

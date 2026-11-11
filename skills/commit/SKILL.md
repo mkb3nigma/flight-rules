@@ -12,7 +12,7 @@ Read `.ai/skills/commit/EXTENSIONS.md` first if the project has one: extra or
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
+come **only** from `.flight-rules/conf`, the file the hooks read — an extension
 restating one is invisible to enforcement, so the conf wins.
 
 ## Division of labour
