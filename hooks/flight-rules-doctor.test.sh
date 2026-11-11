@@ -974,4 +974,12 @@ OUT=$(run "$D")
 say "$(grep -c 'nothing is note-gated (every protected branch is PR-only)' <<<"$OUT")" "1" "the same pattern quoted two ways: every protected branch is PR-only"
 rm -rf "$D"
 
+echo "The way through, left set (#151):"
+D=$(mkrepo)
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 HOME="$D/fakehome" bash "$DOCTOR" 2>&1; echo "rc=$?")
+say "$(grep -c '❌ FLIGHT_RULES_GO_AHEAD=1 is set in this environment — every stop of every git hook is passed' <<<"$OUT")" "1" "FLIGHT_RULES_GO_AHEAD=1 in the environment: a ❌"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'FLIGHT_RULES_GO_AHEAD' <<<"$OUT")" "00" "…and unset: exit 0, and no word of it"
+rm -rf "$D"
+
 finish

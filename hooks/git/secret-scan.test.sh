@@ -400,4 +400,32 @@ say "$(landed "$R" "$h")" yes "a 1 MB binary commits"
 [ "$TOOK" -le 8 ] && say yes yes "…in ${TOOK}s (bound 8s)" || say no yes "…took ${TOOK}s (bound 8s)"
 rm -rf "$R"
 
+echo "The secret stop prints its way through, and takes it (#151):"
+R=$(make_repo armed); h=$(git -C "$R" rev-parse HEAD)
+echo "k=$AWS" > "$R/a.cfg"; git -C "$R" add a.cfg
+OUT=$(cd "$R" && git commit -m x 2>&1); RC=$?
+say "$RC$(landed "$R" "$h")$(grep -c '^  FLIGHT_RULES_GO_AHEAD=1 <the same command>$' <<<"$OUT")" "1no1" "a staged key: refused, and the refusal prints the command that goes ahead"
+OUT=$(cd "$R" && FLIGHT_RULES_GO_AHEAD=1 git commit -m x 2>&1); RC=$?
+say "$RC$(landed "$R" "$h")$(grep -c 'going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — a commit whose staged changes look like they hold a secret' <<<"$OUT")$(grep -c 'AWS access key' <<<"$OUT")" "0yes11" "…which commits it, saying what it went past and what was found"
+h=$(git -C "$R" rev-parse HEAD); echo clean > "$R/b"; git -C "$R" add b
+OUT=$(cd "$R" && FLIGHT_RULES_GO_AHEAD=1 git commit -m y 2>&1); RC=$?
+say "$RC$(landed "$R" "$h")$(grep -c 'going ahead' <<<"$OUT")" "0yes0" "with the variable set and nothing found, nothing is said"
+# The project's own pre-commit still runs on the way through.
+h=$(git -C "$R" rev-parse HEAD); printf '#!/bin/sh\necho "local ran" >&2; exit 3\n' > "$R/.hooks/pre-commit.local"; chmod +x "$R/.hooks/pre-commit.local"
+echo "k2=$AWS" > "$R/c.cfg"; git -C "$R" add c.cfg
+OUT=$(cd "$R" && FLIGHT_RULES_GO_AHEAD=1 git commit -m z 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && echo stopped)$(landed "$R" "$h")$(grep -c 'local ran' <<<"$OUT")" "stoppedno1" "going ahead still runs pre-commit.local, whose exit decides"
+rm -rf "$R"
+
+# A scan that could not read what is staged: the same way through, said.
+R=$(make_repo armed); REAL_GIT=$(command -v git)
+mkdir -p "$R/shim" \
+  && printf '#!/bin/sh\nfor a; do [ "$a" = "$FAIL_ON" ] && { echo "git-said-$FAIL_ON" >&2; exit 128; }; done\nexec "%s" "$@"\n' "$REAL_GIT" > "$R/shim/git" \
+  && chmod +x "$R/shim/git" && echo clean > "$R/f" && git -C "$R" add f || die "could not build the failing-git fixture"
+out=$( (cd "$R" && FAIL_ON=--name-only PATH="$R/shim:$PATH" ./.hooks/pre-commit 2>&1); echo "rc=$?")
+say "${out##*rc=}$(grep -c '^  FLIGHT_RULES_GO_AHEAD=1 <the same command>$' <<<"$out")" "11" "a scan that could not read what is staged: refused, printing the command that goes ahead"
+out=$( (cd "$R" && FAIL_ON=--name-only FLIGHT_RULES_GO_AHEAD=1 PATH="$R/shim:$PATH" ./.hooks/pre-commit 2>&1); echo "rc=$?")
+say "${out##*rc=}$(grep -c 'going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — a commit the secret scan could not read' <<<"$out")" "01" "…which goes ahead, saying the part that went unscanned"
+rm -rf "$R"
+
 finish

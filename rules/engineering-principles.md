@@ -19,8 +19,9 @@ trigger: always_on
 **Not yours to override.**
 
 - A blocked command is information, not an obstacle: read the reason, do what it says,
-  re-run. Never slip past a guard by editing it or its config, adding `--no-verify`, or
-  reshaping the command to dodge it. A person may still run it, told that it was
+  re-run. Never slip past a guard by editing it or its config, adding `--no-verify`,
+  reshaping the command to dodge it, or taking the way through its message prints for
+  the person — that one is theirs to take, or to tell you to. A person may still run it, told that it was
   refused, by what and why: that is a decision you are asking for (§7). Never one that
   writes a `pre-merge-check` note by hand: the note says the check ran, and only
   running it may write one. If the block is wrong, or refuses a step the project's own

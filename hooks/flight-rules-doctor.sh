@@ -297,6 +297,12 @@ if command -v jq >/dev/null 2>&1; then ok "jq on PATH"
 elif command -v python3 >/dev/null 2>&1; then ok "python3 on PATH (jq fallback)"
 else bad "neither jq nor python3 on PATH — the agent guard will deny every git command"; fi
 
+# FLIGHT_RULES_GO_AHEAD=1 is the way through one stop, typed in front of one command
+# (#151). Exported, or set in a tool's settings, it passes every stop there is.
+if [[ "${FLIGHT_RULES_GO_AHEAD-}" == 1 ]]; then
+  bad "FLIGHT_RULES_GO_AHEAD=1 is set in this environment — every stop of every git hook is passed, not one command's. Unset it; it goes in front of a single command"
+fi
+
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 # read_conf <key> <file>: pre-commit-check.sh's, verbatim (flight-rules-doctor.test.sh
 # compares), so a value reads here as the hooks read it. Three sed parsers of this

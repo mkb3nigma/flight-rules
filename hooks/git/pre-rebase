@@ -92,6 +92,20 @@ box_row() {
     [ "$pad" -lt 0 ] && pad=0
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
+# go_ahead <what is passed>: the way through that every stop prints (MISSION.md,
+# principle 5) — FLIGHT_RULES_GO_AHEAD=1 in front of the command. Going ahead is the
+# person's decision, so it is said every time it is used (#151).
+go_ahead() {
+    [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1
+    echo "⚠️  flight-rules: going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — $1. That is the person's decision, never an assistant's own." >&2
+}
+# go_ahead_rows <command>: the rows a box prints for it.
+go_ahead_rows() {
+    box_row "Going ahead anyway is the person's decision, never an"
+    box_row "assistant's own, and it is said when it is used:"
+    box_row "  FLIGHT_RULES_GO_AHEAD=1 $1"
+    box_row ""
+}
 
 # A refusal a broken pattern decided: the pattern named, where it is set, and the
 # command that gets past the gate it broke from where this refusal leaves you — the one
@@ -123,6 +137,9 @@ broken_box() {
 
 # <the same command>, not `git rebase <same arguments>`: `git pull --rebase` reaches
 # here too, and its arguments are not a rebase's (#103 review).
+if go_ahead "a rebase of $BRANCH, a protected branch"; then
+    exit 0
+fi
 if [ "$_rc" -eq 2 ]; then
     broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" REBASE "$BRANCH" "<the same command>"
     exit 1
@@ -154,6 +171,7 @@ else
     box_row "— or rebase the feature branch onto $BRANCH."
 fi
 box_row ""
+go_ahead_rows "<the same command>"
 box_bot
 echo ""
 exit 1

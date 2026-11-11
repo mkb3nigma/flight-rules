@@ -117,16 +117,25 @@ fi
 # Accepted cost: a blobless partial clone, offline, refuses a commit that changes or
 # deletes a file whose blob was never fetched — git fetches it before the diff can be
 # filtered, and fails (/dg, 2026-10-12). The error says so; online, it goes through.
+# go_ahead <what is passed>: the way through that every stop prints (MISSION.md,
+# principle 5) — FLIGHT_RULES_GO_AHEAD=1 in front of the command. Going ahead is the
+# person's decision, so it is said every time it is used (#151).
+go_ahead() {
+  [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1
+  echo "⚠️  flight-rules: going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — $1. That is the person's decision, never an assistant's own." >&2
+}
 unread() {
   local rc=$1 what=$2 err=""; shift 2
+  go_ahead "a commit the secret scan could not read ($what exited $rc), so that part goes unscanned" && return 0
   [ $# -eq 0 ] || err=$("$@" 2>&1 >/dev/null | tail -n 3)
   cat >&2 <<EOF
 🔐 flight-rules: commit refused — the secret scan could not read what is staged
 ($what exited $rc), so nothing was scanned.${err:+
 $err}
 
-Fix the cause, then commit again. Committing unscanned is the repo owner's decision,
-not an agent's: stop and ask them.
+Fix the cause, then commit again. Committing unscanned is the person's decision, never
+an assistant's own, and it is said when it is used:
+  FLIGHT_RULES_GO_AHEAD=1 <the same command>
 EOF
   exit 1
 }
@@ -194,6 +203,7 @@ if hit 'BEGIN [A-Z ]*PRIVATE KEY'; then
 fi
 
 [ -z "$FINDINGS" ] && run_local "$@"
+go_ahead "a commit whose staged changes look like they hold a secret:$FINDINGS" && run_local "$@"
 
 # Concluding a merge, unstaging a file commits HEAD's copy of it: the merge records the
 # other side as merged and drops its change, with nothing said (0.27.0 release review).
@@ -207,6 +217,7 @@ cat >&2 <<EOF
 
 $UNSTAGE If it is a false positive (a test fixture,
 say), build the value at run time instead of writing it literally. Committing it as
-is is the repo owner's decision, not an agent's: stop and ask them.
+is is the person's decision, never an assistant's own, and it is said when it is used:
+  FLIGHT_RULES_GO_AHEAD=1 <the same command>
 EOF
 exit 1
