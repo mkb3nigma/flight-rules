@@ -24,9 +24,10 @@ whether the interface works.
 
 ## The topics
 
-Load the ones the task needs, and only those. Each rule has an ID, a kind — `[standard]`
-(a published standard), `[finding]` (measured research), `[rule of thumb]` (practice,
-not measurement) — and, where it has one, its source.
+Load the ones the task needs, and only those. Each rule has an ID (`UX-A01`: the guide,
+the topic's letter, a number), a kind — `[standard]` (a published standard),
+`[finding]` (measured research), `[rule of thumb]` (practice, not measurement) — and,
+where it has one, its source.
 
 | Read | When the work |
 |---|---|
@@ -83,9 +84,10 @@ As `engineering-principles.md` §7 asks. Findings in a register:
 | ID | Where | Rule | Finding | Fix | Rating |
 |---|---|---|---|---|---|
 
-`Where` is a file and line, or a screen and element; `Rule` is the rule's ID, or
-"record" for a consistency finding. **Rating**: Major — it stops a person, loses their
-work, or fails a `[standard]` rule; Medium — it slows or misleads them; Minor — polish.
+`Where` is a file and line, or a screen and element; `Rule` is the rule's ID, as
+`UX-F01`, or "record" for a consistency finding. **Rating**: Major — it stops a person,
+loses their work, or fails a `[standard]` rule; Medium — it slows or misleads them;
+Minor — polish.
 
 Then: what was **not checked**, any rule traded for another, the record changes, and
 what the person should look at by eye.

@@ -23,11 +23,11 @@ trigger: always_on
   reshaping the command to dodge it, or running the command its message prints for
   going ahead anyway — that one is the person's to run, even when they say go ahead; a
   command the message gives you for when the person asked (finishing a merge they asked
-  for) is yours. A person may still run it, told that it was refused, by what and why:
-  that is a decision you are asking for (§7). Never one that writes a `pre-merge-check`
-  note by hand: the note says the check ran, and only running it may write one. If the
-  block is wrong, or refuses a step the project's own workflow requires, stop and say
-  so; that is a finding, and the owner decides
+  for) is yours. A person may still run the go-ahead command, told that it was refused,
+  by what and why: that is a decision you are asking for (§7). Never one that writes a
+  `pre-merge-check` note by hand: the note says the check ran, and only running it may
+  write one. If the block is wrong, or refuses a step the project's own workflow
+  requires, stop and say so; that is a finding, and the owner decides
 - A push to a branch the project protects — its main line, the branch work integrates
   on — is the person's to ask for, in this session or in the project's own written
   rules: it publishes, and undoing it here does not unpublish it. Not asked, print the

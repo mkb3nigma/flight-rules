@@ -492,12 +492,17 @@ _up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
 # alone was a note written by hand, tree hash and all (#149). What it went past is the
 # cause the box below names, as its title does: "no note" for a stamped branch whose
 # conflict was resolved in the merge, or a catch-up, recorded a reason that was not so
-# (0.29.0 release review, second pass, V11).
-_past=""
-if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -eq 3 ]; then _past="git could not check it against its pre-merge-check note"
-elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its pre-merge-check note checked"
-elif [ -n "$CATCHUP" ]; then _past="a catch-up of $CATCHUP, made as a merge commit"
-elif [ -n "$NOT_CLEAN" ]; then _past="a $NOT_CLEAN that is not git's clean merge"
+# (0.29.0 release review, second pass, V11). One chain sets both, so they cannot part: kept
+# in step by hand, a refused note was recorded as "no note", and a merge git could not
+# check as "not git's clean merge" (third pass, W2). A refused note is named by a fixed
+# phrase, never $NOTE_BAD, which can quote the note.
+_past=""; _title="PRE-MERGE CHECK REQUIRED"
+if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -eq 3 ]; then _past="git could not check it against its pre-merge-check note"; _title="THIS MERGE COULD NOT BE CHECKED"
+elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its pre-merge-check note checked"; _title="THE NOTE DID NOT CHECK THIS MERGE"
+elif [ -n "$CATCHUP" ]; then _past="a catch-up of $CATCHUP, made as a merge commit"; _title="A CATCH-UP PULL MADE A MERGE COMMIT"
+elif [ -n "$NOTE_BAD" ] && [ -z "$NOT_CLEAN" ]; then _past="a pre-merge-check note the gate does not take"; _title="THE NOTE DOES NOT SHOW THE CHECK"
+elif [ -n "$NOT_CLEAN" ] && [ "$CLEAN" -eq 1 ]; then _past="a $NOT_CLEAN that is not git's clean merge"
+elif [ -n "$NOT_CLEAN" ]; then _past="a $NOT_CLEAN, which git could not check is its clean merge"
 fi
 if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, ${_past:+past the note gate: }${_past:-with no pre-merge-check note the gate takes}"; then
     # Replacing one the message already carries: kept, a line written by hand ahead of
@@ -515,17 +520,8 @@ fi
 echo ""
 box_top
 # A catch-up needs no check, so its box does not ask for one (0.28.0 release review).
-if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -eq 3 ]; then
-    box_row "❌  THIS MERGE COULD NOT BE CHECKED" 1
-elif [ -n "$NOTE_PASSED" ]; then
-    box_row "❌  THE NOTE DID NOT CHECK THIS MERGE" 1
-elif [ -n "$CATCHUP" ]; then
-    box_row "❌  A CATCH-UP PULL MADE A MERGE COMMIT" 1
-elif [ -n "$NOTE_BAD" ] && [ -z "$NOT_CLEAN" ]; then
-    box_row "❌  THE NOTE DOES NOT SHOW THE CHECK" 1
-else
-    box_row "❌  PRE-MERGE CHECK REQUIRED" 1
-fi
+# The title is the cause set above, with the trailer's.
+box_row "❌  $_title" 1
 box_sep
 box_row ""
 box_row "Merging: $MERGE_BRANCH"

@@ -73,6 +73,14 @@ Not adopted, deliberately: the enumerated ten-way catalogue of loop construction
 human-in-the-loop script asset (too long and too tool-coupled for this playbook's
 register), and the handoff to an architecture skill this playbook does not have.
 
+A third review (2026-11-12, `8b78b531` to `4ae2317d`, 128 commits) folded in one check,
+from upstream commit `f3fc5632` (#1209, 2026-10-07): the regression test is watched
+failing before the fix, and a red forced by breaking code or a fixture is trusted only
+once a diff against a clean copy shows the break landed (step 6). Wording original.
+Not adopted, deliberately: upstream dropped the post-mortem question ("what would have
+prevented this bug?") into a separate `retro` skill; this playbook has none, so step 8
+keeps it.
+
 **This credit was missing until 2026-08-15.** It was recorded correctly in the source
 project when the skill was first written (AppliHawk commit `c307e69c`, 2026-06-11 —
 *"Borrowed from mattpocock/skills 'diagnose' concept"*) and was lost when the skill was

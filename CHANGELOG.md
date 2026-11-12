@@ -49,10 +49,12 @@ worktree folder does not fall back: a project on the default puts its next workt
   folder's until the setting changes, the moved ones after. `core.hooksPath` is one
   setting for a clone and all its worktrees, and resolves in each. On a branch, `mkdir
   -p .flight-rules && cp -R .ai/hooks .flight-rules/hooks`, commit and merge it; the old
-  folder gates that merge. Then, once every open branch has the copy — the integration
-  branch merged into each; the doctor names any that do not — in every clone, `git
-  config core.hooksPath .flight-rules/hooks`. A branch without the copy then runs no
-  hooks, and the doctor there prints the merge that brings it. Then, on a later branch,
+  folder gates that merge. Then, once every checkout and the integration branch have
+  the copy — the integration branch merged into each checkout; the doctor names any
+  checkout without it, and the integration branch, and prints the command only then —
+  in every clone, `git config core.hooksPath .flight-rules/hooks`. A checkout without
+  the copy then runs no hooks: the doctor, there or in any other checkout, names it and
+  the merge that brings it. Then, on a later branch,
   `git rm -r .ai/hooks`. A clone left naming the old folder — gone, or still there with
   something left in it — is told by the doctor, with the command. A
   `.claude/settings.json` that `exec`s `.ai/hooks/agent/…` is changed with the copy.
@@ -211,7 +213,7 @@ says how.
   trailer: past the instruction check, `went ahead (FLIGHT_RULES_GO_AHEAD)`; past the
   note gate, `went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)`, or `went
   ahead past the note gate:` and the cause its box named (a note that did not check
-  this merge, a catch-up). `pre-commit.local` still runs. The
+  this merge, a note the gate does not take, a catch-up, a merge git could not check). `pre-commit.local` still runs. The
   instruction check's own route, `FLIGHT_RULES_MERGE_AUTHORISED=1`, is unchanged.
 - **The agent guard refuses an assistant's command that sets `FLIGHT_RULES_GO_AHEAD`**
   (#155) — in front of a command, after `env` or `export`, quoted or not — on any branch,
@@ -224,7 +226,8 @@ says how.
   `sources.md` mapping every source to its rules. It loads only the topics a task needs,
   and keeps the project's design record (`.ai/design.md` by default), starting it with
   the project's first interface. A project that never calls it pays only its
-  description.
+  description. Its rule IDs carry the guide's prefix — `UX-A01`, `UX-F01` — so they
+  never read as a reply's actions (A1…) or decisions (D1…).
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back.
@@ -275,6 +278,9 @@ says how.
   with its exit status and last line, single-quoted. Uncommitted changes get a ⚠️ row:
   the stamp vouches for the commit, but the tests ran with those edits on disk. Items 17
   and 18 read `AGENTS.md` beside `CLAUDE.md`.
+- **`/diagnose`** step 6: the regression test is seen to fail without the fix, and a red
+  got by breaking code or a fixture on purpose is trusted only once `git diff` shows the
+  break landed (from `mattpocock/skills`, re-pinned).
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's

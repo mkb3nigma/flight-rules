@@ -1961,5 +1961,41 @@ OUT=$(cd "$d" && FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit 2>&1); RC=$?
 say "$RC|$(git -C "$d" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)' dev | sed '/^$/d')" "0|went ahead past the note gate: not the clean merge its pre-merge-check note checked (FLIGHT_RULES_GO_AHEAD)" "a stamped branch, its conflict resolved in the merge: going ahead records that, not 'no note'"
 say "$(grep -c "$GA — the merge of fix/s into dev, past the note gate: not the clean merge its pre-merge-check note checked" <<<"$OUT")" "1" "…and says so as it goes ahead"
 rm -rf "$d"
+# The record and the box's title name one cause: a refused note was recorded as "no
+# note", and a merge git could not check as "not git's clean merge" (0.29.0 release
+# review, third pass, W2).
+trailer() { git -C "$1" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)' dev | sed '/^$/d'; }
+D=$(mkrepo); git -C "$D" checkout -q -b feature/n dev; echo n > "$D/n"; git -C "$D" add -A
+git -C "$D" commit -qm "feature: n" >/dev/null || die "could not commit on feature/n"
+git -C "$D" notes --ref=pre-merge-check add -f -m "passed: 2026-10-31T00:00:00Z branch:feature/n tree:$(git -C "$D" rev-parse 'HEAD^{tree}')" HEAD || die "could not note feature/n"
+git -C "$D" checkout -q dev
+OUT=$(cd "$D" && git merge --no-ff feature/n -m "Merge feature/n" 2>&1); RC=$?
+say "$RC$(grep -c 'THE NOTE DOES NOT SHOW THE CHECK' <<<"$OUT")" "11" "a note with no ran: line: refused, the note named as not showing the check"
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit 2>&1); RC=$?
+say "$RC|$(trailer "$D")" "0|went ahead past the note gate: a pre-merge-check note the gate does not take (FLIGHT_RULES_GO_AHEAD)" "…going ahead records a note the gate does not take, not 'no note'"
+say "$(grep -c "$GA — the merge of feature/n into dev, past the note gate: a pre-merge-check note the gate does not take" <<<"$OUT")" "1" "…and says so as it goes ahead"
+rm -rf "$D"
+# backmerge <conflict|clean>: D, a repo where main moved on, dev checked out.
+backmerge() {
+  D=$(mkrepo)
+  git -C "$D" checkout -q main && echo h > "$D/$([ "$1" = conflict ] && echo f || echo h)" && git -C "$D" add -A && git -C "$D" commit -qm "fix: hotfix" --no-verify >/dev/null || die "could not move main"
+  git -C "$D" checkout -q dev
+  if [ "$1" = conflict ]; then echo d > "$D/f" && git -C "$D" commit -qam "feat: d" --no-verify >/dev/null || die "could not move dev"; fi
+}
+backmerge conflict
+(cd "$D" && git merge -q --no-edit main >/dev/null 2>&1)
+echo resolved > "$D/f"; git -C "$D" add f
+OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit 2>&1); RC=$?
+say "$RC|$(trailer "$D")" "0|went ahead past the note gate: a back-merge of main that is not git's clean merge (FLIGHT_RULES_GO_AHEAD)" "a back-merge resolved in the merge: going ahead records that it is not git's clean merge"
+rm -rf "$D"
+for g in 2.37.1 real; do
+  G=$(tmpd); standin "$G" "$g"
+  backmerge clean
+  OUT=$(cd "$D" && GIT_EXEC_PATH="$G" git merge --no-edit main 2>&1); RC=$?
+  say "$RC$(grep -c 'PRE-MERGE CHECK REQUIRED' <<<"$OUT")" "11" "a clean back-merge git could not check ($g): refused"
+  OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 GIT_EXEC_PATH="$G" git commit --no-edit 2>&1); RC=$?
+  say "$RC|$(trailer "$D")" "0|went ahead past the note gate: a back-merge of main, which git could not check is its clean merge (FLIGHT_RULES_GO_AHEAD)" "…going ahead records that git could not check it, not that it is not git's clean merge"
+  rm -rf "$D" "$G"
+done
 
 finish
