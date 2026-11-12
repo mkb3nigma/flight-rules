@@ -125,7 +125,10 @@ trigger: always_on
   may name it, never stand in for it. A command you need the person to run is such a
   decision; say also what waits on it, and how many such asks are open
 - Three or more findings is a register — one row each, stable IDs, severity. Issues
-  woven through paragraphs cannot be tracked back to the sentence that raised them
+  woven through paragraphs cannot be tracked back to the sentence that raised them.
+  Two lists in one reply never share a numbering: findings keep their IDs, recommended
+  actions are A1, A2…, decisions D1, D2…, so a bare number in the answer can mean only
+  one thing
 - Separate what you ran from what you concluded, and label which is which. Done means
   you can show the command, its exit status and last line of output, and the commit or
   working-tree state it ran on; if you could not run it, say so — never report what you
