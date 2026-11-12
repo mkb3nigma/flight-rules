@@ -1107,7 +1107,7 @@ rm -rf "$D" "$WT"
 D=$(mkrepo); mv "$D/.flight-rules/hooks" "$D/.ai-hooks-tmp"; mkdir -p "$D/.ai"; mv "$D/.ai-hooks-tmp" "$D/.ai/hooks" || die "could not move the hooks to their old place"
 "${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm base || die "could not commit the fixture in $D"
 OUT=$(run "$D")
-say "$(head -1 <<<"$OUT")$(grep -c 'git pull\|git merge' <<<"$OUT")$(grep -c 'so git runs NO hooks here. The move has not reached main either: merge the branch that carries it into main. Until then, what runs this checkout'"'"'s hooks is git config core.hooksPath .ai/hooks$' <<<"$OUT")" "101" "the setting moved, on an integration branch without the move: no pull of it, and the command that runs the old hooks"
+say "$(head -1 <<<"$OUT")$(grep -c 'git pull\|git merge' <<<"$OUT")$(grep -c 'so git runs NO hooks here. The move has not reached main either: merge the branch that carries it into main. Until then, what runs this checkout'"'"'s hooks is git config core.hooksPath .ai/hooks, one setting for the whole clone, under which a checkout that has already removed .ai/hooks/ runs no hooks until it is changed back$' <<<"$OUT")" "101" "the setting moved, on an integration branch without the move: no pull of it, and the command that runs the old hooks, said to be the whole clone's"
 rm -rf "$D"
 # The other checkouts unread, with the setting on the new folder: said, not taken for
 # none lagging (W1).

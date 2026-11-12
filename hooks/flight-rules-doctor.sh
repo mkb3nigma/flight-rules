@@ -234,12 +234,13 @@ else
     # The setting changed once every checkout had the copy, then a branch cut before the
     # move checked out: it has only the old folder, so git runs no hooks there (V1). Where
     # the local integration branch lacks the move too, pulling or merging it brings
-    # nothing: the move goes into it first (W1).
+    # nothing: the move goes into it first (W1). The .ai/hooks setting offered meanwhile
+    # is the whole clone's, so the message says what it costs a checkout past step 3.
     if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then
       _cur=$(git symbolic-ref -q --short HEAD 2>/dev/null)
       if git rev-parse -q --verify "refs/heads/$_int" >/dev/null 2>&1 && would_lose ref "refs/heads/$_int"; then
         [[ "$_cur" == "$_int" ]] && _fix="" || _fix=", then $_int into this one"
-        _fix="The move has not reached $_int either: merge the branch that carries it into $_int$_fix. Until then, what runs this checkout's hooks is git config core.hooksPath .ai/hooks"
+        _fix="The move has not reached $_int either: merge the branch that carries it into $_int$_fix. Until then, what runs this checkout's hooks is git config core.hooksPath .ai/hooks, one setting for the whole clone, under which a checkout that has already removed .ai/hooks/ runs no hooks until it is changed back"
       elif [[ "$_cur" == "$_int" ]]; then _fix="Bring the move in: git pull --ff --no-rebase origin $(shq "$_int")"
       else _fix="Bring the move in: git merge $(shq "$_int")"
       fi
