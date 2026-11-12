@@ -29,9 +29,10 @@ trigger: always_on
   block is wrong, or refuses a step the project's own workflow requires, stop and say
   so; that is a finding, and the owner decides
 - A push to a branch the project protects — its main line, the branch work integrates
-  on — is the person's to ask for, in this session: it publishes, and undoing it here
-  does not unpublish it. Not asked, print the command and say what it would move.
-  Nothing checks this: to a hook, a push that was asked for looks like one that was not
+  on — is the person's to ask for, in this session or in the project's own written
+  rules: it publishes, and undoing it here does not unpublish it. Not asked, print the
+  command and say what it would move. Nothing checks this: to a hook, a push that was
+  asked for looks like one that was not
 - An action nothing can undo — force-pushing or rewriting shared history, deleting an
   unmerged branch, discarding uncommitted or stashed work you did not make, dropping
   data — needs a person's yes first; a request that names the action is that yes. With

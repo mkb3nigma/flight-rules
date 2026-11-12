@@ -89,7 +89,7 @@ hooks' printed routes still name the local branch until a switch exists (#141).
 a `trigger: always_on` header for Antigravity (the session-start hook strips it before
 injecting), and changes three things an assistant does: it never takes the way through
 a stop prints, even when told to go ahead; it does not push to a protected branch
-unless the person asks in that session; and a reply that reports work or asks for a
+unless the person asks in that session or the project's own written rules do; and a reply that reports work or asks for a
 decision assumes the reader remembers none of the earlier context and ends with the
 decisions it needs, each decidable alone, last (§7), with no two of its lists sharing a
 numbering — the Situation, Background, Assessment, Recommendation headings are this
