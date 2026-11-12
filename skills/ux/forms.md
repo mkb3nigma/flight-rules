@@ -5,9 +5,9 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
 
 ## Labels and instructions
 
-- **F1** [standard] Every field has a label, tied to it in the markup (`<label for>`).
-  (3.3.2, 1.3.1) Visible and outside the field is the practice beyond the criterion: a
-  placeholder is not a label, since it disappears as the person types.
+- **F1** [standard] Every field has a visible label, tied to it in the markup
+  (`<label for>`). (3.3.2, 1.3.1) Outside the field is the practice beyond the
+  criterion: a placeholder is not a label, since it disappears as the person types.
 - **F2** [standard] A requirement is stated before the input, not only in the error
   after it: required fields, formats ("DD/MM/YYYY"), limits ("8 or more characters").
   (3.3.2)
