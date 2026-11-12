@@ -60,7 +60,9 @@ worktree folder does not fall back: a project on the default puts its next workt
   default either sets `WORKTREE_DIR=.ai/worktrees` to stay, or adds
   `.flight-rules/worktrees/` to `.gitignore`; worktrees already made stay where they
   are, and the session-start reminder still lists the merged ones there. The doctor
-  says so until `.gitignore` covers the new folder or `WORKTREE_DIR` is set.
+  says so until `.gitignore` covers the new folder or `WORKTREE_DIR` is set — a ⚠️, so
+  to the assistant at session start and on the full report, not on the screen; and
+  `/feature-start` names the line when it makes a worktree in a folder not ignored.
 
 **A project with its own `pre-push`** (git-lfs installs one) renames it
 `pre-push.local` first. flight-rules' `pre-push` runs it after its own check, with the

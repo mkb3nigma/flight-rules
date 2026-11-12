@@ -159,6 +159,8 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    ```bash
    git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> {INTEGRATION_BRANCH}
    ```
+   If `git check-ignore -q {WORKTREE_DIR}/<slug>` exits 1, say that `git status` will
+   show it, and name the line to add to `.gitignore` on a branch: `{WORKTREE_DIR}/`.
    An approved hotfix (step 3) is cut from `origin/main` instead, tracking nothing, so
    that a bare `git push` or `git pull` in it never aims at `main` itself:
    ```bash
