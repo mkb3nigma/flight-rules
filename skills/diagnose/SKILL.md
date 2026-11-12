@@ -144,7 +144,10 @@ upstream or downstream of it. Keep it surgical (see engineering principles §3).
 ### 6. Verify
 The step-1 loop no longer goes red — re-run it against the *original*, un-minimized
 scenario, not just the minimized one. The full relevant suite still passes. The failing
-repro is committed as a permanent regression test.
+repro is committed as a permanent regression test, seen to fail without the fix. Where
+that red came from breaking the code or a fixture on purpose, first show the break is
+really there — `git diff` against a clean copy — since a break that did not land gives a
+red from something else.
 
 **Write the regression test at a correct seam, or say there isn't one.** A correct seam
 exercises the real bug pattern as it occurs at the call site. A unit test that cannot

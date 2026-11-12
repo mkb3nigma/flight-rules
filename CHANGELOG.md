@@ -278,6 +278,9 @@ says how.
   with its exit status and last line, single-quoted. Uncommitted changes get a ⚠️ row:
   the stamp vouches for the commit, but the tests ran with those edits on disk. Items 17
   and 18 read `AGENTS.md` beside `CLAUDE.md`.
+- **`/diagnose`** step 6: the regression test is seen to fail without the fix, and a red
+  got by breaking code or a fixture on purpose is trusted only once `git diff` shows the
+  break landed (from `mattpocock/skills`, re-pinned).
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's
