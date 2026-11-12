@@ -6,7 +6,7 @@ criteria; read the criterion itself when a case is unclear: https://www.w3.org/T
 
 These rules are the ones an interface most often fails. They are not the whole standard:
 no rule here covers 1.2.1–1.2.5 (audio and video), 1.3.2, 1.3.3, 1.4.2, 2.1.4, 2.4.5,
-2.5.2, 2.5.4 or 3.1.2. A report says AA was checked only for the rules it loaded, and
+2.5.2, 2.5.4 or 3.1.2, and 1.3.5, 3.3.1–3.3.4, 3.3.7 and 3.3.8 are in `forms.md`. A report says AA was checked only for the rules it loaded, and
 never that the interface meets WCAG AA.
 
 ## Keyboard and focus
@@ -16,14 +16,14 @@ never that the interface meets WCAG AA.
   Space or the arrow keys its role expects. (2.1.1)
 - **A2** [standard] Focus never gets stuck: a person can always Tab, or press Escape,
   out of a widget, a dialog or an embedded frame. (2.1.2)
-- **A3** [standard] The focus order follows the reading order of the layout; a
-  positive `tabindex` is a finding. (2.4.3)
+- **A3** [standard] The focus order preserves meaning and operation: in practice, the
+  reading order of the layout. (2.4.3) A positive `tabindex` is where it usually breaks.
 - **A4** [standard] The focused element is always visibly marked; removing the focus
   outline without a replacement is a finding. (2.4.7)
 - **A5** [standard] A focused element is never wholly hidden behind a sticky header,
   footer or banner. (2.4.11)
-- **A6** [standard] A dialog moves focus into itself when it opens and back to the
-  control that opened it when it closes. (2.4.3)
+- **A6** [standard] A dialog moves focus into itself when it opens. (2.4.3) Moving it back
+  to the control that opened it, when it closes, is the practice beyond the criterion.
 - **A7** [standard] A repeated block — the site navigation — can be skipped: a "skip to
   content" link, or landmarks a screen reader can jump between. (2.4.1)
 
@@ -45,8 +45,11 @@ never that the interface meets WCAG AA.
   the font size, paragraph spacing 2 times, letter spacing 0.12 times, word spacing
   0.16 times. Fixed-height text boxes are where this breaks. (1.4.12)
 - **A14** [standard] Content shown on hover or focus — a tooltip, a submenu — can be
-  dismissed without moving the pointer (Escape), stays while the pointer moves onto it,
-  and stays until dismissed or no longer relevant. (1.4.13)
+  dismissed without moving the pointer or focus (Escape), unless it reports an input
+  error or covers nothing; stays while the pointer moves onto it; and stays until the
+  pointer or focus leaves the trigger, the person dismisses it, or it is no longer
+  valid. Content the browser draws and the page does not style — a `title` tooltip — is
+  exempt. (1.4.13)
 - **A15** [standard] Text is text, not an image of text, except a logo. (1.4.5)
 - **A16** [standard] The layout works in both portrait and landscape; do not lock the
   orientation unless it is essential. (1.3.4)
@@ -76,9 +79,12 @@ never that the interface meets WCAG AA.
 
 ## Pointer, motion and time
 
-- **A26** [standard] A pointer target is at least 24 by 24 CSS pixels, or is spaced so
-  that a 24-pixel-diameter circle centred on it meets no other target and no other small
-  target's circle. (2.5.8)
+- **A26** [standard] A pointer target is at least 24 by 24 CSS pixels, except one spaced
+  so that a 24-pixel-diameter circle centred on it meets no other target and no other
+  small target's circle; one in a sentence, or whose size the line height of the text
+  around it sets; one whose function another control on the same page offers at that
+  size; one the browser sizes and the page does not style; and one whose size is
+  essential or legally required. (2.5.8)
 - **A27** [standard] Anything done by dragging can also be done with single clicks or
   taps. (2.5.7)
 - **A28** [standard] Anything done with a multi-point or path gesture (pinch, swipe a

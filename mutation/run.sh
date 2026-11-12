@@ -7,12 +7,13 @@
 # reads it. The checkout this runs from is only read, but for the stamp: after a clean
 # run of the whole kit, a git note on refs/notes/mutation, origin's merged in first. Exit 0: every mutant expected killed was
 # killed and every mutant applied. Exit 1: one survived that should not have, or one
-# did not apply. Exit 2: usage, or a suite failing with no mutant applied — then no
-# result would mean anything.
+# did not apply. Exit 2: usage, or a suite failing with no mutant applied, at the
+# baseline or down the mutant path (the control) — then no result would mean anything.
 set -u
 HERE=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 2
 ROOT=$(cd -P "$HERE/.." && pwd -P) || exit 2
 TIMEOUT=${MUTATION_TIMEOUT:-1200}   # seconds per suite run; a hang counts as killed
+CONTROL=control   # the control's id, run down the mutant path with nothing applied; no mutant has it
 
 # Run one command under the timeout; its exit status, or 124 when the timeout fired.
 # set -m gives the job its own process group, so the kill reaches git and the rest. Where
@@ -43,12 +44,14 @@ bounded() {   # <log> <dir> <cmd…>
 # --- one mutant (xargs calls this): run.sh --mutant <work> <id> ------------------------
 if [ "${1:-}" = --mutant ]; then
     W=$2; id=$3
-    line=$(awk -F '\t' -v id="$id" '$1 == id' "$W/list" | head -1)
+    if [ "$id" = "$CONTROL" ]; then line=$(cat "$W/control")
+    else line=$(awk -F '\t' -v id="$id" '$1 == id' "$W/list" | head -1)
+    fi
     IFS=$'\t' read -r _ file suites expect <<<"$line"
     D="$W/m/$id"; L="$W/logs/$id"; R="$W/res/$id"
     mkdir -p "$D" "$L"
     cp -R "$W/base" "$D/tree" || { printf '%s\tfailed\t-\tcould not copy the tree\n' "$id" >"$R"; exit 0; }
-    if ! python3 -I "$HERE/mutants.py" apply "$id" "$D/tree" >"$L/apply" 2>&1; then
+    if [ "$id" != "$CONTROL" ] && ! python3 -I "$HERE/mutants.py" apply "$id" "$D/tree" >"$L/apply" 2>&1; then
         printf '%s\tapply-failed\t-\t%s\n' "$id" "$(tr '\n' ' ' <"$L/apply")" >"$R"
         rm -rf "${D:?}"; exit 0
     fi
@@ -151,6 +154,22 @@ done <"$W/suites"
 rm -rf "${W:?}/m/base"
 [ "$bad" -eq 0 ] || exit 2
 echo "baseline: $(wc -l <"$W/suites" | tr -d ' ') suite(s) pass unmutated"
+
+# The control: those suites once more, down the path a mutant takes — its own copy of
+# the tree, TMPDIR under it, MUTATION_UNDER_TEST set, the verdict as a mutant's is
+# written — with nothing applied. A kill is any non-zero suite exit, and the baseline
+# runs another path, so a fault in this one alone read as every mutant killed, and a
+# whole-kit run stamped clean (0.29.0 release review, second pass, V4).
+printf '%s\t-\t%s\tkilled\n' "$CONTROL" "$(tr '\n' ' ' <"$W/suites" | sed 's/ $//')" >"$W/control"
+bash "$W/base/mutation/run.sh" --mutant "$W" "$CONTROL"
+cv=no-result; cby=-; cwhy=""
+[ -e "$W/res/$CONTROL" ] && IFS=$'\t' read -r _ cv cby cwhy <"$W/res/$CONTROL"
+if [ "$cv" != survived ]; then
+    echo "❌ control: with nothing mutated, $cby failed down the path a mutant takes ($cv: $cwhy) — its log: $W/logs/$CONTROL/$cby.log. Every mutant would read as killed by that; none was run, and nothing is stamped" >&2
+    exit 2
+fi
+rm -f "$W/res/$CONTROL"
+echo "control: $(wc -l <"$W/suites" | tr -d ' ') suite(s) pass down the path a mutant takes, with nothing mutated"
 
 cut -f1 "$W/list" | xargs -P "$J" -n 1 bash "$W/base/mutation/run.sh" --mutant "$W"
 

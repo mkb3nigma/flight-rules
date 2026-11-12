@@ -191,12 +191,33 @@ ok "plugin.json mentions only shipped skills"
 # naming only the new path ran on built-in defaults in a project not yet moved, while its
 # hooks kept the project's policy (0.29.0 release review, M1).
 echo "Every skill or rule that names the conf names the old path it falls back to:"
-n=0
-for f in $(grep -rl '\.flight-rules/conf' skills rules); do
-  n=$((n+1))
-  grep -q '\.ai/flight-rules\.conf' "$f" || bad "$f names .flight-rules/conf but not the .ai/flight-rules.conf fallback"
-done
-[ "$n" -gt 0 ] || bad "no skill or rule names .flight-rules/conf — the check above read nothing"
-ok "$n files name both"
+# conf_fallback <dir>…: "read <file>" for each file naming the new path, and a line for
+# each that does not name the old. Test files are not read: this one names both, so the
+# read-nothing guard below could never fire, and the ok line printed after a failure
+# too (0.29.0 release review, second pass, V25).
+conf_fallback() {
+  local f
+  for f in $(grep -rl --exclude='*.test.sh' '\.flight-rules/conf' "$@"); do
+    echo "read $f"
+    grep -q '\.ai/flight-rules\.conf' "$f" || echo "$f names .flight-rules/conf but not the .ai/flight-rules.conf fallback"
+  done
+}
+v=$(conf_fallback skills rules); n=$(grep -c '^read ' <<<"$v"); p=$(grep -v '^read ' <<<"$v")
+if [ "$n" -eq 0 ]; then bad "no skill or rule names .flight-rules/conf — the check above read nothing"
+elif [ -n "$p" ]; then while IFS= read -r l; do bad "$l"; done <<<"$p"
+else ok "$n files name both"
+fi
+T=$(mktemp -d) || { bad "could not make a temp dir for the conf fixture"; T=""; }
+if [ -n "$T" ]; then
+  mkdir -p "$T/none" "$T/some"
+  printf 'reads .flight-rules/conf\n' > "$T/some/new-only.md"
+  printf 'reads .flight-rules/conf, or .ai/flight-rules.conf\n' > "$T/some/both.md"
+  printf '.flight-rules/conf\n' > "$T/none/x.test.sh"
+  v=$(conf_fallback "$T/some")
+  [ "$(grep -c '^read ' <<<"$v")" = 2 ] && grep -q 'new-only.md names .flight-rules/conf but not' <<<"$v" && ! grep -q 'both.md names' <<<"$v" \
+    && ok "the fixture's file naming only the new path is caught, and the one naming both is not" || bad "the conf fixture was misread: $v"
+  [ "$(conf_fallback "$T/none" | grep -c '^read ')" = 0 ] && ok "…and a test file is not read, so a tree of only that reads nothing" || bad "a test file was read by the conf check"
+  rm -rf "$T"
+fi
 
 finish

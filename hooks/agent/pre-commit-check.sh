@@ -484,7 +484,7 @@ RESOLVED_DIR=""; RESOLVED=0
 # swallowed the rest of the pasted block (V-1); what the rows need said goes on a prose
 # line above them.
 worktree_route() {
-  local int root="" holder="" cur="" stale="" gone="" l
+  local int root="" holder="" cur="" stale="" gone="" l remotes
   int=$(read_conf INTEGRATION_BRANCH "$CONF_FILE"); int="${int:-main}"
   while IFS= read -r l; do
     case "$l" in
@@ -497,7 +497,13 @@ worktree_route() {
   # one left without its .git under the repo's own tree reads as live, and the pull,
   # sent there, ran in the checkout above it (C-3).
   [ -n "$holder" ] && { [ -n "$stale" ] || [ ! -e "$holder/.git" ]; } && { gone="$holder"; holder=""; }
-  if [ -n "$holder" ]; then
+  # A repository with no remote has nothing to pull or fetch: the route's first step
+  # failed there, and stopped the chain before the add (0.29.0 release review, second
+  # pass, V15). It cuts the branch from the local one as it stands.
+  remotes=$("${GIT[@]}" remote 2>/dev/null) || remotes=""
+  if [ -z "$remotes" ]; then
+    printf 'This repository has no remote, so nothing is pulled: the branch is cut from the local %s as it stands.\n' "$int"
+  elif [ -n "$holder" ]; then
     printf '%s is checked out at %s, so the pull runs there: it brings in the commits origin/%s has that it lacks, if any, merging them if the two diverged. If it fails, stop and ask, and leave whatever it left there to the person.\n' \
       "$int" "$(shq "$holder")" "$int"
   elif "${GIT[@]}" show-ref --verify --quiet "refs/heads/$int"; then
@@ -512,7 +518,9 @@ worktree_route() {
       "$int" "$int"
   fi
   printf '  cd %s && \\\n' "$(shq "${root:-.}")"
-  if [ -n "$holder" ] && [ "$holder" = "$root" ]; then
+  if [ -z "$remotes" ]; then
+    :
+  elif [ -n "$holder" ] && [ "$holder" = "$root" ]; then
     printf '    git pull --ff --no-rebase origin %s && \\\n' "$(shq "$int")"
   elif [ -n "$holder" ]; then
     printf '    git -C %s pull --ff --no-rebase origin %s && \\\n' "$(shq "$holder")" "$(shq "$int")"

@@ -12,7 +12,8 @@ are popularly called "laws"; few are laws. The kind tells you how far to trust o
   unfamiliar options, not for scanning a familiar or ordered list — a long
   alphabetical list of countries is fine.
 - **P2** [rule of thumb] Each screen has one purpose and one primary action, made
-  visibly the most prominent; secondary actions look secondary.
+  visibly the most prominent; secondary actions look secondary. With two that look
+  primary, the person has to stop and work out which one moves them on.
 - **P3** [finding] The item that differs is the one noticed (the isolation, or Von
   Restorff, effect, 1933): use emphasis for the one thing that matters on a screen.
   Emphasise everything and nothing stands out.
@@ -29,7 +30,8 @@ are popularly called "laws"; few are laws. The kind tells you how far to trust o
   search box with a magnifying glass, a cart top right, standard form controls. Depart
   from a convention only for a reason worth the relearning.
 - **P7** [rule of thumb] Within the product, the same thing looks and behaves the same
-  everywhere: the project's design record decides how.
+  everywhere: the project's design record decides how. Where it differs, a person
+  carries what they learned on one screen to another and is wrong.
 
 ## Grouping and layout
 

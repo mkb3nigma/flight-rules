@@ -37,21 +37,32 @@ updates the copies there until the moved set exists beside them, and a fresh clo
 worktree folder does not fall back: a project on the default puts its next worktree in
 `.flight-rules/worktrees/` (below). To move:
 
-- **The conf**, on a branch: `mkdir -p .flight-rules && git mv .ai/flight-rules.conf
-  .flight-rules/conf`. Where both exist only the new one is read; the doctor says which
-  it found.
-- **The hooks**, in three steps, so that a merge is never made with no hooks running —
-  `core.hooksPath` is one setting for a clone and all its worktrees. On a branch, `cp
-  -R .ai/hooks .flight-rules/hooks`, commit and merge it; the old folder gates that
-  merge. Then, in every clone, `git config core.hooksPath .flight-rules/hooks`. Then, on
-  a later branch, `git rm -r .ai/hooks`. A clone left naming the old folder — gone, or
-  still there with something left in it — is told by the doctor, with the command. A `.claude/settings.json` that
-  `exec`s `.ai/hooks/agent/…` is changed with the copy.
+- **The conf**, in two steps, like the hooks: a 0.28.0 hook or plugin reads only
+  `.ai/flight-rules.conf`, and finding none falls back to its built-in defaults without
+  a word — a custom branch pattern, the note gate, `PROTECTED_BRANCHES=off` undone. On a
+  branch, `mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf`, and
+  commit both; 0.29.0 reads the new file, 0.28.0 the old. Later, once the committed
+  hook copies are 0.29.0's and every clone's plugin is on 0.29.0, on a branch: `git rm
+  .ai/flight-rules.conf`. Until then a change to the policy goes in both; the doctor
+  says which file it read, and when the two differ.
+- **The hooks**, in three steps, so that every checkout runs hooks throughout — the old
+  folder's until the setting changes, the moved ones after. `core.hooksPath` is one
+  setting for a clone and all its worktrees, and resolves in each. On a branch, `mkdir
+  -p .flight-rules && cp -R .ai/hooks .flight-rules/hooks`, commit and merge it; the old
+  folder gates that merge. Then, once every open branch has the copy — the integration
+  branch merged into each; the doctor names any that do not — in every clone, `git
+  config core.hooksPath .flight-rules/hooks`. A branch without the copy then runs no
+  hooks, and the doctor there prints the merge that brings it. Then, on a later branch,
+  `git rm -r .ai/hooks`. A clone left naming the old folder — gone, or still there with
+  something left in it — is told by the doctor, with the command. A
+  `.claude/settings.json` that `exec`s `.ai/hooks/agent/…` is changed with the copy.
 - **The worktrees**: a project that sets `WORKTREE_DIR` changes nothing. One on the
   default either sets `WORKTREE_DIR=.ai/worktrees` to stay, or adds
   `.flight-rules/worktrees/` to `.gitignore`; worktrees already made stay where they
   are, and the session-start reminder still lists the merged ones there. The doctor
-  says so until `.gitignore` covers the new folder or `WORKTREE_DIR` is set.
+  says so until `.gitignore` covers the new folder or `WORKTREE_DIR` is set — a ⚠️, so
+  to the assistant at session start and on the full report, not on the screen; and
+  `/feature-start` names the line when it makes a worktree in a folder not ignored.
 
 **A project with its own `pre-push`** (git-lfs installs one) renames it
 `pre-push.local` first. flight-rules' `pre-push` runs it after its own check, with the
@@ -80,9 +91,11 @@ hooks' printed routes still name the local branch until a switch exists (#141).
 a `trigger: always_on` header for Antigravity (the session-start hook strips it before
 injecting), and changes three things an assistant does: it never takes the way through
 a stop prints, even when told to go ahead; it does not push to a protected branch
-unless the person asks in that session; and a reply that reports work or asks for a
-decision is written as Situation, Background, Assessment, Recommendation, decisions
-last (§7). A project that copied them runs `/rules-sync` to fold the changes in; one
+unless the person asks in that session or the project's own written rules do; and a reply that reports work or asks for a
+decision assumes the reader remembers none of the earlier context and ends with the
+decisions it needs, each decidable alone, last (§7), with no two of its lists sharing a
+numbering — the Situation, Background, Assessment, Recommendation headings are this
+repo's own convention, not the shipped rule. A project that copied them runs `/rules-sync` to fold the changes in; one
 that reads the plugin's copy needs nothing.
 
 **Skills changed**: `/commit`, `/dg`, `/feature-start`, `/pr-create`,
@@ -195,7 +208,10 @@ says how.
   `git revert --continue` (a revert of several commits: `git commit --no-edit` first).
   Going ahead is said on the screen every time, with what was passed, and a merge taken
   past the note gate or the instruction check records it in its `Merge-authorisation`
-  trailer (`went ahead (FLIGHT_RULES_GO_AHEAD)`). `pre-commit.local` still runs. The
+  trailer: past the instruction check, `went ahead (FLIGHT_RULES_GO_AHEAD)`; past the
+  note gate, `went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)`, or `went
+  ahead past the note gate:` and the cause its box named (a note that did not check
+  this merge, a catch-up). `pre-commit.local` still runs. The
   instruction check's own route, `FLIGHT_RULES_MERGE_AUTHORISED=1`, is unchanged.
 - **The agent guard refuses an assistant's command that sets `FLIGHT_RULES_GO_AHEAD`**
   (#155) — in front of a command, after `env` or `export`, quoted or not — on any branch,
@@ -286,18 +302,22 @@ says how.
 ### Changed — this repo
 
 - `AGENTS.md` holds how work is done here; `CLAUDE.md` and `GEMINI.md` import it and
-  `MISSION.md`. It names this repo's planning and implementing models.
+  `MISSION.md`. It names this repo's planning and implementing models, and holds the
+  Situation, Background, Assessment, Recommendation reply headings §7 no longer ships.
 - `MISSION.md`: a stop that prints its way through is not a block, and flight-rules
   never blocks the developer; the person runs the way through, an assistant leaves it to
-  them; guides sit beside the core, costing nothing to a project that never calls one.
-  It carries no issue numbers.
+  them; guides sit beside the core, costing a project that never calls one its skill
+  description. The catastrophe of a commit on a protected branch is narrowed to what the
+  hooks do: anyone's on a PR-only branch, an assistant's on any; a person's commit on
+  another protected branch is warned of, not stopped. It carries no issue numbers.
 - `UPSTREAMS.md` pins the sources `/ux` adapts and `ATTRIBUTIONS.md` credits them;
   `/upstream-check` checks a W3C spec or a web page, which has no ref, by its date, and
   judges a change to a `/ux` source rule by rule through `skills/ux/sources.md`.
 - A release PR into `main` must carry an `## Upstream check` section and a clean
   mutation stamp of its head commit, written by the new `mutation/` kit and checked by
-  CI; the test suites share one harness and had duplicates cut and the gaps the mutants
-  found closed.
+  CI; the test suites share one harness and had duplicates cut, and each gap the mutants
+  found was closed or recorded as a known survivor (`survives: not held` in
+  `mutation/mutants.py`).
 
 ## 0.28.0 — 2026-10-30
 

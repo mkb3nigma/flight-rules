@@ -34,6 +34,8 @@ mkrepo() {
 run() { local d="$1" out rc; out=$(cd "$d" && HOME="$d/fakehome" bash "$DOCTOR" 2>&1); rc=$?; printf '%s\n%s' "$rc" "$out"; }
 rc()  { run "$1" | head -1; }
 has() { run "$1" | tail -n +2 | grep -qF -- "$2"; echo $?; }
+# git with no hooks, to build a fixture's history: the hooks under test are not its subject.
+GN=(git -c core.hooksPath=/dev/null)
 
 echo "Healthy install:"
 D=$(mkrepo)
@@ -89,6 +91,16 @@ say "$([ -n "$CMD" ] && echo printed)" "printed" "no core.hooksPath → the full
 say "$(run "$D" | grep -cE 'core.hooksPath is not set|missing from|merge.ff is')" "0" "…and afterwards doctor reports no hook or merge.ff problem"
 say "$(has "$D" "core.hooksPath=.flight-rules/hooks")" "0" "…with the relative path installed"
 rm -rf "$D" "$(dirname "$P")"
+# An .ai/hooks/ that holds no git hooks (the agent guard's copy alone) and no
+# .flight-rules/hooks/: install.sh installs into .ai/hooks, so that is the folder named —
+# the message said .flight-rules/hooks/ while its command wrote .ai/hooks (V16).
+D=$(tmpd); git -C "$D" init -q -b main || die "git init failed in $D"
+mkdir -p "$D/.ai/hooks/agent" && cp "$H/agent/pre-commit-check.sh" "$D/.ai/hooks/agent/" || die "could not lay out $D/.ai/hooks"
+OUT=$(run "$D")
+say "$(grep -c 'To install them into .ai/hooks/: bash .*(it also sets merge.ff false; then commit .ai/hooks/)' <<<"$OUT")$(grep -c '\.flight-rules/hooks' <<<"$OUT")" "10" "an .ai/hooks/ with no git hooks in it: the folder install.sh uses is the one named"
+CMD=$(printf '%s\n' "$OUT" | sed -n 's/.*To install them into \.ai\/hooks\/: \(bash .*\)   (it also sets.*/\1/p')
+[ -n "$CMD" ] && (cd "$D" && eval "$CMD" >/dev/null 2>&1); say "$?$(git -C "$D" config --local core.hooksPath)" "0.ai/hooks" "…and the command, run as printed, installs there"
+rm -rf "$D"
 
 D=$(mkrepo); git -C "$D" config core.hooksPath .ai/gone
 say "$(rc "$D")" "1" "hooksPath at a missing directory → problem"
@@ -942,11 +954,17 @@ echo "What a project still on .ai/ is told (#153):"
 D=$(mkrepo); mkdir -p "$D/.ai"; mv "$D/.flight-rules/conf" "$D/.ai/flight-rules.conf" || die "could not move the conf to its old place"
 printf 'PROTECTD_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
 OUT=$(run "$D")
-say "$(grep -c 'the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf' <<<"$OUT")" "1" "the conf in its old place: said, with the move"
+# A copy, not a git mv: a 0.28.0 hook or plugin reads only the old file, and moved, it
+# fell back to its defaults without a word — a custom pattern undone (V3, reproduced).
+say "$(grep -c 'the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf, and commit both. Leave the old file for now: a 0.28.0 hook or plugin reads only that one' <<<"$OUT")$(grep -c 'git mv' <<<"$OUT")" "10" "the conf in its old place: said, with the copy, not a move"
 say "$(grep -c ".ai/flight-rules.conf: unknown key 'PROTECTD_BRANCHES'" <<<"$OUT")" "1" "…and it is the file that is checked"
 printf 'PROTECTED_BRANCHES=^main$\n' > "$D/.flight-rules/conf"
 OUT=$(run "$D")
 say "$(grep -c '.ai/flight-rules.conf is not read: .flight-rules/conf is there, and wins' <<<"$OUT")$(grep -c 'unknown key' <<<"$OUT")" "10" "a conf in both places: the old one is said not to be read, and is not"
+say "$(grep -c 'Only a 0.28.0 hook or plugin reads the old one; once every committed hook copy is 0.29.0'"'"'s and every clone'"'"'s plugin is on 0.29.0, on a branch: git rm .ai/flight-rules.conf' <<<"$OUT")$(grep -c 'the two files differ, so a 0.28.0 reader follows another policy than this one' <<<"$OUT")" "11" "…who still reads it, when to remove it, and that the two differ"
+cp "$D/.flight-rules/conf" "$D/.ai/flight-rules.conf"
+OUT=$(run "$D")
+say "$(grep -c 'Only a 0.28.0 hook or plugin reads the old one' <<<"$OUT")$(grep -c 'differ' <<<"$OUT")" "10" "…and the same two files: no word of a difference"
 rm "$D/.ai/flight-rules.conf"
 OUT=$(run "$D")
 # By its sentences, not by ".ai/": a path the doctor prints may hold that itself.
@@ -966,6 +984,24 @@ say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "�
 rm "$D/.gitignore"; printf 'WORKTREE_DIR=.ai/worktrees\n' >> "$D/.flight-rules/conf"
 OUT=$(run "$D")
 say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…nor once WORKTREE_DIR is set"
+# Set empty, it is not set: the hooks read the default (V17), where the line's mere
+# presence silenced this.
+printf 'PROTECTED_BRANCHES=^main$\nWORKTREE_DIR=\n' > "$D/.flight-rules/conf"
+OUT=$(run "$D")
+say "$(grep -c "$NOT_IGNORED" <<<"$OUT")" "1" "…but WORKTREE_DIR= set empty: said, as for unset"
+rm -rf "$D"
+# A repository that never adopted flight-rules — no conf, no flight-rules hook where
+# core.hooksPath points — is not told where its worktrees go: the plugin met it in every
+# session and said so every day (V17).
+D=$(tmpd); git -C "$D" init -q -b main || die "git init failed in $D"
+OUT=$(run "$D")
+say "$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")$(grep -c 'problem(s),' <<<"$OUT")" "01" "a repository that never adopted flight-rules: no word of the worktree folder"
+mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^main$\n' > "$D/.ai/flight-rules.conf"
+OUT=$(run "$D")
+say "$(grep -c "$NOT_IGNORED" <<<"$OUT")" "1" "…one with a conf, if only in the old place, is told"
+rm "$D/.ai/flight-rules.conf"; cp -R "$H/git" "$D/hk" && git -C "$D" config core.hooksPath hk || die "could not wire hooks in $D"
+OUT=$(run "$D")
+say "$(grep -c "$NOT_IGNORED" <<<"$OUT")" "1" "…and so is one with no conf whose core.hooksPath runs flight-rules' hooks"
 rm -rf "$D"
 # The hook copies: committed in the old folder, a fresh clone is pointed at those; a
 # clone that pulled the move still names the old folder, and git then runs no hooks.
@@ -1008,6 +1044,34 @@ OUT=$(run "$D")
 say "$(head -1 <<<"$OUT")$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'commit-msg does not look like the flight-rules hook' <<<"$OUT")$(grep -c 'commit-msg installed and executable' <<<"$OUT")" "1110" "both folders full, still on the old one: the move said, and the stub in the old folder named"
 say "$(grep -c 'post-merge differs from' <<<"$OUT")$(grep -c 'to update:' <<<"$OUT")$(grep -c 'cp .*\.ai/hooks/' <<<"$OUT")" "100" "…a changed copy there named, with no sync and no cp into the old folder offered"
 rm -rf "$D"
+# core.hooksPath is one setting for a clone and all its worktrees, and a relative value
+# resolves in each. Judged from a worktree holding the unmerged copy, the bare command,
+# followed, left the main checkout running no hooks: a staged AWS key committed with
+# exit 0 (0.29.0 release review, second pass, V1).
+D=$(mkrepo); mv "$D/.flight-rules/hooks" "$D/.ai-hooks-tmp"; mkdir -p "$D/.ai"; mv "$D/.ai-hooks-tmp" "$D/.ai/hooks" || die "could not move the hooks to their old place"
+git -C "$D" config core.hooksPath .ai/hooks
+"${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm base || die "could not commit the fixture in $D"
+WT=$(tmpd); "${GN[@]}" -C "$D" worktree add -q "$WT/move" -b chore/move-hooks main || die "could not add a worktree to $D"
+mkdir -p "$WT/move/.flight-rules" && cp -R "$WT/move/.ai/hooks" "$WT/move/.flight-rules/hooks" || die "could not copy the hooks in $WT/move"
+OUT=$(run "$WT/move")
+say "$(head -1 <<<"$OUT")$(grep -c 'git config core.hooksPath .flight-rules/hooks' <<<"$OUT")" "10" "a worktree ahead of the main checkout (the copy unmerged): no command to change core.hooksPath"
+say "$(grep -c "one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $D" <<<"$OUT")" "1" "…and the main checkout, which has none, is named"
+mkdir -p "$D/.flight-rules" && cp -R "$D/.ai/hooks" "$D/.flight-rules/hooks" || die "could not copy the hooks in $D"
+OUT=$(run "$WT/move")
+say "$(grep -c "$MOVED" <<<"$OUT")$(grep -c 'have no copy in' <<<"$OUT")" "10" "…and once every checkout has the copy, the command"
+# After it, a branch cut before the move has only the old folder: git runs no hooks
+# there, and the doctor named no remedy (V1).
+rm -rf "$D/.flight-rules/hooks"; "${GN[@]}" -C "$D" worktree remove --force "$WT/move" || die "could not remove the worktree"
+"${GN[@]}" -C "$D" switch -q -c chore/move && mkdir -p "$D/.flight-rules" && cp -R "$D/.ai/hooks" "$D/.flight-rules/hooks" \
+  && "${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm move && "${GN[@]}" -C "$D" switch -q main \
+  && "${GN[@]}" -C "$D" merge -q --no-ff --no-edit chore/move || die "could not merge the move in $D"
+"${GN[@]}" -C "$D" worktree add -q "$WT/old" -b feature/old 'main^1' || die "could not add the old branch's worktree"
+git -C "$D" config core.hooksPath .flight-rules/hooks
+OUT=$(run "$WT/old")
+say "$(head -1 <<<"$OUT")$(grep -c 'core.hooksPath=.flight-rules/hooks but that directory does not exist in this checkout — this branch predates the hooks'"'"' move from .ai/hooks/, so git runs NO hooks here. Bring the move in: git merge main' <<<"$OUT")" "11" "a worktree behind the move (setting on the new folder, only the old one here): the merge that brings it"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'predates\|have no copy in' <<<"$OUT")" "00" "…and the main checkout, moved, is healthy"
+rm -rf "$D" "$WT"
 
 echo "The doctor reads the conf as the hooks do (#127):"
 say "$(sed -n '/^read_conf() {/,/^}/p' "$DOCTOR")" "$(sed -n '/^read_conf() {/,/^}/p' "$H/agent/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"

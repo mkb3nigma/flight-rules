@@ -39,9 +39,10 @@
 #    ships `PR_ONLY_BRANCHES=^nothing$` and then merges itself — does not change
 #    what the reviewed upstream says.
 #
-# Bypass: none. `--no-verify` does not apply to reference-transaction, which is the
-# point. To move a PR-only branch to something not on the remote, the owner turns
-# the policy off in the conf AND pushes that change through review.
+# The refusal prints its way through, FLIGHT_RULES_GO_AHEAD=1 <the command that finishes
+# what was refused>, the person's to run (#151). `--no-verify` is not one: it does not
+# reach reference-transaction, which is the point. A project that does not mean to gate
+# a branch changes the policy in the conf and pushes that change through review.
 
 set -uo pipefail
 
@@ -55,11 +56,16 @@ ZERO='0000000000000000000000000000000000000000'
 # "aborted" are notifications; exiting non-zero there does nothing but noise.
 [ "${1:-}" = "prepared" ] || exit 0
 
-# The conf as the messages name it: the one HEAD has.
-CONF_SHOWN="$CONF_PATH"
-if ! git cat-file -e "HEAD:$CONF_PATH" 2>/dev/null && git cat-file -e "HEAD:$LEGACY_CONF_PATH" 2>/dev/null; then
-    CONF_SHOWN="$LEGACY_CONF_PATH"
-fi
+# The conf as the messages name it: the one HEAD has. Worked out only where a box
+# prints it: on every prepared transaction, its two cat-files took a 32-commit rebase
+# from about 2.2 s to 3.2–3.8 s (0.29.0 release review, second pass, V10).
+conf_shown() {
+    if ! git cat-file -e "HEAD:$CONF_PATH" 2>/dev/null && git cat-file -e "HEAD:$LEGACY_CONF_PATH" 2>/dev/null; then
+        printf '%s' "$LEGACY_CONF_PATH"
+    else
+        printf '%s' "$CONF_PATH"
+    fi
+}
 
 read_conf_from() {   # <committish> <key>
     local ref="$1" key="$2" content
@@ -153,7 +159,7 @@ broken_box() {
     box_row "  $2"
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
-    box_row "The project owner fixes it in $CONF_SHOWN, on a"
+    box_row "The project owner fixes it in $(conf_shown), on a"
     box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
     box_row "has landed, and if $4 is not a branch it means,"
     box_row "give the pattern meant in front of this command:"
@@ -414,7 +420,7 @@ while read -r _old new ref; do
         box_row "  git pull --ff-only origin $short"
         box_row ""
         box_row "If this project does not gate $short, its owner changes"
-        box_row "PR_ONLY_BRANCHES in $CONF_SHOWN and pushes"
+        box_row "PR_ONLY_BRANCHES in $(conf_shown) and pushes"
         box_row "that through review. Editing your working tree copy"
         box_row "will not lift this: the rule is read from the remote."
         box_row ""

@@ -274,9 +274,10 @@ place a long verdict turns back into paragraphs.
 ### Pre-review-only (neither persona raised independently)
 ### Dependency scan
 ### Recommended Actions
+A1. <the action>
 
 ## Decisions waiting (<n>)
-1. **<the decision>** — what it is, why it came up, the evidence, what each option
+D1. **<the decision>** — what it is, why it came up, the evidence, what each option
    costs, and the recommendation: decidable from this item alone.
 
 Add the comic to the PR? (y/N)
@@ -284,9 +285,10 @@ Add the comic to the PR? (y/N)
 
 The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
 with `DG_COMIC_PR=ask` on a review that is for a PR. The decisions are the reply's last
-section — only that optional line follows them — where a reader in a terminal lands; a numbered list, not a table, because each one is
-sentences, and a table of sentences wrapped past reading at terminal width
-(2026-10-24). With none, the section says so: `## Decisions waiting (0)`. Last, as
+section — only that optional line follows them — where a reader in a terminal lands;
+a list numbered D1, D2…, as the actions are A1, A2…, so a bare number in an answer
+means one item (2026-11-12) — not a table, because each one is sentences, and a table
+of sentences wrapped past reading at terminal width (2026-10-24). With none, the section says so: `## Decisions waiting (0)`. Last, as
 `engineering-principles.md` §7 puts them: a verdict runs to screens, and its first
 screen is the one scrolled past. Each decision is decidable from its item alone, as §7
 asks.
@@ -316,7 +318,8 @@ other, and a reviewer who cannot fill it has said something weaker than it sound
 Adapt to the subject. For code, look for each class below that the diff gives a reason
 to. A finding names its place (`file:line`) and, where a test should have caught it,
 the test that would fail. A class with nothing found is not reported: the table holds
-findings, not a checklist.
+findings, not a checklist. The classes' warrant: an adopter found body ids its ownership
+sweep missed, which this list's generic "security" had not named (2026-10-21).
 
 - **Security** — *object-level authorization*: a record id a caller supplies (path,
   body, nested arrays, tool or RPC arguments) with no ownership check, or an ownership

@@ -751,15 +751,15 @@ rm -rf "$D"
 # warning only the project can silence would repeat every day (review, 2026-10-13).
 D=$(mkrepo); rm "$D/.flight-rules/conf"
 J=$(raw "$D")
-say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "a ⚠️ warning reaches the assistant"
+say "$(ctx <<<"$J" | grep -cF '.flight-rules/conf absent')" "1" "a ⚠️ warning reaches the assistant"
 say "$(jq -r 'has("systemMessage")' <<<"$J")" "false" "…and nothing is put on the user's screen for it"
 rm -rf "$D"
 # Beside a ❌, the ⚠️ is still kept off the screen.
 D=$(mkrepo); rm "$D/.flight-rules/conf"; git -C "$D" config --unset merge.ff
 J=$(raw "$D")
 say "$(usr <<<"$J" | grep -c 'merge.ff')" "1" "with a ❌ as well: the ❌ is on screen"
-say "$(usr <<<"$J" | grep -c 'flight-rules.conf absent')" "0" "…the ⚠️ is not"
-say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "…and the assistant has both"
+say "$(usr <<<"$J" | grep -cF '.flight-rules/conf absent')" "0" "…the ⚠️ is not"
+say "$(ctx <<<"$J" | grep -cF '.flight-rules/conf absent')" "1" "…and the assistant has both"
 rm -rf "$D"
 D=$(mkrepo); branch "$D" fix/merged merge
 git -C "$D" worktree add -q "$D/.flight-rules/worktrees/merged" fix/merged
@@ -1148,7 +1148,7 @@ git -C "$D" branch main trunk || die "could not make main"
 rm "$D/.flight-rules/conf"; rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
 J=$(OB)
 say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "no conf: exits 0"
-say "$(ctx <<<"$J" | grep -c 'flight-rules.conf absent')" "1" "…the run reports (doctor's warning)"
+say "$(ctx <<<"$J" | grep -cF '.flight-rules/conf absent')" "1" "…the run reports (doctor's warning)"
 say "$(ctx <<<"$J" | grep -c 'branches are open')" "0" "…and gives no open-branch warning"
 rm -rf "$D"
 # A clone with no local integration branch counts against origin's; with neither, the

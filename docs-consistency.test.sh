@@ -266,7 +266,8 @@ else
   ustep() { BODY="$1" PATH="${2:+$2:}$PATH" bash -e -c "$URUN" 2>&1; }
   UP=$(printf '## Upstream check\nAll three sources up to date.\n## Testing\n')
   OUT=$(ustep "$FULL"); RC=$?
-  [ "$RC" -ne 0 ] && ok "the upstream step fails a body with no Upstream check section" || bad "the upstream step passes a body with no section (exit $RC: $OUT)"
+  # Every refusal prints its way through too, here the owner's admin merge (V21).
+  [ "$RC" -ne 0 ] && grep -q "The way past this check is the owner's admin merge" <<<"$OUT" && ok "the upstream step fails a body with no Upstream check section, printing the way past" || bad "the upstream step passes a body with no section, or prints no way past (exit $RC: $OUT)"
   OUT=$(ustep "$(printf '## Upstream check\n## Testing\nx\n')"); RC=$?
   [ "$RC" -ne 0 ] && ok "…fails an empty section" || bad "the upstream step passes an empty section (exit $RC: $OUT)"
   OUT=$(ustep "$UP"); RC=$?
@@ -300,6 +301,9 @@ else
 NOPE	killed	suite"                                                                  "NOPE is not a mutant"
   vfails "a row twice"                       "$(clean "$H")" "/^$FIRST	/p"        "$FIRST: 2 rows"
   vfails "a mutant expected killed that survived" "$(clean "$H")" "s/^$FIRST	killed/$FIRST	survived/" "$FIRST: survived, expected killed"
+  # Only the values run.sh writes: read by prefix, any 'killed…' passed as a kill (V4).
+  vfails "a row whose result run.sh never writes" "$(clean "$H")" "s/^$FIRST	killed/$FIRST	killed-bogus/" "$FIRST: 'killed-bogus' is not a result run.sh writes"
+  vfails "…an expected survivor's too"       "$(clean "$H")" "s/^$SURV	survived/$SURV	killedx/" "$SURV: 'killedx' is not a result run.sh writes"
   # A known gap now killed is the kit grown stronger, not a regression: it passes, and
   # the line the check prints names it, to have its expect updated (owner, 2026-11-05).
   stamp "$(clean "$H")" "s/^$SURV	survived/$SURV	killed/" >"$SD/s"; OUT=$(python3 -I "$MK" verify "$H" "$SD/s" 2>&1); RC=$?
@@ -326,7 +330,7 @@ NOPE	killed	suite"                                                              
   HS=$(git -C "$CO" rev-parse HEAD)
   mstep() { (cd "$CO" && HEAD_SHA=$HS bash -e -c "$MRUN" 2>&1); }
   OUT=$(mstep); RC=$?
-  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q 'git push origin refs/notes/mutation' <<<"$OUT" && grep -q 're-run this one' <<<"$OUT" && ok "the stamp step fails when no stamp was pushed, printing the push and the re-run" || bad "the stamp step passes, or prints no push, with no stamp pushed (exit $RC: $OUT)"
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q 'git push origin refs/notes/mutation' <<<"$OUT" && grep -q 're-run this one' <<<"$OUT" && grep -q "The way past this check is the owner's admin merge" <<<"$OUT" && ok "the stamp step fails when no stamp was pushed, printing the push, the re-run and the way past" || bad "the stamp step passes, or prints no push or way past, with no stamp pushed (exit $RC: $OUT)"
   H=$HS; stamp "$(clean "$HS")" >"$SD/good"; stamp "$(clean "$HS")" "/^$FIRST	/d" >"$SD/short"
   "${G[@]}" -C "$ORG" commit -q --allow-empty -m later && "${G[@]}" -C "$ORG" notes --ref=mutation add -F "$SD/good" HEAD || die "could not stamp the later commit"
   OUT=$(mstep); RC=$?
@@ -518,6 +522,36 @@ N=$(grep -rln . rules skills --include='*.md' | wc -l | tr -d ' ')
 HITS=$(grep -rnE '#[0-9]{2,}\b' rules skills --include='*.md' | grep -vF '(`#123`, a key, a URL)' | grep -vF "AppliHawk's" | grep -vF 'release PR #191')
 [ "$N" -gt 10 ] || bad "read $N Markdown files under rules/ and skills/ — the check below read nothing"
 [ -z "$HITS" ] && ok "none in $N files" || bad "issue numbers in shipped text: $(head -3 <<<"$HITS" | tr '\n' ' ')"
+
+echo "The mutation run proves the path a mutant takes before any mutant:"
+# A kill is any non-zero suite exit under a mutant, and the baseline ran another path (no
+# MUTATION_UNDER_TEST, another TMPDIR): a fault in the mutant path alone read as every
+# mutant killed, and a whole-kit run stamped clean (0.29.0 release review, second pass,
+# V4). A one-mutant kit on a fixture: its suite passes the tree, mutated or not, but
+# fails wherever MUTATION_UNDER_TEST is set — a fault in that path and nowhere else.
+MF=$(mktemp -d "${TMPDIR:-/tmp}/mctl.XXXXXX") && MF=$(cd -P "$MF" && pwd -P) || die "could not make the control fixture"
+mkdir -p "$MF/mutation" "$MF/tmp" && cp mutation/run.sh "$MF/mutation/" || die "could not copy run.sh into $MF"
+cat >"$MF/mutation/mutants.py" <<'PY' || die "could not write the fixture's mutants.py"
+import sys
+if sys.argv[1] == 'list': print('X1\tf.txt\tt.sh\tkilled'); sys.exit(0)
+if sys.argv[1] == 'apply': open(sys.argv[3] + '/f.txt', 'w').write('mutated\n'); sys.exit(0)
+sys.exit(2)
+PY
+printf 'ok\n' >"$MF/f.txt"
+printf '#!/bin/sh\n[ -z "${MUTATION_UNDER_TEST:-}" ]\n' >"$MF/t.sh"
+GF=(git -C "$MF" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@invalid -c commit.gpgsign=false)
+{ "${GF[@]}" init -q && "${GF[@]}" add -A && "${GF[@]}" commit -qm fixture; } >/dev/null 2>&1 || die "could not commit the control fixture"
+# Unset here: under a mutation run of this suite, it is set in this suite's own environment.
+mrun() { (cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" bash mutation/run.sh X1 2>&1); }
+OUT=$(mrun); RC=$?
+[ "$RC" -eq 2 ] && grep -q '❌ control: with nothing mutated, t.sh failed down the path a mutant takes .* — its log: .*/logs/control/t.sh.log' <<<"$OUT" && ! grep -q '^killed, by the suite' <<<"$OUT" \
+  && ok "a suite failing down the mutant path with nothing mutated: exit 2, named, before any mutant" || bad "run.sh judged mutants down a path that fails unmutated (exit $RC: $(tail -3 <<<"$OUT" | tr '\n' ' '))"
+# And a sound path: the control passes, and the mutant is judged as before.
+printf '#!/bin/sh\ngrep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a sound suite' >/dev/null 2>&1 || die "could not commit the sound suite"
+OUT=$(mrun); RC=$?
+[ "$RC" -eq 0 ] && grep -q '^control: 1 suite(s) pass down the path a mutant takes' <<<"$OUT" && grep -q '— 1 killed' <<<"$OUT" \
+  && ok "…while a sound path passes the control, and the mutant is killed" || bad "the control refuses a sound mutant path, or the mutant was not judged (exit $RC: $(tail -3 <<<"$OUT" | tr '\n' ' '))"
+rm -rf "$MF"
 
 echo "Every mutation mutant's anchor occurs exactly once:"
 # A hook edit that moved an anchor and not its mutant passed every suite, and surfaced

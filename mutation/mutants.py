@@ -182,7 +182,7 @@ mut('P209', PCC, '-b %s %s && \\\\\\n\'', '-b %s %s\\n\'', 'pre-commit-check', w
 mut('P214', PCC, "  else\n    printf '    git fetch origin && \\\\\\n'\n", "  else\n    [ -n \"$gone\" ] && printf '    git worktree prune && \\\\\\n'\n    printf '    git fetch origin && \\\\\\n'\n", 'pre-commit-check', what='route: a worktree gone from its path is pruned, which clears a moved one past repair')
 mut('P215', PCC, '    elif [ -n "$gone" ]; then\n      printf \'%s was checked out at', '    elif false; then\n      printf \'%s was checked out at', 'pre-commit-check', what='route: a worktree gone from its path is not named, nor the choice between repair and prune')
 mut('P217', PCC, '    if [ -d "$gone" ]; then\n', '    if false; then\n', 'pre-commit-check', what='route: a worktree whose .git file alone is gone is called gone, which steers to a prune that drops its staged work')
-mut('P211', PCC, '  if [ -n "$holder" ]; then\n    printf \'%s is checked out at', '  if false; then\n    printf \'%s is checked out at', 'pre-commit-check', what='route: no prose for a failed pull in a checkout, where git says to commit the conflict')
+mut('P211', PCC, '  elif [ -n "$holder" ]; then\n    printf \'%s is checked out at', '  elif false; then\n    printf \'%s is checked out at', 'pre-commit-check', what='route: no prose for a failed pull in a checkout, where git says to commit the conflict')
 mut('P213', PCC, 'If it fails, stop and ask, and leave whatever it left there to the person.', 'If it fails, run git merge --abort there, then stop and ask.', 'pre-commit-check', what='route: the prose says to abort a merge, which may be the person\'s')
 mut('P197', PCC, '      "branch refs/heads/$int") holder="$cur" ;;\n', '', 'pre-commit-check', what='route: the worktree holding the integration branch is not found')
 mut('P195', PCC, 'printf \'    git -C %s pull --ff --no-rebase origin %s && \\\\\\n\' "$(shq "$holder")" "$(shq "$int")"', 'printf \'    git pull --ff --no-rebase origin %s && \\\\\\n\' "$(shq "$int")"', 'pre-commit-check', what='route: the pull is not sent to the worktree holding the branch')
@@ -372,7 +372,7 @@ mut('S106', SS, '  printf \'%s\\n\' "$PLAIN"', '  touch "$HINT_FILE" 2>/dev/null
 
 # ---- hooks/session-start-rules.sh
 mut('R001', SSR, '${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}', '$CLAUDE_PLUGIN_ROOT', 'wiring', what='no fallback root')
-mut('R008', SSR, '[ -r "$RULES" ] || exit 0', ':', 'wiring', expect='survives: not held — a missing rules file injects the header with no rules', what='missing rules not a clean no-op')
+mut('R008', SSR, '[ -r "$RULES" ] || exit 0', ':', 'wiring', what='missing rules not a clean no-op')
 mut('R002', SSR, ' || true)', ')', 'wiring', what='version read aborts without plugin.json')
 mut('R009', SSR, 'sub(/\\r$/, "", l)', 'l = l', 'wiring', what='CRLF front matter not stripped')
 mut('R003', SSR, 'NR==1 && l=="---" {fm=1; next} fm && l=="---" {fm=0; next} !fm', '1', 'wiring', what='front matter injected')
@@ -450,12 +450,12 @@ mut('C34', CM, '    && ! git merge-base --is-ancestor HEAD "$MERGE_SHA" 2>/dev/n
 mut('C35', CM, '    if [ "$CLEAN" -eq 0 ]; then\n        echo "✅ Merge of', '    if true; then\n        echo "✅ Merge of', 'merge-gate secret-scan')
 mut('C36', CM, 'a fast-forward would bring, no note needed"\n        exit 0', 'a fast-forward would bring, no note needed"\n        exit 1', 'merge-gate secret-scan')
 mut('C37', CM, '    NOT_CLEAN="merge of this branch\'s own upstream"', '    :', 'merge-gate secret-scan')
-mut('C38', CM, '    if [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -Eq', '    if false && printf \'%s\\n\' "$NOTE" | grep -Eq', 'merge-gate secret-scan')
-mut('C39', CM, '    elif [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -q \'^passed:.*tree:\'; then', '    elif false; then', 'merge-gate secret-scan')
+mut('C38', CM, '    if [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -Ec', '    if false && printf \'%s\\n\' "$NOTE" | grep -Ec', 'merge-gate secret-scan')
+mut('C39', CM, '    elif [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -c \'^passed:.*tree:\' >/dev/null; then', '    elif false; then', 'merge-gate secret-scan')
 mut('C40', CM, '        NOTE_BAD="its passed: line has no tree:<hash>"', '        :', 'merge-gate secret-scan')
 mut('C65', CM, '    NOTE_BAD="it has no line beginning passed:"', '    :', 'merge-gate secret-scan', what='a note with no passed: line gets the generic box')
 mut('C41', CM, '    elif [ "$_nt" != "$(git rev-parse -q --verify "$MERGE_SHA^{tree}" 2>/dev/null)" ]; then', '    elif false; then', 'merge-gate secret-scan')
-mut('C42', CM, '    elif ! printf \'%s\\n\' "$NOTE" | grep -q \'^ran:[[:space:]]*[^[:space:]]\'; then', '    elif false; then', 'merge-gate secret-scan')
+mut('C42', CM, '    elif ! printf \'%s\\n\' "$NOTE" | grep -c \'^ran:[[:space:]]*[^[:space:]]\' >/dev/null; then', '    elif false; then', 'merge-gate secret-scan')
 mut('C43', CM, 'if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then', 'if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ]; then', 'merge-gate secret-scan')
 mut('C44', CM, '        echo "⚠️  git merge-tree --write-tree failed here (it needs git 2.38 or later), so"', '        :', 'merge-gate secret-scan')
 mut('C62', CM, 'NEEDS_INSTRUCTION=$(read_conf_at_head MERGE_NEEDS_INSTRUCTION "$CONF_PATH")', 'NEEDS_INSTRUCTION=""', 'merge-gate secret-scan')
@@ -929,7 +929,7 @@ mut('P220', PMC, "  CONF_PATH='.ai/flight-rules.conf'", '  :', 'merge-gate', wha
 mut('R16', PR, "  CONF_PATH='.ai/flight-rules.conf'", '  :', 'merge-gate', what='pre-rebase: the old conf is not read')
 mut('U27', PP, "  CONF_PATH='.ai/flight-rules.conf'", '  :', 'ref-gate', what='pre-push: the old conf is not read')
 mut('T78', RT, '        || content=$(git show "${ref}:${LEGACY_CONF_PATH}" 2>/dev/null) || return 0', '        || return 0', 'ref-gate merge-gate', what='ref gate: the old conf is not read')
-mut('T79', RT, '    CONF_SHOWN="$LEGACY_CONF_PATH"', '    :', 'ref-gate merge-gate', what='ref gate: boxes name the new conf over an old one')
+mut('T79', RT, '        printf \'%s\' "$LEGACY_CONF_PATH"', '        printf \'%s\' "$CONF_PATH"', 'ref-gate merge-gate', what='ref gate: boxes name the new conf over an old one')
 mut('M52', PM, '    read_conf "$1" "$t/.ai/flight-rules.conf"', '    read_conf "$1" "$t/.flight-rules/conf"', 'merge-gate', what='post-merge: the old conf is not read')
 mut('P221', PCC, "; CONF_NAME='.ai/flight-rules.conf'\n", '\n', 'pre-commit-check', what='guard: the refusal names the new conf over an old one')
 mut('P222', PCC, '[[ ! -f "$CONF_FILE" && -f "${CONF_FILE%/$CONF_NAME}/.ai/flight-rules.conf" ]]', 'false', 'pre-commit-check', what='guard: the old conf is not read')
@@ -945,7 +945,7 @@ mut('D136', DOC, '    warn "WORKTREE_DIR is not set, so new worktrees go to', ' 
 mut('D145', DOC, '  for _g in .ai/hooks/agent/pre-commit-check.sh .flight-rules/hooks/agent/pre-commit-check.sh; do', '  for _g in .flight-rules/hooks/agent/pre-commit-check.sh; do', 'flight-rules-doctor', what='doctor: a pre-conf guard copy in .ai/hooks/agent/ is not looked for')
 mut('D144', DOC, '  if [[ $_ig -eq 1 ]]; then', '  if [[ $_ig -eq 1 && -n "$(ls -A .ai/worktrees 2>/dev/null)" ]]; then', 'install flight-rules-doctor', what='doctor: the un-ignored worktree folder is said only while the old one holds worktrees')
 mut('S120', SS, '[ "${WORKTREE_DIR%/}" = "$OLD_WORKTREE_DIR" ] && OLD_WORKTREE_DIR=""', 'OLD_WORKTREE_DIR=""', 'session-start', what='session start: merged worktrees left in .ai/worktrees/ are not reminded of')
-mut('D137', DOC, "   && ! grep -qE '^[[:space:]]*WORKTREE_DIR[[:space:]]*=' \"$CONF\" 2>/dev/null; then", '   ; then', 'install flight-rules-doctor', what='doctor: the old worktree folder is said though WORKTREE_DIR is set')
+mut('D137', DOC, '_wtd="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF")}"', '_wtd="${FLIGHT_RULES_WORKTREE_DIR:-}"', 'install flight-rules-doctor', what='doctor: the old worktree folder is said though WORKTREE_DIR is set')
 mut('D138', DOC, '; [[ ! -d "$ROOT/$_hd" && -d "$ROOT/.ai/hooks" ]] && _hd=.ai/hooks', '', 'install flight-rules-doctor', what='doctor: hooks committed in .ai/hooks are not named')
 mut('D139', DOC, ' — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"', ' — git runs NO hooks"', 'install flight-rules-doctor', what='doctor: a core.hooksPath left on .ai/hooks gets no command')
 mut('D146', DOC, '_hp="${_hp//"$_dot"//}"', ':', 'flight-rules-doctor', what='doctor: core.hooksPath spelled ./.ai/hooks is not read as the old folder')
@@ -967,8 +967,8 @@ mut('T80', RT, '    [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 
 mut('T81', RT, '    [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 2>/dev/null && continue', '    [ -n "$_up" ] && continue', 'ref-gate merge-gate', what='ref gate: any move beside an upstream update is let through')
 
 # ---- #151, #149: every stop honours and prints FLIGHT_RULES_GO_AHEAD=1.
-mut('C67', CM, 'if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, with no pre-merge-check note the gate takes"; then', 'if false; then', 'merge-gate secret-scan', what='note gate: no way through')
-mut('C68', CM, '            --trailer "Merge-authorisation: went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)" "$1"', '            "$1"', 'merge-gate secret-scan', what='note gate: going ahead is not recorded')
+mut('C67', CM, 'if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, ${_past:+past the note gate: }', 'if false && go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, ${_past:+past the note gate: }', 'merge-gate secret-scan', what='note gate: no way through')
+mut('C68', CM, '            --trailer "Merge-authorisation: went ahead ${_past:+past the note gate: }', '            "$1" # ', 'merge-gate secret-scan', what='note gate: going ahead is not recorded')
 mut('C69', CM, '    elif go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, with nobody recorded as asking for it"; then', '    elif false; then', 'merge-gate secret-scan', what='who asked: no way through')
 mut('C70', CM, '   && go_ahead "a squash merge committed on $CURRENT_BRANCH, a PR-only branch"; then', '   && false; then', 'merge-gate secret-scan', what='squash guard: no way through')
 mut('C71', CM, '    [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1', '    [ -n "${FLIGHT_RULES_GO_AHEAD:-}" ] || return 1', 'merge-gate secret-scan', what='commit-msg: any value goes ahead')
@@ -1010,12 +1010,30 @@ mut('misc-V1', MP, 'if not lines or lines[0] ' '!= STAMP_HEAD:', 'if False:', 'd
 mut('misc-V2', MP, "if not summary.startswith(" "'mutation: all '):", 'if False:', 'docs-consistency', what='verify: a selection passes')
 mut('misc-V3', MP, "if (' run from %s — ' % sha) " "not in summary:", 'if False:', 'docs-consistency', what="verify: another commit's run passes")
 mut('misc-V4', MP, "if not summary.endswith(" "', 0 failed to apply; 0 unexpected survivor(s)'):", 'if False:', 'docs-consistency', what='verify: a run that did not pass passes')
-mut('misc-V5', MP, "if not f[1]." "startswith('killed'):", 'if False:', 'docs-consistency', what='verify: an expected kill that survived passes')
+mut('misc-V5', MP, "if f[1] == " "'survived':", 'if False:', 'docs-consistency', what='verify: an expected kill that survived passes')
 mut('misc-V9', MP, 'stale.' 'append(f[0])', "bad.append(f[0])", 'docs-consistency', what='verify: a known gap now killed is refused')
-mut('misc-V10', MP, "elif f[1] == " "'killed':", "elif f[1].startswith('killed'):", 'docs-consistency', what='verify: an abort or timeout kill is named a closed gap')
+mut('misc-V10', MP, "elif f[1] == " "'killed':", "elif f[1] in ('killed', 'killed-abort', 'killed-timeout'):", 'docs-consistency', what='verify: an abort or timeout kill is named a closed gap')
 mut('misc-V6', MP, "bad += ['%s: %d rows' % (i, n) " "for i, n in seen.items() if n > 1]", 'pass', 'docs-consistency', what='verify: a row twice passes')
 mut('misc-V7', MP, "bad += ['%s: no row — the run did not cover it' % i " "for i in by_id if i not in seen]", 'pass', 'docs-consistency', what='verify: a mutant with no row passes')
 mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "continue", 'continue', 'docs-consistency', what='verify: a row for no such mutant passes')
+
+# ---- 0.29.0 release review, second pass (#163).
+mut('D154', DOC, '        [[ -n "$_has" ]] || _lacking="$_lacking${_lacking:+, }$_p"', '        :', 'flight-rules-doctor', what='doctor: core.hooksPath changed from a worktree with the copy, leaving the main checkout without hooks (V1)')
+mut('D155', DOC, '    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then', '    if false; then', 'flight-rules-doctor', what='doctor: a branch from before the move runs no hooks, with no remedy (V1)')
+mut('R012', SSR, '  [ -z "$_top" ] || RULES="$_top/.ai/rules/engineering-principles.md"', '  :', 'wiring', what='hand-wired from .flight-rules/hooks/, the rules in .ai/rules/ are not read (V2)')
+mut('D156', DOC, 'mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf, and commit both', 'mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf', 'flight-rules-doctor', what='doctor: the conf moved, so a 0.28.0 reader falls back to its defaults (V3)')
+mut('D157', DOC, '    1) _diff=" — the two files differ, so a 0.28.0 reader follows another policy than this one: make them the same until the old one goes" ;;', '    1) _diff="" ;;', 'flight-rules-doctor', what='doctor: two confs that differ are not named (V3, V30)')
+mut('D158', DOC, "then commit %s/)' \"$_hd\"", "then commit %s/)' \".flight-rules/hooks\"", 'flight-rules-doctor', what='doctor: an .ai/hooks/ with no git hooks, and the message names another folder than the command installs into (V16)')
+mut('misc-V11', MP, "if f[1] not in " "RESULTS:", 'if False:', 'docs-consistency', what='verify: a result run.sh never writes passes (V4)')
+mut('misc-R1', 'mutation/run.sh', 'if [ "$cv" != survived ]; then', 'if false; then', 'docs-consistency', what='run.sh: mutants judged down a path that fails with nothing mutated (V4)')
+mut('C77', CM, 'elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its pre-merge-check note checked"', 'elif false; then :', 'merge-gate', what='note gate: going ahead past a stamped, unclean merge records "no note" (V11)')
+mut('C78', CM, 'elif printf \'%s\\n\' "$NOTE" | grep -c "^passed:" >/dev/null; then', 'elif printf \'%s\\n\' "$NOTE" | grep -q "^passed:"; then', 'merge-gate', what='note gate: a note over the pipe buffer reads as having no passed: line (V14)')
+mut('P231', PCC, '  if [ -z "$remotes" ]; then\n    printf \'This repository has no remote', '  if false; then\n    printf \'This repository has no remote', 'pre-commit-check', what='route: no remote, and the prose sends the pull to origin (V15)')
+mut('P232', PCC, '  if [ -z "$remotes" ]; then\n    :\n', '  if false; then\n    :\n', 'pre-commit-check', what='route: no remote, and its first row fetches from origin, which fails (V15)')
+mut('D159', DOC, 'if [[ -z "$_wtd" && -n "$_adopted" ]]; then', 'if [[ -z "$_wtd" ]]; then', 'flight-rules-doctor', what='doctor: a repository that never adopted flight-rules is told where its worktrees go, every day (V17)')
+mut('D160', DOC, '[[ -n "${HOOKS_DIR:-}" ]] && grep -q "$(hook_marker pre-merge-commit)" "$HOOKS_DIR/pre-merge-commit" 2>/dev/null && _adopted=1', ':', 'flight-rules-doctor', what='doctor: a project with no conf, on its hooks, is not told where its worktrees go (V17)')
+mut('D161', DOC, 'if [[ -z "$_wtd" && -n "$_adopted" ]]; then', 'if [[ -z "$(grep -E \'^[[:space:]]*WORKTREE_DIR[[:space:]]*=\' "$CONF" 2>/dev/null)" && -n "$_adopted" ]]; then', 'flight-rules-doctor', what='doctor: WORKTREE_DIR= set empty silences the notice (V17)')
+mut('T89', RT, '    elif [ -e "$(git_path MERGE_HEAD)" ]; then echo "git commit --no-edit"\n', '', 'ref-gate', what='ref gate: a refused merge is printed the same command, which fails on the unfinished merge (V12)')
 
 
 def _check_data():
@@ -1026,6 +1044,7 @@ def _check_data():
         assert m['old'] and m['old'] != m['new'], m['id'] + ': old must be non-empty and differ from new'
         assert m['suites'] and all(s in SUITES for s in m['suites']), m['id'] + ': unknown suite'
         assert m['expect'] == 'killed' or m['expect'].startswith('survives: '), m['id'] + ': bad expect'
+        assert m['id'] != 'control', 'control is run.sh\'s control, not a mutant id'
 
 
 def _read(p):
@@ -1034,6 +1053,9 @@ def _read(p):
 
 
 STAMP_HEAD = 'flight-rules mutation stamp'
+# The results run.sh writes in a stamp's rows, and no others: read by prefix, any
+# 'killed…' passed as a kill (0.29.0 release review, second pass, V4).
+RESULTS = ('killed', 'killed-abort', 'killed-timeout', 'survived')
 
 
 def verify(sha, path, by_id):
@@ -1058,15 +1080,15 @@ def verify(sha, path, by_id):
         m = by_id.get(f[0])
         if m is None:
             bad.append('%s is not a mutant at this commit' % f[0]); continue
+        if f[1] not in RESULTS:
+            bad.append('%s: %r is not a result run.sh writes' % (f[0], f[1])); continue
         if m['expect'] == 'killed':
-            if not f[1].startswith('killed'):
+            if f[1] == 'survived':
                 bad.append('%s: %s, expected killed' % (f[0], f[1]))
         elif f[1] == 'killed':
             stale.append(f[0])
-        elif f[1].startswith('killed'):
+        elif f[1] in ('killed-abort', 'killed-timeout'):
             unsure.append('%s %s' % (f[0], f[1]))
-        elif f[1] != 'survived':
-            bad.append('%s: %s, expected survived' % (f[0], f[1]))
     bad += ['%s: %d rows' % (i, n) for i, n in seen.items() if n > 1]
     bad += ['%s: no row — the run did not cover it' % i for i in by_id if i not in seen]
     if bad:

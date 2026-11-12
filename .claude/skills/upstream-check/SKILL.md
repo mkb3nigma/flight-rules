@@ -37,8 +37,9 @@ gist's *Revisions* tab and compare against the pinned revision/date.
 
 For a **W3C spec**, open its latest-version URL and compare the Recommendation date it
 states with the pinned one; a newer date, or a newer version (WCAG 2.2 → 3.0), is a
-change to review. For a **web page**, fetch it and compare its published or updated date
-with the pin; with neither shown, compare what it says against what the row feeds.
+change to review. For a **web page**, fetch it and compare what it says with what the pin
+records (its values, "as read" on a date); a published or updated date newer than that
+is a prompt to re-read it, not a change in itself.
 
 For a source that feeds `skills/ux/`, a change is judged rule by rule:
 `skills/ux/sources.md` names the rules that rest on each source. Re-read those rules

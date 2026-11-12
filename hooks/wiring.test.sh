@@ -179,6 +179,18 @@ if grep -q 'Engineering Principles' <<<"$(inject "$NP")"; then
 else
   FAIL=$((FAIL+1)); printf '  ❌ no plugin.json → nothing injected; reading the version cost the rules\n'
 fi
+# Hand-wired from .flight-rules/hooks/, the sibling rules/ is .flight-rules/rules/, which
+# nothing creates: a project's rules stay in .ai/rules/, and the hook exited 0 having
+# injected nothing (0.29.0 release review, second pass, V2).
+HW="$LAB/handwired"; git init -q "$HW" || die "git init failed in $HW"
+mkdir -p "$HW/.flight-rules/hooks" "$HW/.ai/rules" || die "could not build $HW"
+cp "$ROOT/hooks/session-start-rules.sh" "$HW/.flight-rules/hooks/" && cp "$ROOT/rules/engineering-principles.md" "$HW/.ai/rules/" || die "could not copy into $HW"
+hw() { ( cd "$HW" && env -u CLAUDE_PLUGIN_ROOT bash "$HW/.flight-rules/hooks/session-start-rules.sh" </dev/null ) 2>&1; }
+OUT=$(hw); RC=$?
+say "$RC$(grep -c 'Engineering Principles' <<<"$OUT")" "01" "hand-wired from .flight-rules/hooks/, the rules in .ai/rules/: injected"
+rm "$HW/.ai/rules/engineering-principles.md"
+OUT=$(hw); RC=$?
+say "$RC:$OUT" "0:" "…and with no rules file anywhere: exit 0, nothing injected"
 # And a plugin.json that is not JSON at all.
 mkdir -p "$NP/.claude-plugin"; printf 'not json\n' > "$NP/.claude-plugin/plugin.json"
 if grep -q 'Engineering Principles' <<<"$(inject "$NP")"; then

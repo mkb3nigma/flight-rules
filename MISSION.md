@@ -11,11 +11,12 @@ flight-rules helps a competent developer — working alone or with AI assistants
 holds to the same standard — keep good code hygiene: the small things that are easy to
 overlook — a check not run, a doc left describing the old behaviour, a claim of "done"
 with nothing behind it, a worktree left behind — and four catastrophes: a leaked key, a
-commit on a protected branch, a protected branch moved without review, work destroyed or
-history rewritten, either on a protected branch. It is one source of truth, consumed by
-many projects and any assistant that reads Markdown. That is the core of the job.
-Beside it sit guides, loaded only when the work calls for one, which cost nothing to a
-project that never calls them.
+commit on a protected branch (anyone's on one that moves only by a reviewed PR, an
+assistant's on any), a protected branch moved without review, work destroyed or history
+rewritten, either on a protected branch. It is one source of truth, consumed by many
+projects and any assistant that reads Markdown. That is the core of the job.
+Beside it sit guides, loaded only when the work calls for one, which cost a project
+that never calls them one skill description.
 
 The standard is one; the restraint is not. flight-rules reminds the developer and
 restrains the assistant. A hygiene slip is reminded of, never stopped. A catastrophe is
@@ -140,9 +141,10 @@ locally, the commit message of the change itself.
   unconditionally (`engineering-principles.md` §2); where the fix adds a refusal on
   legitimate work, question 4 applies.
 - A ref movement is the git hooks' to stop — for a person and an assistant alike, since
-  a git hook cannot tell them apart, which is why its stop prints the way through. The
-  agent guard reads the assistant alone, and is an early, specific message, not the
-  enforcement (`hooks/README.md` → the layering lesson).
+  a git hook cannot tell them apart, which is why its stop prints the way through. On a
+  protected branch that is not PR-only, a person's commit is warned of, not stopped
+  (owner, 2026-11-09). The agent guard reads the assistant alone, and is an early,
+  specific message, not the enforcement (`hooks/README.md` → the layering lesson).
 - Where the questions are asked: `pre-merge-check` item 18 asks a rules-file diff for
   its warrant and its enforcement; `/dg` asks every change in this repo the questions
   that apply to it (`.ai/skills/dg/EXTENSIONS.md`), and the whole release diff at

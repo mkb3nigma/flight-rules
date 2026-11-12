@@ -90,6 +90,14 @@ designs and reviews, and hands implementation to the tier below through an issue
 carries the plan (owner, 2026-11-11). At the time of writing that is Fable for
 Anthropic, Sol for OpenAI and Argon for Google; the owner can override it for any task.
 
+## How to report here
+
+In this repo, a reply that reports work or asks for a decision runs **Situation** (what
+is true now), **Background** (what the reader needs to judge it), **Assessment** (what
+you found, with the evidence), **Recommendation** (what you would do), decisions last
+(owner, 2026-10-30); a short answer needs no headings. `engineering-principles.md` §7
+is the shipped part of it.
+
 ## The skills run here too
 
 The skills are plain Markdown: `skills/<name>/SKILL.md`, plus `upstream-check`, which
