@@ -764,8 +764,10 @@ rm -rf "$D"
 # starts where Required 8 and /feature-start start — the local integration branch, origin
 # pulled into it — not origin's, which lacks merges not yet pushed (0.29.0 release
 # review, R-1).
+# A remote, named and never reached: with none, the route pulls nothing (V15, below).
+with_origin() { git -C "$1" remote add origin https://example.invalid/r.git || die "could not add a remote in $1"; }
 for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|main|a commit on main'; do
-  D=$(make_repo "$(cut -d'|' -f2 <<<"$c")")
+  D=$(make_repo "$(cut -d'|' -f2 <<<"$c")"); with_origin "$D"
   OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
         <<<"$(jq -n --arg c "$(cut -d'|' -f1 <<<"$c")" '{tool_input:{command:$c}}')" 2>/dev/null)
   if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q '/feature-start' <<<"$OUT" && grep -q 'open-branch limit\|OPEN_BRANCH_LIMIT' <<<"$OUT" \
@@ -794,7 +796,17 @@ route_rows() { reason_of "$1" | sed -n '/^  cd /,/^    cd .*<name>$/p'; }
 route_lines() { route_rows "$1" | sed '1d;$d'; }
 route_of() { route_lines "$1" | tr '\n' '|'; }
 CHAIN="    git fetch origin && \\|    { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\|"
+# With no remote, nothing to pull or fetch: the route's first step failed there and
+# stopped the chain. The branch is cut from the local one, and the rows, run as printed,
+# make it (0.29.0 release review, second pass, V15).
 D=$(make_repo main); mkdir -p "$D/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.flight-rules/conf"
+git -C "$D" branch dev || die "could not make dev in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")|$(reason_of "$OUT" | grep -c '^This repository has no remote, so nothing is pulled: the branch is cut from the local dev as it stands\.$')|$(route_rows "$OUT" | grep -c 'origin')" "    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\||1|0" "no remote: the route is the add from the local dev alone, said so, no row naming origin"
+(cd "$D" && bash -c "$(route_rows "$OUT" | sed 's|<name>|nr|g')") >/dev/null 2>&1
+say "$?$(git -C "$D" rev-parse -q --verify feature/nr)" "0$(git -C "$D" rev-parse dev)" "…and its rows, run as printed, cut the branch from it"
+rm -rf "$D"
+D=$(make_repo main); mkdir -p "$D/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.flight-rules/conf"; with_origin "$D"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
 say "$(route_of "$OUT")" "    git fetch origin && \\|    git branch --track dev origin/dev && \\|    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
 say "$(route_rows "$OUT" | sed -n '1p;$p' | sed "s|^  cd '*$D'* |  cd <root> |" | tr '\n' '|')" "  cd <root> && \\|    cd .flight-rules/worktrees/<name>|" "…the first cd chained to the rest, the last after the add (T-1)"

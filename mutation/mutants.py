@@ -182,7 +182,7 @@ mut('P209', PCC, '-b %s %s && \\\\\\n\'', '-b %s %s\\n\'', 'pre-commit-check', w
 mut('P214', PCC, "  else\n    printf '    git fetch origin && \\\\\\n'\n", "  else\n    [ -n \"$gone\" ] && printf '    git worktree prune && \\\\\\n'\n    printf '    git fetch origin && \\\\\\n'\n", 'pre-commit-check', what='route: a worktree gone from its path is pruned, which clears a moved one past repair')
 mut('P215', PCC, '    elif [ -n "$gone" ]; then\n      printf \'%s was checked out at', '    elif false; then\n      printf \'%s was checked out at', 'pre-commit-check', what='route: a worktree gone from its path is not named, nor the choice between repair and prune')
 mut('P217', PCC, '    if [ -d "$gone" ]; then\n', '    if false; then\n', 'pre-commit-check', what='route: a worktree whose .git file alone is gone is called gone, which steers to a prune that drops its staged work')
-mut('P211', PCC, '  if [ -n "$holder" ]; then\n    printf \'%s is checked out at', '  if false; then\n    printf \'%s is checked out at', 'pre-commit-check', what='route: no prose for a failed pull in a checkout, where git says to commit the conflict')
+mut('P211', PCC, '  elif [ -n "$holder" ]; then\n    printf \'%s is checked out at', '  elif false; then\n    printf \'%s is checked out at', 'pre-commit-check', what='route: no prose for a failed pull in a checkout, where git says to commit the conflict')
 mut('P213', PCC, 'If it fails, stop and ask, and leave whatever it left there to the person.', 'If it fails, run git merge --abort there, then stop and ask.', 'pre-commit-check', what='route: the prose says to abort a merge, which may be the person\'s')
 mut('P197', PCC, '      "branch refs/heads/$int") holder="$cur" ;;\n', '', 'pre-commit-check', what='route: the worktree holding the integration branch is not found')
 mut('P195', PCC, 'printf \'    git -C %s pull --ff --no-rebase origin %s && \\\\\\n\' "$(shq "$holder")" "$(shq "$int")"', 'printf \'    git pull --ff --no-rebase origin %s && \\\\\\n\' "$(shq "$int")"', 'pre-commit-check', what='route: the pull is not sent to the worktree holding the branch')
@@ -1028,6 +1028,8 @@ mut('misc-V11', MP, "if f[1] not in " "RESULTS:", 'if False:', 'docs-consistency
 mut('misc-R1', 'mutation/run.sh', 'if [ "$cv" != survived ]; then', 'if false; then', 'docs-consistency', what='run.sh: mutants judged down a path that fails with nothing mutated (V4)')
 mut('C77', CM, 'elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its pre-merge-check note checked"', 'elif false; then :', 'merge-gate', what='note gate: going ahead past a stamped, unclean merge records "no note" (V11)')
 mut('C78', CM, 'elif printf \'%s\\n\' "$NOTE" | grep -c "^passed:" >/dev/null; then', 'elif printf \'%s\\n\' "$NOTE" | grep -q "^passed:"; then', 'merge-gate', what='note gate: a note over the pipe buffer reads as having no passed: line (V14)')
+mut('P231', PCC, '  if [ -z "$remotes" ]; then\n    printf \'This repository has no remote', '  if false; then\n    printf \'This repository has no remote', 'pre-commit-check', what='route: no remote, and the prose sends the pull to origin (V15)')
+mut('P232', PCC, '  if [ -z "$remotes" ]; then\n    :\n', '  if false; then\n    :\n', 'pre-commit-check', what='route: no remote, and its first row fetches from origin, which fails (V15)')
 
 
 def _check_data():
