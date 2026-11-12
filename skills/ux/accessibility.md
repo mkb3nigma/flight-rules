@@ -45,8 +45,11 @@ never that the interface meets WCAG AA.
   the font size, paragraph spacing 2 times, letter spacing 0.12 times, word spacing
   0.16 times. Fixed-height text boxes are where this breaks. (1.4.12)
 - **A14** [standard] Content shown on hover or focus — a tooltip, a submenu — can be
-  dismissed without moving the pointer (Escape), stays while the pointer moves onto it,
-  and stays until dismissed or no longer relevant. (1.4.13)
+  dismissed without moving the pointer or focus (Escape), unless it reports an input
+  error or covers nothing; stays while the pointer moves onto it; and stays until the
+  pointer or focus leaves the trigger, the person dismisses it, or it is no longer
+  valid. Content the browser draws and the page does not style — a `title` tooltip — is
+  exempt. (1.4.13)
 - **A15** [standard] Text is text, not an image of text, except a logo. (1.4.5)
 - **A16** [standard] The layout works in both portrait and landscape; do not lock the
   orientation unless it is essential. (1.3.4)
@@ -76,9 +79,12 @@ never that the interface meets WCAG AA.
 
 ## Pointer, motion and time
 
-- **A26** [standard] A pointer target is at least 24 by 24 CSS pixels, or is spaced so
-  that a 24-pixel-diameter circle centred on it meets no other target and no other small
-  target's circle. (2.5.8)
+- **A26** [standard] A pointer target is at least 24 by 24 CSS pixels, except one spaced
+  so that a 24-pixel-diameter circle centred on it meets no other target and no other
+  small target's circle; one in a sentence, or whose size the line height of the text
+  around it sets; one whose function another control on the same page offers at that
+  size; one the browser sizes and the page does not style; and one whose size is
+  essential or legally required. (2.5.8)
 - **A27** [standard] Anything done by dragging can also be done with single clicks or
   taps. (2.5.7)
 - **A28** [standard] Anything done with a multi-point or path gesture (pinch, swipe a
