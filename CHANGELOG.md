@@ -208,7 +208,10 @@ says how.
   `git revert --continue` (a revert of several commits: `git commit --no-edit` first).
   Going ahead is said on the screen every time, with what was passed, and a merge taken
   past the note gate or the instruction check records it in its `Merge-authorisation`
-  trailer (`went ahead (FLIGHT_RULES_GO_AHEAD)`). `pre-commit.local` still runs. The
+  trailer: past the instruction check, `went ahead (FLIGHT_RULES_GO_AHEAD)`; past the
+  note gate, `went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)`, or `went
+  ahead past the note gate:` and the cause its box named (a note that did not check
+  this merge, a catch-up). `pre-commit.local` still runs. The
   instruction check's own route, `FLIGHT_RULES_MERGE_AUTHORISED=1`, is unchanged.
 - **The agent guard refuses an assistant's command that sets `FLIGHT_RULES_GO_AHEAD`**
   (#155) — in front of a command, after `env` or `export`, quoted or not — on any branch,
@@ -312,8 +315,9 @@ says how.
   judges a change to a `/ux` source rule by rule through `skills/ux/sources.md`.
 - A release PR into `main` must carry an `## Upstream check` section and a clean
   mutation stamp of its head commit, written by the new `mutation/` kit and checked by
-  CI; the test suites share one harness and had duplicates cut and the gaps the mutants
-  found closed.
+  CI; the test suites share one harness and had duplicates cut, and each gap the mutants
+  found was closed or recorded as a known survivor (`survives: not held` in
+  `mutation/mutants.py`).
 
 ## 0.28.0 — 2026-10-30
 
