@@ -24,7 +24,7 @@ jobs:
         # review CI-1, 2026-10-29).
         run: |
           fail=0
-          for f in hooks/*.sh hooks/agent/*.sh hooks/git/* skills/*.sh; do
+          for f in hooks/*.sh hooks/agent/*.sh hooks/git/* skills/*.sh mutation/*.sh; do
             case "$f" in *.md) continue ;; esac
             if bash -n "$f"; then echo "ok  $f"; else echo "::error file=$f::bash -n failed"; fail=1; fi
           done

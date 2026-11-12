@@ -1010,9 +1010,9 @@ mut('misc-V1', MP, 'if not lines or lines[0] ' '!= STAMP_HEAD:', 'if False:', 'd
 mut('misc-V2', MP, "if not summary.startswith(" "'mutation: all '):", 'if False:', 'docs-consistency', what='verify: a selection passes')
 mut('misc-V3', MP, "if (' run from %s — ' % sha) " "not in summary:", 'if False:', 'docs-consistency', what="verify: another commit's run passes")
 mut('misc-V4', MP, "if not summary.endswith(" "', 0 failed to apply; 0 unexpected survivor(s)'):", 'if False:', 'docs-consistency', what='verify: a run that did not pass passes')
-mut('misc-V5', MP, "if not f[1]." "startswith('killed'):", 'if False:', 'docs-consistency', what='verify: an expected kill that survived passes')
+mut('misc-V5', MP, "if f[1] == " "'survived':", 'if False:', 'docs-consistency', what='verify: an expected kill that survived passes')
 mut('misc-V9', MP, 'stale.' 'append(f[0])', "bad.append(f[0])", 'docs-consistency', what='verify: a known gap now killed is refused')
-mut('misc-V10', MP, "elif f[1] == " "'killed':", "elif f[1].startswith('killed'):", 'docs-consistency', what='verify: an abort or timeout kill is named a closed gap')
+mut('misc-V10', MP, "elif f[1] == " "'killed':", "elif f[1] in ('killed', 'killed-abort', 'killed-timeout'):", 'docs-consistency', what='verify: an abort or timeout kill is named a closed gap')
 mut('misc-V6', MP, "bad += ['%s: %d rows' % (i, n) " "for i, n in seen.items() if n > 1]", 'pass', 'docs-consistency', what='verify: a row twice passes')
 mut('misc-V7', MP, "bad += ['%s: no row — the run did not cover it' % i " "for i in by_id if i not in seen]", 'pass', 'docs-consistency', what='verify: a mutant with no row passes')
 mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "continue", 'continue', 'docs-consistency', what='verify: a row for no such mutant passes')
@@ -1024,6 +1024,8 @@ mut('R012', SSR, '  [ -z "$_top" ] || RULES="$_top/.ai/rules/engineering-princip
 mut('D156', DOC, 'mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf, and commit both', 'mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf', 'flight-rules-doctor', what='doctor: the conf moved, so a 0.28.0 reader falls back to its defaults (V3)')
 mut('D157', DOC, '    1) _diff=" — the two files differ, so a 0.28.0 reader follows another policy than this one: make them the same until the old one goes" ;;', '    1) _diff="" ;;', 'flight-rules-doctor', what='doctor: two confs that differ are not named (V3, V30)')
 mut('D158', DOC, "then commit %s/)' \"$_hd\"", "then commit %s/)' \".flight-rules/hooks\"", 'flight-rules-doctor', what='doctor: an .ai/hooks/ with no git hooks, and the message names another folder than the command installs into (V16)')
+mut('misc-V11', MP, "if f[1] not in " "RESULTS:", 'if False:', 'docs-consistency', what='verify: a result run.sh never writes passes (V4)')
+mut('misc-R1', 'mutation/run.sh', 'if [ "$cv" != survived ]; then', 'if false; then', 'docs-consistency', what='run.sh: mutants judged down a path that fails with nothing mutated (V4)')
 
 
 def _check_data():
@@ -1034,6 +1036,7 @@ def _check_data():
         assert m['old'] and m['old'] != m['new'], m['id'] + ': old must be non-empty and differ from new'
         assert m['suites'] and all(s in SUITES for s in m['suites']), m['id'] + ': unknown suite'
         assert m['expect'] == 'killed' or m['expect'].startswith('survives: '), m['id'] + ': bad expect'
+        assert m['id'] != 'control', 'control is run.sh\'s control, not a mutant id'
 
 
 def _read(p):
@@ -1042,6 +1045,9 @@ def _read(p):
 
 
 STAMP_HEAD = 'flight-rules mutation stamp'
+# The results run.sh writes in a stamp's rows, and no others: read by prefix, any
+# 'killed…' passed as a kill (0.29.0 release review, second pass, V4).
+RESULTS = ('killed', 'killed-abort', 'killed-timeout', 'survived')
 
 
 def verify(sha, path, by_id):
@@ -1066,15 +1072,15 @@ def verify(sha, path, by_id):
         m = by_id.get(f[0])
         if m is None:
             bad.append('%s is not a mutant at this commit' % f[0]); continue
+        if f[1] not in RESULTS:
+            bad.append('%s: %r is not a result run.sh writes' % (f[0], f[1])); continue
         if m['expect'] == 'killed':
-            if not f[1].startswith('killed'):
+            if f[1] == 'survived':
                 bad.append('%s: %s, expected killed' % (f[0], f[1]))
         elif f[1] == 'killed':
             stale.append(f[0])
-        elif f[1].startswith('killed'):
+        elif f[1] in ('killed-abort', 'killed-timeout'):
             unsure.append('%s %s' % (f[0], f[1]))
-        elif f[1] != 'survived':
-            bad.append('%s: %s, expected survived' % (f[0], f[1]))
     bad += ['%s: %d rows' % (i, n) for i, n in seen.items() if n > 1]
     bad += ['%s: no row — the run did not cover it' % i for i in by_id if i not in seen]
     if bad:

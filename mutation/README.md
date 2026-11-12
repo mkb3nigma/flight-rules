@@ -63,14 +63,20 @@ one is in once `git add`ed; the checkout is only read, but for the stamp a clean
 whole-kit run writes. A tracked file that differs from
 the commit is named at the start, with the route above, and marks the summary line
 "+ uncommitted changes". Before any mutant, each suite in use runs unmutated and must
-pass. A suite run is cut off after `MUTATION_TIMEOUT` seconds (default 1200) and
+pass — then once more down the path a mutant takes (its own copy of the tree, `TMPDIR`
+under it, `MUTATION_UNDER_TEST` set), with nothing applied: the control. A kill is any
+non-zero suite exit, so a fault in that path alone would read as every mutant killed;
+a suite failing there is named with its log, and the run exits 2 with no stamp. The
+control proves the path passes unmutated, once, with nothing else running; it does not
+prove a kill made under load is the mutant's — the kills re-run alone below are for
+that, and one made only by load, in a case outside those, is not caught. A suite run is cut off after `MUTATION_TIMEOUT` seconds (default 1200) and
 counted as a kill. The run ends with a summary — killed by suite,
 each abort and timeout by id with the line it failed on, the survivors, what did not
 apply — and the work directory, whose `logs/` hold every suite's output.
 
 Exit 0: every mutant expected killed was killed, and every mutant applied. Exit 1: one
 survived that should not have, or one's `old` text did not occur exactly once — an
-error, never a skip. Exit 2: usage, or a suite failing with no mutant applied.
+error, never a skip. Exit 2: usage, or a suite failing with no mutant applied, at the baseline or the control.
 
 More than about six suites at once and `merge-gate.test.sh` fails cases that have
 nothing to do with the mutant, which reads as a kill: the sweep recorded eight such on
