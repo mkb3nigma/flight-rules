@@ -140,28 +140,32 @@ echo "A guide's topic files: rule shape, unique IDs, size, and the source map:"
 # is `- **<ID>** [<kind>] …`, so a reader knows how far to trust it; IDs are unique so a
 # finding can cite one; files stay small enough to load for a small task; and
 # sources.md names the rules each source carries, so an update to a source says which
-# rules to re-read (/upstream-check). guide_verdict <dir>: one line per problem.
+# rules to re-read (/upstream-check). An ID is a capital and a number (A1), or that
+# behind a guide's prefix of two to four capitals and a hyphen (UX-A01): §7 of the
+# principles labels a reply's actions A1… and decisions D1…, so /ux's own A1 read two
+# ways (owner, 2026-11-12). guide_verdict <dir>: one line per problem.
+GID='([A-Z]{2,4}-)?[A-Z][0-9]+'
 guide_verdict() {
   local d="$1" f n ids dup mapped
   [ -f "$d/SKILL.md" ] && [ "$(wc -l < "$d/SKILL.md")" -gt 120 ] && echo "$d/SKILL.md is over 120 lines"
   for f in "$d"/*.md; do
     case "$(basename "$f")" in SKILL.md|sources.md) continue ;; esac
     n=$(wc -l < "$f" | tr -d ' '); [ "$n" -gt 150 ] && echo "$f is $n lines, over 150"
-    grep -n '^- \*\*' "$f" | grep -vE '^[0-9]+:- \*\*[A-Z][0-9]+\*\* \[(standard|finding|rule of thumb)\] [^ ]' \
+    grep -n '^- \*\*' "$f" | grep -vE '^[0-9]+:- \*\*'"$GID"'\*\* \[(standard|finding|rule of thumb)\] [^ ]' \
       | sed "s|^|$f:|; s|$| — not a rule line: - **<ID>** [standard\|finding\|rule of thumb] <rule>|"
   done
-  ids=$(cat "$d"/*.md | sed -n -E 's/^- \*\*([A-Z][0-9]+)\*\* .*/\1/p')
+  ids=$(cat "$d"/*.md | sed -n -E 's/^- \*\*('"$GID"')\*\* .*/\1/p')
   dup=$(sort <<<"$ids" | uniq -d | tr '\n' ' '); [ -n "$dup" ] && echo "$d: rule IDs used twice: $dup"
   [ -f "$d/sources.md" ] || return 0
   mapped=$(sed -n -E 's/^\|.*\| (living|fixed) \| (.*) \|$/\2/p' "$d/sources.md" | tr ' ' '\n' | sed '/^$/d' | sort -u)
   for n in $mapped; do grep -qx "$n" <<<"$ids" || echo "$d/sources.md names $n, which no topic file has"; done
-  for n in $(cat "$d"/*.md | sed -n -E 's/^- \*\*([A-Z][0-9]+)\*\* \[(standard|finding)\].*/\1/p'); do
+  for n in $(cat "$d"/*.md | sed -n -E 's/^- \*\*('"$GID"')\*\* \[(standard|finding)\].*/\1/p'); do
     grep -qx "$n" <<<"$mapped" || echo "$d: $n is a [standard] or [finding] rule no source in sources.md carries"
   done
 }
 G=0
 for d in skills/*/; do
-  d=${d%/}; [ "$(find "$d" -maxdepth 1 -name '*.md' ! -name SKILL.md | xargs grep -l '^- \*\*[A-Z][0-9]*\*\* \[' 2>/dev/null)" ] || continue
+  d=${d%/}; [ "$(find "$d" -maxdepth 1 -name '*.md' ! -name SKILL.md | xargs grep -lE '^- \*\*'"$GID"'\*\* \[' 2>/dev/null)" ] || continue
   G=$((G+1)); v=$(guide_verdict "$d")
   if [ -z "$v" ]; then ok "$d: every rule well formed, IDs unique, within size, every standard and finding sourced"
   else while IFS= read -r l; do bad "$l"; done <<<"$v"; fi
@@ -172,10 +176,15 @@ T=$(mktemp -d) || { bad "could not make a temp dir for the guide fixture"; T="";
 if [ -n "$T" ]; then
   { printf -- '---\nname: g\n---\n'; for i in $(seq 120); do echo filler; done; } > "$T/SKILL.md"
   { printf -- '- **A1** [standard] Fine.\n- **A2** [opinion] Not a kind.\n- **A1** [finding] Twice.\n- **B9** [finding] Unsourced.\n'
+    # The prefixed form: well formed, and caught twice and unsourced; a prefix in lower
+    # case, or a prefix with no letter and number after it, is no ID.
+    printf -- '- **UX-A01** [standard] Fine.\n- **UX-A01** [finding] Twice.\n- **UX-B09** [finding] Unsourced.\n'
+    printf -- '- **ux-A03** [standard] Lower-case prefix.\n- **UX-** [standard] Bare prefix.\n- **UXABC-A04** [standard] Long prefix.\n'
     for i in $(seq 150); do echo filler; done; } > "$T/topic.md"
-  printf '| Src | Kind | Rules |\n|---|---|---|\n| X | fixed | A1 Z7 |\n' > "$T/sources.md"
+  printf '| Src | Kind | Rules |\n|---|---|---|\n| X | fixed | A1 Z7 UX-A01 UX-Z07 |\n' > "$T/sources.md"
   v=$(guide_verdict "$T")
-  for want in "SKILL.md is over 120" "over 150" "A2" "used twice: A1" "names Z7" "B9 is a"; do
+  for want in "SKILL.md is over 120" "over 150" "A2" "used twice: A1 UX-A01" "names Z7" "B9 is a" \
+      "names UX-Z07" "UX-B09 is a" "Lower-case prefix" "Bare prefix" "Long prefix"; do
     grep -q -- "$want" <<<"$v" && ok "the fixture's \"$want\" is caught" || bad "the fixture's \"$want\" was not caught: $v"
   done
   rm -rf "$T"

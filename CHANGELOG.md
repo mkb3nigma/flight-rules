@@ -226,7 +226,8 @@ says how.
   `sources.md` mapping every source to its rules. It loads only the topics a task needs,
   and keeps the project's design record (`.ai/design.md` by default), starting it with
   the project's first interface. A project that never calls it pays only its
-  description.
+  description. Its rule IDs carry the guide's prefix — `UX-A01`, `UX-F01` — so they
+  never read as a reply's actions (A1…) or decisions (D1…).
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back.
