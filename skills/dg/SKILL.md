@@ -318,7 +318,8 @@ other, and a reviewer who cannot fill it has said something weaker than it sound
 Adapt to the subject. For code, look for each class below that the diff gives a reason
 to. A finding names its place (`file:line`) and, where a test should have caught it,
 the test that would fail. A class with nothing found is not reported: the table holds
-findings, not a checklist.
+findings, not a checklist. The classes' warrant: an adopter found body ids its ownership
+sweep missed, which this list's generic "security" had not named (2026-10-21).
 
 - **Security** — *object-level authorization*: a record id a caller supplies (path,
   body, nested arrays, tool or RPC arguments) with no ownership check, or an ownership
