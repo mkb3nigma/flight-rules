@@ -1039,6 +1039,8 @@ mut('D162', DOC, '      && would_lose ref "refs/heads/$_int" && _int_lacks=1', '
 mut('D163', DOC, '    [[ -n "$old" ]]\n  }', '    :\n  }', 'flight-rules-doctor', what='doctor: a worktree with neither folder holds the command back for as long as it exists (W1 c)')
 mut('D164', DOC, '    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && "$HOOKS_PATH" != /* ]]; then', '    if false; then', 'flight-rules-doctor', what='doctor: the setting moved, and a worktree on a branch from before the move runs no hooks unsaid (W1 b)')
 mut('D165', DOC, '      if git rev-parse -q --verify "refs/heads/$_int" >/dev/null 2>&1 && would_lose ref "refs/heads/$_int"; then', '      if false; then', 'flight-rules-doctor', what='doctor: a pull of an integration branch the move has not reached, printed as the remedy (W1 3)')
+mut('C79', CM, 'elif [ -n "$NOTE_BAD" ] && [ -z "$NOT_CLEAN" ]; then _past="a pre-merge-check note the gate does not take"', 'elif false; then _past=""', 'merge-gate', what='note gate: going ahead past a refused note records "no note" (W2)')
+mut('C80', CM, 'elif [ -n "$NOT_CLEAN" ] && [ "$CLEAN" -eq 1 ]; then _past=', 'elif [ -n "$NOT_CLEAN" ]; then _past=', 'merge-gate', what='note gate: going ahead past a merge git could not check records "not git\'s clean merge" (W2)')
 mut('D166', DOC, '      if [[ -n "$_lacking" && -z "$_lacking_l" ]]; then', '      if false; then', 'flight-rules-doctor', what='doctor: git worktree list failing, with the setting moved, reads as no checkout lagging (W1)')
 
 

@@ -213,7 +213,7 @@ says how.
   trailer: past the instruction check, `went ahead (FLIGHT_RULES_GO_AHEAD)`; past the
   note gate, `went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)`, or `went
   ahead past the note gate:` and the cause its box named (a note that did not check
-  this merge, a catch-up). `pre-commit.local` still runs. The
+  this merge, a note the gate does not take, a catch-up, a merge git could not check). `pre-commit.local` still runs. The
   instruction check's own route, `FLIGHT_RULES_MERGE_AUTHORISED=1`, is unchanged.
 - **The agent guard refuses an assistant's command that sets `FLIGHT_RULES_GO_AHEAD`**
   (#155) — in front of a command, after `env` or `export`, quoted or not — on any branch,
