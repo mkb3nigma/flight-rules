@@ -450,12 +450,12 @@ mut('C34', CM, '    && ! git merge-base --is-ancestor HEAD "$MERGE_SHA" 2>/dev/n
 mut('C35', CM, '    if [ "$CLEAN" -eq 0 ]; then\n        echo "✅ Merge of', '    if true; then\n        echo "✅ Merge of', 'merge-gate secret-scan')
 mut('C36', CM, 'a fast-forward would bring, no note needed"\n        exit 0', 'a fast-forward would bring, no note needed"\n        exit 1', 'merge-gate secret-scan')
 mut('C37', CM, '    NOT_CLEAN="merge of this branch\'s own upstream"', '    :', 'merge-gate secret-scan')
-mut('C38', CM, '    if [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -Eq', '    if false && printf \'%s\\n\' "$NOTE" | grep -Eq', 'merge-gate secret-scan')
-mut('C39', CM, '    elif [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -q \'^passed:.*tree:\'; then', '    elif false; then', 'merge-gate secret-scan')
+mut('C38', CM, '    if [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -Ec', '    if false && printf \'%s\\n\' "$NOTE" | grep -Ec', 'merge-gate secret-scan')
+mut('C39', CM, '    elif [ -z "$_nt" ] && printf \'%s\\n\' "$NOTE" | grep -c \'^passed:.*tree:\' >/dev/null; then', '    elif false; then', 'merge-gate secret-scan')
 mut('C40', CM, '        NOTE_BAD="its passed: line has no tree:<hash>"', '        :', 'merge-gate secret-scan')
 mut('C65', CM, '    NOTE_BAD="it has no line beginning passed:"', '    :', 'merge-gate secret-scan', what='a note with no passed: line gets the generic box')
 mut('C41', CM, '    elif [ "$_nt" != "$(git rev-parse -q --verify "$MERGE_SHA^{tree}" 2>/dev/null)" ]; then', '    elif false; then', 'merge-gate secret-scan')
-mut('C42', CM, '    elif ! printf \'%s\\n\' "$NOTE" | grep -q \'^ran:[[:space:]]*[^[:space:]]\'; then', '    elif false; then', 'merge-gate secret-scan')
+mut('C42', CM, '    elif ! printf \'%s\\n\' "$NOTE" | grep -c \'^ran:[[:space:]]*[^[:space:]]\' >/dev/null; then', '    elif false; then', 'merge-gate secret-scan')
 mut('C43', CM, 'if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then', 'if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ]; then', 'merge-gate secret-scan')
 mut('C44', CM, '        echo "⚠️  git merge-tree --write-tree failed here (it needs git 2.38 or later), so"', '        :', 'merge-gate secret-scan')
 mut('C62', CM, 'NEEDS_INSTRUCTION=$(read_conf_at_head MERGE_NEEDS_INSTRUCTION "$CONF_PATH")', 'NEEDS_INSTRUCTION=""', 'merge-gate secret-scan')
@@ -1027,6 +1027,7 @@ mut('D158', DOC, "then commit %s/)' \"$_hd\"", "then commit %s/)' \".flight-rule
 mut('misc-V11', MP, "if f[1] not in " "RESULTS:", 'if False:', 'docs-consistency', what='verify: a result run.sh never writes passes (V4)')
 mut('misc-R1', 'mutation/run.sh', 'if [ "$cv" != survived ]; then', 'if false; then', 'docs-consistency', what='run.sh: mutants judged down a path that fails with nothing mutated (V4)')
 mut('C77', CM, 'elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its pre-merge-check note checked"', 'elif false; then :', 'merge-gate', what='note gate: going ahead past a stamped, unclean merge records "no note" (V11)')
+mut('C78', CM, 'elif printf \'%s\\n\' "$NOTE" | grep -c "^passed:" >/dev/null; then', 'elif printf \'%s\\n\' "$NOTE" | grep -q "^passed:"; then', 'merge-gate', what='note gate: a note over the pipe buffer reads as having no passed: line (V14)')
 
 
 def _check_data():

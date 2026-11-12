@@ -363,17 +363,20 @@ NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
 # ran. Anyone can still type both; what this stops is the bare shortcut, and a note
 # carried onto a commit it never checked.
 NOTE_PASSED=""; NOTE_BAD=""
-if [ -n "$NOTE" ] && ! printf '%s\n' "$NOTE" | grep -q "^passed:"; then
+# grep -c, not -q, on the note: -q stops at the first match, printf then fails on the
+# closed pipe, and under pipefail a note bigger than the pipe's buffer read as having
+# no passed: line (0.29.0 release review, second pass, V14; as pre-commit's hit() reads).
+if [ -n "$NOTE" ] && ! printf '%s\n' "$NOTE" | grep -c "^passed:" >/dev/null; then
     # A note with no line beginning passed: — indented, mistyped, failed: — got the
     # generic box, which never said a note was read (#124, F1).
     NOTE_BAD="it has no line beginning passed:"
-elif printf '%s\n' "$NOTE" | grep -q "^passed:"; then
+elif printf '%s\n' "$NOTE" | grep -c "^passed:" >/dev/null; then
     _nt=$(printf '%s\n' "$NOTE" | sed -n 's/^passed:.* tree:\([0-9a-f]\{40,64\}\).*$/\1/p' | head -1)
-    if [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -Eq '^passed:(.*[^ ])?tree:[0-9a-f]{40,64}([^0-9a-f]|$)'; then
+    if [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -Ec '^passed:(.*[^ ])?tree:[0-9a-f]{40,64}([^0-9a-f]|$)' >/dev/null; then
         # A full hash with no space before tree: (passed:tree:…, subtree:…) is not a
         # short one: name the space (#124, O-G1).
         NOTE_BAD="its tree: has no space before it"
-    elif [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -q '^passed:.*tree:'; then
+    elif [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -c '^passed:.*tree:' >/dev/null; then
         # Typed by hand, a tree comes short, in capitals or after a space: name that,
         # not "no tree" (fix review of #107, N-G1).
         NOTE_BAD="its tree: is not a full, lowercase tree hash"
@@ -381,7 +384,7 @@ elif printf '%s\n' "$NOTE" | grep -q "^passed:"; then
         NOTE_BAD="its passed: line has no tree:<hash>"
     elif [ "$_nt" != "$(git rev-parse -q --verify "$MERGE_SHA^{tree}" 2>/dev/null)" ]; then
         NOTE_BAD="its tree: is ${_nt:0:12}, not this commit's"
-    elif ! printf '%s\n' "$NOTE" | grep -q '^ran:[[:space:]]*[^[:space:]]'; then
+    elif ! printf '%s\n' "$NOTE" | grep -c '^ran:[[:space:]]*[^[:space:]]' >/dev/null; then
         NOTE_BAD="it has no ran: line saying what ran"
     else
         NOTE_PASSED=1
@@ -609,7 +612,7 @@ elif [ -n "$CATCHUP" ]; then
     box_row "Undo it (below), and catch up without one:"
     box_row "  git pull --ff-only"
 elif [ -n "$NOTE_BAD" ]; then
-    if printf '%s\n' "$NOTE" | grep -q "^passed:"; then
+    if printf '%s\n' "$NOTE" | grep -c "^passed:" >/dev/null; then
         box_row "The pre-merge-check note says passed, but"
     else
         box_row "There is a pre-merge-check note, but"
