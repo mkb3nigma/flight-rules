@@ -413,9 +413,15 @@ fi
 # project that never set WORKTREE_DIR puts its next worktree in .flight-rules/worktrees/;
 # un-ignored, that checkout shows in `git status` and goes in with a `git add -A`. Said
 # whenever the folder is not ignored — not only while .ai/worktrees/ held worktrees,
-# which left a project that had none untold (0.29.0 release review, D1).
-if [[ -z "${FLIGHT_RULES_WORKTREE_DIR-}" ]] \
-   && ! grep -qE '^[[:space:]]*WORKTREE_DIR[[:space:]]*=' "$CONF" 2>/dev/null; then
+# which left a project that had none untold (0.29.0 release review, D1). Read as the
+# hooks read it: `WORKTREE_DIR=`, set empty, is the default, and its mere presence
+# silenced this. Only where flight-rules was adopted — a conf, or core.hooksPath running
+# its hooks: in any other repository the plugin met, it was said every day (second
+# pass, V17).
+_wtd="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF")}"
+_adopted=""; [[ -f "$CONF" ]] && _adopted=1
+[[ -n "${HOOKS_DIR:-}" ]] && grep -q "$(hook_marker pre-merge-commit)" "$HOOKS_DIR/pre-merge-commit" 2>/dev/null && _adopted=1
+if [[ -z "$_wtd" && -n "$_adopted" ]]; then
   git check-ignore -q .flight-rules/worktrees/x 2>/dev/null; _ig=$?
   if [[ $_ig -eq 1 ]]; then
     _old=""; [[ -n "$(ls -A .ai/worktrees 2>/dev/null)" ]] && _old=" The worktrees in .ai/worktrees/ stay where they are until they are removed."

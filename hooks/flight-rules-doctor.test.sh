@@ -984,6 +984,24 @@ say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "�
 rm "$D/.gitignore"; printf 'WORKTREE_DIR=.ai/worktrees\n' >> "$D/.flight-rules/conf"
 OUT=$(run "$D")
 say "$(head -1 <<<"$OUT")$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")" "00" "…nor once WORKTREE_DIR is set"
+# Set empty, it is not set: the hooks read the default (V17), where the line's mere
+# presence silenced this.
+printf 'PROTECTED_BRANCHES=^main$\nWORKTREE_DIR=\n' > "$D/.flight-rules/conf"
+OUT=$(run "$D")
+say "$(grep -c "$NOT_IGNORED" <<<"$OUT")" "1" "…but WORKTREE_DIR= set empty: said, as for unset"
+rm -rf "$D"
+# A repository that never adopted flight-rules — no conf, no flight-rules hook where
+# core.hooksPath points — is not told where its worktrees go: the plugin met it in every
+# session and said so every day (V17).
+D=$(tmpd); git -C "$D" init -q -b main || die "git init failed in $D"
+OUT=$(run "$D")
+say "$(grep -c 'WORKTREE_DIR is not set' <<<"$OUT")$(grep -c 'problem(s),' <<<"$OUT")" "01" "a repository that never adopted flight-rules: no word of the worktree folder"
+mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^main$\n' > "$D/.ai/flight-rules.conf"
+OUT=$(run "$D")
+say "$(grep -c "$NOT_IGNORED" <<<"$OUT")" "1" "…one with a conf, if only in the old place, is told"
+rm "$D/.ai/flight-rules.conf"; cp -R "$H/git" "$D/hk" && git -C "$D" config core.hooksPath hk || die "could not wire hooks in $D"
+OUT=$(run "$D")
+say "$(grep -c "$NOT_IGNORED" <<<"$OUT")" "1" "…and so is one with no conf whose core.hooksPath runs flight-rules' hooks"
 rm -rf "$D"
 # The hook copies: committed in the old folder, a fresh clone is pointed at those; a
 # clone that pulled the move still names the old folder, and git then runs no hooks.

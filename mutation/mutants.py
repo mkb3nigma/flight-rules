@@ -945,7 +945,7 @@ mut('D136', DOC, '    warn "WORKTREE_DIR is not set, so new worktrees go to', ' 
 mut('D145', DOC, '  for _g in .ai/hooks/agent/pre-commit-check.sh .flight-rules/hooks/agent/pre-commit-check.sh; do', '  for _g in .flight-rules/hooks/agent/pre-commit-check.sh; do', 'flight-rules-doctor', what='doctor: a pre-conf guard copy in .ai/hooks/agent/ is not looked for')
 mut('D144', DOC, '  if [[ $_ig -eq 1 ]]; then', '  if [[ $_ig -eq 1 && -n "$(ls -A .ai/worktrees 2>/dev/null)" ]]; then', 'install flight-rules-doctor', what='doctor: the un-ignored worktree folder is said only while the old one holds worktrees')
 mut('S120', SS, '[ "${WORKTREE_DIR%/}" = "$OLD_WORKTREE_DIR" ] && OLD_WORKTREE_DIR=""', 'OLD_WORKTREE_DIR=""', 'session-start', what='session start: merged worktrees left in .ai/worktrees/ are not reminded of')
-mut('D137', DOC, "   && ! grep -qE '^[[:space:]]*WORKTREE_DIR[[:space:]]*=' \"$CONF\" 2>/dev/null; then", '   ; then', 'install flight-rules-doctor', what='doctor: the old worktree folder is said though WORKTREE_DIR is set')
+mut('D137', DOC, '_wtd="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf WORKTREE_DIR "$CONF")}"', '_wtd="${FLIGHT_RULES_WORKTREE_DIR:-}"', 'install flight-rules-doctor', what='doctor: the old worktree folder is said though WORKTREE_DIR is set')
 mut('D138', DOC, '; [[ ! -d "$ROOT/$_hd" && -d "$ROOT/.ai/hooks" ]] && _hd=.ai/hooks', '', 'install flight-rules-doctor', what='doctor: hooks committed in .ai/hooks are not named')
 mut('D139', DOC, ' — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"', ' — git runs NO hooks"', 'install flight-rules-doctor', what='doctor: a core.hooksPath left on .ai/hooks gets no command')
 mut('D146', DOC, '_hp="${_hp//"$_dot"//}"', ':', 'flight-rules-doctor', what='doctor: core.hooksPath spelled ./.ai/hooks is not read as the old folder')
@@ -1030,6 +1030,9 @@ mut('C77', CM, 'elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its 
 mut('C78', CM, 'elif printf \'%s\\n\' "$NOTE" | grep -c "^passed:" >/dev/null; then', 'elif printf \'%s\\n\' "$NOTE" | grep -q "^passed:"; then', 'merge-gate', what='note gate: a note over the pipe buffer reads as having no passed: line (V14)')
 mut('P231', PCC, '  if [ -z "$remotes" ]; then\n    printf \'This repository has no remote', '  if false; then\n    printf \'This repository has no remote', 'pre-commit-check', what='route: no remote, and the prose sends the pull to origin (V15)')
 mut('P232', PCC, '  if [ -z "$remotes" ]; then\n    :\n', '  if false; then\n    :\n', 'pre-commit-check', what='route: no remote, and its first row fetches from origin, which fails (V15)')
+mut('D159', DOC, 'if [[ -z "$_wtd" && -n "$_adopted" ]]; then', 'if [[ -z "$_wtd" ]]; then', 'flight-rules-doctor', what='doctor: a repository that never adopted flight-rules is told where its worktrees go, every day (V17)')
+mut('D160', DOC, '[[ -n "${HOOKS_DIR:-}" ]] && grep -q "$(hook_marker pre-merge-commit)" "$HOOKS_DIR/pre-merge-commit" 2>/dev/null && _adopted=1', ':', 'flight-rules-doctor', what='doctor: a project with no conf, on its hooks, is not told where its worktrees go (V17)')
+mut('D161', DOC, 'if [[ -z "$_wtd" && -n "$_adopted" ]]; then', 'if [[ -z "$(grep -E \'^[[:space:]]*WORKTREE_DIR[[:space:]]*=\' "$CONF" 2>/dev/null)" && -n "$_adopted" ]]; then', 'flight-rules-doctor', what='doctor: WORKTREE_DIR= set empty silences the notice (V17)')
 mut('T89', RT, '    elif [ -e "$(git_path MERGE_HEAD)" ]; then echo "git commit --no-edit"\n', '', 'ref-gate', what='ref gate: a refused merge is printed the same command, which fails on the unfinished merge (V12)')
 
 
