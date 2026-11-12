@@ -39,9 +39,10 @@
 #    ships `PR_ONLY_BRANCHES=^nothing$` and then merges itself — does not change
 #    what the reviewed upstream says.
 #
-# Bypass: none. `--no-verify` does not apply to reference-transaction, which is the
-# point. To move a PR-only branch to something not on the remote, the owner turns
-# the policy off in the conf AND pushes that change through review.
+# The refusal prints its way through, FLIGHT_RULES_GO_AHEAD=1 <the command that finishes
+# what was refused>, the person's to run (#151). `--no-verify` is not one: it does not
+# reach reference-transaction, which is the point. A project that does not mean to gate
+# a branch changes the policy in the conf and pushes that change through review.
 
 set -uo pipefail
 

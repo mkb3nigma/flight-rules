@@ -148,11 +148,13 @@ STAGED_DIFF=$("${DIFF[@]}" 2>/dev/null | tr -d '\000') || unread $? "${DIFF[*]} 
 # A .env is flagged for every change except its removal (--diff-filter=d): deleting or
 # untracking one is the clean-up. Editing one already tracked is refused like adding it
 # (owner's call, 2026-10-05) — a password typed into committed defaults has no format
-# for the patterns below to catch. A project that commits one on purpose uses
-# --no-verify, deliberately. A rename or copy is listed under its new name only, so
-# its source is added: `git mv .env config.txt` keeps the secrets tracked under a name
-# nothing watches. -M because diff.renames=false lists a rename as a delete and an add,
-# and the delete is filtered out.
+# for the patterns below to catch. The refusal prints its way through,
+# FLIGHT_RULES_GO_AHEAD=1 <the same command>, the person's to run (#151); a project
+# that commits one on purpose takes it, or --no-verify, which skips this hook. A rename
+# or copy is listed under its new name only, so its source is added: `git mv .env
+# config.txt` keeps the secrets tracked under a name nothing watches. -M because
+# diff.renames=false lists a rename as a delete and an add, and the delete is filtered
+# out.
 STAGED_FILES=$("${NAMES[@]}" 2>/dev/null) || unread $? "${NAMES[*]}" "${NAMES[@]}"
 RENAMED_FROM=$("${RENAMES[@]}" 2>/dev/null | awk -F '\t' '{print $2}') || unread $? "${RENAMES[*]} | awk" "${RENAMES[@]}"
 STAGED_FILES="$STAGED_FILES
