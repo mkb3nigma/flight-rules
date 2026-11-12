@@ -6,7 +6,7 @@ criteria; read the criterion itself when a case is unclear: https://www.w3.org/T
 
 These rules are the ones an interface most often fails. They are not the whole standard:
 no rule here covers 1.2.1–1.2.5 (audio and video), 1.3.2, 1.3.3, 1.4.2, 2.1.4, 2.4.5,
-2.5.2, 2.5.4 or 3.1.2. A report says AA was checked only for the rules it loaded, and
+2.5.2, 2.5.4 or 3.1.2, and 1.3.5, 3.3.1–3.3.4, 3.3.7 and 3.3.8 are in `forms.md`. A report says AA was checked only for the rules it loaded, and
 never that the interface meets WCAG AA.
 
 ## Keyboard and focus
@@ -16,14 +16,14 @@ never that the interface meets WCAG AA.
   Space or the arrow keys its role expects. (2.1.1)
 - **A2** [standard] Focus never gets stuck: a person can always Tab, or press Escape,
   out of a widget, a dialog or an embedded frame. (2.1.2)
-- **A3** [standard] The focus order follows the reading order of the layout; a
-  positive `tabindex` is a finding. (2.4.3)
+- **A3** [standard] The focus order preserves meaning and operation: in practice, the
+  reading order of the layout. (2.4.3) A positive `tabindex` is where it usually breaks.
 - **A4** [standard] The focused element is always visibly marked; removing the focus
   outline without a replacement is a finding. (2.4.7)
 - **A5** [standard] A focused element is never wholly hidden behind a sticky header,
   footer or banner. (2.4.11)
-- **A6** [standard] A dialog moves focus into itself when it opens and back to the
-  control that opened it when it closes. (2.4.3)
+- **A6** [standard] A dialog moves focus into itself when it opens. (2.4.3) Moving it back
+  to the control that opened it, when it closes, is the practice beyond the criterion.
 - **A7** [standard] A repeated block — the site navigation — can be skipped: a "skip to
   content" link, or landmarks a screen reader can jump between. (2.4.1)
 

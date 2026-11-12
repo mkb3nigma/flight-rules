@@ -6,7 +6,8 @@ which rules to re-read.
 
 **Living** sources can change under the same URL, and are pinned in `UPSTREAMS.md`, so
 `/upstream-check` notices when they move. **Fixed** sources are published papers: they
-do not change, but newer work can supersede them, which a release review asks.
+do not change, but newer work can supersede them, which no step checks: whoever changes
+a rule resting on one asks it (advisory).
 
 `skills/catalogue.test.sh` checks this file: every rule ID named here exists, and every
 `[standard]` and `[finding]` rule is named in at least one row.

@@ -5,9 +5,9 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
 
 ## Labels and instructions
 
-- **F1** [standard] Every field has a visible label, outside the field, tied to it in
-  the markup (`<label for>`). A placeholder is not a label: it disappears as the person
-  types. (3.3.2, 1.3.1)
+- **F1** [standard] Every field has a label, tied to it in the markup (`<label for>`).
+  (3.3.2, 1.3.1) Visible and outside the field is the practice beyond the criterion: a
+  placeholder is not a label, since it disappears as the person types.
 - **F2** [standard] A requirement is stated before the input, not only in the error
   after it: required fields, formats ("DD/MM/YYYY"), limits ("8 or more characters").
   (3.3.2)
@@ -19,7 +19,8 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
 - **F5** [rule of thumb] Use the input type the value needs (`email`, `tel`, `number`
   only for quantities, `date` or a picker), so phones show the right keyboard.
 - **F6** [rule of thumb] Related fields are grouped with a heading or a `fieldset` and
-  `legend`: an address, a set of radio buttons, a card's details.
+  `legend`: an address, a set of radio buttons, a card's details. Ungrouped, a screen
+  reader announces each radio button with no question it answers.
 
 ## Choices and defaults
 
@@ -89,4 +90,5 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
 - **F25** [rule of thumb] Each step can be reviewed and changed before the final
   submit, and going back does not lose what was entered.
 - **F26** [rule of thumb] A single column of fields, read top to bottom, unless the
-  fields are short and belong together on one line (city, postcode).
+  fields are short and belong together on one line (city, postcode). Side by side, a
+  field is skipped by an eye that reads down.
