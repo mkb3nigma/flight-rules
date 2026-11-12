@@ -164,8 +164,15 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the review's. Every persona brief says: *"Research only — read the subject and produce your
    review. Do NOT edit any files."* A persona subagent has the full toolset, and a
    reviewer that fixes what it found leaves an unreviewed change in the tree the
-   verdict describes. When the subject is code, each brief also carries § Review Domains
-   verbatim, for step 2's reason.
+   verdict describes. A brief to any reviewer with a shell — a persona, step 2's
+   same-family subagent — also says, and simulating both voices you keep it yourself:
+   *"A probe that runs git or writes anything works in a directory it made with
+   `mktemp -d`, never in the repository under review: it enters it with `cd … || exit`,
+   and after `git init` checks that `git rev-parse --show-toplevel` prints what `pwd -P`
+   does."* A reviewer's probe whose `cd` went nowhere ran its git commands, hooks
+   switched off, in the repository under review, and switched its branch (2026-11-12).
+   When the subject is code, each brief also carries § Review Domains verbatim, for
+   step 2's reason.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its
