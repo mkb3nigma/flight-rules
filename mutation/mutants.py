@@ -929,7 +929,7 @@ mut('P220', PMC, "  CONF_PATH='.ai/flight-rules.conf'", '  :', 'merge-gate', wha
 mut('R16', PR, "  CONF_PATH='.ai/flight-rules.conf'", '  :', 'merge-gate', what='pre-rebase: the old conf is not read')
 mut('U27', PP, "  CONF_PATH='.ai/flight-rules.conf'", '  :', 'ref-gate', what='pre-push: the old conf is not read')
 mut('T78', RT, '        || content=$(git show "${ref}:${LEGACY_CONF_PATH}" 2>/dev/null) || return 0', '        || return 0', 'ref-gate merge-gate', what='ref gate: the old conf is not read')
-mut('T79', RT, '    CONF_SHOWN="$LEGACY_CONF_PATH"', '    :', 'ref-gate merge-gate', what='ref gate: boxes name the new conf over an old one')
+mut('T79', RT, '        printf \'%s\' "$LEGACY_CONF_PATH"', '        printf \'%s\' "$CONF_PATH"', 'ref-gate merge-gate', what='ref gate: boxes name the new conf over an old one')
 mut('M52', PM, '    read_conf "$1" "$t/.ai/flight-rules.conf"', '    read_conf "$1" "$t/.flight-rules/conf"', 'merge-gate', what='post-merge: the old conf is not read')
 mut('P221', PCC, "; CONF_NAME='.ai/flight-rules.conf'\n", '\n', 'pre-commit-check', what='guard: the refusal names the new conf over an old one')
 mut('P222', PCC, '[[ ! -f "$CONF_FILE" && -f "${CONF_FILE%/$CONF_NAME}/.ai/flight-rules.conf" ]]', 'false', 'pre-commit-check', what='guard: the old conf is not read')
