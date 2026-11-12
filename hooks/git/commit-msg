@@ -486,13 +486,22 @@ _up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
 
 # The way through: the merge lands without a note the gate takes, and its commit says
 # so, where it can be found later. One command, where the route for a person working
-# alone was a note written by hand, tree hash and all (#149).
-if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, with no pre-merge-check note the gate takes"; then
+# alone was a note written by hand, tree hash and all (#149). What it went past is the
+# cause the box below names, as its title does: "no note" for a stamped branch whose
+# conflict was resolved in the merge, or a catch-up, recorded a reason that was not so
+# (0.29.0 release review, second pass, V11).
+_past=""
+if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -eq 3 ]; then _past="git could not check it against its pre-merge-check note"
+elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its pre-merge-check note checked"
+elif [ -n "$CATCHUP" ]; then _past="a catch-up of $CATCHUP, made as a merge commit"
+elif [ -n "$NOT_CLEAN" ]; then _past="a $NOT_CLEAN that is not git's clean merge"
+fi
+if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, ${_past:+past the note gate: }${_past:-with no pre-merge-check note the gate takes}"; then
     # Replacing one the message already carries: kept, a line written by hand ahead of
     # the merge ("explicit") stood where this one belongs (commit security review, 2026-11-11).
     if [ -n "${1:-}" ] && [ -f "$1" ]; then
         git interpret-trailers --in-place --if-exists replace \
-            --trailer "Merge-authorisation: went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)" "$1"
+            --trailer "Merge-authorisation: went ahead ${_past:+past the note gate: }${_past:-with no pre-merge-check note} (FLIGHT_RULES_GO_AHEAD)" "$1"
     fi
     exit 0
 fi

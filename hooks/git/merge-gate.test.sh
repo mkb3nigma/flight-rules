@@ -1938,5 +1938,14 @@ git -C "$D" checkout -q dev
 OUT=$(cd "$D" && FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit 2>&1); RC=$?
 say "$RC|$(git -C "$D" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)' dev | sed '/^$/d')" "0|went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)" "a message that came with a Merge-authorisation line: the merge lands with the one line, saying it went ahead"
 rm -rf "$D"
+# The record names what was gone past: a stamped branch whose conflict was resolved in
+# the merge has a note, and "no pre-merge-check note" said otherwise (V11).
+stamped_conflict
+(cd "$d" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge -q --no-edit fix/s >/dev/null 2>&1)
+echo resolved > "$d/f"; git -C "$d" add f
+OUT=$(cd "$d" && FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit 2>&1); RC=$?
+say "$RC|$(git -C "$d" log -1 --format='%(trailers:key=Merge-authorisation,valueonly)' dev | sed '/^$/d')" "0|went ahead past the note gate: not the clean merge its pre-merge-check note checked (FLIGHT_RULES_GO_AHEAD)" "a stamped branch, its conflict resolved in the merge: going ahead records that, not 'no note'"
+say "$(grep -c "$GA — the merge of fix/s into dev, past the note gate: not the clean merge its pre-merge-check note checked" <<<"$OUT")" "1" "…and says so as it goes ahead"
+rm -rf "$d"
 
 finish

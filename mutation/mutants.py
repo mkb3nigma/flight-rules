@@ -967,8 +967,8 @@ mut('T80', RT, '    [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 
 mut('T81', RT, '    [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 2>/dev/null && continue', '    [ -n "$_up" ] && continue', 'ref-gate merge-gate', what='ref gate: any move beside an upstream update is let through')
 
 # ---- #151, #149: every stop honours and prints FLIGHT_RULES_GO_AHEAD=1.
-mut('C67', CM, 'if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, with no pre-merge-check note the gate takes"; then', 'if false; then', 'merge-gate secret-scan', what='note gate: no way through')
-mut('C68', CM, '            --trailer "Merge-authorisation: went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)" "$1"', '            "$1"', 'merge-gate secret-scan', what='note gate: going ahead is not recorded')
+mut('C67', CM, 'if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, ${_past:+past the note gate: }', 'if false && go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, ${_past:+past the note gate: }', 'merge-gate secret-scan', what='note gate: no way through')
+mut('C68', CM, '            --trailer "Merge-authorisation: went ahead ${_past:+past the note gate: }', '            "$1" # ', 'merge-gate secret-scan', what='note gate: going ahead is not recorded')
 mut('C69', CM, '    elif go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, with nobody recorded as asking for it"; then', '    elif false; then', 'merge-gate secret-scan', what='who asked: no way through')
 mut('C70', CM, '   && go_ahead "a squash merge committed on $CURRENT_BRANCH, a PR-only branch"; then', '   && false; then', 'merge-gate secret-scan', what='squash guard: no way through')
 mut('C71', CM, '    [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1', '    [ -n "${FLIGHT_RULES_GO_AHEAD:-}" ] || return 1', 'merge-gate secret-scan', what='commit-msg: any value goes ahead')
@@ -1026,6 +1026,7 @@ mut('D157', DOC, '    1) _diff=" — the two files differ, so a 0.28.0 reader fo
 mut('D158', DOC, "then commit %s/)' \"$_hd\"", "then commit %s/)' \".flight-rules/hooks\"", 'flight-rules-doctor', what='doctor: an .ai/hooks/ with no git hooks, and the message names another folder than the command installs into (V16)')
 mut('misc-V11', MP, "if f[1] not in " "RESULTS:", 'if False:', 'docs-consistency', what='verify: a result run.sh never writes passes (V4)')
 mut('misc-R1', 'mutation/run.sh', 'if [ "$cv" != survived ]; then', 'if false; then', 'docs-consistency', what='run.sh: mutants judged down a path that fails with nothing mutated (V4)')
+mut('C77', CM, 'elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its pre-merge-check note checked"', 'elif false; then :', 'merge-gate', what='note gate: going ahead past a stamped, unclean merge records "no note" (V11)')
 
 
 def _check_data():

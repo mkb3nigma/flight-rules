@@ -212,7 +212,9 @@ the same checks in that tool's hook protocol; the point of keeping them in
   there, as on a branch stamped before notes carried their evidence). Or, with nothing
   recorded, the way through the box prints: `FLIGHT_RULES_GO_AHEAD=1 git commit
   --no-edit`, which lands the merge and writes `Merge-authorisation: went ahead with no
-  pre-merge-check note` into it (#149). The box describes it rather than
+  pre-merge-check note` into it (#149) — or, where the box named another cause (a note
+  that did not check this merge, a catch-up), `went ahead past the note gate:` and that
+  cause. The box describes it rather than
   printing it ready to paste: an assistant reads the box too, and only running the
   check may write its note (`engineering-principles.md`, Stops). This check used to live in
   `pre-merge-commit` and was a **silent no-op**:
