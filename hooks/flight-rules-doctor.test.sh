@@ -34,6 +34,8 @@ mkrepo() {
 run() { local d="$1" out rc; out=$(cd "$d" && HOME="$d/fakehome" bash "$DOCTOR" 2>&1); rc=$?; printf '%s\n%s' "$rc" "$out"; }
 rc()  { run "$1" | head -1; }
 has() { run "$1" | tail -n +2 | grep -qF -- "$2"; echo $?; }
+# git with no hooks, to build a fixture's history: the hooks under test are not its subject.
+GN=(git -c core.hooksPath=/dev/null)
 
 echo "Healthy install:"
 D=$(mkrepo)
@@ -1008,6 +1010,34 @@ OUT=$(run "$D")
 say "$(head -1 <<<"$OUT")$(grep -c "core.hooksPath=.ai/hooks, $MOVED" <<<"$OUT")$(grep -c 'commit-msg does not look like the flight-rules hook' <<<"$OUT")$(grep -c 'commit-msg installed and executable' <<<"$OUT")" "1110" "both folders full, still on the old one: the move said, and the stub in the old folder named"
 say "$(grep -c 'post-merge differs from' <<<"$OUT")$(grep -c 'to update:' <<<"$OUT")$(grep -c 'cp .*\.ai/hooks/' <<<"$OUT")" "100" "…a changed copy there named, with no sync and no cp into the old folder offered"
 rm -rf "$D"
+# core.hooksPath is one setting for a clone and all its worktrees, and a relative value
+# resolves in each. Judged from a worktree holding the unmerged copy, the bare command,
+# followed, left the main checkout running no hooks: a staged AWS key committed with
+# exit 0 (0.29.0 release review, second pass, V1).
+D=$(mkrepo); mv "$D/.flight-rules/hooks" "$D/.ai-hooks-tmp"; mkdir -p "$D/.ai"; mv "$D/.ai-hooks-tmp" "$D/.ai/hooks" || die "could not move the hooks to their old place"
+git -C "$D" config core.hooksPath .ai/hooks
+"${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm base || die "could not commit the fixture in $D"
+WT=$(tmpd); "${GN[@]}" -C "$D" worktree add -q "$WT/move" -b chore/move-hooks main || die "could not add a worktree to $D"
+mkdir -p "$WT/move/.flight-rules" && cp -R "$WT/move/.ai/hooks" "$WT/move/.flight-rules/hooks" || die "could not copy the hooks in $WT/move"
+OUT=$(run "$WT/move")
+say "$(head -1 <<<"$OUT")$(grep -c 'git config core.hooksPath .flight-rules/hooks' <<<"$OUT")" "10" "a worktree ahead of the main checkout (the copy unmerged): no command to change core.hooksPath"
+say "$(grep -c "one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $D" <<<"$OUT")" "1" "…and the main checkout, which has none, is named"
+mkdir -p "$D/.flight-rules" && cp -R "$D/.ai/hooks" "$D/.flight-rules/hooks" || die "could not copy the hooks in $D"
+OUT=$(run "$WT/move")
+say "$(grep -c "$MOVED" <<<"$OUT")$(grep -c 'have no copy in' <<<"$OUT")" "10" "…and once every checkout has the copy, the command"
+# After it, a branch cut before the move has only the old folder: git runs no hooks
+# there, and the doctor named no remedy (V1).
+rm -rf "$D/.flight-rules/hooks"; "${GN[@]}" -C "$D" worktree remove --force "$WT/move" || die "could not remove the worktree"
+"${GN[@]}" -C "$D" switch -q -c chore/move && mkdir -p "$D/.flight-rules" && cp -R "$D/.ai/hooks" "$D/.flight-rules/hooks" \
+  && "${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm move && "${GN[@]}" -C "$D" switch -q main \
+  && "${GN[@]}" -C "$D" merge -q --no-ff --no-edit chore/move || die "could not merge the move in $D"
+"${GN[@]}" -C "$D" worktree add -q "$WT/old" -b feature/old 'main^1' || die "could not add the old branch's worktree"
+git -C "$D" config core.hooksPath .flight-rules/hooks
+OUT=$(run "$WT/old")
+say "$(head -1 <<<"$OUT")$(grep -c 'core.hooksPath=.flight-rules/hooks but that directory does not exist in this checkout — this branch predates the hooks'"'"' move from .ai/hooks/, so git runs NO hooks here. Bring the move in: git merge main' <<<"$OUT")" "11" "a worktree behind the move (setting on the new folder, only the old one here): the merge that brings it"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'predates\|have no copy in' <<<"$OUT")" "00" "…and the main checkout, moved, is healthy"
+rm -rf "$D" "$WT"
 
 echo "The doctor reads the conf as the hooks do (#127):"
 say "$(sed -n '/^read_conf() {/,/^}/p' "$DOCTOR")" "$(sed -n '/^read_conf() {/,/^}/p' "$H/agent/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"

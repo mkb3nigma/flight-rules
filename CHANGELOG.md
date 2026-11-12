@@ -40,13 +40,17 @@ worktree folder does not fall back: a project on the default puts its next workt
 - **The conf**, on a branch: `mkdir -p .flight-rules && git mv .ai/flight-rules.conf
   .flight-rules/conf`. Where both exist only the new one is read; the doctor says which
   it found.
-- **The hooks**, in three steps, so that a merge is never made with no hooks running —
-  `core.hooksPath` is one setting for a clone and all its worktrees. On a branch, `cp
-  -R .ai/hooks .flight-rules/hooks`, commit and merge it; the old folder gates that
-  merge. Then, in every clone, `git config core.hooksPath .flight-rules/hooks`. Then, on
-  a later branch, `git rm -r .ai/hooks`. A clone left naming the old folder — gone, or
-  still there with something left in it — is told by the doctor, with the command. A `.claude/settings.json` that
-  `exec`s `.ai/hooks/agent/…` is changed with the copy.
+- **The hooks**, in three steps, so that every checkout runs hooks throughout — the old
+  folder's until the setting changes, the moved ones after. `core.hooksPath` is one
+  setting for a clone and all its worktrees, and resolves in each. On a branch, `mkdir
+  -p .flight-rules && cp -R .ai/hooks .flight-rules/hooks`, commit and merge it; the old
+  folder gates that merge. Then, once every open branch has the copy — the integration
+  branch merged into each; the doctor names any that do not — in every clone, `git
+  config core.hooksPath .flight-rules/hooks`. A branch without the copy then runs no
+  hooks, and the doctor there prints the merge that brings it. Then, on a later branch,
+  `git rm -r .ai/hooks`. A clone left naming the old folder — gone, or still there with
+  something left in it — is told by the doctor, with the command. A
+  `.claude/settings.json` that `exec`s `.ai/hooks/agent/…` is changed with the copy.
 - **The worktrees**: a project that sets `WORKTREE_DIR` changes nothing. One on the
   default either sets `WORKTREE_DIR=.ai/worktrees` to stay, or adds
   `.flight-rules/worktrees/` to `.gitignore`; worktrees already made stay where they

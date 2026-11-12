@@ -1017,6 +1017,10 @@ mut('misc-V6', MP, "bad += ['%s: %d rows' % (i, n) " "for i, n in seen.items() i
 mut('misc-V7', MP, "bad += ['%s: no row — the run did not cover it' % i " "for i in by_id if i not in seen]", 'pass', 'docs-consistency', what='verify: a mutant with no row passes')
 mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "continue", 'continue', 'docs-consistency', what='verify: a row for no such mutant passes')
 
+# ---- 0.29.0 release review, second pass (#163).
+mut('D154', DOC, '        [[ -n "$_has" ]] || _lacking="$_lacking${_lacking:+, }$_p"', '        :', 'flight-rules-doctor', what='doctor: core.hooksPath changed from a worktree with the copy, leaving the main checkout without hooks (V1)')
+mut('D155', DOC, '    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then', '    if false; then', 'flight-rules-doctor', what='doctor: a branch from before the move runs no hooks, with no remedy (V1)')
+
 
 def _check_data():
     seen = set()

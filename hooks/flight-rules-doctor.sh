@@ -48,6 +48,17 @@ cd "$ROOT" || exit 1
 # update hint below named the new path in a project on the old one, and following it
 # made a one-line conf that hid the whole old one (0.29.0 release review, D4).
 CONF=".flight-rules/conf"; [[ ! -f "$CONF" && -f .ai/flight-rules.conf ]] && CONF=".ai/flight-rules.conf"
+# read_conf <key> <file>: pre-commit-check.sh's, verbatim (flight-rules-doctor.test.sh
+# compares), so a value reads here as the hooks read it. Three sed parsers of this
+# script's own took `off  # trunk only` and 'off' for patterns, and printed a ✅ about a
+# note gate beside the ⚠️ that said protection was off (#127).
+read_conf() {
+  local key="$1" file="$2"
+  [ -r "$file" ] || return 1
+  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
+    | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+    | tail -1
+}
 
 # Which flight-rules release shipped this exact file? Searches the plugin cache and
 # prints the version directory's name, or nothing. The same function sits in
@@ -146,20 +157,61 @@ else
       [[ -f "$ROOT/.flight-rules/hooks/$h" ]] && { _old_named=1; break; }
     done
   fi
+  # core.hooksPath is one setting for a clone and every worktree of it, and a relative
+  # value resolves in each. Judged from this checkout alone, the command below, followed
+  # in a worktree holding the unmerged copy, left the main checkout running no hooks: a
+  # staged AWS key committed with exit 0 (0.29.0 release review, second pass, V1). So it
+  # is printed only once every checkout has the copy; the rest are named. A bare entry
+  # runs no hooks, and a worktree whose folder is gone is not there to run any.
+  _lacking=""
+  if [[ -n "$_old_named" ]]; then
+    if _wl=$(git worktree list --porcelain 2>/dev/null \
+        | awk '/^worktree /{ if (p != "") print p; p = substr($0, 10); next } /^bare$/{ p = "" } END { if (p != "") print p }'); then
+      while IFS= read -r _p; do
+        [[ -n "$_p" && -d "$_p" ]] || continue
+        _has=""
+        for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
+          [[ -f "$_p/.flight-rules/hooks/$h" ]] && { _has=1; break; }
+        done
+        [[ -n "$_has" ]] || _lacking="$_lacking${_lacking:+, }$_p"
+      done <<<"$_wl"
+    else
+      _lacking="(the other checkouts: git worktree list failed, so they could not be checked)"
+    fi
+  fi
+  _wait="core.hooksPath is one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $_lacking. Changed now, git runs no hooks in them. Change it once each has the copy — the move merged into the integration branch, then that branch merged into each one still open; this line then prints the command"
   if [[ -n "$_old_named" ]]; then
     if [[ -d "$HOOKS_DIR" ]]; then
-      bad "core.hooksPath=$HOOKS_PATH, the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks"
+      if [[ -n "$_lacking" ]]; then
+        bad "core.hooksPath=$HOOKS_PATH, the folder before 0.29.0, and this checkout has the moved hooks in .flight-rules/hooks/ — git runs the old folder's, so leave it there for now: $_wait"
+      else
+        bad "core.hooksPath=$HOOKS_PATH, the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks"
+      fi
       # The copies checked below are the old folder's, which git runs: checked in the
       # new one, a stub left in the old passed as installed (R1, #160).
       _old_run=1
     else
-      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"
+      if [[ -n "$_lacking" ]]; then
+        bad "core.hooksPath=$HOOKS_PATH but that directory does not exist here — git runs NO hooks in this checkout, whose hooks moved to .flight-rules/hooks/. Yet $_wait"
+      else
+        bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"
+      fi
       # The copies checked below are the moved ones, which run once the line above is.
       HOOKS_PATH=.flight-rules/hooks; HOOKS_DIR="$ROOT/.flight-rules/hooks"
     fi
   fi
   if [[ ! -d "$HOOKS_DIR" ]]; then
-    bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
+    # The setting changed once every checkout had the copy, then a branch cut before the
+    # move checked out: it has only the old folder, so git runs no hooks there (V1).
+    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then
+      _int=$(read_conf INTEGRATION_BRANCH "$CONF"); _int="${_int:-main}"
+      if [[ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" == "$_int" ]]; then _fix="git pull --ff --no-rebase origin $(shq "$_int")"
+      else _fix="git merge $(shq "$_int")"
+      fi
+      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist in this checkout — this branch predates the hooks' move from .ai/hooks/, so git runs NO hooks here. Bring the move in: $_fix"
+    else
+      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
+    fi
   else
     [[ -n "$_old_named" ]] || ok "core.hooksPath=$HOOKS_PATH"
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
@@ -338,17 +390,6 @@ if [[ "${FLIGHT_RULES_GO_AHEAD-}" == 1 ]]; then
 fi
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
-# read_conf <key> <file>: pre-commit-check.sh's, verbatim (flight-rules-doctor.test.sh
-# compares), so a value reads here as the hooks read it. Three sed parsers of this
-# script's own took `off  # trunk only` and 'off' for patterns, and printed a ✅ about a
-# note gate beside the ⚠️ that said protection was off (#127).
-read_conf() {
-  local key="$1" file="$2"
-  [ -r "$file" ] || return 1
-  sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$file" \
-    | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
-    | tail -1
-}
 # The conf in its place before 0.29.0 ($CONF, set at the top). The move is a commit, so
 # it is made on a branch.
 if [[ "$CONF" == .ai/flight-rules.conf ]]; then
