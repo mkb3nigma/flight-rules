@@ -1030,6 +1030,7 @@ mut('C77', CM, 'elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its 
 mut('C78', CM, 'elif printf \'%s\\n\' "$NOTE" | grep -c "^passed:" >/dev/null; then', 'elif printf \'%s\\n\' "$NOTE" | grep -q "^passed:"; then', 'merge-gate', what='note gate: a note over the pipe buffer reads as having no passed: line (V14)')
 mut('P231', PCC, '  if [ -z "$remotes" ]; then\n    printf \'This repository has no remote', '  if false; then\n    printf \'This repository has no remote', 'pre-commit-check', what='route: no remote, and the prose sends the pull to origin (V15)')
 mut('P232', PCC, '  if [ -z "$remotes" ]; then\n    :\n', '  if false; then\n    :\n', 'pre-commit-check', what='route: no remote, and its first row fetches from origin, which fails (V15)')
+mut('T89', RT, '    elif [ -e "$(git_path MERGE_HEAD)" ]; then echo "git commit --no-edit"\n', '', 'ref-gate', what='ref gate: a refused merge is printed the same command, which fails on the unfinished merge (V12)')
 
 
 def _check_data():

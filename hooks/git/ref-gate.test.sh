@@ -828,6 +828,18 @@ finishes "a cherry-pick of two" "git cherry-pick --continue" "feature: y" range_
 finishes "a revert of one commit" "git commit --no-edit" 'Revert "chore: second"' git revert --no-edit HEAD
 finishes "a revert of two" "git commit --no-edit" 'Revert "chore: base"' git revert --no-edit HEAD HEAD~1
 finishes "a git am" "git am --continue" "feature: x" am_patch
+# A merge too, and on the full set install.sh installs, where pre-merge-commit refuses
+# it first and its box prints the finishing command: never run as printed before
+# (0.29.0 release review, second pass, V12).
+finishes "a merge" "git commit --no-edit" "Merge branch 'feature/x'" git merge --no-edit feature/x
+full_set() {
+    local h
+    for h in pre-merge-commit commit-msg pre-rebase post-merge pre-commit pre-push; do
+        cp "$(dirname "$HOOK_SRC")/$h" "$(git config core.hooksPath)/" || return 1
+    done
+    chmod +x "$(git config core.hooksPath)"/*
+}
+FINISH_SETUP=full_set finishes "a merge, with every hook installed" "git commit --no-edit" "Merge branch 'feature/x'" git merge --no-edit feature/x
 # Stopped on a conflict first, resolved, and refused at `--continue` (#161, R4). A side
 # branch off main~1 adds s.txt, which main holds with other content: picking it is an
 # add/add conflict and reverting it a modify/delete one, main and origin unmoved. A box
