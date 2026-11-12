@@ -1056,22 +1056,66 @@ mkdir -p "$WT/move/.flight-rules" && cp -R "$WT/move/.ai/hooks" "$WT/move/.fligh
 OUT=$(run "$WT/move")
 say "$(head -1 <<<"$OUT")$(grep -c 'git config core.hooksPath .flight-rules/hooks' <<<"$OUT")" "10" "a worktree ahead of the main checkout (the copy unmerged): no command to change core.hooksPath"
 say "$(grep -c "one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $D" <<<"$OUT")" "1" "…and the main checkout, which has none, is named"
+# A copy in the main checkout, not committed: the integration branch still lacks it, so
+# a checkout of it made later would run no hooks (W1).
 mkdir -p "$D/.flight-rules" && cp -R "$D/.ai/hooks" "$D/.flight-rules/hooks" || die "could not copy the hooks in $D"
 OUT=$(run "$WT/move")
-say "$(grep -c "$MOVED" <<<"$OUT")$(grep -c 'have no copy in' <<<"$OUT")" "10" "…and once every checkout has the copy, the command"
+say "$(grep -c "$MOVED" <<<"$OUT")$(grep -c 'have no copy in .flight-rules/hooks/ yet: the integration branch main' <<<"$OUT")" "01" "…every checkout with a copy, the integration branch without: still no command, and it is named"
+rm -rf "$D/.flight-rules/hooks"
+"${GN[@]}" -C "$WT/move" add -A && "${GN[@]}" -C "$WT/move" commit -qm move \
+  && "${GN[@]}" -C "$D" merge -q --no-ff --no-edit chore/move-hooks || die "could not merge the move in $D"
+OUT=$(run "$WT/move")
+say "$(grep -c "$MOVED" <<<"$OUT")$(grep -c 'have no copy in' <<<"$OUT")" "10" "…and once the move is merged into it, the command"
 # After it, a branch cut before the move has only the old folder: git runs no hooks
 # there, and the doctor named no remedy (V1).
-rm -rf "$D/.flight-rules/hooks"; "${GN[@]}" -C "$D" worktree remove --force "$WT/move" || die "could not remove the worktree"
-"${GN[@]}" -C "$D" switch -q -c chore/move && mkdir -p "$D/.flight-rules" && cp -R "$D/.ai/hooks" "$D/.flight-rules/hooks" \
-  && "${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm move && "${GN[@]}" -C "$D" switch -q main \
-  && "${GN[@]}" -C "$D" merge -q --no-ff --no-edit chore/move || die "could not merge the move in $D"
-"${GN[@]}" -C "$D" worktree add -q "$WT/old" -b feature/old 'main^1' || die "could not add the old branch's worktree"
+"${GN[@]}" -C "$D" worktree remove --force "$WT/move" || die "could not remove the worktree"
+# Its path has a space in it, and is named whole.
+"${GN[@]}" -C "$D" worktree add -q "$WT/old one" -b feature/old 'main^1' || die "could not add the old branch's worktree"
 git -C "$D" config core.hooksPath .flight-rules/hooks
-OUT=$(run "$WT/old")
+OUT=$(run "$WT/old one")
 say "$(head -1 <<<"$OUT")$(grep -c 'core.hooksPath=.flight-rules/hooks but that directory does not exist in this checkout — this branch predates the hooks'"'"' move from .ai/hooks/, so git runs NO hooks here. Bring the move in: git merge main' <<<"$OUT")" "11" "a worktree behind the move (setting on the new folder, only the old one here): the merge that brings it"
+# From the main checkout, which has the move, that worktree was not mentioned: only a
+# doctor run inside it said it ran no hooks (0.29.0 release review, third pass, W1 (b)).
 OUT=$(run "$D")
-say "$(head -1 <<<"$OUT")$(grep -c 'predates\|have no copy in' <<<"$OUT")" "00" "…and the main checkout, moved, is healthy"
+say "$(head -1 <<<"$OUT")$(grep -c "core.hooksPath=.flight-rules/hooks is one setting for every checkout of this clone, and $WT/old one has no copy in .flight-rules/hooks/ — git runs NO hooks there. Bring the move in, in that checkout: git merge main" <<<"$OUT")" "11" "…and from the main checkout, moved, that worktree is named whole, with the merge"
+"${GN[@]}" -C "$WT/old one" merge -q --no-edit main || die "could not merge main into the old branch"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'core.hooksPath' <<<"$OUT")$(grep -c '✅ core.hooksPath=.flight-rules/hooks$' <<<"$OUT")" "011" "…and once it has the move, the one ok line and nothing else"
 rm -rf "$D" "$WT"
+# One checkout, the move committed on a branch not yet in the integration branch: the
+# command was printed, and a switch to the integration branch ran no hooks (W1 (a)).
+D=$(mkrepo); mv "$D/.flight-rules/hooks" "$D/.ai-hooks-tmp"; mkdir -p "$D/.ai"; mv "$D/.ai-hooks-tmp" "$D/.ai/hooks" || die "could not move the hooks to their old place"
+git -C "$D" config core.hooksPath .ai/hooks
+"${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm base || die "could not commit the fixture in $D"
+"${GN[@]}" -C "$D" switch -q -c chore/move && cp -R "$D/.ai/hooks" "$D/.flight-rules/hooks" \
+  && "${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm move || die "could not commit the move in $D"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'git config core.hooksPath .flight-rules/hooks' <<<"$OUT")$(grep -c 'have no copy in .flight-rules/hooks/ yet: the integration branch main (merge the move into it first)' <<<"$OUT")" "101" "one checkout, the move not in the integration branch: no command, and the integration branch named"
+"${GN[@]}" -C "$D" switch -q main && "${GN[@]}" -C "$D" merge -q --no-ff --no-edit chore/move || die "could not merge the move in $D"
+OUT=$(run "$D")
+say "$(grep -c "$MOVED" <<<"$OUT")$(grep -c 'have no copy in' <<<"$OUT")" "10" "…once it has the move, the command"
+# A worktree whose branch has neither folder (an orphan docs branch) loses nothing when
+# the setting changes, and held the command back for as long as it existed (W1 (c)).
+WT=$(tmpd); "${GN[@]}" -C "$D" worktree add -q --detach "$WT/docs" || die "could not add the docs worktree"
+"${GN[@]}" -C "$WT/docs" checkout -q --orphan docs && "${GN[@]}" -C "$WT/docs" rm -rqf . && echo d > "$WT/docs/d.md" \
+  && "${GN[@]}" -C "$WT/docs" add d.md && "${GN[@]}" -C "$WT/docs" commit -qm docs || die "could not make the orphan docs branch"
+OUT=$(run "$D")
+say "$(grep -c "$MOVED" <<<"$OUT")$(grep -c 'have no copy in' <<<"$OUT")" "10" "…and a worktree on an orphan branch with neither folder does not hold it back"
+rm -rf "$D" "$WT"
+# The setting on the new folder, in a checkout of an integration branch the move has not
+# reached: a pull of it was printed, which brings nothing (W1, 3).
+D=$(mkrepo); mv "$D/.flight-rules/hooks" "$D/.ai-hooks-tmp"; mkdir -p "$D/.ai"; mv "$D/.ai-hooks-tmp" "$D/.ai/hooks" || die "could not move the hooks to their old place"
+"${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm base || die "could not commit the fixture in $D"
+OUT=$(run "$D")
+say "$(head -1 <<<"$OUT")$(grep -c 'git pull\|git merge' <<<"$OUT")$(grep -c 'so git runs NO hooks here. The move has not reached main either: merge the branch that carries it into main. Until then, what runs this checkout'"'"'s hooks is git config core.hooksPath .ai/hooks$' <<<"$OUT")" "101" "the setting moved, on an integration branch without the move: no pull of it, and the command that runs the old hooks"
+rm -rf "$D"
+# The other checkouts unread, with the setting on the new folder: said, not taken for
+# none lagging (W1).
+D=$(mkrepo); SH=$(tmpd); REALGIT=$(command -v git)
+printf '#!/bin/sh\n[ "$1" = worktree ] && [ "$2" = list ] && exit 128\nexec "%s" "$@"\n' "$REALGIT" > "$SH/git" && chmod +x "$SH/git" || die "could not make the git shim"
+OUT=$(cd "$D" && PATH="$SH:$PATH" HOME="$D/fakehome" bash "$DOCTOR" 2>&1)
+say "$(grep -c '⚠️  core.hooksPath is one setting for every checkout of this clone, and (the other checkouts: git worktree list failed, so they could not be checked)' <<<"$OUT")" "1" "git worktree list failing, the setting on the new folder: said"
+rm -rf "$D" "$SH"
 
 echo "The doctor reads the conf as the hooks do (#127):"
 say "$(sed -n '/^read_conf() {/,/^}/p' "$DOCTOR")" "$(sed -n '/^read_conf() {/,/^}/p' "$H/agent/pre-commit-check.sh")" "read_conf is pre-commit-check.sh's, verbatim"

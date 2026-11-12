@@ -49,10 +49,12 @@ worktree folder does not fall back: a project on the default puts its next workt
   folder's until the setting changes, the moved ones after. `core.hooksPath` is one
   setting for a clone and all its worktrees, and resolves in each. On a branch, `mkdir
   -p .flight-rules && cp -R .ai/hooks .flight-rules/hooks`, commit and merge it; the old
-  folder gates that merge. Then, once every open branch has the copy — the integration
-  branch merged into each; the doctor names any that do not — in every clone, `git
-  config core.hooksPath .flight-rules/hooks`. A branch without the copy then runs no
-  hooks, and the doctor there prints the merge that brings it. Then, on a later branch,
+  folder gates that merge. Then, once every checkout and the integration branch have
+  the copy — the integration branch merged into each checkout; the doctor names any
+  checkout without it, and the integration branch, and prints the command only then —
+  in every clone, `git config core.hooksPath .flight-rules/hooks`. A checkout without
+  the copy then runs no hooks: the doctor, there or in any other checkout, names it and
+  the merge that brings it. Then, on a later branch,
   `git rm -r .ai/hooks`. A clone left naming the old folder — gone, or still there with
   something left in it — is told by the doctor, with the command. A
   `.claude/settings.json` that `exec`s `.ai/hooks/agent/…` is changed with the copy.

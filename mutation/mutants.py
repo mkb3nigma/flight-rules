@@ -1018,7 +1018,7 @@ mut('misc-V7', MP, "bad += ['%s: no row — the run did not cover it' % i " "for
 mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "continue", 'continue', 'docs-consistency', what='verify: a row for no such mutant passes')
 
 # ---- 0.29.0 release review, second pass (#163).
-mut('D154', DOC, '        [[ -n "$_has" ]] || _lacking="$_lacking${_lacking:+, }$_p"', '        :', 'flight-rules-doctor', what='doctor: core.hooksPath changed from a worktree with the copy, leaving the main checkout without hooks (V1)')
+mut('D154', DOC, '        would_lose dir "$_p" || continue', '        continue', 'flight-rules-doctor', what='doctor: core.hooksPath changed from a worktree with the copy, leaving the main checkout without hooks (V1)')
 mut('D155', DOC, '    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then', '    if false; then', 'flight-rules-doctor', what='doctor: a branch from before the move runs no hooks, with no remedy (V1)')
 mut('R012', SSR, '  [ -z "$_top" ] || RULES="$_top/.ai/rules/engineering-principles.md"', '  :', 'wiring', what='hand-wired from .flight-rules/hooks/, the rules in .ai/rules/ are not read (V2)')
 mut('D156', DOC, 'mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf, and commit both', 'mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf', 'flight-rules-doctor', what='doctor: the conf moved, so a 0.28.0 reader falls back to its defaults (V3)')
@@ -1034,6 +1034,12 @@ mut('D159', DOC, 'if [[ -z "$_wtd" && -n "$_adopted" ]]; then', 'if [[ -z "$_wtd
 mut('D160', DOC, '[[ -n "${HOOKS_DIR:-}" ]] && grep -q "$(hook_marker pre-merge-commit)" "$HOOKS_DIR/pre-merge-commit" 2>/dev/null && _adopted=1', ':', 'flight-rules-doctor', what='doctor: a project with no conf, on its hooks, is not told where its worktrees go (V17)')
 mut('D161', DOC, 'if [[ -z "$_wtd" && -n "$_adopted" ]]; then', 'if [[ -z "$(grep -E \'^[[:space:]]*WORKTREE_DIR[[:space:]]*=\' "$CONF" 2>/dev/null)" && -n "$_adopted" ]]; then', 'flight-rules-doctor', what='doctor: WORKTREE_DIR= set empty silences the notice (V17)')
 mut('T89', RT, '    elif [ -e "$(git_path MERGE_HEAD)" ]; then echo "git commit --no-edit"\n', '', 'ref-gate', what='ref gate: a refused merge is printed the same command, which fails on the unfinished merge (V12)')
+# ---- 0.29.0 release review, third pass (#165).
+mut('D162', DOC, '      && would_lose ref "refs/heads/$_int" && _int_lacks=1', '      && false && _int_lacks=1', 'flight-rules-doctor', what='doctor: one checkout on the move, the integration branch without it, and the command printed (W1 a)')
+mut('D163', DOC, '    [[ -n "$old" ]]\n  }', '    :\n  }', 'flight-rules-doctor', what='doctor: a worktree with neither folder holds the command back for as long as it exists (W1 c)')
+mut('D164', DOC, '    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && "$HOOKS_PATH" != /* ]]; then', '    if false; then', 'flight-rules-doctor', what='doctor: the setting moved, and a worktree on a branch from before the move runs no hooks unsaid (W1 b)')
+mut('D165', DOC, '      if git rev-parse -q --verify "refs/heads/$_int" >/dev/null 2>&1 && would_lose ref "refs/heads/$_int"; then', '      if false; then', 'flight-rules-doctor', what='doctor: a pull of an integration branch the move has not reached, printed as the remedy (W1 3)')
+mut('D166', DOC, '      if [[ -n "$_lacking" && -z "$_lacking_l" ]]; then', '      if false; then', 'flight-rules-doctor', what='doctor: git worktree list failing, with the setting moved, reads as no checkout lagging (W1)')
 
 
 def _check_data():

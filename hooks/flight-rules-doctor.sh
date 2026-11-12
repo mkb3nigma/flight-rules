@@ -162,29 +162,57 @@ else
   # core.hooksPath is one setting for a clone and every worktree of it, and a relative
   # value resolves in each. Judged from this checkout alone, the command below, followed
   # in a worktree holding the unmerged copy, left the main checkout running no hooks: a
-  # staged AWS key committed with exit 0 (0.29.0 release review, second pass, V1). So it
-  # is printed only once every checkout has the copy; the rest are named. A bare entry
-  # runs no hooks, and a worktree whose folder is gone is not there to run any.
-  _lacking=""
-  if [[ -n "$_old_named" ]]; then
+  # staged AWS key committed with exit 0 (0.29.0 release review, second pass, V1). Judged
+  # from the checkouts alone, it was printed in a single checkout on the branch that
+  # holds the move, and a switch to the integration branch, which lacks it, ran none;
+  # with the setting changed, a worktree on a branch cut before the move ran none and
+  # nothing said so (third pass, W1). So every checkout and the local integration branch
+  # are judged by one test, and what would lose its hooks is named. A bare entry runs no
+  # hooks, and a worktree whose folder is gone is not there to run any.
+  # would_lose <dir|ref> <place>: <place> holds one of the seven in .ai/hooks/ and none in
+  # .flight-rules/hooks/. One with neither folder (an orphan docs branch) loses nothing.
+  would_lose() {
+    local h old=""
+    for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
+      if [[ "$1" == ref ]]; then
+        git cat-file -e "$2:.flight-rules/hooks/$h" 2>/dev/null && return 1
+        [[ -z "$old" ]] && git cat-file -e "$2:.ai/hooks/$h" 2>/dev/null && old=1
+      else
+        [[ -f "$2/.flight-rules/hooks/$h" ]] && return 1
+        [[ -f "$2/.ai/hooks/$h" ]] && old=1
+      fi
+    done
+    [[ -n "$old" ]]
+  }
+  _int=$(read_conf INTEGRATION_BRANCH "$CONF"); _int="${_int:-main}"
+  # lagging: _lacking, the checkouts that would lose their hooks (or why they could not be
+  # read), one per line in _lacking_l, and _int_lacks, set when the local integration
+  # branch would; absent, skipped.
+  lagging() {
+    local _wl _p
+    _lacking=""; _lacking_l=""; _int_lacks=""
     if _wl=$(git worktree list --porcelain 2>/dev/null \
         | awk '/^worktree /{ if (p != "") print p; p = substr($0, 10); next } /^bare$/{ p = "" } END { if (p != "") print p }'); then
       while IFS= read -r _p; do
         [[ -n "$_p" && -d "$_p" ]] || continue
-        _has=""
-        for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
-          [[ -f "$_p/.flight-rules/hooks/$h" ]] && { _has=1; break; }
-        done
-        [[ -n "$_has" ]] || _lacking="$_lacking${_lacking:+, }$_p"
+        would_lose dir "$_p" || continue
+        _lacking="$_lacking${_lacking:+, }$_p"; _lacking_l="$_lacking_l$_p
+"
       done <<<"$_wl"
     else
       _lacking="(the other checkouts: git worktree list failed, so they could not be checked)"
     fi
-  fi
-  _wait="core.hooksPath is one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $_lacking. Changed now, git runs no hooks in them. Change it once each has the copy — the move merged into the integration branch, then that branch merged into each one still open; this line then prints the command"
+    git rev-parse -q --verify "refs/heads/$_int" >/dev/null 2>&1 \
+      && would_lose ref "refs/heads/$_int" && _int_lacks=1
+    return 0
+  }
+  _lacking=""; _int_lacks=""
+  [[ -n "$_old_named" ]] && lagging
+  _named="$_lacking${_int_lacks:+${_lacking:+, }the integration branch $_int (merge the move into it first)}"
+  _wait="core.hooksPath is one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $_named. Changed now, git runs no hooks in them. Change it once each has the copy — the move merged into the integration branch, then that branch merged into each one still open; this line then prints the command"
   if [[ -n "$_old_named" ]]; then
     if [[ -d "$HOOKS_DIR" ]]; then
-      if [[ -n "$_lacking" ]]; then
+      if [[ -n "$_named" ]]; then
         bad "core.hooksPath=$HOOKS_PATH, the folder before 0.29.0, and this checkout has the moved hooks in .flight-rules/hooks/ — git runs the old folder's, so leave it there for now: $_wait"
       else
         bad "core.hooksPath=$HOOKS_PATH, the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks"
@@ -193,7 +221,7 @@ else
       # new one, a stub left in the old passed as installed (R1, #160).
       _old_run=1
     else
-      if [[ -n "$_lacking" ]]; then
+      if [[ -n "$_named" ]]; then
         bad "core.hooksPath=$HOOKS_PATH but that directory does not exist here — git runs NO hooks in this checkout, whose hooks moved to .flight-rules/hooks/. Yet $_wait"
       else
         bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks — the hooks moved to .flight-rules/hooks/: git config core.hooksPath .flight-rules/hooks"
@@ -204,17 +232,41 @@ else
   fi
   if [[ ! -d "$HOOKS_DIR" ]]; then
     # The setting changed once every checkout had the copy, then a branch cut before the
-    # move checked out: it has only the old folder, so git runs no hooks there (V1).
+    # move checked out: it has only the old folder, so git runs no hooks there (V1). Where
+    # the local integration branch lacks the move too, pulling or merging it brings
+    # nothing: the move goes into it first (W1).
     if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then
-      _int=$(read_conf INTEGRATION_BRANCH "$CONF"); _int="${_int:-main}"
-      if [[ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" == "$_int" ]]; then _fix="git pull --ff --no-rebase origin $(shq "$_int")"
-      else _fix="git merge $(shq "$_int")"
+      _cur=$(git symbolic-ref -q --short HEAD 2>/dev/null)
+      if git rev-parse -q --verify "refs/heads/$_int" >/dev/null 2>&1 && would_lose ref "refs/heads/$_int"; then
+        [[ "$_cur" == "$_int" ]] && _fix="" || _fix=", then $_int into this one"
+        _fix="The move has not reached $_int either: merge the branch that carries it into $_int$_fix. Until then, what runs this checkout's hooks is git config core.hooksPath .ai/hooks"
+      elif [[ "$_cur" == "$_int" ]]; then _fix="Bring the move in: git pull --ff --no-rebase origin $(shq "$_int")"
+      else _fix="Bring the move in: git merge $(shq "$_int")"
       fi
-      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist in this checkout — this branch predates the hooks' move from .ai/hooks/, so git runs NO hooks here. Bring the move in: $_fix"
+      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist in this checkout — this branch predates the hooks' move from .ai/hooks/, so git runs NO hooks here. $_fix"
     else
       bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
     fi
   else
+    # The setting on the new folder, and this checkout has it: a worktree on a branch cut
+    # before the move, or an integration branch without it, runs no hooks, and only a
+    # doctor run there said so (W1). A value that is not relative resolves to this
+    # checkout's folder everywhere, so nothing else is read.
+    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && "$HOOKS_PATH" != /* ]]; then
+      lagging
+      if [[ -n "$_int_lacks" ]]; then
+        bad "core.hooksPath=$HOOKS_PATH, but the integration branch, $_int, has no copy in .flight-rules/hooks/ — git runs NO hooks in a checkout of it. Merge the branch that carries the move into $_int"
+      fi
+      if [[ -n "$_lacking" && -z "$_lacking_l" ]]; then
+        warn "core.hooksPath is one setting for every checkout of this clone, and $_lacking"
+      else
+        _then=${_int_lacks:+once the move is in $_int, }
+        while IFS= read -r _w; do
+          [[ -n "$_w" ]] || continue
+          bad "core.hooksPath=$HOOKS_PATH is one setting for every checkout of this clone, and $_w has no copy in .flight-rules/hooks/ — git runs NO hooks there. Bring the move in, ${_then}in that checkout: git merge $(shq "$_int")"
+        done <<<"$_lacking_l"
+      fi
+    fi
     [[ -n "$_old_named" ]] || ok "core.hooksPath=$HOOKS_PATH"
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
