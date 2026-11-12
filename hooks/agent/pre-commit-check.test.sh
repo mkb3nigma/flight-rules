@@ -134,8 +134,9 @@ echo "Shell metacharacters must not smuggle a destructive command past the guard
 # Regression: the first version enumerated separators (space ; & |) and so missed "("
 # entirely — a subshell or command substitution was allowed on a protected branch.
 # Found in the wild: a verification command of the form `echo x && (git rm ...)` ran
-# unblocked on dev. The subshell, `$( … )`, brace-group, pipe and `&&` shapes are crossed
-# with every core in "Shape coverage" below; the backtick is the one the product lacks.
+# unblocked on dev. The subshell, pipe and `&&` shapes are crossed with every core in
+# "Shape coverage" below, where `$( … )` and the brace group were trimmed as asserting
+# what the subshell does; the backtick is crossed with none, so it has its own case.
 check "backtick substitution"            deny  dev 'out=`git rm f.txt`'
 # ...without matching words that merely contain the letters "git"
 check "mygit is not git"                 allow dev 'mygit rm f.txt'
