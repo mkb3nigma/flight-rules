@@ -90,8 +90,10 @@ a `trigger: always_on` header for Antigravity (the session-start hook strips it 
 injecting), and changes three things an assistant does: it never takes the way through
 a stop prints, even when told to go ahead; it does not push to a protected branch
 unless the person asks in that session; and a reply that reports work or asks for a
-decision is written as Situation, Background, Assessment, Recommendation, decisions
-last (§7). A project that copied them runs `/rules-sync` to fold the changes in; one
+decision assumes the reader remembers none of the earlier context and ends with the
+decisions it needs, each decidable alone, last (§7), with no two of its lists sharing a
+numbering — the Situation, Background, Assessment, Recommendation headings are this
+repo's own convention, not the shipped rule. A project that copied them runs `/rules-sync` to fold the changes in; one
 that reads the plugin's copy needs nothing.
 
 **Skills changed**: `/commit`, `/dg`, `/feature-start`, `/pr-create`,
