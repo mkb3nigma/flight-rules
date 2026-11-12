@@ -119,7 +119,7 @@ jobs:
             in_s && /[^[:space:]]/ && !/^#/ { n++ }
             END { print n + 0 }') || { echo "::error::could not read the PR body (awk exited $?)"; exit 1; }
           if [ "$n" -eq 0 ]; then
-            echo "::error::PR into main has no filled '## Upstream check' section — run /upstream-check and put its report there: each source up to date, or what changed and whether this release takes it"
+            echo "::error::PR into main has no filled '## Upstream check' section — run /upstream-check and put its report there: each source up to date, or what changed and whether this release takes it. The way past this check is the owner's admin merge, the emergency path AGENTS.md names"
             exit 1
           fi
           echo "ok  Upstream check section present and filled"
@@ -140,7 +140,7 @@ jobs:
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          route="from a clean worktree of it — git worktree add --detach .flight-rules/worktrees/mutation $HEAD_SHA (one left from an earlier run: git worktree remove .flight-rules/worktrees/mutation first), then mutation/run.sh -j 4 there — and push the stamp it writes: git push origin refs/notes/mutation. A pushed note starts no check, so then re-run this one (Re-run jobs, on the PR's Checks tab) or edit the PR body, which re-runs it"
+          route="from a clean worktree of it — git worktree add --detach .flight-rules/worktrees/mutation $HEAD_SHA (one left from an earlier run: git worktree remove .flight-rules/worktrees/mutation first), then mutation/run.sh -j 4 there — and push the stamp it writes: git push origin refs/notes/mutation. A pushed note starts no check, so then re-run this one (Re-run jobs, on the PR's Checks tab) or edit the PR body, which re-runs it. The way past this check is the owner's admin merge, the emergency path AGENTS.md names"
           if ! git fetch -q origin refs/notes/mutation:refs/notes/mutation; then
             echo "::error::no mutation stamps on origin (refs/notes/mutation not pushed, or not fetched: git's message is above) — run the kit $route"
             exit 1

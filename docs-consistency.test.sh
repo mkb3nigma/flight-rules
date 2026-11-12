@@ -266,7 +266,8 @@ else
   ustep() { BODY="$1" PATH="${2:+$2:}$PATH" bash -e -c "$URUN" 2>&1; }
   UP=$(printf '## Upstream check\nAll three sources up to date.\n## Testing\n')
   OUT=$(ustep "$FULL"); RC=$?
-  [ "$RC" -ne 0 ] && ok "the upstream step fails a body with no Upstream check section" || bad "the upstream step passes a body with no section (exit $RC: $OUT)"
+  # Every refusal prints its way through too, here the owner's admin merge (V21).
+  [ "$RC" -ne 0 ] && grep -q "The way past this check is the owner's admin merge" <<<"$OUT" && ok "the upstream step fails a body with no Upstream check section, printing the way past" || bad "the upstream step passes a body with no section, or prints no way past (exit $RC: $OUT)"
   OUT=$(ustep "$(printf '## Upstream check\n## Testing\nx\n')"); RC=$?
   [ "$RC" -ne 0 ] && ok "…fails an empty section" || bad "the upstream step passes an empty section (exit $RC: $OUT)"
   OUT=$(ustep "$UP"); RC=$?
@@ -329,7 +330,7 @@ NOPE	killed	suite"                                                              
   HS=$(git -C "$CO" rev-parse HEAD)
   mstep() { (cd "$CO" && HEAD_SHA=$HS bash -e -c "$MRUN" 2>&1); }
   OUT=$(mstep); RC=$?
-  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q 'git push origin refs/notes/mutation' <<<"$OUT" && grep -q 're-run this one' <<<"$OUT" && ok "the stamp step fails when no stamp was pushed, printing the push and the re-run" || bad "the stamp step passes, or prints no push, with no stamp pushed (exit $RC: $OUT)"
+  [ "$RC" -ne 0 ] && ! grep -q '^ok ' <<<"$OUT" && grep -q 'git push origin refs/notes/mutation' <<<"$OUT" && grep -q 're-run this one' <<<"$OUT" && grep -q "The way past this check is the owner's admin merge" <<<"$OUT" && ok "the stamp step fails when no stamp was pushed, printing the push, the re-run and the way past" || bad "the stamp step passes, or prints no push or way past, with no stamp pushed (exit $RC: $OUT)"
   H=$HS; stamp "$(clean "$HS")" >"$SD/good"; stamp "$(clean "$HS")" "/^$FIRST	/d" >"$SD/short"
   "${G[@]}" -C "$ORG" commit -q --allow-empty -m later && "${G[@]}" -C "$ORG" notes --ref=mutation add -F "$SD/good" HEAD || die "could not stamp the later commit"
   OUT=$(mstep); RC=$?
