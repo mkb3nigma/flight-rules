@@ -1021,6 +1021,8 @@ mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "c
 mut('D154', DOC, '        [[ -n "$_has" ]] || _lacking="$_lacking${_lacking:+, }$_p"', '        :', 'flight-rules-doctor', what='doctor: core.hooksPath changed from a worktree with the copy, leaving the main checkout without hooks (V1)')
 mut('D155', DOC, '    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then', '    if false; then', 'flight-rules-doctor', what='doctor: a branch from before the move runs no hooks, with no remedy (V1)')
 mut('R012', SSR, '  [ -z "$_top" ] || RULES="$_top/.ai/rules/engineering-principles.md"', '  :', 'wiring', what='hand-wired from .flight-rules/hooks/, the rules in .ai/rules/ are not read (V2)')
+mut('D156', DOC, 'mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf, and commit both', 'mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf', 'flight-rules-doctor', what='doctor: the conf moved, so a 0.28.0 reader falls back to its defaults (V3)')
+mut('D157', DOC, '    1) _diff=" — the two files differ, so a 0.28.0 reader follows another policy than this one: make them the same until the old one goes" ;;', '    1) _diff="" ;;', 'flight-rules-doctor', what='doctor: two confs that differ are not named (V3, V30)')
 
 
 def _check_data():

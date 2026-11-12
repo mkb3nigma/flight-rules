@@ -37,9 +37,14 @@ updates the copies there until the moved set exists beside them, and a fresh clo
 worktree folder does not fall back: a project on the default puts its next worktree in
 `.flight-rules/worktrees/` (below). To move:
 
-- **The conf**, on a branch: `mkdir -p .flight-rules && git mv .ai/flight-rules.conf
-  .flight-rules/conf`. Where both exist only the new one is read; the doctor says which
-  it found.
+- **The conf**, in two steps, like the hooks: a 0.28.0 hook or plugin reads only
+  `.ai/flight-rules.conf`, and finding none falls back to its built-in defaults without
+  a word — a custom branch pattern, the note gate, `PROTECTED_BRANCHES=off` undone. On a
+  branch, `mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf`, and
+  commit both; 0.29.0 reads the new file, 0.28.0 the old. Later, once the committed
+  hook copies are 0.29.0's and every clone's plugin is on 0.29.0, on a branch: `git rm
+  .ai/flight-rules.conf`. Until then a change to the policy goes in both; the doctor
+  says which file it read, and when the two differ.
 - **The hooks**, in three steps, so that every checkout runs hooks throughout — the old
   folder's until the setting changes, the moved ones after. `core.hooksPath` is one
   setting for a clone and all its worktrees, and resolves in each. On a branch, `mkdir

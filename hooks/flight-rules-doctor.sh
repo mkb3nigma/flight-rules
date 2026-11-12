@@ -391,11 +391,21 @@ fi
 
 # ── 3. The conf: known keys only, values that compile ─────────────────────────
 # The conf in its place before 0.29.0 ($CONF, set at the top). The move is a commit, so
-# it is made on a branch.
+# it is made on a branch. A copy first, not a git mv: a 0.28.0 hook or plugin reads only
+# the old file, and with it moved fell back to its defaults without a word — a custom
+# branch pattern undone, reproduced (0.29.0 release review, second pass, V3). So the old
+# file stays until nothing on 0.28.0 is left to read it, and while both are there, a
+# difference between them is a policy that depends on which release reads it (V30).
 if [[ "$CONF" == .ai/flight-rules.conf ]]; then
-  warn "the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf"
+  warn "the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf, and commit both. Leave the old file for now: a 0.28.0 hook or plugin reads only that one, and without it falls back to its built-in defaults"
 elif [[ -f .ai/flight-rules.conf ]]; then
-  warn ".ai/flight-rules.conf is not read: .flight-rules/conf is there, and wins. Once nothing in it is missing from the new one, on a branch: git rm .ai/flight-rules.conf"
+  cmp -s .ai/flight-rules.conf "$CONF"; _c=$?
+  case $_c in
+    0) _diff="" ;;
+    1) _diff=" — the two files differ, so a 0.28.0 reader follows another policy than this one: make them the same until the old one goes" ;;
+    *) _diff=" — could not compare the two (cmp exited $_c)" ;;
+  esac
+  warn ".ai/flight-rules.conf is not read: .flight-rules/conf is there, and wins. Only a 0.28.0 hook or plugin reads the old one; once every committed hook copy is 0.29.0's and every clone's plugin is on 0.29.0, on a branch: git rm .ai/flight-rules.conf$_diff"
 fi
 # The default worktree folder moved with it, and has no fallback (owner, 2026-11-11). A
 # project that never set WORKTREE_DIR puts its next worktree in .flight-rules/worktrees/;

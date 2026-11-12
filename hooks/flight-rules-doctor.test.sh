@@ -944,11 +944,17 @@ echo "What a project still on .ai/ is told (#153):"
 D=$(mkrepo); mkdir -p "$D/.ai"; mv "$D/.flight-rules/conf" "$D/.ai/flight-rules.conf" || die "could not move the conf to its old place"
 printf 'PROTECTD_BRANCHES=^main$\n' >> "$D/.ai/flight-rules.conf"
 OUT=$(run "$D")
-say "$(grep -c 'the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf' <<<"$OUT")" "1" "the conf in its old place: said, with the move"
+# A copy, not a git mv: a 0.28.0 hook or plugin reads only the old file, and moved, it
+# fell back to its defaults without a word — a custom pattern undone (V3, reproduced).
+say "$(grep -c 'the conf is at .ai/flight-rules.conf, its place before 0.29.0 — still read there. To move it, on a branch: mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf, and commit both. Leave the old file for now: a 0.28.0 hook or plugin reads only that one' <<<"$OUT")$(grep -c 'git mv' <<<"$OUT")" "10" "the conf in its old place: said, with the copy, not a move"
 say "$(grep -c ".ai/flight-rules.conf: unknown key 'PROTECTD_BRANCHES'" <<<"$OUT")" "1" "…and it is the file that is checked"
 printf 'PROTECTED_BRANCHES=^main$\n' > "$D/.flight-rules/conf"
 OUT=$(run "$D")
 say "$(grep -c '.ai/flight-rules.conf is not read: .flight-rules/conf is there, and wins' <<<"$OUT")$(grep -c 'unknown key' <<<"$OUT")" "10" "a conf in both places: the old one is said not to be read, and is not"
+say "$(grep -c 'Only a 0.28.0 hook or plugin reads the old one; once every committed hook copy is 0.29.0'"'"'s and every clone'"'"'s plugin is on 0.29.0, on a branch: git rm .ai/flight-rules.conf' <<<"$OUT")$(grep -c 'the two files differ, so a 0.28.0 reader follows another policy than this one' <<<"$OUT")" "11" "…who still reads it, when to remove it, and that the two differ"
+cp "$D/.flight-rules/conf" "$D/.ai/flight-rules.conf"
+OUT=$(run "$D")
+say "$(grep -c 'Only a 0.28.0 hook or plugin reads the old one' <<<"$OUT")$(grep -c 'differ' <<<"$OUT")" "10" "…and the same two files: no word of a difference"
 rm "$D/.ai/flight-rules.conf"
 OUT=$(run "$D")
 # By its sentences, not by ".ai/": a path the doctor prints may hold that itself.
