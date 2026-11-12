@@ -208,8 +208,15 @@ else
   }
   _lacking=""; _int_lacks=""
   [[ -n "$_old_named" ]] && lagging
-  _named="$_lacking${_int_lacks:+${_lacking:+, }the integration branch $_int (merge the move into it first)}"
-  _wait="core.hooksPath is one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $_named. Changed now, git runs no hooks in them. Change it once each has the copy — the move merged into the integration branch, then that branch merged into each one still open; this line then prints the command"
+  # How the move reaches a branch, and what runs the hooks meanwhile: written once, for
+  # every message below. A merge or pull command printed for another branch or checkout
+  # was wrong where the local integration branch lagged origin's, and on a branch that
+  # moves only by PR, where the hooks refuse the merge (0.29.0 release review, fourth
+  # pass, X1/X2); the doctor names the fault and the kinds of route, not a command.
+  _route="The move reaches a branch by that branch's usual route: a pull where origin has it, a merge of $_int on a work branch, its PR where the branch moves only by PR"
+  _meantime="Until then, git config core.hooksPath .ai/hooks runs the old folder's hooks; it is one setting for the whole clone, and a checkout that has already removed .ai/hooks/ runs no hooks under it until it is changed back"
+  _named="$_lacking${_int_lacks:+${_lacking:+, }the local integration branch $_int}"
+  _wait="core.hooksPath is one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $_named. Changed now, git runs no hooks in them. Change it once each has the copy; this line then prints the command. $_route; a checkout on a branch that moves only by PR gets the copy at that PR, or can be switched to a branch that has it"
   if [[ -n "$_old_named" ]]; then
     if [[ -d "$HOOKS_DIR" ]]; then
       if [[ -n "$_named" ]]; then
@@ -233,18 +240,16 @@ else
   if [[ ! -d "$HOOKS_DIR" ]]; then
     # The setting changed once every checkout had the copy, then a branch cut before the
     # move checked out: it has only the old folder, so git runs no hooks there (V1). Where
-    # the local integration branch lacks the move too, pulling or merging it brings
-    # nothing: the move goes into it first (W1). The .ai/hooks setting offered meanwhile
+    # the local integration branch lacks the move too, that is said (W1); a pull or merge
+    # is not printed, since which one fits depends on the branch and on origin, which the
+    # doctor does not read (fourth pass, X1/X2). The .ai/hooks setting offered meanwhile
     # is the whole clone's, so the message says what it costs a checkout past step 3.
     if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then
-      _cur=$(git symbolic-ref -q --short HEAD 2>/dev/null)
+      _fix=""
       if git rev-parse -q --verify "refs/heads/$_int" >/dev/null 2>&1 && would_lose ref "refs/heads/$_int"; then
-        [[ "$_cur" == "$_int" ]] && _fix="" || _fix=", then $_int into this one"
-        _fix="The move has not reached $_int either: merge the branch that carries it into $_int$_fix. Until then, what runs this checkout's hooks is git config core.hooksPath .ai/hooks, one setting for the whole clone, under which a checkout that has already removed .ai/hooks/ runs no hooks until it is changed back"
-      elif [[ "$_cur" == "$_int" ]]; then _fix="Bring the move in: git pull --ff --no-rebase origin $(shq "$_int")"
-      else _fix="Bring the move in: git merge $(shq "$_int")"
+        _fix="The move is not in the local $_int either. "
       fi
-      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist in this checkout — this branch predates the hooks' move from .ai/hooks/, so git runs NO hooks here. $_fix"
+      bad "core.hooksPath=$HOOKS_PATH but that directory does not exist in this checkout — this branch predates the hooks' move from .ai/hooks/, so git runs NO hooks here. $_fix$_route. $_meantime"
     else
       bad "core.hooksPath=$HOOKS_PATH but that directory does not exist — git runs NO hooks"
     fi
@@ -252,23 +257,24 @@ else
     # The setting on the new folder, and this checkout has it: a worktree on a branch cut
     # before the move, or an integration branch without it, runs no hooks, and only a
     # doctor run there said so (W1). A value that is not relative resolves to this
-    # checkout's folder everywhere, so nothing else is read.
+    # checkout's folder everywhere, so nothing else is read. No merge is printed for the
+    # integration branch or another checkout (fourth pass, X1/X2), and a ✅ on the setting
+    # follows only when nothing lags: beside a ❌ on it, it was a second verdict (X3).
     if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && "$HOOKS_PATH" != /* ]]; then
       lagging
       if [[ -n "$_int_lacks" ]]; then
-        bad "core.hooksPath=$HOOKS_PATH, but the integration branch, $_int, has no copy in .flight-rules/hooks/ — git runs NO hooks in a checkout of it. Merge the branch that carries the move into $_int"
+        bad "core.hooksPath=$HOOKS_PATH, but the local integration branch, $_int, has no copy in .flight-rules/hooks/ — git runs NO hooks in a checkout of it. $_route"
       fi
       if [[ -n "$_lacking" && -z "$_lacking_l" ]]; then
         warn "core.hooksPath is one setting for every checkout of this clone, and $_lacking"
       else
-        _then=${_int_lacks:+once the move is in $_int, }
         while IFS= read -r _w; do
           [[ -n "$_w" ]] || continue
-          bad "core.hooksPath=$HOOKS_PATH is one setting for every checkout of this clone, and $_w has no copy in .flight-rules/hooks/ — git runs NO hooks there. Bring the move in, ${_then}in that checkout: git merge $(shq "$_int")"
+          bad "core.hooksPath=$HOOKS_PATH is one setting for every checkout of this clone, and $_w has no copy in .flight-rules/hooks/ — git runs NO hooks there. $_route. $_meantime"
         done <<<"$_lacking_l"
       fi
     fi
-    [[ -n "$_old_named" ]] || ok "core.hooksPath=$HOOKS_PATH"
+    [[ -n "$_old_named$_int_lacks$_lacking" ]] || ok "core.hooksPath=$HOOKS_PATH"
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then
         # A plugin upgrade cannot copy git hooks into a project, so a hook added in a
