@@ -91,6 +91,16 @@ say "$([ -n "$CMD" ] && echo printed)" "printed" "no core.hooksPath → the full
 say "$(run "$D" | grep -cE 'core.hooksPath is not set|missing from|merge.ff is')" "0" "…and afterwards doctor reports no hook or merge.ff problem"
 say "$(has "$D" "core.hooksPath=.flight-rules/hooks")" "0" "…with the relative path installed"
 rm -rf "$D" "$(dirname "$P")"
+# An .ai/hooks/ that holds no git hooks (the agent guard's copy alone) and no
+# .flight-rules/hooks/: install.sh installs into .ai/hooks, so that is the folder named —
+# the message said .flight-rules/hooks/ while its command wrote .ai/hooks (V16).
+D=$(tmpd); git -C "$D" init -q -b main || die "git init failed in $D"
+mkdir -p "$D/.ai/hooks/agent" && cp "$H/agent/pre-commit-check.sh" "$D/.ai/hooks/agent/" || die "could not lay out $D/.ai/hooks"
+OUT=$(run "$D")
+say "$(grep -c 'To install them into .ai/hooks/: bash .*(it also sets merge.ff false; then commit .ai/hooks/)' <<<"$OUT")$(grep -c '\.flight-rules/hooks' <<<"$OUT")" "10" "an .ai/hooks/ with no git hooks in it: the folder install.sh uses is the one named"
+CMD=$(printf '%s\n' "$OUT" | sed -n 's/.*To install them into \.ai\/hooks\/: \(bash .*\)   (it also sets.*/\1/p')
+[ -n "$CMD" ] && (cd "$D" && eval "$CMD" >/dev/null 2>&1); say "$?$(git -C "$D" config --local core.hooksPath)" "0.ai/hooks" "…and the command, run as printed, installs there"
+rm -rf "$D"
 
 D=$(mkrepo); git -C "$D" config core.hooksPath .ai/gone
 say "$(rc "$D")" "1" "hooksPath at a missing directory → problem"

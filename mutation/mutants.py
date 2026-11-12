@@ -1023,6 +1023,7 @@ mut('D155', DOC, '    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.
 mut('R012', SSR, '  [ -z "$_top" ] || RULES="$_top/.ai/rules/engineering-principles.md"', '  :', 'wiring', what='hand-wired from .flight-rules/hooks/, the rules in .ai/rules/ are not read (V2)')
 mut('D156', DOC, 'mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf, and commit both', 'mkdir -p .flight-rules && git mv .ai/flight-rules.conf .flight-rules/conf', 'flight-rules-doctor', what='doctor: the conf moved, so a 0.28.0 reader falls back to its defaults (V3)')
 mut('D157', DOC, '    1) _diff=" — the two files differ, so a 0.28.0 reader follows another policy than this one: make them the same until the old one goes" ;;', '    1) _diff="" ;;', 'flight-rules-doctor', what='doctor: two confs that differ are not named (V3, V30)')
+mut('D158', DOC, "then commit %s/)' \"$_hd\"", "then commit %s/)' \".flight-rules/hooks\"", 'flight-rules-doctor', what='doctor: an .ai/hooks/ with no git hooks, and the message names another folder than the command installs into (V16)')
 
 
 def _check_data():

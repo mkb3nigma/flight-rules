@@ -139,7 +139,9 @@ if [[ -z "$HOOKS_PATH" ]]; then
     [[ -n "$_cp" ]] && _cp_note=" Commit the hooks it copies in, so the next clone has them."
     bad "$(printf 'core.hooksPath is not set — this clone is not running the hooks committed in %s/. To wire them up: %sbash %s   (git config is per clone; it also sets merge.ff false.%s Those hooks then run on your git commands — in a repo you do not trust, read them first)' "$_hd" "$_cp" "$(shq "$GIT_HOOKS_SRC/install.sh")" "${_cp_note:-}")"
   elif [[ -f "$GIT_HOOKS_SRC/install.sh" ]]; then
-    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into .flight-rules/hooks/: bash %s --from %s   (it also sets merge.ff false; then commit .flight-rules/hooks/)' "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")")"
+    # Into $_hd, the folder install.sh uses: an .ai/hooks/ holding no git hooks drew
+    # .flight-rules/hooks/ here while the command installed into .ai/hooks (V16).
+    bad "$(printf 'core.hooksPath is not set — the git hooks are not installed. To install them into %s/: bash %s --from %s   (it also sets merge.ff false; then commit %s/)' "$_hd" "$(shq "$GIT_HOOKS_SRC/install.sh")" "$(shq "$GIT_HOOKS_SRC")" "$_hd")"
   else
     bad "core.hooksPath is not set — the merge gate is not installed (flight-rules' hooks/git/install.sh, or: git config core.hooksPath <dir>)"
   fi
