@@ -297,11 +297,14 @@ says how.
 ### Changed — this repo
 
 - `AGENTS.md` holds how work is done here; `CLAUDE.md` and `GEMINI.md` import it and
-  `MISSION.md`. It names this repo's planning and implementing models.
+  `MISSION.md`. It names this repo's planning and implementing models, and holds the
+  Situation, Background, Assessment, Recommendation reply headings §7 no longer ships.
 - `MISSION.md`: a stop that prints its way through is not a block, and flight-rules
   never blocks the developer; the person runs the way through, an assistant leaves it to
-  them; guides sit beside the core, costing nothing to a project that never calls one.
-  It carries no issue numbers.
+  them; guides sit beside the core, costing a project that never calls one its skill
+  description. The catastrophe of a commit on a protected branch is narrowed to what the
+  hooks do: anyone's on a PR-only branch, an assistant's on any; a person's commit on
+  another protected branch is warned of, not stopped. It carries no issue numbers.
 - `UPSTREAMS.md` pins the sources `/ux` adapts and `ATTRIBUTIONS.md` credits them;
   `/upstream-check` checks a W3C spec or a web page, which has no ref, by its date, and
   judges a change to a `/ux` source rule by rule through `skills/ux/sources.md`.
