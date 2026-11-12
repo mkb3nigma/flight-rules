@@ -155,7 +155,10 @@ hooks; pointing `settings.json` at a copy too runs the guard twice. **Without it
 the scripts in `.flight-rules/hooks/` and point `.claude/settings.json` at them:
 
 Register all **three**: without `session-start-rules.sh` **no rules are injected at
-all**, and without `session-start.sh` there is no install health check.
+all**, and without `session-start.sh` there is no install health check. Wired so,
+`session-start-rules.sh` reads `rules/engineering-principles.md` beside its own folder,
+and where there is none — a copy in `.flight-rules/hooks/` — the project's
+`.ai/rules/engineering-principles.md`; with neither, it injects nothing.
 
 ```json
 {

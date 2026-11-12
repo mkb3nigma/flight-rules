@@ -18,10 +18,17 @@ set -euo pipefail
 # this line used to abort the hook with "unbound variable" on every hand-wired install
 # — so the path documented in hooks/README.md injected NO rules at all, which is the
 # exact failure that README section exists to warn about. Fall back to the script's own
-# location, which is correct for every install shape: the plugin directory, .flight-rules/hooks/,
-# or hooks/ in the playbook repo itself.
+# location: rules/ beside its folder, which is right for the plugin directory and for
+# hooks/ in the playbook repo itself.
 RULES_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 RULES="$RULES_ROOT/rules/engineering-principles.md"
+# Not for a copy hand-wired from .flight-rules/hooks/: beside it is .flight-rules/rules/,
+# which nothing creates, since a project's copied rules stay in .ai/rules/ — and the
+# hook exited 0 having injected nothing (0.29.0 release review, second pass, V2).
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ ! -r "$RULES" ]; then
+  _top=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel 2>/dev/null) || _top=""
+  [ -z "$_top" ] || RULES="$_top/.ai/rules/engineering-principles.md"
+fi
 [ -r "$RULES" ] || exit 0
 
 # Name the version in the header. The rules are injected ONCE, at session start, and

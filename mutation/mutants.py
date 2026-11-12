@@ -372,7 +372,7 @@ mut('S106', SS, '  printf \'%s\\n\' "$PLAIN"', '  touch "$HINT_FILE" 2>/dev/null
 
 # ---- hooks/session-start-rules.sh
 mut('R001', SSR, '${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}', '$CLAUDE_PLUGIN_ROOT', 'wiring', what='no fallback root')
-mut('R008', SSR, '[ -r "$RULES" ] || exit 0', ':', 'wiring', expect='survives: not held — a missing rules file injects the header with no rules', what='missing rules not a clean no-op')
+mut('R008', SSR, '[ -r "$RULES" ] || exit 0', ':', 'wiring', what='missing rules not a clean no-op')
 mut('R002', SSR, ' || true)', ')', 'wiring', what='version read aborts without plugin.json')
 mut('R009', SSR, 'sub(/\\r$/, "", l)', 'l = l', 'wiring', what='CRLF front matter not stripped')
 mut('R003', SSR, 'NR==1 && l=="---" {fm=1; next} fm && l=="---" {fm=0; next} !fm', '1', 'wiring', what='front matter injected')
@@ -1020,6 +1020,7 @@ mut('misc-V8', MP, "bad.append('%s is not a mutant at this commit' % f[0]); " "c
 # ---- 0.29.0 release review, second pass (#163).
 mut('D154', DOC, '        [[ -n "$_has" ]] || _lacking="$_lacking${_lacking:+, }$_p"', '        :', 'flight-rules-doctor', what='doctor: core.hooksPath changed from a worktree with the copy, leaving the main checkout without hooks (V1)')
 mut('D155', DOC, '    if [[ "$_hp" == "$ROOT/.flight-rules/hooks" && -d "$ROOT/.ai/hooks" ]]; then', '    if false; then', 'flight-rules-doctor', what='doctor: a branch from before the move runs no hooks, with no remedy (V1)')
+mut('R012', SSR, '  [ -z "$_top" ] || RULES="$_top/.ai/rules/engineering-principles.md"', '  :', 'wiring', what='hand-wired from .flight-rules/hooks/, the rules in .ai/rules/ are not read (V2)')
 
 
 def _check_data():
