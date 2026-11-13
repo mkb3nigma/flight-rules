@@ -34,7 +34,7 @@ where it has one, its source.
 | `accessibility.md` beside this file | puts anything on a screen. Always, for interface work. |
 | `states.md` beside this file | loads, saves, submits or waits on anything; shows a list or data that can be empty. |
 | `forms.md` beside this file | takes input: a form, a field, a search box, a settings page, a destructive action. |
-| `principles.md` beside this file | lays out a screen, a menu or a flow; adds choices; decides what is primary. |
+| `principles.md` beside this file | lays out a screen, a menu or a flow; moves between views; adds choices; decides what is primary. |
 
 `sources.md` beside this file lists every source and the rules that rest on it. It is
 for maintaining this guide, not for building: do not load it for a task.
@@ -51,17 +51,19 @@ for maintaining this guide, not for building: do not load it for a task.
    interface for keyboard, focus and states; the markup or the accessibility tree for
    names, roles and announcements. Where the project runs, make these passes, each
    reported done or **not checked**: Tab through the main task with the mouse untouched,
-   focus visible throughout; the page 320 px wide; text zoomed to 200%; each state of
-   UX-S01 forced — no data, slow, failed; the longest plausible content (UX-S01);
-   reduced motion on. Where only the code was read, list what could not be judged from
-   it — contrast, focus order, timing, layout — as **not checked**. Never pass a rule
-   silently.
+   focus visible throughout; Back and reload on the main task; no hover (touch
+   emulation); 320 px wide; text zoomed to 200%; each UX-S01 state forced — no data,
+   slow, failed — and the longest plausible content; reduced motion on. Where only the
+   code was read, list what could not be judged from it — contrast, focus order,
+   timing, layout — as **not checked**. Never pass a rule silently.
 6. Report (below).
 7. If a token, component or pattern was added or changed, update the record in the same
    change — or start it, where this is the project's first interface — and say so.
 
-To review an interface that already exists, run steps 1, 2, 5 and 6, and change nothing
-unless asked.
+To review an interface that already exists, run steps 1, 2 (every topic), 5 and 6, one
+screen or flow at a time, the main task first. Name the screens and flows looked at —
+any other is **not checked** — order the findings by Rating, the smallest fix first
+within each, and change nothing unless asked.
 
 ## When rules pull against each other
 
