@@ -360,13 +360,16 @@ say "$(grep -c -- '--this-checkout' <<<"$OUT")" "0" "…and not --this-checkout,
 # passed for inside the worktree while it named the main checkout's .flight-rules (0.27.0 release
 # review). The missing directory sits below wt/.flight-rules: below wt itself, the deepest existing
 # directory is the worktree root, which is never "inside" it, and the case passed with
-# the walk past it deleted (test sweep).
-git -C "$D" config core.hooksPath "$D/.flight-rules/worktrees/wt/.ai/missing/../../../../hooks-dd"
+# the walk past it deleted (test sweep). So below a directory the worktree has: the
+# move to .flight-rules/ left this path on wt/.ai, which the worktree no longer has,
+# and the case passed with the walk deleted again (0.29.0 mutation run, I08).
+[ -d "$D/.flight-rules/worktrees/wt/.flight-rules" ] || die "the worktree has no .flight-rules: the case below tests nothing"
+git -C "$D" config core.hooksPath "$D/.flight-rules/worktrees/wt/.flight-rules/missing/../../../../hooks-dd"
 OUT=$(run "$D/.flight-rules/worktrees/wt" "$P/hooks/git/install.sh" --from "$P/hooks/git")
 say "$(head -1 <<<"$OUT")" "1" "plain --from, a path into the main checkout through a missing directory's ..: refused"
 say "$(grep -c 'is in the main checkout' <<<"$OUT")" "1" "…by the main-checkout refusal, not another exit 1"
 say "$([ -e "$D/.flight-rules/hooks-dd" ] && echo made || echo absent)" "absent" "…not making it there"
-say "$([ -e "$D/.flight-rules/worktrees/wt/.ai/missing" ] && echo made || echo absent)" "absent" "…nor the missing directory in the worktree"
+say "$([ -e "$D/.flight-rules/worktrees/wt/.flight-rules/missing" ] && echo made || echo absent)" "absent" "…nor the missing directory in the worktree"
 # …nor when the .. climbs back into a directory that exists and is a link into the
 # main checkout: resolved by name alone, wt/missing/../lnk/x passed for inside the
 # worktree, and the install wrote seven hooks into the main checkout (fix review).
