@@ -188,7 +188,10 @@ echo "post-merge must never offer a protected branch for deletion:"
 # Read as the guard and doctor read the conf: its own sed kept single quotes, so a
 # quoted pattern, ✅ to doctor, matched nothing and offered `git branch -d main`; a
 # quoted integration branch wrote no note at all. The environment comes first, as for
-# every other reader (full release review, S1).
+# every other reader (full release review, S1). Each case turns PR_ONLY_BRANCHES off:
+# main is PR-only by default, so since #128 it is kept whatever the protected set reads
+# as, and the environment case passed with the environment ignored (0.29.0 mutation
+# run, M38).
 # <description> % <conf lines, \n-separated> % <FLIGHT_RULES_PROTECTED_BRANCHES>
 while IFS='%' read -r desc conf envv; do
   PM=$(mktemp -d)
@@ -206,9 +209,9 @@ while IFS='%' read -r desc conf envv; do
   say "$(grep -cE "git branch -d '?main'?( |$)" "$NOTE" 2>/dev/null)" "0" "…and not main"
   rm -rf "$PM"
 done <<'CASES'
-single-quoted values%PROTECTED_BRANCHES='^(main|dev)$'\nINTEGRATION_BRANCH='dev'%
-double-quoted, with a comment%PROTECTED_BRANCHES="^(main|dev)$"  # the two\nINTEGRATION_BRANCH=dev%
-from the environment%PROTECTED_BRANCHES=^nothing$\nINTEGRATION_BRANCH=dev%^(main|dev)$
+single-quoted values%PROTECTED_BRANCHES='^(main|dev)$'\nPR_ONLY_BRANCHES=none\nINTEGRATION_BRANCH='dev'%
+double-quoted, with a comment%PROTECTED_BRANCHES="^(main|dev)$"  # the two\nPR_ONLY_BRANCHES=none\nINTEGRATION_BRANCH=dev%
+from the environment%PROTECTED_BRANCHES=^nothing$\nPR_ONLY_BRANCHES=none\nINTEGRATION_BRANCH=dev%^(main|dev)$
 CASES
 
 echo "post-merge: the cleanup note is a command you can paste:"
