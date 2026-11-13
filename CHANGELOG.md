@@ -223,13 +223,26 @@ says how.
   run themselves. Text that names the variable with a value is refused too: the guard's
   accepted trade on prose.
 - **`/ux`, a first guide** (#154, #159): accessibility (WCAG 2.2 A and AA, with the
-  criteria it does not cover listed), states, forms and basic UX principles, 99 rules in
+  criteria it does not cover listed), states, forms and basic UX principles, 100 rules in
   four topic files, each labelled a standard, a finding or a rule of thumb, with
   `sources.md` mapping every source to its rules. It loads only the topics a task needs,
   and keeps the project's design record (`.ai/design.md` by default), starting it with
   the project's first interface. A project that never calls it pays only its
   description. Its rule IDs carry the guide's prefix — `UX-A01`, `UX-F01` — so they
   never read as a reply's actions (A1…) or decisions (D1…).
+  A coverage review before release (#167) added: a review checks each rule only by
+  evidence that can show it, with set passes — Tab through, 320 px, 200% zoom, each
+  state forced, the longest content, reduced motion — each reported done or not checked,
+  and the report gives the evidence for what the eye cannot judge and a short by-eye
+  script; reviewing an existing interface changes nothing unless asked. Modal dialogs
+  keep focus inside and are named; focus is never lost when its element goes; source
+  order matches screen order; a zoom-locking viewport fails; data tables have header
+  cells and sort state; a role keeps its keyboard promise; screens are built with the
+  longest content and nothing is inserted above the reader; defaults never pre-select
+  consent or cost; errors are tied to fields in the markup; an empty required field
+  waits for submit; undo stays until dismissed; text shows the person's terms, not the
+  system's (UX-P20). Three rules applied by extrapolation (UX-S18, UX-F27, UX-P16) are
+  now rules of thumb.
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back.

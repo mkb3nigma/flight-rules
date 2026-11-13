@@ -32,6 +32,10 @@ are popularly called "laws"; few are laws. The kind tells you how far to trust o
 - **UX-P07** [rule of thumb] Within the product, the same thing looks and behaves the same
   everywhere: the project's design record decides how. Where it differs, a person
   carries what they learned on one screen to another and is wrong.
+- **UX-P20** [rule of thumb] What a person reads is in their terms, not the system's: a
+  label, not an enum or column name (`PENDING_REVIEW`); a name, not an ID; dates, times
+  and numbers in the person's format, not ISO strings or raw `true` and `false`
+  (Nielsen's heuristic 2, *match between the system and the real world*).
 
 ## Grouping and layout
 
@@ -66,9 +70,10 @@ From Gestalt psychology (Wertheimer 1923, and later work):
   from Miller 1956. Design for recognition over recall: show what the person chose on
   one screen when they need it on the next, and group long numbers and lists into
   chunks. Never use this number to size a menu.
-- **UX-P16** [finding] People remember the first and last items of a sequence best (the
-  serial position effect): put the most important navigation items first and last.
-  Applying it to menus is an extrapolation from list recall; treat it as a tiebreaker.
+- **UX-P16** [rule of thumb] People remember the first and last items of a sequence best
+  (the serial position effect): put the most important navigation items first and
+  last. Applying it to menus is an extrapolation from list recall; treat it as a
+  tiebreaker.
 
 ## Judging your own work
 
