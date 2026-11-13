@@ -14,8 +14,9 @@ for the rules it loaded, and never that the interface meets WCAG AA.
 - **UX-A01** [standard] Everything a pointer can do, the keyboard can do: every link,
   button, field, menu and custom control is reachable with Tab and operable with Enter,
   Space or the arrow keys its role expects; a control that hover reveals, focus reveals
-  too. (2.1.1, failure F54) The practice beyond it: other content hover reveals, focus
-  and touch reveal too (Understanding 1.4.13), except a browser-drawn `title` tooltip.
+  too. (2.1.1, failure F54) The practice beyond it: touch reveals that control too, as a
+  touch screen cannot hover (MDN, `hover` media feature); other content hover reveals,
+  focus (Understanding 1.4.13) and touch reveal as well, except a `title` tooltip.
 - **UX-A02** [standard] Focus never gets stuck: a person can always Tab, or press Escape,
   out of a widget or an embedded frame, and leaves a dialog by closing it — Escape or its
   close control — not by tabbing out, which a modal dialog does not allow (UX-A06).
@@ -61,8 +62,8 @@ for the rules it loaded, and never that the interface meets WCAG AA.
   (1.3.3)
 - **UX-A11** [standard] Text resizes to 200% without anything cut off or overlapping.
   (1.4.4) A viewport tag with `user-scalable=no`, or `maximum-scale` below 2, is a
-  finding, rated as practice beyond the criterion: a page can still meet 1.4.4 another
-  way (ACT rule b4f0c3, *Meta viewport allows for zoom*).
+  finding under 1.4.4, unless the page gives another way to enlarge its text (ACT rule
+  b4f0c3, *Meta viewport allows for zoom*).
 - **UX-A12** [standard] At 320 CSS pixels wide the page scrolls in one direction only:
   no sideways scrolling for text, except tables, maps and the like. (1.4.10) The practice
   beyond it: a wide table scrolls in its own container, so the content around it can
