@@ -168,11 +168,12 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    same-family subagent — also says, and simulating both voices you keep it yourself:
    *"A probe that runs git or writes anything works in a directory it made, never in
    the repository under review: at the script's top level, not inside `$(…)` or a
-   function, `d=$(mktemp -d) && cd "$d" && d=$(pwd -P) || exit`, and after `git init`
-   it checks that `git rev-parse --show-toplevel` prints `$d`."* A reviewer's probe
-   whose `cd` went nowhere ran its git commands, hooks switched off, in the repository
-   under review, and switched its branch (2026-11-12). When the subject is code, each
-   brief also carries § Review Domains verbatim, for step 2's reason.
+   function, `d=$(mktemp -d) && cd "$d" && d=$(pwd -P) || exit`, and after each
+   `git init` it stops unless `git rev-parse --show-toplevel` prints `$d`, or, for a
+   repository made in a folder under it, that folder."* A reviewer's probe whose `cd`
+   went nowhere ran its git commands, hooks switched off, in the repository under
+   review, and switched its branch (2026-11-12). When the subject is code, each brief
+   also carries § Review Domains verbatim, for step 2's reason.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its

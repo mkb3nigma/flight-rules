@@ -284,8 +284,8 @@ says how.
   got by breaking code or a fixture on purpose is trusted only once `git diff` shows the
   break landed (from `mattpocock/skills`, re-pinned).
 - **`/dg`** step 3: a reviewer's probe runs in a scratch directory it made, never in the
-  repository under review, and checks after `git init` that it is in the directory it
-  made.
+  repository under review, and stops after `git init` unless it is in the directory it
+  made, or a folder under it.
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's
