@@ -58,9 +58,10 @@ https://web.dev/articles/defining-core-web-vitals-thresholds
   pressed state on the button, then the result or a message beside it. A save that
   succeeds silently is a finding.
 - **UX-S13** [rule of thumb] A button that starts work shows it is busy and ignores a
-  second press until the work ends, so nothing is submitted twice. It stays in the Tab
-  order: `aria-disabled="true"`, with the press ignored in code, not `disabled`, which
-  browsers take out of the Tab sequence (Authoring Practices, keyboard interface; MDN,
+  second press until the work ends, so nothing is submitted twice. Either way does it:
+  `aria-disabled="true"`, with the press ignored in code, keeps the button in the Tab
+  order so the person can still find it; `disabled` blocks the press by itself but takes
+  the button out of the Tab order (Authoring Practices, keyboard interface; MDN,
   `aria-disabled`).
 - **UX-S14** [rule of thumb] Success says what happened in specific terms — "Invoice 104
   sent to ana@example.com" — and, where it matters, what happens next.

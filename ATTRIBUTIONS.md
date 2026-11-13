@@ -164,8 +164,9 @@ The structure of `audit.md`, the scored audit of an existing interface, is adapt
 **[Impeccable](https://github.com/pbakaus/impeccable)** (`pbakaus/impeccable`, Apache 2.0),
 `skill/reference/audit.md` and `skill/reference/critique.md` read at `b4bff162`; the
 idea only, no text taken. Taken: an audit documents and does not fix; one score per
-area beside the findings; an area that could not be judged is not scored rather than
-passed. Not taken: its judged score levels (here a score is worked out from the
+area beside the findings, with the key finding's ID; a section for patterns, one
+problem recurring across the interface; n/a for an area that does not apply; and an
+area that could not be judged is not scored rather than passed. Not taken: its judged score levels (here a score is worked out from the
 findings register and can be recomputed), its totals and rating bands, its P0–P3
 severities (this guide rates Major, Medium and Minor by effect), the open-critique
 parts (gut reaction, personas, questions to consider, praise), its performance, theming
