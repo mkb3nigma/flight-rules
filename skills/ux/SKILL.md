@@ -72,7 +72,7 @@ undo. Then consistency with the design record. Then clarity over brevity. Name i
 report any rule knowingly traded for another, and why.
 
 A design record that itself breaks a rule — a colour pair that fails contrast — is a
-finding against the record, not something to copy.
+finding under the rule it breaks, naming the record; it is not something to copy.
 
 ## The design record
 
