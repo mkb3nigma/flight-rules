@@ -258,6 +258,10 @@ says how.
   interface goes screen by screen, names its scope and orders findings by Rating, and
   the passes add Back and reload and no hover. UX-S07 is folded into UX-S08, and a
   retired rule ID is never reused.
+  A scored audit of an existing interface (`audit.md`, #154): the main task walked
+  first, then each screen or flow, named; one 0–5 score per area worked out from the
+  findings register and shown with its counts, an area mostly unchecked left unscored,
+  and no total across areas.
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back.

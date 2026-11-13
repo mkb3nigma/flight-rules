@@ -60,10 +60,9 @@ for maintaining this guide, not for building: do not load it for a task.
 7. If a token, component or pattern was added or changed, update the record in the same
    change — or start it, where this is the project's first interface — and say so.
 
-To review an interface that already exists, run steps 1, 2 (every topic), 5 and 6, one
-screen or flow at a time, the main task first. Name the screens and flows looked at —
-any other is **not checked** — order the findings by Rating, the smallest fix first
-within each, and change nothing unless asked.
+To review an interface that already exists, follow `audit.md` beside this file: it
+walks the interface, scores each area from the findings, and changes nothing unless
+asked.
 
 ## When rules pull against each other
 

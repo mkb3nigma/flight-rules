@@ -43,6 +43,7 @@ derivation), then run `/upstream-check`.
 | [MDN: aria-disabled](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-disabled) | `skills/ux/states.md` (UX-S13) | web page | `aria-disabled` keeps focusability; the author suppresses the function, as read 2026-11-13 | 2026-11-13 |
 | [NN/g: User Control and Freedom](https://www.nngroup.com/articles/user-control-and-freedom/) | `skills/ux/principles.md` (UX-P21) | web page | an overlay is taken for a new page and closed with Back; published 2020-11-29, as read 2026-11-13 | 2026-11-13 |
 | [Baymard: Back button expectations](https://baymard.com/blog/back-button-expectations) | `skills/ux/principles.md` (UX-P21) | web page | 59% of e-commerce sites get at least one of 4 Back expectations wrong; published 2020-07-20, as read 2026-11-13 | 2026-11-13 |
+| [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | `skills/ux/audit.md` (the audit's structure, from `skill/reference/audit.md` and `critique.md`; concept only) | git repo | `b4bff1626c344067788c2679f048a20057c7cc5a` | 2026-11-13 |
 | [mattpocock/skills](https://github.com/mattpocock/skills) | `skills/diagnose/` (structure and several disciplines — see ATTRIBUTIONS) | git repo | `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` | 2026-11-12 |
 
 > **`v1r3n/dinesh-gilfoyle` baseline review done (2026-10-17).** Its `dg/SKILL.md`,
