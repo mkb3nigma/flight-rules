@@ -100,8 +100,8 @@ As `engineering-principles.md` §7 asks. Findings in a register:
 a person, one using only a keyboard or a screen reader included, or loses their work or
 money; Medium — it slows or misleads them; Minor — polish. A failure of a `[standard]`
 rule's criterion is never rated below Medium, and its finding names it a conformance
-failure, with the criterion number; a failure of only the practice beyond the criterion
-is rated by effect and names no criterion.
+failure, with each failed criterion's number; a failure of only the practice beyond
+the criterion is rated by effect and names no criterion.
 
 For each rule the eye cannot judge — contrast, accessible names, roles and states,
 status announcements, a label or error tied to its field, `autocomplete`, the page's
