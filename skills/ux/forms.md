@@ -26,7 +26,8 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
 
 - **UX-F07** [rule of thumb] A sensible default wherever one exists — the country from the
   locale, today's date, the most common option — so the person changes it only when it
-  is wrong.
+  is wrong. Never for consent, a marketing opt-in, or anything that costs the person
+  money: those start unselected (GDPR recital 32: a pre-ticked box is not consent).
 - **UX-F08** [rule of thumb] Up to about five mutually exclusive options are radio buttons,
   all visible; more is a select or a searchable list. A yes/no choice that applies at
   once is a switch; one submitted with a form is a checkbox.
@@ -55,13 +56,17 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
 - **UX-F15** [standard] Where the fix is known, the error says it: "Enter a date after
   today", not "Invalid date". (3.3.3)
 - **UX-F16** [rule of thumb] The error sits next to the field, and on submit a summary at
-  the top lists every error with a link to each field; focus moves to the summary or to
-  the first error.
+  the top lists every error with a link to each field, in the same words as the message
+  beside it; focus moves to the summary or to the first error (GOV.UK Design System,
+  error summary). The hint and the error are tied to the field in the markup
+  (`aria-describedby`), and the field is marked invalid (`aria-invalid`) only once
+  validation has failed (WCAG technique ARIA21).
 - **UX-F17** [rule of thumb] An error keeps everything the person entered — every field,
   not only the valid ones. Losing input on an error is a Major finding.
 - **UX-F18** [rule of thumb] Validate a field when the person leaves it or submits, not on
   every keystroke while they are still typing it; clear the error as soon as it is
-  fixed.
+  fixed. An empty required field is not an error until the person submits. The GOV.UK
+  Design System disputes the first part: it validates only when the person moves on.
 - **UX-F19** [rule of thumb] A disabled submit button that never says why is a dead end:
   leave it enabled and show the errors on submit, or say beside it what is missing.
 
@@ -71,9 +76,9 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
   changes or deletes the person's data, it can be undone, or is checked with a chance to
   correct it, or the person reviews and confirms before it is final. (3.3.4)
 - **UX-F21** [rule of thumb] Prefer undo to confirmation for a destructive action: delete,
-  then offer "Undo" for some seconds. Where undo is not possible, the confirmation names
-  what will be lost ("Delete project Atlas and its 12 files?") and its button repeats
-  the action ("Delete project"), not "OK".
+  then offer "Undo" until dismissed, or keep the item recoverable elsewhere. Where undo
+  is not possible, the confirmation names what will be lost ("Delete project Atlas and
+  its 12 files?") and its button repeats the action ("Delete project"), not "OK".
 - **UX-F22** [rule of thumb] A destructive action is never the default button, does not
   sit where the safe action usually is, and is kept away from the control used most
   often: distance prevents the slip that a large target invites.
@@ -84,9 +89,10 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
 
 - **UX-F24** [rule of thumb] A long form is split into steps of related fields, each
   short enough to finish without scrolling far.
-- **UX-F27** [finding] A form in steps shows the steps and marks the current one: people
-  work faster as a visible goal gets nearer (the goal-gradient effect, Kivetz, Urminsky
-  and Zheng 2006, measured on reward programmes; applied to forms by extrapolation).
+- **UX-F27** [rule of thumb] A form in steps shows the steps and marks the current one:
+  people work faster as a visible goal gets nearer (the goal-gradient effect, Kivetz,
+  Urminsky and Zheng 2006, measured on reward programmes; applied to forms by
+  extrapolation).
 - **UX-F25** [rule of thumb] Each step can be reviewed and changed before the final
   submit, and going back does not lose what was entered.
 - **UX-F26** [rule of thumb] A single column of fields, read top to bottom, unless the
