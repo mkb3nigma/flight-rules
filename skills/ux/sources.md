@@ -35,6 +35,7 @@ UX-S07 are retired — and it stays with its rule if the rule moves to another f
 | MDN, the `hover` media feature (a primary input that cannot hover) — https://developer.mozilla.org/en-US/docs/Web/CSS/@media/hover | living | UX-A01 |
 | Understanding WCAG 2.2, 1.3.3 Sensory Characteristics — https://www.w3.org/WAI/WCAG22/Understanding/sensory-characteristics.html | living | UX-A10 |
 | MDN, `aria-disabled` — https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-disabled | living | UX-S13 |
+| Understanding WCAG 2.2, 1.4.10 Reflow (a table in its own scrollable container) — https://www.w3.org/WAI/WCAG22/Understanding/reflow.html | living | UX-A12 |
 | W3C ACT rule b4f0c3, Meta viewport allows for zoom — https://www.w3.org/WAI/standards-guidelines/act/rules/b4f0c3/ | living | UX-A11 |
 | WCAG 2.2 technique ARIA21, Using `aria-invalid` to indicate an error field — https://www.w3.org/WAI/WCAG22/Techniques/aria/ARIA21 | living | UX-F16 |
 | GOV.UK Design System, Error summary — https://design-system.service.gov.uk/components/error-summary/ | living | UX-F16 |
