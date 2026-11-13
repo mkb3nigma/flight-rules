@@ -2,7 +2,10 @@
 
 The long-established findings behind most interface advice, each with its limit. Several
 are popularly called "laws"; few are laws. The kind tells you how far to trust one: a
-`[finding]` was measured, a `[rule of thumb]` is practice.
+`[finding]` was measured, a `[rule of thumb]` is practice. For what to build first: a
+few features usually carry most of the use (the Pareto principle, a rough regularity),
+so make those fast and obvious before polishing the rest — a note on priorities, not a
+rule a finding cites.
 
 ## Choice
 
@@ -80,6 +83,3 @@ From Gestalt psychology (Wertheimer 1923, and later work):
 - **UX-P18** [finding] An attractive interface is judged easier to use than it is (the
   aesthetic-usability effect, Kurosu and Kashimura 1995): when a design looks good, check
   it against these rules anyway — looking good is when problems are missed.
-- **UX-P19** [rule of thumb] A few features carry most of the use (the Pareto principle,
-  a rough regularity): find which, and make those fast and obvious before polishing the
-  rest.

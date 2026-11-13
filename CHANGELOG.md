@@ -223,7 +223,7 @@ says how.
   run themselves. Text that names the variable with a value is refused too: the guard's
   accepted trade on prose.
 - **`/ux`, a first guide** (#154, #159): accessibility (WCAG 2.2 A and AA, with the
-  criteria it does not cover listed), states, forms and basic UX principles, 100 rules in
+  criteria it does not cover listed), states, forms and basic UX principles, 99 rules in
   four topic files, each labelled a standard, a finding or a rule of thumb, with
   `sources.md` mapping every source to its rules. It loads only the topics a task needs,
   and keeps the project's design record (`.ai/design.md` by default), starting it with
@@ -243,6 +243,11 @@ says how.
   waits for submit; undo stays until dismissed; text shows the person's terms, not the
   system's (UX-P20). Three rules applied by extrapolation (UX-S18, UX-F27, UX-P16) are
   now rules of thumb.
+  A finding is rated by its effect: Major if it stops a person or loses their work or
+  money; a failed `[standard]` rule is never below Medium, and is named a conformance
+  failure with its criterion.
+  UX-P19, the Pareto principle, is no longer a rule: it is a note on what to build
+  first in `principles.md`'s introduction, and its ID is retired.
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back.

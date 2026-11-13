@@ -94,9 +94,10 @@ As `engineering-principles.md` §7 asks. Findings in a register:
 |---|---|---|---|---|---|
 
 `Where` is a file and line, or a screen and element; `Rule` is the rule's ID, as
-`UX-F01`, or "record" for a consistency finding. **Rating**: Major — it stops a person,
-loses their work, or fails a `[standard]` rule; Medium — it slows or misleads them;
-Minor — polish.
+`UX-F01`, or "record" for a consistency finding. **Rating**, by effect: Major — it stops
+a person, or loses their work or money; Medium — it slows or misleads them; Minor —
+polish. A failed `[standard]` rule is never rated below Medium, and its finding names it
+a conformance failure, with the WCAG criterion number.
 
 For each rule the eye cannot judge — contrast, accessible names, roles and states,
 status announcements, a label or error tied to its field, `autocomplete`, the page's
