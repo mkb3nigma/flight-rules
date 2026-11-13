@@ -213,10 +213,10 @@ else
   # was wrong where the local integration branch lagged origin's, and on a branch that
   # moves only by PR, where the hooks refuse the merge (0.29.0 release review, fourth
   # pass, X1/X2); the doctor names the fault and the kinds of route, not a command.
-  _route="The move reaches a branch by that branch's usual route: a pull where origin has it, a merge of $_int on a work branch, its PR where the branch moves only by PR"
+  _route="The move reaches a branch by that branch's usual route: a pull where origin has it, a merge of $_int on a work branch, its PR where the branch moves only by PR, and $_int itself, where neither it nor origin has the move, by the merge or PR of the branch that carries it"
   _meantime="Until then, git config core.hooksPath .ai/hooks runs the old folder's hooks; it is one setting for the whole clone, and a checkout that has already removed .ai/hooks/ runs no hooks under it until it is changed back"
   _named="$_lacking${_int_lacks:+${_lacking:+, }the local integration branch $_int}"
-  _wait="core.hooksPath is one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $_named. Changed now, git runs no hooks in them. Change it once each has the copy; this line then prints the command. $_route; a checkout on a branch that moves only by PR gets the copy at that PR, or can be switched to a branch that has it"
+  _wait="core.hooksPath is one setting for every checkout of this clone, and these have no copy in .flight-rules/hooks/ yet: $_named. Changed now, git runs no hooks in them. Change it once each has the copy; this line then prints the command. $_route; a checkout on a branch that moves only by PR can instead be switched to a branch that has the copy"
   if [[ -n "$_old_named" ]]; then
     if [[ -d "$HOOKS_DIR" ]]; then
       if [[ -n "$_named" ]]; then
@@ -274,6 +274,7 @@ else
         done <<<"$_lacking_l"
       fi
     fi
+    # Not where the other checkouts could not be read either: unknown is not healthy (Y4).
     [[ -n "$_old_named$_int_lacks$_lacking" ]] || ok "core.hooksPath=$HOOKS_PATH"
     for h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
       if [[ ! -f "$HOOKS_DIR/$h" ]]; then

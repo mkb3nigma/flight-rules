@@ -1017,7 +1017,7 @@ say "$(grep -c 'core.hooksPath=.ai/hooks but that directory does not exist — g
 MOVED='the folder before 0.29.0, but the hooks moved to .flight-rules/hooks/ — git runs whatever is left in the old one. To run the moved ones: git config core.hooksPath .flight-rules/hooks'
 # What the doctor says in place of a merge or pull command for another branch or checkout
 # (0.29.0 release review, fourth pass, X1/X2): the kinds of route, and the meantime.
-route() { printf "The move reaches a branch by that branch's usual route: a pull where origin has it, a merge of %s on a work branch, its PR where the branch moves only by PR" "$1"; }
+route() { printf "The move reaches a branch by that branch's usual route: a pull where origin has it, a merge of %s on a work branch, its PR where the branch moves only by PR, and %s itself, where neither it nor origin has the move, by the merge or PR of the branch that carries it" "$1" "$1"; }
 MEANTIME="Until then, git config core.hooksPath .ai/hooks runs the old folder's hooks; it is one setting for the whole clone, and a checkout that has already removed .ai/hooks/ runs no hooks under it until it is changed back"
 mkdir -p "$D/.ai/hooks"; : > "$D/.ai/hooks/.DS_Store"
 OUT=$(run "$D")
@@ -1098,7 +1098,7 @@ git -C "$D" config core.hooksPath .ai/hooks
 "${GN[@]}" -C "$D" switch -q -c chore/move && cp -R "$D/.ai/hooks" "$D/.flight-rules/hooks" \
   && "${GN[@]}" -C "$D" add -A && "${GN[@]}" -C "$D" commit -qm move || die "could not commit the move in $D"
 OUT=$(run "$D")
-say "$(head -1 <<<"$OUT")$(grep -c 'git config core.hooksPath .flight-rules/hooks\|git merge\|git pull' <<<"$OUT")$(grep -cF "have no copy in .flight-rules/hooks/ yet: the local integration branch main. Changed now, git runs no hooks in them. Change it once each has the copy; this line then prints the command. $(route main); a checkout on a branch that moves only by PR gets the copy at that PR, or can be switched to a branch that has it" <<<"$OUT")" "101" "one checkout, the move not in the integration branch: no command, the local integration branch named, and the route"
+say "$(head -1 <<<"$OUT")$(grep -c 'git config core.hooksPath .flight-rules/hooks\|git merge\|git pull' <<<"$OUT")$(grep -cF "have no copy in .flight-rules/hooks/ yet: the local integration branch main. Changed now, git runs no hooks in them. Change it once each has the copy; this line then prints the command. $(route main); a checkout on a branch that moves only by PR can instead be switched to a branch that has the copy" <<<"$OUT")" "101" "one checkout, the move not in the integration branch: no command, the local integration branch named, and the route"
 # The setting moved anyway: the integration branch's line had no assertion, and the suite
 # stayed green with it broken (fourth pass, X1).
 git -C "$D" config core.hooksPath .flight-rules/hooks
@@ -1129,6 +1129,8 @@ D=$(mkrepo); SH=$(tmpd); REALGIT=$(command -v git)
 printf '#!/bin/sh\n[ "$1" = worktree ] && [ "$2" = list ] && exit 128\nexec "%s" "$@"\n' "$REALGIT" > "$SH/git" && chmod +x "$SH/git" || die "could not make the git shim"
 OUT=$(cd "$D" && PATH="$SH:$PATH" HOME="$D/fakehome" bash "$DOCTOR" 2>&1)
 say "$(grep -c '⚠️  core.hooksPath is one setting for every checkout of this clone, and (the other checkouts: git worktree list failed, so they could not be checked)' <<<"$OUT")" "1" "git worktree list failing, the setting on the new folder: said"
+# Unknown is not healthy: no ✅ on the setting beside that ⚠️ (fourth pass, Y4).
+say "$(grep -c '⚠️  core.hooksPath is one setting' <<<"$OUT")$(grep -c '✅ core.hooksPath' <<<"$OUT")" "10" "…and no ✅ on core.hooksPath beside it"
 rm -rf "$D" "$SH"
 # A linked checkout on main, which moves only by PR, without the copy: "in that checkout:
 # git merge dev" was printed, a merge the hooks refuse there (fourth pass, X2).
