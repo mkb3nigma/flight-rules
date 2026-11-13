@@ -38,7 +38,8 @@ record before the audit, it is filed under UX-P07 instead, and the design record
 One defect is filed once, under the most specific rule that covers it — for a field or
 a form, the `forms.md` rule: a field's missing label is UX-F01, not also UX-A18; a
 colour-only error is UX-F14, not also UX-A10. It counts once, under that rule; the
-other rule's outcome is **filed under** that rule (below). Where a rule the defect also
+other rule's outcome is **filed under** that rule (below), unless it has a finding of
+its own from another defect. Where a rule the defect also
 breaks is `[standard]` and its criterion fails, the finding keeps that criterion
 whichever rule it is filed under: it is rated at least Medium, named a conformance
 failure with each failed criterion's number, a kept one with the rule that carries it
@@ -53,21 +54,23 @@ Each rule of every topic has one outcome over the walked screens:
 
 | Outcome | When |
 |---|---|
-| finding | it fails somewhere walked: a row in the register |
+| finding | it fails somewhere walked in its own right: a row in the register |
 | no finding | the evidence showed it, and it holds |
-| filed under UX-… | it fails only as part of a defect filed under the named rule |
+| filed under UX-… | it fails only as part of a defect filed under the named rule or rules |
 | does not apply | nothing it governs is present: no drag, no time limit, nothing flashes |
 | not checked | no walked screen gave evidence for it |
 
-A rule **filed under** another leaves its own area's score unaffected, by design: the
-defect is counted once. The report shows it, so a reader sees that UX-A21 fails inside
-a forms finding even where accessibility scores 5.
+A rule **filed under** another adds nothing to its own area's score, by design: the
+defect is counted once, in the area it is filed under, even when both rules are in one
+area. The report lists it, so a reader sees that UX-A18 fails inside a forms finding
+even where accessibility scores 5.
 
 ## The score — worked out, never judged
 
 One score per area, from that area's findings in the register: **accessibility** (the
-`UX-A` rules), **states** (`UX-S`), **forms** (`UX-F`, with the WCAG criteria in
-`forms.md` and any a forms finding keeps under the filing rule), **principles** (`UX-P`) and the **design record** (the "record" findings).
+`UX-A` rules), **states** (`UX-S`), **forms** (`UX-F`; a criterion its findings carry or
+keep counts here), **principles** (`UX-P`) and the **design record** (the "record"
+findings).
 Take the worst Rating among the area's findings, and whether a finding at that Rating
 is on the main task:
 
@@ -97,7 +100,9 @@ score, and the report says so.
 
 There is **no total** across areas. The areas are not interchangeable: accessibility
 comes first (`SKILL.md`, *When rules pull against each other*), and a sum would let a
-good forms score hide a failing accessibility one.
+good score in one area hide a failure in another. For the same reason the report lists
+each rule filed under another, so a good score in its own area does not hide a failure
+counted elsewhere.
 
 ## The report
 
@@ -113,14 +118,17 @@ good forms score hide a failing accessibility one.
    not one finding per place: a missing focus ring on every button is one fix, and
    counting it forty times would bury the rest. Two different problems under one rule
    are two findings.
-4. **Not checked**, and why — the rules not checked, the rules that do not apply, and
-   the rules filed under another (with that rule's ID), by area; each rule evidenced on only some of the walked screens where it applied,
-   with the screens missed (the scores do not change); the passes that could not run —
-   and, for each rule the eye cannot judge, the evidence, as `SKILL.md`'s Report asks.
-5. **Any rule traded** for another, and why.
-6. **The fixes, in order**: Major first; within each Rating, the smallest fix first.
-7. **The design record**: the draft, or the changes the existing one needs.
-8. **The by-eye script** from `SKILL.md`'s Report, the steps that apply.
+4. **Filed under another rule** — each rule that fails only inside another rule's
+   finding, with the ID of each rule it is filed under, by area. These were checked;
+   they count where the defect is filed.
+5. **Not checked**, and why — the rules not checked and the rules that do not apply, by
+   area; each rule evidenced on only some of the walked screens where it applied, with
+   the screens missed (the scores do not change); the passes that could not run — and,
+   for each rule the eye cannot judge, the evidence, as `SKILL.md`'s Report asks.
+6. **Any rule traded** for another, and why.
+7. **The fixes, in order**: Major first; within each Rating, the smallest fix first.
+8. **The design record**: the draft, or the changes the existing one needs.
+9. **The by-eye script** from `SKILL.md`'s Report, the steps that apply.
 
 ## Auditing again
 
