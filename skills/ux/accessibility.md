@@ -15,8 +15,8 @@ for the rules it loaded, and never that the interface meets WCAG AA.
   button, field, menu and custom control is reachable with Tab and operable with Enter,
   Space or the arrow keys its role expects; a control that hover reveals, focus reveals
   too. (2.1.1, failure F54) The practice beyond it: touch reveals that control too, as a
-  touch screen cannot hover (MDN, `hover` media feature); other content hover reveals,
-  focus (Understanding 1.4.13) and touch reveal as well, except a `title` tooltip.
+  touch screen cannot hover, or not conveniently (MDN, `hover`); other content hover
+  reveals, focus (Understanding 1.4.13) and touch reveal as well, except a `title` tooltip.
 - **UX-A02** [standard] Focus never gets stuck: a person can always Tab, or press Escape,
   out of a widget or an embedded frame, and leaves a dialog by closing it — Escape or its
   close control — not by tabbing out, which a modal dialog does not allow (UX-A06).

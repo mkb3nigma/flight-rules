@@ -35,11 +35,14 @@ An inconsistency is filed against an existing record as "record". Where there wa
 record before the audit, it is filed under UX-P07 instead, and the design record area is
 **not scored**: there was nothing yet to compare against.
 
-One defect is filed once, under the most specific rule that covers it: a field's
-missing label is UX-F01, not also UX-A18; a colour-only error is UX-F14, not also
-UX-A10. Where the design record itself breaks a rule — a colour pair in it fails
-contrast — the finding goes under that rule and its area (UX-A08), with `Where` naming
-the record, not under "record".
+One defect is filed once, under the most specific rule that covers it — for a field or
+a form, the `forms.md` rule: a field's missing label is UX-F01, not also UX-A18; a
+colour-only error is UX-F14, not also UX-A10. It counts once, under that rule; the less
+specific rule's outcome is not a finding for that defect. Where the design record itself
+breaks a rule — a colour pair in it fails contrast — the finding goes under that rule
+and its area (UX-A08), not under "record", and its `Where` names the record and each
+walked screen that uses the broken value. It is on the main task if any of those
+screens is; if no walked screen uses the value, it is not.
 
 Each rule of every topic has one outcome over the walked screens:
 
