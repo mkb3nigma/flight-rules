@@ -57,8 +57,8 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
   today", not "Invalid date". (3.3.3)
 - **UX-F16** [rule of thumb] The error sits next to the field, and on submit a summary at
   the top lists every error with a link to each field, in the same words as the message
-  beside it; focus moves to the summary or to the first error (GOV.UK Design System,
-  error summary). The hint and the error are tied to the field in the markup
+  beside it; focus moves to the summary (GOV.UK Design System, error summary) or to the
+  first error. The hint and the error are tied to the field in the markup
   (`aria-describedby`), and the field is marked invalid (`aria-invalid`) only once
   validation has failed (WCAG technique ARIA21). The browser's own validation does not
   meet this: with it on, the browser reports the problem itself and stops before the
@@ -69,8 +69,7 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
   not only the valid ones. Losing input on an error is a Major finding.
 - **UX-F18** [rule of thumb] Validate a field when the person leaves it or submits, not on
   every keystroke while they are still typing it; clear the error as soon as it is
-  fixed. An empty required field is not an error until the person submits. The GOV.UK
-  Design System disputes the first part: it validates only when the person moves on.
+  fixed. An empty required field is not an error until the person submits.
 - **UX-F19** [rule of thumb] A disabled submit button that never says why is a dead end:
   leave it enabled and show the errors on submit, or say beside it what is missing.
 
