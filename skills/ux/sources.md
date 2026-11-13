@@ -14,7 +14,7 @@ a rule resting on one asks it (advisory).
 
 | Source | Kind | Rules |
 |---|---|---|
-| WCAG 2.2, W3C Recommendation, 12 December 2024 — https://www.w3.org/TR/WCAG22/ | living | UX-A01 UX-A02 UX-A03 UX-A04 UX-A05 UX-A06 UX-A07 UX-A08 UX-A09 UX-A10 UX-A11 UX-A12 UX-A13 UX-A14 UX-A15 UX-A16 UX-A17 UX-A18 UX-A19 UX-A20 UX-A21 UX-A22 UX-A23 UX-A24 UX-A25 UX-A26 UX-A27 UX-A28 UX-A29 UX-A30 UX-A31 UX-A33 UX-A34 UX-A35 UX-F01 UX-F02 UX-F04 UX-F09 UX-F13 UX-F14 UX-F15 UX-F20 |
+| WCAG 2.2, W3C Recommendation, 12 December 2024 — https://www.w3.org/TR/WCAG22/ | living | UX-A01 UX-A02 UX-A03 UX-A04 UX-A05 UX-A06 UX-A07 UX-A08 UX-A09 UX-A10 UX-A11 UX-A12 UX-A13 UX-A14 UX-A15 UX-A16 UX-A17 UX-A18 UX-A19 UX-A20 UX-A21 UX-A22 UX-A23 UX-A24 UX-A25 UX-A26 UX-A27 UX-A28 UX-A29 UX-A30 UX-A31 UX-A33 UX-A34 UX-A35 UX-A37 UX-A38 UX-F01 UX-F02 UX-F04 UX-F09 UX-F13 UX-F14 UX-F15 UX-F20 |
 | WAI-ARIA Authoring Practices, Dialog (Modal) pattern — https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/ | living | UX-A02 UX-A06 |
 | WAI-ARIA Authoring Practices, Developing a Keyboard Interface (persistence of focus) — https://www.w3.org/WAI/ARIA/apg/practices/keyboard-interface/ | living | UX-A06 |
 | MDN, `<dialog>`: the Dialog element (`showModal()`) — https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/dialog | living | UX-A06 |

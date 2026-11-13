@@ -5,15 +5,17 @@ project can raise it in its extension file. Numbers in brackets are the success
 criteria; read the criterion itself when a case is unclear: https://www.w3.org/TR/WCAG22/
 
 These rules are the ones an interface most often fails. They are not the whole standard:
-no rule here covers 1.2.1–1.2.5 (audio and video), 1.3.3, 1.4.2, 2.1.4, 2.4.5,
-2.5.2, 2.5.4 or 3.1.2, and 1.3.5, 3.3.1–3.3.4, 3.3.7 and 3.3.8 are in `forms.md`. A report says AA was checked only for the rules it loaded, and
+no rule here covers 1.2.1–1.2.5 (audio and video), 1.4.2, 2.4.5, 2.5.4 or 3.1.2, and 1.3.5, 3.3.1–3.3.4, 3.3.7 and 3.3.8 are in `forms.md`. A report says AA was checked only for the rules it loaded, and
 never that the interface meets WCAG AA.
 
 ## Keyboard and focus
 
 - **UX-A01** [standard] Everything a pointer can do, the keyboard can do: every link,
   button, field, menu and custom control is reachable with Tab and operable with Enter,
-  Space or the arrow keys its role expects. (2.1.1)
+  Space or the arrow keys its role expects. (2.1.1) Nothing is reachable only by hover:
+  what hover reveals, keyboard focus reveals too (failure F54; Understanding 1.4.13);
+  that it is also there on a touch screen, which cannot hover, is the practice beyond
+  the criterion.
 - **UX-A02** [standard] Focus never gets stuck: a person can always Tab, or press Escape,
   out of a widget or an embedded frame, and leaves a dialog by closing it — Escape or its
   close control — not by tabbing out, which a modal dialog does not allow (UX-A06).
@@ -40,6 +42,9 @@ never that the interface meets WCAG AA.
   interface).
 - **UX-A07** [standard] A repeated block — the site navigation — can be skipped: a "skip to
   content" link, or landmarks a screen reader can jump between. (2.4.1)
+- **UX-A38** [standard] A keyboard shortcut that is a single letter, digit, punctuation
+  or symbol key can be turned off, or remapped to include a modifier key such as Ctrl
+  or Alt, or works only while its control has focus. (2.1.4)
 
 ## Seeing it
 
@@ -50,7 +55,10 @@ never that the interface meets WCAG AA.
   checkbox, a focus ring — and meaningful graphics contrast with what is next to them at
   least 3:1. (1.4.11)
 - **UX-A10** [standard] Colour is never the only signal: an error, a required field, a
-  status, a link inside text also has text, an icon or an underline. (1.4.1)
+  status, a link inside text also has text, an icon or an underline. (1.4.1) An
+  instruction names the thing it points at, never only its colour, shape, size,
+  position or sound: "press Save", not "the round button" or "the panel on the right".
+  (1.3.3)
 - **UX-A11** [standard] Text resizes to 200% without anything cut off or overlapping.
   (1.4.4) A viewport tag with `user-scalable=no`, or `maximum-scale` below 2, fails it
   (ACT rule b4f0c3, *Meta viewport allows for zoom*).
@@ -93,7 +101,8 @@ never that the interface meets WCAG AA.
   sortable table).
 - **UX-A22** [standard] Headings and labels say what follows them. (2.4.6)
 - **UX-A23** [standard] Each page has a title saying what it is, and the page declares its
-  language. (2.4.2, 3.1.1)
+  language. (2.4.2, 3.1.1) Where a view changes without a page load, as in a
+  single-page app, the title changes with the view (Understanding 2.4.2).
 - **UX-A24** [standard] A link's purpose is clear from its text, or from its text and its
   sentence; "click here" alone is a finding. (2.4.4)
 - **UX-A25** [standard] A status message — "Saved", "3 results", an error count — is
@@ -111,6 +120,12 @@ never that the interface meets WCAG AA.
   taps. (2.5.7)
 - **UX-A28** [standard] Anything done with a multi-point or path gesture (pinch, swipe a
   shape) can also be done with a single pointer. (2.5.1)
+- **UX-A37** [standard] A control acts when the pointer is released, not when it is
+  pressed, so a person who presses the wrong one can slide off it: `click`, not
+  `mousedown`, `pointerdown` or `touchstart` (failure F101; native controls already do
+  this, G212). A drag may start on the press; otherwise acting on the press is only
+  for an action the release reverses, or one where acting on the press is essential.
+  (2.5.2)
 - **UX-A29** [standard] Moving, blinking or scrolling content that starts by itself and
   lasts more than five seconds can be paused, stopped or hidden; content that updates by
   itself can be paused, hidden, or slowed. (2.2.2)
