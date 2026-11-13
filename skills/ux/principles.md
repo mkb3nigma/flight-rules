@@ -32,6 +32,14 @@ rule a finding cites.
   yours to work the same way (Jakob's law, Nielsen 2000): a logo that links home, a
   search box with a magnifying glass, a cart top right, standard form controls. Depart
   from a convention only for a reason worth the relearning.
+- **UX-P21** [rule of thumb] The browser's Back returns to the view the person took to be
+  the previous one: it closes an overlay that looked like a page, undoes a filter or
+  sort, goes back one step. A view worth returning to or sending to someone — a record,
+  a tab, a filtered or sorted list, a page of results — has its own URL, and a reload or
+  a pasted link restores it. State held only in memory is where this breaks. People
+  take an overlay for a new page and press Back to close it (Nielsen Norman Group,
+  *User Control and Freedom*); 59% of e-commerce sites in Baymard's benchmark got at
+  least one such Back expectation wrong (measured on shops).
 - **UX-P07** [rule of thumb] Within the product, the same thing looks and behaves the same
   everywhere: the project's design record decides how. Where it differs, a person
   carries what they learned on one screen to another and is wrong.

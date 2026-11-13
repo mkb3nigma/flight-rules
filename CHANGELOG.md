@@ -223,7 +223,7 @@ says how.
   run themselves. Text that names the variable with a value is refused too: the guard's
   accepted trade on prose.
 - **`/ux`, a first guide** (#154, #159): accessibility (WCAG 2.2 A and AA, with the
-  criteria it does not cover listed), states, forms and basic UX principles, 99 rules in
+  criteria it does not cover listed), states, forms and basic UX principles, 101 rules in
   four topic files, each labelled a standard, a finding or a rule of thumb, with
   `sources.md` mapping every source to its rules. It loads only the topics a task needs,
   and keeps the project's design record (`.ai/design.md` by default), starting it with
@@ -248,6 +248,16 @@ says how.
   failure with its criterion.
   UX-P19, the Pareto principle, is no longer a rule: it is a note on what to build
   first in `principles.md`'s introduction, and its ID is retired.
+  A second pass added: a control acts on release, not press (UX-A37, 2.5.2); a
+  single-key shortcut can be turned off, remapped or scoped to focus (UX-A38, 2.1.4);
+  a single-page app changes its title with the view; nothing is reachable only by
+  hover; an instruction never points only by colour, shape or position (1.3.3); Back
+  and reload behave as the person expects, and a view worth returning to has a URL
+  (UX-P21); a busy button stays in the Tab order; unsized media is named; the browser's
+  own validation is turned off so the page's errors show. Reviewing an existing
+  interface goes screen by screen, names its scope and orders findings by Rating, and
+  the passes add Back and reload and no hover. UX-S07 is folded into UX-S08, and a
+  retired rule ID is never reused.
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back.

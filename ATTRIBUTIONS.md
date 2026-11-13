@@ -130,11 +130,14 @@ practice they add beyond a criterion, and the markup they ask for, rest on W3C's
 supporting documents: the **[WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/)**
 (the modal dialog pattern, the keyboard interface, *Read Me First*, the sortable table),
 the **[WAI Tables Tutorial](https://www.w3.org/WAI/tutorials/tables/)**, *Understanding
-WCAG 2.2* for 1.3.2, technique ARIA21, and ACT rule b4f0c3; and on MDN's page on the
-`dialog` element. `forms.md` also follows the **[GOV.UK Design
-System](https://design-system.service.gov.uk/)** (the error summary and the validation
-pattern, recording where it disputes a rule) and GDPR recital 32 on consent. Each is
-summarised in this skill's own words and named beside its rule.
+WCAG 2.2* for 1.3.2, 1.3.3, 1.4.13, 2.1.4, 2.4.2 and 2.5.2, techniques ARIA21 and G212,
+failures F54 and F101, and ACT rule b4f0c3; and on MDN's pages on the `dialog` element,
+the `hover` media feature and `aria-disabled`. `forms.md` also follows the **[GOV.UK
+Design System](https://design-system.service.gov.uk/)** (the error summary and the
+validation pattern, recording where it disputes a rule), the **[HTML
+Standard](https://html.spec.whatwg.org/)**'s form submission algorithm, and GDPR
+recital 32 on consent. Each is summarised in this skill's own words and named beside
+its rule.
 
 `principles.md`, `states.md` and `forms.md` restate published findings in their own
 words, each named with its source: Hick (1952) and Hyman (1953); Fitts (1954); the
@@ -145,8 +148,9 @@ revising Miller 1956); the serial position effect; the aesthetic-usability effec
 (Kivetz, Urminsky and Zheng 2006); the Zeigarnik and Ovsiankina effects as weighed by
 Ghibellini and Meier (2025); response-time limits as given by Nielsen Norman Group;
 the Core Web Vitals responsiveness threshold and the layout-shift guidance (web.dev);
-Jakob's law and the second of the ten usability heuristics (Nielsen); Tesler's law;
-Postel's robustness principle (RFC 761).
+Jakob's law, the second of the ten usability heuristics and *User Control and Freedom*
+(Nielsen and Nielsen Norman Group); Baymard Institute's benchmark of Back button
+expectations; Tesler's law; Postel's robustness principle (RFC 761).
 
 The starting list was **[The UX laws in my CLAUDE.md](https://adamhayes.xyz/blog/the-ux-laws-in-my-claude-md)**
 by Adam Hayes (2026-09-01), which states no licence; no text is taken from it. What
