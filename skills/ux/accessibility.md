@@ -5,7 +5,7 @@ project can raise it in its extension file. Numbers in brackets are the success
 criteria; read the criterion itself when a case is unclear: https://www.w3.org/TR/WCAG22/
 
 These rules are the ones an interface most often fails. They are not the whole standard:
-no rule here covers 1.2.1–1.2.5 (audio and video), 1.3.2, 1.3.3, 1.4.2, 2.1.4, 2.4.5,
+no rule here covers 1.2.1–1.2.5 (audio and video), 1.3.3, 1.4.2, 2.1.4, 2.4.5,
 2.5.2, 2.5.4 or 3.1.2, and 1.3.5, 3.3.1–3.3.4, 3.3.7 and 3.3.8 are in `forms.md`. A report says AA was checked only for the rules it loaded, and
 never that the interface meets WCAG AA.
 
@@ -15,15 +15,29 @@ never that the interface meets WCAG AA.
   button, field, menu and custom control is reachable with Tab and operable with Enter,
   Space or the arrow keys its role expects. (2.1.1)
 - **UX-A02** [standard] Focus never gets stuck: a person can always Tab, or press Escape,
-  out of a widget, a dialog or an embedded frame. (2.1.2)
+  out of a widget or an embedded frame, and leaves a dialog by closing it — Escape or its
+  close control — not by tabbing out, which a modal dialog does not allow (UX-A06).
+  (2.1.2)
 - **UX-A03** [standard] The focus order preserves meaning and operation: in practice, the
   reading order of the layout. (2.4.3) A positive `tabindex` is where it usually breaks.
+  The order in the markup is the order on screen, so what is read out follows what is
+  seen (1.3.2, technique C27); reordering with CSS — `order`, a reversed flex direction,
+  absolute positioning — is where that breaks (failure F1).
 - **UX-A04** [standard] The focused element is always visibly marked; removing the focus
   outline without a replacement is a finding. (2.4.7)
 - **UX-A05** [standard] A focused element is never wholly hidden behind a sticky header,
   footer or banner. (2.4.11)
-- **UX-A06** [standard] A dialog moves focus into itself when it opens. (2.4.3) Moving it back
-  to the control that opened it, when it closes, is the practice beyond the criterion.
+- **UX-A06** [standard] A dialog moves focus into itself when it opens. (2.4.3) The practice
+  beyond the criterion (ARIA Authoring Practices, modal dialog): while a modal dialog is
+  open, Tab and Shift+Tab stay inside it, Escape closes it, the page behind cannot be
+  operated, and it has a name — its title, through `aria-labelledby`; when it closes,
+  focus goes back to the control that opened it. A native `dialog` opened with
+  `showModal()` makes the page behind inert and closes on Escape; its name is still
+  the author's to give. When the focused element is removed — a deleted row, a closed
+  panel — or the view changes without a page load, focus moves somewhere sensible: the
+  next item, the control that opened it, or the new view's heading. Left alone, it falls
+  to the page body and the person's place is lost (Authoring Practices, keyboard
+  interface).
 - **UX-A07** [standard] A repeated block — the site navigation — can be skipped: a "skip to
   content" link, or landmarks a screen reader can jump between. (2.4.1)
 
@@ -38,9 +52,11 @@ never that the interface meets WCAG AA.
 - **UX-A10** [standard] Colour is never the only signal: an error, a required field, a
   status, a link inside text also has text, an icon or an underline. (1.4.1)
 - **UX-A11** [standard] Text resizes to 200% without anything cut off or overlapping.
-  (1.4.4)
+  (1.4.4) A viewport tag with `user-scalable=no`, or `maximum-scale` below 2, fails it
+  (ACT rule b4f0c3, *Meta viewport allows for zoom*).
 - **UX-A12** [standard] At 320 CSS pixels wide the page scrolls in one direction only:
-  no sideways scrolling for text, except tables, maps and the like. (1.4.10)
+  no sideways scrolling for text, except tables, maps and the like. (1.4.10) A wide table
+  scrolls inside its own container, not the page: the practice beyond the criterion.
 - **UX-A13** [standard] Layout survives a person's own text spacing: line height 1.5 times
   the font size, paragraph spacing 2 times, letter spacing 0.12 times, word spacing
   0.16 times. Fixed-height text boxes are where this breaks. (1.4.12)
@@ -66,9 +82,15 @@ never that the interface meets WCAG AA.
   checked) and keeps them current. (4.1.2)
 - **UX-A36** [rule of thumb] Use the native element for its job — `button`, `a`, `input`,
   `select`, `label` — before a `div` with a role: it brings its role, states and
-  keyboard handling with it.
+  keyboard handling with it. A role promises its keyboard behaviour: a custom widget
+  given a role — tabs, a menu, a combobox — is built to that role's pattern in the ARIA
+  Authoring Practices, or is not given the role (Authoring Practices, *Read Me First*).
 - **UX-A21** [standard] Headings, lists, tables and form groups are marked up as such, so
-  structure seen on screen is structure a screen reader gets. (1.3.1)
+  structure seen on screen is structure a screen reader gets. (1.3.1) A data table's
+  header cells are `th`, with `scope` set where a header's direction is not obvious, and
+  a sortable column says its sort state in the markup (`aria-sort` on the sorted
+  column's header) as well as showing it (WAI tables tutorial; Authoring Practices,
+  sortable table).
 - **UX-A22** [standard] Headings and labels say what follows them. (2.4.6)
 - **UX-A23** [standard] Each page has a title saying what it is, and the page declares its
   language. (2.4.2, 3.1.1)
