@@ -4,7 +4,7 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
-## 0.29.0 — 2026-11-11
+## 0.29.0 — 2026-11-14
 
 Every stop now prints the one command that goes ahead anyway —
 `FLIGHT_RULES_GO_AHEAD=1` in front of the command that finishes what was stopped — so
