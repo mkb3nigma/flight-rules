@@ -14,31 +14,32 @@ for the rules it loaded, and never that the interface meets WCAG AA.
 - **UX-A01** [standard] Everything a pointer can do, the keyboard can do: every link,
   button, field, menu and custom control is reachable with Tab and operable with Enter,
   Space or the arrow keys its role expects; a control that hover reveals, focus reveals
-  too. (2.1.1, failure F54) The practice beyond it: other content hover reveals, focus
-  and touch reveal too (Understanding 1.4.13), except a browser-drawn `title` tooltip.
+  too. (2.1.1, failure F54) The practice beyond it: touch reveals that control too, as a
+  touch screen cannot hover (MDN, `hover` media feature); other content hover reveals,
+  focus (Understanding 1.4.13) and touch reveal as well, except a `title` tooltip.
 - **UX-A02** [standard] Focus never gets stuck: a person can always Tab, or press Escape,
   out of a widget or an embedded frame, and leaves a dialog by closing it — Escape or its
   close control — not by tabbing out, which a modal dialog does not allow (UX-A06).
   (2.1.2)
 - **UX-A03** [standard] The focus order preserves meaning and operation: in practice, the
   reading order of the layout. (2.4.3) A positive `tabindex` is where it usually breaks.
-  Where order carries meaning, the markup order is the reading order. (1.3.2) Keeping
-  markup and screen order the same throughout is the practice beyond it (technique C27);
-  CSS reordering breaks it: positioning (failure F1), and `order` or a reversed flex row.
+  Where order carries meaning, the markup order is the reading order, and CSS
+  positioning that changes the meaning fails it. (1.3.2, failure F1) Practice beyond it:
+  markup and screen order the same throughout (technique C27), which `order` or a
+  reversed flex row breaks.
 - **UX-A04** [standard] The focused element is always visibly marked; removing the focus
   outline without a replacement is a finding. (2.4.7)
 - **UX-A05** [standard] A focused element is never wholly hidden behind a sticky header,
   footer or banner. (2.4.11)
-- **UX-A06** [standard] A dialog moves focus into itself when it opens. (2.4.3) The practice
+- **UX-A06** [standard] A dialog moves focus into itself when it opens. (2.4.3) Practice
   beyond the criterion (ARIA Authoring Practices, modal dialog): while a modal dialog is
   open, Tab and Shift+Tab stay inside it, Escape closes it, the page behind cannot be
-  operated, and it has a name — its title, through `aria-labelledby`; when it closes,
-  focus goes back to the control that opened it. A native `dialog` opened with
-  `showModal()` makes the page behind inert and closes on Escape; its name is still
-  the author's to give. When a dialog closes or the focused item is deleted, focus goes to
-  the control that opened it or the next item; left alone, it falls to the page body
-  (Authoring Practices, keyboard interface). This guide's own practice: when the view
-  changes without a page load, focus moves to the new view's heading.
+  operated, and it has a name — its title, through `aria-labelledby`. A native `dialog`
+  opened with `showModal()` makes the page behind inert and closes on Escape; its name
+  is still the author's to give. Also practice: when a dialog closes or the focused item
+  is deleted, focus goes to the control that opened it or the next item, not the page
+  body (Authoring Practices, keyboard interface); when the view changes without a page
+  load, to the new view's heading (this guide's own practice).
 - **UX-A07** [standard] A repeated block — the site navigation — can be skipped: a "skip to
   content" link, or landmarks a screen reader can jump between. (2.4.1)
 - **UX-A38** [standard] A keyboard shortcut made only of printable characters — letters,
@@ -61,8 +62,8 @@ for the rules it loaded, and never that the interface meets WCAG AA.
   (1.3.3)
 - **UX-A11** [standard] Text resizes to 200% without anything cut off or overlapping.
   (1.4.4) A viewport tag with `user-scalable=no`, or `maximum-scale` below 2, is a
-  finding, rated as practice beyond the criterion: a page can still meet 1.4.4 another
-  way (ACT rule b4f0c3, *Meta viewport allows for zoom*).
+  finding under 1.4.4, unless the page gives another way to enlarge its text (ACT rule
+  b4f0c3, *Meta viewport allows for zoom*).
 - **UX-A12** [standard] At 320 CSS pixels wide the page scrolls in one direction only:
   no sideways scrolling for text, except tables, maps and the like. (1.4.10) The practice
   beyond it: a wide table scrolls in its own container, so the content around it can
@@ -98,9 +99,9 @@ for the rules it loaded, and never that the interface meets WCAG AA.
 - **UX-A21** [standard] Headings, lists, tables and form groups are marked up as such, so
   structure seen on screen is structure a screen reader gets. (1.3.1) A data table's
   header cells are `th`, with `scope` set where a header's direction is not obvious, and
-  a sortable column says its sort state in the markup (`aria-sort` on the sorted
-  column's header) as well as showing it (WAI tables tutorial; Authoring Practices,
-  sortable table).
+  a sortable column's sort state is in the markup — `aria-sort` on the sorted column's
+  header, for example — or in the header's text, not only shown (WAI tables tutorial;
+  Authoring Practices, sortable table).
 - **UX-A22** [standard] Headings and labels say what follows them. (2.4.6)
 - **UX-A23** [standard] Each page has a title saying what it is, and the page declares its
   language. (2.4.2, 3.1.1) The practice beyond them: where a view changes without a

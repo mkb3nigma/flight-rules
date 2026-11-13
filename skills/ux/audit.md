@@ -35,6 +35,12 @@ An inconsistency is filed against an existing record as "record". Where there wa
 record before the audit, it is filed under UX-P07 instead, and the design record area is
 **not scored**: there was nothing yet to compare against.
 
+One defect is filed once, under the most specific rule that covers it: a field's
+missing label is UX-F01, not also UX-A18; a colour-only error is UX-F14, not also
+UX-A10. Where the design record itself breaks a rule — a colour pair in it fails
+contrast — the finding goes under that rule and its area (UX-A08), with `Where` naming
+the record, not under "record".
+
 Each rule of every topic has one outcome over the walked screens:
 
 | Outcome | When |
@@ -62,9 +68,11 @@ is on the main task:
 | 0 | a Major finding is on the main task |
 
 Beside each score, its counts: Major, Medium, Minor, and the area's rules **not
-checked**. A rule that does not apply leaves the count. An area whose rules all do not
-apply — no form anywhere — is **n/a**. An area with more than half of its remaining
-rules **not checked** is **not scored**: it gets no number it was not checked for.
+checked** (for the design record, which has no rules, "—"). A rule that does not apply
+leaves the count. An area whose rules all do not apply — forms, with no input and no
+destructive action on any walked screen — is **n/a**. An area with more than half of
+its remaining rules **not checked** is **not scored**: it gets no number it was not
+checked for.
 
 With `SKILL.md`'s floor, a failed criterion on the main task holds accessibility (or
 forms) at 2 or below, however small the fix; the counts beside the score carry the
@@ -85,14 +93,17 @@ good forms score hide a failing accessibility one.
 1. **The walk** — the main task, and every screen and flow walked, the main task's
    marked.
 2. **The score table** — area, score, Major / Medium / Minor, not checked, and the ID of
-   the finding that set the score (on a tie, the first in register order).
-3. **The findings register**, worst first, in `SKILL.md`'s columns unchanged. One rule
-   failing in many places is one finding, with its count and two or three examples,
+   the key finding, the one that set the score: on a tie, the first in register order
+   among the worst-rated, those on the main task first.
+3. **The findings register**, worst first, in `SKILL.md`'s columns unchanged. One problem
+   recurring in many places is one finding, with its count and two or three examples,
    not one finding per place: a missing focus ring on every button is one fix, and
-   counting it forty times would bury the rest.
+   counting it forty times would bury the rest. Two different problems under one rule
+   are two findings.
 4. **Not checked**, and why — the rules not checked and the rules that do not apply,
-   by area; the passes that could not run — and, for each rule the eye cannot judge,
-   the evidence, as `SKILL.md`'s Report asks.
+   by area; each rule evidenced on only some of the walked screens where it applied,
+   with the screens missed (the scores do not change); the passes that could not run —
+   and, for each rule the eye cannot judge, the evidence, as `SKILL.md`'s Report asks.
 5. **Any rule traded** for another, and why.
 6. **The fixes, in order**: Major first; within each Rating, the smallest fix first.
 7. **The design record**: the draft, or the changes the existing one needs.
