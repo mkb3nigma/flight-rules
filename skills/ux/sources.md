@@ -30,7 +30,7 @@ a rule resting on one asks it (advisory).
 | web.dev, *Optimize Cumulative Layout Shift* — https://web.dev/articles/optimize-cls | living | UX-S06 |
 | Nielsen Norman Group, *10 Usability Heuristics for User Interface Design*, heuristic 2 — https://www.nngroup.com/articles/ten-usability-heuristics/ | living | UX-P20 |
 | Core Web Vitals thresholds (Interaction to Next Paint) — https://web.dev/articles/defining-core-web-vitals-thresholds | living | UX-S10 |
-| Nielsen Norman Group, *Response Times: The 3 Important Limits* — https://www.nngroup.com/articles/response-times-3-important-limits/ | living | UX-S07 UX-S08 UX-S09 |
+| Nielsen Norman Group, *Response Times: The 3 Important Limits* — https://www.nngroup.com/articles/response-times-3-important-limits/ | living | UX-S08 UX-S09 |
 | Ghibellini and Meier (2025), Zeigarnik and Ovsiankina meta-analysis, *Humanities and Social Sciences Communications* 12 — https://ideas.repec.org/a/pal/palcom/v12y2025i1d10.1057_s41599-025-05000-w.html | fixed | UX-S19 |
 | Kahneman et al., the peak-end rule (1993) | fixed | UX-S18 |
 | Kivetz, Urminsky and Zheng (2006), the goal-gradient effect | fixed | UX-F27 |
