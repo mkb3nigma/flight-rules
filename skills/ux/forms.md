@@ -60,7 +60,11 @@ failures sit. WCAG numbers in brackets: https://www.w3.org/TR/WCAG22/
   beside it; focus moves to the summary or to the first error (GOV.UK Design System,
   error summary). The hint and the error are tied to the field in the markup
   (`aria-describedby`), and the field is marked invalid (`aria-invalid`) only once
-  validation has failed (WCAG technique ARIA21).
+  validation has failed (WCAG technique ARIA21). The browser's own validation does not
+  meet this: with it on, the browser reports the problem itself and stops before the
+  form's `submit` event fires, so the page's messages and summary never run. Put
+  `novalidate` on the form and show the errors in the page (HTML standard, form
+  submission; GOV.UK Design System, validation).
 - **UX-F17** [rule of thumb] An error keeps everything the person entered — every field,
   not only the valid ones. Losing input on an error is a Major finding.
 - **UX-F18** [rule of thumb] Validate a field when the person leaves it or submits, not on
