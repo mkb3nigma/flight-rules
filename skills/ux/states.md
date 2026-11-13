@@ -14,7 +14,11 @@ https://web.dev/articles/defining-core-web-vitals-thresholds
 
 - **UX-S01** [rule of thumb] Each screen or component that shows data is designed in five
   states: empty, loading, partial (some data, or some failed), error, and success. A
-  review lists any state that was not built.
+  review lists any state that was not built. Each is also built and checked with the
+  longest and largest plausible content — a long name, an unbroken string, many more
+  rows than fit, a missing optional value: text wraps, or truncates with the full value
+  reachable, and a long list pages, loads in parts or filters. Built only against short
+  sample data, as an assistant's first version usually is, none of this shows.
 - **UX-S02** [rule of thumb] An empty state says what will appear there and how to make the
   first one — a button to create it, or a line on how it fills — not a blank area or a
   bare "No data".
@@ -27,14 +31,17 @@ https://web.dev/articles/defining-core-web-vitals-thresholds
 - **UX-S05** [rule of thumb] A partial failure is shown as partial: the items that loaded
   are shown, and the ones that did not are marked, with a retry for those alone.
 - **UX-S06** [rule of thumb] Loading keeps the layout's shape — a skeleton or a reserved
-  area — so content does not jump when it arrives.
+  area — so content does not jump when it arrives. Nothing is inserted above what the
+  person is reading or about to press: a late banner, or an image, video or embed that
+  does not declare its size — `width` and `height`, or `aspect-ratio` (web.dev,
+  *Optimize Cumulative Layout Shift*).
 
 ## How fast, and what to show while waiting
 
-- **UX-S07** [finding] A response within about 0.1 second feels instant and needs no
-  feedback beyond the result.
-- **UX-S08** [finding] Up to about 1 second, the person's flow of thought holds; past
-  1 second, show that work is happening — a busy indicator on the control or the area.
+- **UX-S08** [finding] A response within about 0.1 second feels instant and needs no
+  feedback beyond the result. Up to about 1 second, the person's flow of thought
+  holds; past 1 second, show that work is happening — a busy indicator on the control
+  or the area.
 - **UX-S09** [finding] Past about 10 seconds, attention is lost: show progress — a
   percent-done bar where the work can be measured, or what is being done now where it
   cannot — and a way to cancel.
@@ -50,8 +57,11 @@ https://web.dev/articles/defining-core-web-vitals-thresholds
 - **UX-S12** [rule of thumb] Every action is acknowledged where the person is looking: a
   pressed state on the button, then the result or a message beside it. A save that
   succeeds silently is a finding.
-- **UX-S13** [rule of thumb] A button that starts work is disabled, or shows it is busy,
-  until the work ends, so a second click does not submit twice.
+- **UX-S13** [rule of thumb] A button that starts work shows it is busy and ignores a
+  second press until the work ends, so nothing is submitted twice. It stays in the Tab
+  order: `aria-disabled="true"`, with the press ignored in code, not `disabled`, which
+  browsers take out of the Tab sequence (Authoring Practices, keyboard interface; MDN,
+  `aria-disabled`).
 - **UX-S14** [rule of thumb] Success says what happened in specific terms — "Invoice 104
   sent to ana@example.com" — and, where it matters, what happens next.
 - **UX-S15** [rule of thumb] An optimistic update (showing the result before the server
@@ -66,9 +76,9 @@ https://web.dev/articles/defining-core-web-vitals-thresholds
 
 ## Ending well
 
-- **UX-S18** [finding] A flow ends on a clear completion: what was done, and what happens
-  next. People judge an experience largely by its most intense moment and its end
-  (Kahneman's peak-end rule, measured on experiences of pain and discomfort; applied
+- **UX-S18** [rule of thumb] A flow ends on a clear completion: what was done, and what
+  happens next. People judge an experience largely by its most intense moment and its
+  end (Kahneman's peak-end rule, measured on experiences of pain and discomfort; applied
   to interface flows by extrapolation); an end that is a blank page or an unexplained
   redirect costs more than its size suggests.
 - **UX-S19** [finding] An interrupted task is shown so it can be resumed — "You have an

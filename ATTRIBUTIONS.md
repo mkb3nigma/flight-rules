@@ -125,7 +125,19 @@ above.
 `accessibility.md` and part of `forms.md` follow the **[Web Content Accessibility
 Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/)** (W3C Recommendation, 12 December
 2024), level AA, citing each success criterion by number; the wording is this skill's
-own summary, not the specification's text, and the thresholds were read from it.
+own summary, not the specification's text, and the thresholds were read from it. The
+practice they add beyond a criterion, and the markup they ask for, rest on W3C's
+supporting documents: the **[WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/)**
+(the modal dialog pattern, the keyboard interface, *Read Me First*, the sortable table),
+the **[WAI Tables Tutorial](https://www.w3.org/WAI/tutorials/tables/)**, *Understanding
+WCAG 2.2* for 1.3.2, 1.3.3, 1.4.13, 2.1.4, 2.4.2 and 2.5.2, techniques ARIA21 and G212,
+failures F54 and F101, and ACT rule b4f0c3; and on MDN's pages on the `dialog` element,
+the `hover` media feature and `aria-disabled`. `forms.md` also follows the **[GOV.UK
+Design System](https://design-system.service.gov.uk/)** (the error summary and the
+validation pattern, recording where it disputes a rule), the **[HTML
+Standard](https://html.spec.whatwg.org/)**'s form submission algorithm, and GDPR
+recital 32 on consent. Each is summarised in this skill's own words and named beside
+its rule.
 
 `principles.md`, `states.md` and `forms.md` restate published findings in their own
 words, each named with its source: Hick (1952) and Hyman (1953); Fitts (1954); the
@@ -135,8 +147,10 @@ revising Miller 1956); the serial position effect; the aesthetic-usability effec
 (Kurosu and Kashimura 1995); the peak-end rule (Kahneman); the goal-gradient effect
 (Kivetz, Urminsky and Zheng 2006); the Zeigarnik and Ovsiankina effects as weighed by
 Ghibellini and Meier (2025); response-time limits as given by Nielsen Norman Group;
-the Core Web Vitals responsiveness threshold (web.dev); Jakob's law (Nielsen);
-Tesler's law; Postel's robustness principle (RFC 761).
+the Core Web Vitals responsiveness threshold and the layout-shift guidance (web.dev);
+Jakob's law, the second of the ten usability heuristics and *User Control and Freedom*
+(Nielsen and Nielsen Norman Group); Baymard Institute's benchmark of Back button
+expectations; Tesler's law; Postel's robustness principle (RFC 761).
 
 The starting list was **[The UX laws in my CLAUDE.md](https://adamhayes.xyz/blog/the-ux-laws-in-my-claude-md)**
 by Adam Hayes (2026-09-01), which states no licence; no text is taken from it. What
@@ -145,3 +159,14 @@ standard, a finding or a rule of thumb, with its limit; Miller's seven replaced 
 Cowan's three to five; the 0.4 s response figure replaced by the 0.1 / 1 / 10 s limits
 and the web's 200 ms threshold; the Zeigarnik effect kept only as resumption;
 Parkinson's law and Occam's razor left out as not interface findings.
+
+The structure of `audit.md`, the scored audit of an existing interface, is adapted from
+**[Impeccable](https://github.com/pbakaus/impeccable)** (`pbakaus/impeccable`, Apache 2.0),
+`skill/reference/audit.md` and `skill/reference/critique.md` read at `b4bff162`; the
+idea only, no text taken. Taken: an audit documents and does not fix; one score per
+area beside the findings; an area that could not be judged is not scored rather than
+passed. Not taken: its judged score levels (here a score is worked out from the
+findings register and can be recomputed), its totals and rating bands, its P0–P3
+severities (this guide rates Major, Medium and Minor by effect), the open-critique
+parts (gut reaction, personas, questions to consider, praise), its performance, theming
+and integrity areas, which have no rules here yet, and its saved-report scripts.

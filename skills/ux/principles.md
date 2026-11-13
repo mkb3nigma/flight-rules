@@ -2,7 +2,10 @@
 
 The long-established findings behind most interface advice, each with its limit. Several
 are popularly called "laws"; few are laws. The kind tells you how far to trust one: a
-`[finding]` was measured, a `[rule of thumb]` is practice.
+`[finding]` was measured, a `[rule of thumb]` is practice. For what to build first: a
+few features usually carry most of the use (the Pareto principle, a rough regularity),
+so make those fast and obvious before polishing the rest — a note on priorities, not a
+rule a finding cites.
 
 ## Choice
 
@@ -29,9 +32,21 @@ are popularly called "laws"; few are laws. The kind tells you how far to trust o
   yours to work the same way (Jakob's law, Nielsen 2000): a logo that links home, a
   search box with a magnifying glass, a cart top right, standard form controls. Depart
   from a convention only for a reason worth the relearning.
+- **UX-P21** [rule of thumb] The browser's Back returns to the view the person took to be
+  the previous one: it closes an overlay that looked like a page, undoes a filter or
+  sort, goes back one step. A view worth returning to or sending to someone — a record,
+  a tab, a filtered or sorted list, a page of results — has its own URL, and a reload or
+  a pasted link restores it. State held only in memory is where this breaks. People
+  take an overlay for a new page and press Back to close it (Nielsen Norman Group,
+  *User Control and Freedom*); 59% of e-commerce sites in Baymard's benchmark got at
+  least one such Back expectation wrong (measured on shops).
 - **UX-P07** [rule of thumb] Within the product, the same thing looks and behaves the same
   everywhere: the project's design record decides how. Where it differs, a person
   carries what they learned on one screen to another and is wrong.
+- **UX-P20** [rule of thumb] What a person reads is in their terms, not the system's: a
+  label, not an enum or column name (`PENDING_REVIEW`); a name, not an ID; dates, times
+  and numbers in the person's format, not ISO strings or raw `true` and `false`
+  (Nielsen's heuristic 2, *match between the system and the real world*).
 
 ## Grouping and layout
 
@@ -66,15 +81,13 @@ From Gestalt psychology (Wertheimer 1923, and later work):
   from Miller 1956. Design for recognition over recall: show what the person chose on
   one screen when they need it on the next, and group long numbers and lists into
   chunks. Never use this number to size a menu.
-- **UX-P16** [finding] People remember the first and last items of a sequence best (the
-  serial position effect): put the most important navigation items first and last.
-  Applying it to menus is an extrapolation from list recall; treat it as a tiebreaker.
+- **UX-P16** [rule of thumb] People remember the first and last items of a sequence best
+  (the serial position effect): put the most important navigation items first and
+  last. Applying it to menus is an extrapolation from list recall; treat it as a
+  tiebreaker.
 
 ## Judging your own work
 
 - **UX-P18** [finding] An attractive interface is judged easier to use than it is (the
   aesthetic-usability effect, Kurosu and Kashimura 1995): when a design looks good, check
   it against these rules anyway — looking good is when problems are missed.
-- **UX-P19** [rule of thumb] A few features carry most of the use (the Pareto principle,
-  a rough regularity): find which, and make those fast and obvious before polishing the
-  rest.

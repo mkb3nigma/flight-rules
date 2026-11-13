@@ -34,7 +34,7 @@ where it has one, its source.
 | `accessibility.md` beside this file | puts anything on a screen. Always, for interface work. |
 | `states.md` beside this file | loads, saves, submits or waits on anything; shows a list or data that can be empty. |
 | `forms.md` beside this file | takes input: a form, a field, a search box, a settings page, a destructive action. |
-| `principles.md` beside this file | lays out a screen, a menu or a flow; adds choices; decides what is primary. |
+| `principles.md` beside this file | lays out a screen, a menu or a flow; moves between views; adds choices; decides what is primary. |
 
 `sources.md` beside this file lists every source and the rules that rest on it. It is
 for maintaining this guide, not for building: do not load it for a task.
@@ -46,13 +46,23 @@ for maintaining this guide, not for building: do not load it for a task.
 2. Read the topics the task needs, from the table above.
 3. Reuse a component or pattern the record names before making a new one.
 4. Build.
-5. Review the result against the loaded topics and the record. Look at it running, or at
-   a screenshot, where the project can be run. Where only the code was read, list what
-   could not be judged from it — contrast, focus order, timing, layout at 320 px — as
-   **not checked**; never pass it silently.
+5. Review the result against the loaded topics and the record. A rule is checked only by
+   evidence that can show it: a screenshot for layout and colour; operating the
+   interface for keyboard, focus and states; the markup or the accessibility tree for
+   names, roles and announcements. Where the project runs, make these passes, each
+   reported done or **not checked**: Tab through the main task with the mouse untouched,
+   focus visible throughout; Back and reload on the main task; no hover (touch
+   emulation); 320 px wide; text zoomed to 200%; each UX-S01 state forced — no data,
+   slow, failed — and the longest plausible content; reduced motion on. Where only the
+   code was read, list what could not be judged from it — contrast, focus order,
+   timing, layout — as **not checked**. Never pass a rule silently.
 6. Report (below).
 7. If a token, component or pattern was added or changed, update the record in the same
    change — or start it, where this is the project's first interface — and say so.
+
+To review an interface that already exists, follow `audit.md` beside this file: it
+walks the interface, scores each area from the findings, and changes nothing unless
+asked.
 
 ## When rules pull against each other
 
@@ -85,12 +95,20 @@ As `engineering-principles.md` §7 asks. Findings in a register:
 |---|---|---|---|---|---|
 
 `Where` is a file and line, or a screen and element; `Rule` is the rule's ID, as
-`UX-F01`, or "record" for a consistency finding. **Rating**: Major — it stops a person,
-loses their work, or fails a `[standard]` rule; Medium — it slows or misleads them;
-Minor — polish.
+`UX-F01`, or "record" for a consistency finding. **Rating**, by effect: Major — it stops
+a person, or loses their work or money; Medium — it slows or misleads them; Minor —
+polish. A failed `[standard]` rule is never rated below Medium, and its finding names it
+a conformance failure, with the WCAG criterion number.
 
-Then: what was **not checked**, any rule traded for another, the record changes, and
-what the person should look at by eye.
+For each rule the eye cannot judge — contrast, accessible names, roles and states,
+status announcements, a label or error tied to its field, `autocomplete`, the page's
+language and title — the evidence: the markup line, the accessibility tree, a measured
+contrast ratio, the Tab order as walked; or **not checked**.
+
+Then: what was **not checked**, any rule traded for another, the record changes, and a
+short script the person can follow by eye, with no design knowledge: Tab through from
+the top and watch the focus ring; narrow the window to phone width; zoom to 200%; submit
+the form empty; turn the network off and retry — the steps that apply.
 
 ## What this is not
 
