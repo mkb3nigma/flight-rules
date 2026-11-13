@@ -1,7 +1,7 @@
 ---
 name: ux
-description: Interface guidance for building or changing anything a person sees or operates — accessibility, states, forms and the basic UX principles, plus the project's own design record. Loads only the topics the task needs.
-argument-hint: "[what is being built or changed]"
+description: Interface guidance for building, changing or auditing anything a person sees or operates — accessibility, states, forms and the basic UX principles, plus the project's own design record. Loads only the topics the task needs.
+argument-hint: "[what is being built, changed or audited]"
 ---
 
 # /ux — Interface Guidance
@@ -47,15 +47,16 @@ for maintaining this guide, not for building: do not load it for a task.
 3. Reuse a component or pattern the record names before making a new one.
 4. Build.
 5. Review the result against the loaded topics and the record. A rule is checked only by
-   evidence that can show it: a screenshot for layout and colour; operating the
-   interface for keyboard, focus and states; the markup or the accessibility tree for
-   names, roles and announcements. Where the project runs, make these passes, each
-   reported done or **not checked**: Tab through the main task with the mouse untouched,
-   focus visible throughout; Back and reload on the main task; no hover (touch
-   emulation); 320 px wide; text zoomed to 200%; each UX-S01 state forced — no data,
-   slow, failed — and the longest plausible content; reduced motion on. Where only the
-   code was read, list what could not be judged from it — contrast, focus order,
-   timing, layout — as **not checked**. Never pass a rule silently.
+   evidence that can show it: a screenshot for layout; a measured ratio for contrast;
+   operating the interface for keyboard, focus and states; the markup or the
+   accessibility tree for names, roles and announcements. Where the project runs, make
+   these passes, each reported done or **not checked**: Tab through the main task — what
+   most people come to do — with the mouse untouched, focus visible throughout; Back and
+   reload on the main task; no hover (touch emulation); 320 px wide; text zoomed to
+   200%; the UX-S01 states that can be forced — no data, slow, failed, part-failed — and
+   the longest plausible content; reduced motion on. Where only the code was read, list
+   what could not be judged from it — contrast, focus order, timing, layout — as **not
+   checked**. Never pass a rule silently.
 6. Report (below).
 7. If a token, component or pattern was added or changed, update the record in the same
    change — or start it, where this is the project's first interface — and say so.
@@ -96,9 +97,11 @@ As `engineering-principles.md` §7 asks. Findings in a register:
 
 `Where` is a file and line, or a screen and element; `Rule` is the rule's ID, as
 `UX-F01`, or "record" for a consistency finding. **Rating**, by effect: Major — it stops
-a person, or loses their work or money; Medium — it slows or misleads them; Minor —
-polish. A failed `[standard]` rule is never rated below Medium, and its finding names it
-a conformance failure, with the WCAG criterion number.
+a person, one using only a keyboard or a screen reader included, or loses their work or
+money; Medium — it slows or misleads them; Minor — polish. A failure of a `[standard]`
+rule's criterion is never rated below Medium, and its finding names it a conformance
+failure, with the criterion number; a failure of only the practice beyond the criterion
+is rated by effect and names no criterion.
 
 For each rule the eye cannot judge — contrast, accessible names, roles and states,
 status announcements, a label or error tied to its field, `autocomplete`, the page's
@@ -112,7 +115,6 @@ the form empty; turn the network off and retry — the steps that apply.
 
 ## What this is not
 
-A design system, a brand, or a taste in fonts: those are the project's, in its record.
 Nothing here is checked by a hook. Whether a screen has one clear purpose is a
 judgement; this guide's review is where it is made, and the person's eye is where it is
 confirmed.
