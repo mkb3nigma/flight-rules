@@ -236,10 +236,10 @@ says how.
   the evidence for what the eye cannot judge and a short script for checking by eye.
   A finding is rated by its effect: Major if it stops a person, keyboard and
   screen-reader users included, or loses their work or money; a failed criterion is
-  never below Medium. `audit.md` audits an existing interface and changes nothing: the
-  main task walked first and every screen named, one 0–5 score per area worked out from
-  the findings register and shown with its counts, an area mostly unchecked left
-  unscored, and no total across areas. Rule IDs carry the guide's prefix — `UX-A01`,
+  never below Medium. `audit.md` audits an existing interface and changes nothing unless
+  asked: the main task walked first and every screen named, one 0–5 score per area
+  worked out from the findings register and shown with its counts, an area mostly
+  unchecked left unscored, and no total across areas. Rule IDs carry the guide's prefix — `UX-A01`,
   `UX-F01` — so they never read as a reply's actions (A1…) or decisions (D1…); the IDs
   UX-P14, UX-P17, UX-P19 and UX-S07 are unused and are never reused.
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
