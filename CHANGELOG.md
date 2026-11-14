@@ -245,7 +245,8 @@ says how.
   reused.
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
-  work over through an issue carrying it, and reviews what comes back.
+  work over through an issue carrying it, and reviews what comes back. In a review, the
+  top tier's part is the cold, independent read; the debate can run on the tier below.
 
 - **A warning of a direct change to a protected branch that is not PR-only** (#115,
   #144). A plain commit on `dev` passed every git hook: a probe script that lost its
@@ -298,7 +299,10 @@ says how.
   break landed (from `mattpocock/skills`, re-pinned).
 - **`/dg`** step 3: a reviewer's probe runs in a scratch directory it made, in the same
   script as its git commands, never in the repository under review, and stops after
-  `git init` unless git's repository is the one it made there.
+  `git init` unless git's repository is the one it made there. Where a project names
+  its tiers, step 3 also says which runs which part: the pre-review on the top tier,
+  the personas on the tier below, and a fix that only applies agreed findings may be
+  checked by one reviewer on the tier below; with none named, one model runs every part.
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's
@@ -326,8 +330,9 @@ says how.
 ### Changed — this repo
 
 - `AGENTS.md` holds how work is done here; `CLAUDE.md` and `GEMINI.md` import it and
-  `MISSION.md`. It names this repo's planning and implementing models, and holds the
-  Situation, Background, Assessment, Recommendation reply headings §7 no longer ships.
+  `MISSION.md`. It names this repo's planning and implementing models, and which runs
+  each part of `/dg`, and holds the Situation, Background, Assessment, Recommendation
+  reply headings §7 no longer ships.
 - `MISSION.md`: a stop that prints its way through is not a block, and flight-rules
   never blocks the developer; the person runs the way through, an assistant leaves it to
   them; guides sit beside the core, costing a project that never calls one its skill
