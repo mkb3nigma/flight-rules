@@ -246,7 +246,8 @@ says how.
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back. In a review, the
-  top tier's part is the cold, independent read; the debate can run on the tier below.
+  top tier's part is the cold, independent read; the debate, and a light check of a fix
+  that only applies agreed findings, run on the tier below by default.
 
 - **A warning of a direct change to a protected branch that is not PR-only** (#115,
   #144). A plain commit on `dev` passed every git hook: a probe script that lost its
@@ -300,9 +301,12 @@ says how.
 - **`/dg`** step 3: a reviewer's probe runs in a scratch directory it made, in the same
   script as its git commands, never in the repository under review, and stops after
   `git init` unless git's repository is the one it made there. Where a project names
-  its tiers, step 3 also says which runs which part: the pre-review on the top tier,
-  the personas on the tier below, and a fix that only applies agreed findings may be
-  checked by one reviewer on the tier below; with none named, one model runs every part.
+  its tiers, step 3 also says which runs which part: by default the pre-review on the
+  top tier, the personas on the tier below. A fix's own diff may instead get a light
+  check, one reviewer on the tier below, only when every change applies a finding the
+  person dispositioned as applied, changes what no rule, refusal, check, skill step or
+  session line requires, and applies no critical finding. With no tiers named, nothing
+  here applies: each part runs as before.
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's
