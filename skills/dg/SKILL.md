@@ -93,8 +93,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    <why>` in the header, never "clean": a missing tool or a refused request that reads as
    no CVEs is the silent pass §2 forbids.
 
-2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
-   subject cold: no personas, no access to their findings. It enumerates correctness
+2. **Independent pre-review (optional, best-effort)** — one strong reviewer, on the top
+   tier where the project names tiers (step 3), looks at the subject cold: no personas,
+   no access to their findings. It enumerates correctness
    bugs, security issues, design weaknesses, and unstated assumptions with severity
    (critical/important/minor) and confidence. When the subject is code, the brief carries
    § Review Domains verbatim: a reviewer starts with nothing but its brief, and a class
@@ -177,22 +178,42 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    brief also carries § Review Domains verbatim, for step 2's reason.
 
    **Which tier runs which part**, where the project names its planning tier and the
-   tier below (`multi-ai-setup.md` principle 6). Step 2's pre-review runs on the top
-   tier, as the close, cold read of the subject against its sources: the same-family
-   subagent is started on it, and a wired CLI runs its family's top tier where the
-   CLI's own config can name it — the command still names none (`pre-review-cli.md`).
-   The preference for a cross-family pre-review is unchanged. The two personas run on
-   the tier below. A review of a fix's own diff, where the fix only applies findings
-   already agreed and adds or widens no rule, refusal or check, may be one reviewer on
-   the tier below that checks each finding landed and nothing new came in — not the
-   full debate; a fix that adds or widens one gets the full review. With no tiers
-   named, one model runs every part; the person can override any of it. Why: in the
-   0.29.0 release review (2026-11-13/14) three top-tier reviewers ran every pass, the
-   ones that only confirmed rewordings included, until the top tier's credits ran out
-   and the final pass stopped; each pass's decisive finding came from one reviewer,
-   and the top tier earned its cost in the pre-review's close reading against
-   sources. That the personas keep their findings on the tier below is testimony, not
-   yet measured.
+   tier below (`multi-ai-setup.md` principle 6). By default there, step 2's pre-review
+   runs on the top tier, as the close, cold read of the subject against its sources,
+   and the two personas run on the tier below. A wired CLI runs whatever its own config
+   names: that is the person's choice (`pre-review-cli.md`), the assistant does not
+   edit it, and the header reports the model that ran. The preference for a
+   cross-family pre-review is unchanged. Where the tool cannot start a subagent on a
+   named model, each part runs on the session's model, and the header says so. With no
+   tiers named, nothing here applies: each part runs as before. The person can
+   override any of it. Why: in the 0.29.0 release review (2026-11-13/14) three
+   top-tier reviewers ran every pass, the ones that only confirmed rewordings included,
+   until the top tier's credits ran out and the final pass stopped; each pass's
+   decisive finding came from one reviewer, and the top tier's strength showed in the
+   pre-review's close reading against sources. Both halves of the split are testimony:
+   which part keeps its findings on the tier below has not been measured.
+
+   **A light check**, where tiers are named, may replace the full review of a fix's
+   own diff only when all three hold: (a) every change applies a finding the person
+   dispositioned as applied in the verdict that raised it; (b) it changes what no rule,
+   refusal, check (its wiring and tests included), skill step or line that reaches a
+   session requires — rewording one without changing what it asks is allowed; adding,
+   widening, narrowing or removing one is not — and, in code, it changes no behaviour
+   beyond what the finding names and touches no code that guards, gates, stores or
+   pays; (c) no finding it applies was critical, or rated Major where the project rates
+   findings. Anything else gets the full review. The orchestrator proposes it, with the
+   reason, and the person can ask for the full review instead. One reviewer on the tier
+   below reads it cold — the diff and the findings it applies, nothing else; its brief
+   carries what every brief here does: the no-edit and probe lines above, § Review
+   Domains for code, and the project's extensions — and reports, under
+   `## Review: <subject>`, the header line
+   `> Review: light check (<model>) — <why it qualifies>` and a `## Verdict` of one
+   register: each applied finding landed, not landed, or changed beyond the finding,
+   then anything new. Any change beyond the findings, or anything new, sends the diff
+   to the full review. No rounds, personas, pre-review line or comic, whatever
+   `DG_COMIC` says: a comic needs rounds. The turn ends there, as at step 5. In a PR
+   body it goes in as a full review's verdict does, its headings one level down:
+   `### Verdict` (`pr-create` 2b).
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its
