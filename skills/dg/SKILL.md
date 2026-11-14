@@ -184,8 +184,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    names: that is the person's choice (`pre-review-cli.md`), the assistant does not
    edit it, and the header reports the model that ran. The preference for a
    cross-family pre-review is unchanged. Where the tool cannot start a subagent on a
-   named model, each part runs on the session's model, and the header says so. With no
-   tiers named, nothing here applies: each part runs as before. The person can
+   named model, each part runs on the session's model. With no tiers named, nothing
+   here applies: each part runs as before. The person can
    override any of it. Why: in the 0.29.0 release review (2026-11-13/14) three
    top-tier reviewers ran every pass, the ones that only confirmed rewordings included,
    until the top tier's credits ran out and the final pass stopped; each pass's
@@ -194,26 +194,38 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    which part keeps its findings on the tier below has not been measured.
 
    **A light check**, where tiers are named, may replace the full review of a fix's
-   own diff only when all three hold: (a) every change applies a finding the person
-   dispositioned as applied in the verdict that raised it; (b) it changes what no rule,
-   refusal, check (its wiring and tests included), skill step or line that reaches a
-   session requires — rewording one without changing what it asks is allowed; adding,
-   widening, narrowing or removing one is not — and, in code, it changes no behaviour
-   beyond what the finding names and touches no code that guards, gates, stores or
-   pays; (c) no finding it applies was critical, or rated Major where the project rates
-   findings. Anything else gets the full review. The orchestrator proposes it, with the
-   reason, and the person can ask for the full review instead. One reviewer on the tier
-   below reads it cold — the diff and the findings it applies, nothing else; its brief
-   carries what every brief here does: the no-edit and probe lines above, § Review
-   Domains for code, and the project's extensions — and reports, under
-   `## Review: <subject>`, the header line
-   `> Review: light check (<model>) — <why it qualifies>` and a `## Verdict` of one
-   register: each applied finding landed, not landed, or changed beyond the finding,
-   then anything new. Any change beyond the findings, or anything new, sends the diff
-   to the full review. No rounds, personas, pre-review line or comic, whatever
-   `DG_COMIC` says: a comic needs rounds. The turn ends there, as at step 5. In a PR
-   body it goes in as a full review's verdict does, its headings one level down:
-   `### Verdict` (`pr-create` 2b).
+   own diff only when all three hold: (a) every change applies a finding dispositioned
+   as applied in the verdict that raised it — by the person, or by the assistant where
+   the calling workflow lets it (`pr-create` 2b) — and the register says which; (b) it
+   changes nothing that a rule, refusal, check (its wiring and tests included), skill
+   step, line that reaches a session, documented boundary or upstream-pinned claim
+   requires or states — rewording one without changing what it asks is allowed, and so
+   is adding a test that pins the finding's fix; adding, widening, narrowing or
+   removing anything else, a test included, is not — and, in code, it changes no
+   behaviour beyond what the finding names, and touches no code that guards, gates,
+   stores or pays, nor any dependency file (a manifest or lockfile: the full review
+   runs step 1's scan); (c) no finding it applies was critical, or rated Major where
+   the project rates findings, by any reviewer or in the verdict. Anything else gets
+   the full review, and so does every fix where no subagent can be started: its
+   reviewer would not be cold.
+
+   The orchestrator runs it, and the header names it and why:
+   `> Review: light check (<model>) — <why it qualifies>`, under
+   `## Review: <subject>`. The person can ask for the full review at any time. One
+   reviewer on the tier below reads it cold — no debate, no earlier review: the diff
+   with its commit messages, the files it touches as they stand at the head, the
+   findings it applies with each one's severity and disposition, and (a)–(c) as
+   written; its brief also carries what every brief here does: the no-edit and probe
+   lines above, § Review Domains for code, and the project's extensions. Its
+   `## Verdict` is one register: a row per condition, holds or does not, from what it
+   read; a row per applied finding, landed, not landed, or changed beyond the finding;
+   then anything new. A finding not landed goes under `## Decisions waiting`, which
+   ends the report as every verdict's does, `(0)` included. A condition that does not
+   hold or is in doubt, a change beyond the findings, or anything new sends the same
+   diff to the full review in the same turn, and the turn ends at its verdict;
+   otherwise it ends here, as at step 5. No rounds, personas, pre-review line or comic.
+   In a PR body (`pr-create` 2b) the header line and the verdict go in as a full
+   review's do, headings one level down: `### Verdict`.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its
@@ -258,6 +270,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
      `### Comic` at the end of the PR's review section. Nothing else carries the comic
      or the score into a PR, issue or commit: the owner added both for levity, and not
      every reader shares the taste (2026-10-17). Ignored when `DG_COMIC=never`.
+
+   A light check (step 3) has no comic: it has no rounds.
 
    The comic: up to 8 panels of the best banter, at least one per round, in a block
    fenced with more backticks than any run inside it (a quoted ` ``` ` would close a
@@ -331,6 +345,7 @@ D1. **<the decision>** — what it is, why it came up, the evidence, what each o
 Add the comic to the PR? (y/N)
 ````
 
+A light check (step 3) has no `## Comic` section, whatever `DG_COMIC` says.
 The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
 with `DG_COMIC_PR=ask` on a review that is for a PR. The decisions are the reply's last
 section — only that optional line follows them — where a reader in a terminal lands;
