@@ -89,8 +89,8 @@ a protected branch, which `pr-create`'s constraint names as its only exception.
 designs and reviews, and hands implementation to the tier below through an issue that
 carries the plan (owner, 2026-11-11). At the time of writing that is Fable for
 Anthropic, Sol for OpenAI and Argon for Google; the owner can override it for any task.
-In `/dg` (step 3 says which part runs where), the pre-review runs on Fable, or on Sol
-where a cross-family CLI is wired; Dinesh and Gilfoyle run on Opus, the tier below.
+In `/dg` (step 3 says which part runs where): the pre-review on Sol where Codex is wired
+and reports it, else Fable; the personas, and a light check, on Opus.
 
 ## How to report here
 

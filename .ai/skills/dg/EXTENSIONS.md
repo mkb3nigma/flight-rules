@@ -6,8 +6,9 @@ in every reviewer's brief.
 
 ## Review Domains, this repo
 
-In addition to the skill's domains, every brief — the pre-reviewer's and each
-persona's — carries `MISSION.md` → *The five questions* verbatim, and:
+In addition to the skill's domains, every brief — the pre-reviewer's, each persona's
+and a light check's (step 3) — carries `MISSION.md` → *The five questions* verbatim,
+and:
 
 - **For the change as a whole**: its answer to each question that applies, and which do
   not and why (`MISSION.md` → *The five questions* says which apply). A change that
