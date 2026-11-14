@@ -129,9 +129,14 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `✅ <reviewer>` — it ran (name the model; a same-family one with none wired is
      no warning);
    - `✅ <reviewer> (<model>, not cross-family)` — a wired CLI ran, but on a
-     same-family or unreported model (`pre-review-cli.md`, its last point);
+     same-family or unreported model (`pre-review-cli.md`, its last point), or
+     `(<model>, below the top tier)` where tiers are named and the model it reports is
+     below the top tier;
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
+
+   Where more than one pre-reviewer counts, the line names each, joined by ` · `, and
+   every one's findings reach round 2.
 
    If captured, the personas get it from round 2 on, not in round 1: *"An independent
    senior reviewer flagged the following — agree, escalate, or dispute each point as
@@ -191,7 +196,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    until the top tier's credits ran out and the final pass stopped; each pass's
    decisive finding came from one reviewer, and the top tier's strength showed in the
    pre-review's close reading against sources. Both halves of the split are testimony:
-   which part keeps its findings on the tier below has not been measured.
+   which part keeps its findings on the tier below has not been measured. To measure
+   it, where tiers are named the header records `> Personas: <model>` (the session's
+   model where the tool could not choose one); with no tiers named, no line.
 
    **A light check**, where tiers are named, may replace the full review of a fix's
    own diff only when all three hold: (a) every change applies a finding dispositioned
@@ -333,8 +340,10 @@ place a long verdict turns back into paragraphs.
 
 ````markdown
 ## Review: <subject>
+> Review: light check (<model>) — <why it qualifies> | light check (<model>) escalated — <why>   (a light check only, step 3)
 > Pre-review: <one of the forms in step 2>
 > Dependency scan: ✅ <tool> — <n> findings | ⚠️ not run — <why> | n/a (no dependency files, or not code)
+> Personas: <model>   (where tiers are named, step 3)
 
 ## Comic
 ```

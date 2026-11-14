@@ -90,9 +90,10 @@ designs and reviews, and hands implementation to the tier below through an issue
 carries the plan (owner, 2026-11-11). At the time of writing that is Fable for
 Anthropic, Sol for OpenAI and Argon for Google; the owner can override it for any task.
 In `/dg` (step 3 says which part runs where): the pre-review on Codex where wired (Sol
-when its config names it), and on Fable where Codex is not wired, fails, or reports a
-model below the top tier; Gemini through Antigravity where wired is another
-cross-family pre-review; the personas and a light check on Opus.
+when its config names it), and on Fable where Codex is not wired or fails; where Codex
+reports a model below the top tier, Fable runs too, both runs are kept and the header
+names both; Gemini through Antigravity where wired is another cross-family pre-review;
+the personas and a light check on Opus.
 
 ## How to report here
 
