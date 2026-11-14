@@ -195,36 +195,46 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
    **A light check**, where tiers are named, may replace the full review of a fix's
    own diff only when all three hold: (a) every change applies a finding dispositioned
-   as applied in the verdict that raised it — by the person, or by the assistant where
-   the calling workflow lets it (`pr-create` 2b) — and the register says which; (b) it
-   changes nothing that a rule, refusal, check (its wiring and tests included), skill
-   step, line that reaches a session, documented boundary or upstream-pinned claim
-   requires or states — rewording one without changing what it asks is allowed, and so
-   is adding a test that pins the finding's fix; adding, widening, narrowing or
-   removing anything else, a test included, is not — and, in code, it changes no
-   behaviour beyond what the finding names, and touches no code that guards, gates,
-   stores or pays, nor any dependency file (a manifest or lockfile: the full review
-   runs step 1's scan); (c) no finding it applies was critical, or rated Major where
-   the project rates findings, by any reviewer or in the verdict. Anything else gets
-   the full review, and so does every fix where no subagent can be started: its
-   reviewer would not be cold.
+   as applied in the verdict that raised it — by the person, or by the assistant after
+   the person's reply to that verdict, for any finding not critical (`pr-create` 2b) —
+   and the register says which; (b) it changes nothing that a rule, refusal, check (its
+   wiring and tests included), skill step, line that reaches a session, documented
+   boundary or upstream-pinned claim requires or states — rewording one without
+   changing what it asks or states is allowed, and so is adding a test that pins the
+   finding's fix; adding, widening, narrowing or removing one of these, or any other
+   test, is not — and, in code or configuration (an access policy, CORS, a workflow's
+   `permissions:`, a feature flag), it changes no behaviour beyond what the finding
+   names, and touches nothing that guards, gates, stores or pays, nor any dependency
+   file (a manifest or lockfile: the full review runs step 1's scan); (c) no finding it
+   applies was critical, or rated Major where the project rates findings, by any
+   reviewer or in the verdict. Anything else gets the full review, and so does every
+   fix where no subagent can be started: its reviewer would not be cold.
 
    The orchestrator runs it, and the header names it and why:
    `> Review: light check (<model>) — <why it qualifies>`, under
    `## Review: <subject>`. The person can ask for the full review at any time. One
-   reviewer on the tier below reads it cold — no debate, no earlier review: the diff
-   with its commit messages, the files it touches as they stand at the head, the
-   findings it applies with each one's severity and disposition, and (a)–(c) as
-   written; its brief also carries what every brief here does: the no-edit and probe
-   lines above, § Review Domains for code, and the project's extensions. Its
-   `## Verdict` is one register: a row per condition, holds or does not, from what it
-   read; a row per applied finding, landed, not landed, or changed beyond the finding;
-   then anything new. A finding not landed goes under `## Decisions waiting`, which
-   ends the report as every verdict's does, `(0)` included. A condition that does not
-   hold or is in doubt, a change beyond the findings, or anything new sends the same
-   diff to the full review in the same turn, and the turn ends at its verdict;
-   otherwise it ends here, as at step 5. No rounds, personas, pre-review line or comic.
-   In a PR body (`pr-create` 2b) the header line and the verdict go in as a full
+   reviewer on the tier below reads it cold — no debate, no earlier review: the diff,
+   the files it touches as they stand at the head, its commit messages as claims to
+   check, not answers, and (a)–(c) as written. For (a) and (c) the brief quotes the
+   record verbatim, each quote marked with its source: per applied finding, its row in
+   the verdict that raised it, every round table's and pre-review's row that rated it,
+   and its disposition as recorded (the person's reply, or the PR body). A paraphrase
+   or a missing row puts that condition in doubt. The brief also carries what every
+   brief here does: the no-edit and probe lines above, § Review Domains for code, and
+   the project's extensions. Its `## Verdict` is one register: a row per condition,
+   holds, does not or in doubt; a row per applied finding, landed, not landed (no
+   change made for it) or beyond the finding (a change past it, or one that claims it
+   and misses); then anything new. If every condition holds, nothing is beyond a
+   finding and nothing is new, `## Decisions waiting` follows, the not-landed findings
+   in it, `(0)` included, and the turn ends, as at step 5. Otherwise it escalates: the
+   report stops at its register, the header line reads
+   `> Review: light check (<model>) escalated — <why>`, and the full review runs on
+   the same diff in the same turn. The register reaches the personas from round 2, as
+   a pre-review's findings do, and gets its own verdict section, `### Light check`;
+   its not-landed rows join that review's `## Decisions waiting`, still the reply's
+   last section. A light check has no rounds, personas, pre-review line, scan or
+   comic: the review that raised a finding scanned what the fix leaves unchanged. In
+   a PR body (`pr-create` 2b) the header line and the verdict go in as a full
    review's do, headings one level down: `### Verdict`.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
@@ -248,7 +258,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
-   silently dropped), the dependency scan's results and concrete recommended actions.
+   silently dropped), an escalated light check's register (step 3), the dependency
+   scan's results and concrete recommended actions.
    It goes to the person in the format below — step 6's comic after the header, the
    decisions waiting last — and **the turn ends there**: apply no finding and run no further
    step of a calling workflow (such as `pr-create` 2b) until the person replies. A
@@ -334,6 +345,7 @@ place a long verdict turns back into paragraphs.
 ### Disputed (severity differed)
 ### Dinesh only / Gilfoyle only
 ### Pre-review-only (neither persona raised independently)
+### Light check (only when one escalated: its register, step 3)
 ### Dependency scan
 ### Recommended Actions
 A1. <the action>
