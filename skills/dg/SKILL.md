@@ -195,10 +195,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
    **A light check**, where tiers are named, may replace the full review of a fix's
    own diff only when all three hold: (a) every change applies a finding dispositioned
-   as applied in the verdict that raised it — by the person, or by the assistant after
-   the person's reply to that verdict, for any finding not critical (`pr-create` 2b) —
-   and the register says which; (b) it changes nothing that a rule, refusal, check (its
-   wiring and tests included), skill step, line that reaches a session, documented
+   as applied after the verdict that raised it — by the person, or by the assistant
+   where the calling workflow lets it (`pr-create` 2b: after the person's reply to that
+   verdict, any finding not critical) — and the register says which; (b) it changes
+   nothing that a rule, refusal, check (its wiring and tests included), skill step,
+   line that reaches a session, documented
    boundary or upstream-pinned claim requires or states — rewording one without
    changing what it asks or states is allowed, and so is adding a test that pins the
    finding's fix; adding, widening, narrowing or removing one of these, or any other
@@ -215,27 +216,33 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    `## Review: <subject>`. The person can ask for the full review at any time. One
    reviewer on the tier below reads it cold — no debate, no earlier review: the diff,
    the files it touches as they stand at the head, its commit messages as claims to
-   check, not answers, and (a)–(c) as written. For (a) and (c) the brief quotes the
-   record verbatim, each quote marked with its source: per applied finding, its row in
-   the verdict that raised it, every round table's and pre-review's row that rated it,
-   and its disposition as recorded (the person's reply, or the PR body). A paraphrase
-   or a missing row puts that condition in doubt. The brief also carries what every
+   check, not answers, and (a)–(c) as written. For (a) and (c) the brief names the
+   rounds that ran and every reviewer in them — each pre-reviewer, each persona per
+   round, the verdict — and quotes the record verbatim, each quote marked with its
+   source: per applied finding, for each of those, the row that rated it or "did not
+   rate it", and its disposition as recorded — the person's reply, or the PR body; for
+   the assistant's with no PR body yet, the person's reply that released the verdict
+   and the assistant's disposition, marked as the assistant's. A paraphrase or a
+   missing entry puts that condition in doubt. The brief also carries what every
    brief here does: the no-edit and probe lines above, § Review Domains for code, and
    the project's extensions. Its `## Verdict` is one register: a row per condition,
    holds, does not or in doubt; a row per applied finding, landed, not landed (no
    change made for it) or beyond the finding (a change past it, or one that claims it
-   and misses); then anything new. If every condition holds, nothing is beyond a
-   finding and nothing is new, `## Decisions waiting` follows, the not-landed findings
-   in it, `(0)` included, and the turn ends, as at step 5. Otherwise it escalates: the
-   report stops at its register, the header line reads
-   `> Review: light check (<model>) escalated — <why>`, and the full review runs on
-   the same diff in the same turn. The register reaches the personas from round 2, as
-   a pre-review's findings do, and gets its own verdict section, `### Light check`;
-   its not-landed rows join that review's `## Decisions waiting`, still the reply's
+   and misses); then anything new the diff introduces. A defect that predates the
+   diff is listed as pre-existing and does not escalate. If every condition holds,
+   nothing is beyond a finding and nothing is new, `## Decisions waiting` follows, the
+   not-landed and pre-existing rows in it, `(0)` included, and the turn ends, as at
+   step 5. Otherwise — or with no register from the reviewer within `DG_WAIT_MINUTES`
+   (step 4) — it escalates: the full review runs on the same diff in the same turn,
+   and the reply is that review, its one `## Review:` header carrying
+   `> Review: light check (<model>) escalated — <why>`, and the register printed once,
+   as the verdict's `### Light check`, not on its own before it. The register reaches
+   the personas from round 2, as a pre-review's findings do; its not-landed and
+   pre-existing rows join that review's `## Decisions waiting`, still the reply's
    last section. A light check has no rounds, personas, pre-review line, scan or
    comic: the review that raised a finding scanned what the fix leaves unchanged. In
    a PR body (`pr-create` 2b) the header line and the verdict go in as a full
-   review's do, headings one level down: `### Verdict`.
+   review's do, headings one level down: `### Verdict`, `#### Light check`.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its
@@ -249,12 +256,13 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    run — no result in <n>m`). A timeout an extension gives its own pre-reviewer is an
    inner limit under this one, so the extension need not read the key: a shorter one
    fails that run sooner, a longer one is cut off here. Round 2's table then
-   answers each pre-review finding by its ID and each scan finding by its
-   `<package>@<version>` and CVE, and Gilfoyle's harshest finding → Dinesh defends or
-   concedes. Further rounds alternate who leads. Converge early when concessions leave
-   nothing disputed, but
-   never before round 2 has answered the pre-review and the scan: a debate that
-   converges in round 1 is the debate that ends before they arrive.
+   answers each pre-review finding by its ID, each scan finding by its
+   `<package>@<version>` and CVE, and each row of an escalated light check's register,
+   and Gilfoyle's harshest finding → Dinesh defends or concedes. Further rounds
+   alternate who leads. Converge early when concessions leave nothing disputed, but
+   never before round 2 has answered the pre-review, the scan and an escalated light
+   check's register: a debate that converges in round 1 is the debate that ends
+   before they arrive.
 
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
@@ -380,7 +388,7 @@ Dinesh conceded it under pressure or a `[defend]` broke, Dinesh's if his `[defen
 held or Gilfoyle `[concede]`d. Gilfoyle's `[dismiss]` (rejecting Dinesh's defence)
 scores nothing by itself: the point goes to whichever way the defence then went. Unscored: findings both
 `[agree]` on, nobody argued, a persona raised against their own side, or that came from
-the pre-review or the scan. The orchestrator scores at the verdict; the personas are
+the pre-review, the scan or a light check. The orchestrator scores at the verdict; the personas are
 never told the rule, so no one defends a point to win it.
 
 **Location** is `file:line` for code, the section or claim otherwise. **Verified?**
