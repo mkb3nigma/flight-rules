@@ -302,7 +302,8 @@ says how.
   script as its git commands, never in the repository under review, and stops after
   `git init` unless git's repository is the one it made there. Where a project names
   its tiers, step 3 also says which runs which part: by default the pre-review on the
-  top tier, the personas on the tier below. A fix's own diff may instead get a light
+  top tier, the personas on the tier below, their model named in the header
+  (`> Personas:`). A fix's own diff may instead get a light
   check, one cold reviewer on the tier below who checks the conditions against the
   quoted record too, only when every change applies a finding dispositioned as
   applied, changes nothing a rule, refusal, check, skill step, session line, documented
