@@ -247,7 +247,7 @@ says how.
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back. In a review, the
   top tier's part is the cold, independent read; the debate, and a light check of a fix
-  that only applies agreed findings, run on the tier below by default.
+  where `/dg` step 3 allows one, run on the tier below by default.
 
 - **A warning of a direct change to a protected branch that is not PR-only** (#115,
   #144). A plain commit on `dev` passed every git hook: a probe script that lost its
@@ -303,10 +303,13 @@ says how.
   `git init` unless git's repository is the one it made there. Where a project names
   its tiers, step 3 also says which runs which part: by default the pre-review on the
   top tier, the personas on the tier below. A fix's own diff may instead get a light
-  check, one reviewer on the tier below, only when every change applies a finding the
-  person dispositioned as applied, changes what no rule, refusal, check, skill step or
-  session line requires, and applies no critical finding. With no tiers named, nothing
-  here applies: each part runs as before.
+  check, one cold reviewer on the tier below who checks the conditions too, only when
+  every change applies a finding dispositioned as applied, changes nothing a rule,
+  refusal, check, skill step or session line requires (a test pinning the fix aside),
+  touches no code that guards, gates, stores or pays and no dependency file, and
+  applies no finding rated critical or Major; anything else, or any doubt, gets the
+  full review in the same turn. With no tiers named, nothing here applies: each part
+  runs as before.
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's
