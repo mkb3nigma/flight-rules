@@ -239,23 +239,27 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the project's extensions. Its `## Verdict` is one register: a row per condition,
    holds, does not or in doubt; a row per applied finding, landed, not landed (no
    change made for it) or beyond the finding (a change past it, or one that claims it
-   and misses); then anything new. The brief asks for `LIGHT CHECK COMPLETE: <n> new`
-   as its last line, verbatim and unformatted, `<n>` a number, `0` included, read as
-   step 2 reads a subagent's: the last non-empty line of its own reply. A reply without
-   it, or whose `<n>` is not the register's count of new rows, gave no register; an
-   `<n>` other than 0 is something new. If every condition holds, nothing is beyond a
-   finding and the line states `0` new — never silence — `## Decisions waiting`
-   follows, the not-landed findings in it, `(0)` included, and the turn ends, as at
-   step 5. Otherwise — or with no register from the reviewer within `DG_WAIT_MINUTES`
-   (step 4) — it escalates: the full review runs on the same diff in the same turn,
-   and the reply is that review, its one `## Review:` header carrying
+   and misses); then a row per new finding under `New`, or `New: none`. The brief
+   asks for `LIGHT CHECK COMPLETE: <n> new` as its last line, verbatim and
+   unformatted, `<n>` the count of new findings, `0` included, read as step 2 reads a
+   subagent's: the last non-empty line of its own reply. The line shows only that the
+   reply reached its end. The register is complete only with that line, a row for
+   each of (a)–(c) and for each applied finding the brief names, by its ID, and `<n>`
+   equal to its new findings: the orchestrator checks this against the brief it
+   wrote, and never takes it from the reviewer. If it is complete, every condition
+   holds, nothing is beyond a finding and `<n>` is 0, `## Decisions waiting` follows,
+   the not-landed findings in it, `(0)` included, and the turn ends, as at step 5.
+   Otherwise, or with no reply within `DG_WAIT_MINUTES` (step 4), it escalates: the
+   full review runs on the same diff in the same turn, and the reply is that review,
+   its one `## Review:` header carrying
    `> Review: light check (<model>) escalated — <why>`, and the register printed once,
-   as the verdict's `### Light check`, not on its own before it. A light reviewer that
-   gave no register is stopped, as step 4 stops a pre-reviewer; the `<why>` says so,
-   and `### Light check` holds that one line. The register reaches the personas from
-   round 2, as a pre-review's findings do; its not-landed rows join that review's
-   `## Decisions waiting`, still the reply's last section. A light check that did not
-   escalate has no rounds, personas, pre-review line, scan or comic: the review that
+   as the verdict's `### Light check`, not on its own before it. An incomplete one is
+   printed as given, under `incomplete — <what is missing>`; with no reply,
+   `### Light check` holds the `<why>` alone, and a reviewer still running at the
+   limit is stopped, as step 4 stops a pre-reviewer. The register, complete or not,
+   reaches the personas from round 2, as a pre-review's findings do; its not-landed
+   rows join that review's `## Decisions waiting`, still the reply's last section. A
+   light check that did not escalate has no rounds, personas, pre-review line, scan or comic: the review that
    raised a finding scanned what the fix leaves unchanged. In a PR body (`pr-create`
    2b) the header line and the verdict go in as a full review's do, headings one
    level down: `### Verdict`, `#### Light check`.
@@ -371,7 +375,7 @@ place a long verdict turns back into paragraphs.
 ### Disputed (severity differed)
 ### Dinesh only / Gilfoyle only
 ### Pre-review-only (neither persona raised independently)
-### Light check (only when one escalated: its register, step 3)
+### Light check (only when one escalated: its register, marked incomplete where it is, or the `<why>` alone where no reply came; step 3)
 ### Dependency scan
 ### Recommended Actions
 A1. <the action>
