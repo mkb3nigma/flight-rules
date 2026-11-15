@@ -235,21 +235,20 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the project's extensions. Its `## Verdict` is one register: a row per condition,
    holds, does not or in doubt; a row per applied finding, landed, not landed (no
    change made for it) or beyond the finding (a change past it, or one that claims it
-   and misses); then anything new the diff introduces. A defect that predates the
-   diff is listed as pre-existing and does not escalate. If every condition holds,
-   nothing is beyond a finding and nothing is new, `## Decisions waiting` follows, the
-   not-landed and pre-existing rows in it, `(0)` included, and the turn ends, as at
-   step 5. Otherwise — or with no register from the reviewer within `DG_WAIT_MINUTES`
-   (step 4) — it escalates: the full review runs on the same diff in the same turn,
-   and the reply is that review, its one `## Review:` header carrying
+   and misses); then anything new. If every condition holds, nothing is beyond a
+   finding and nothing is new, `## Decisions waiting` follows, the not-landed findings
+   in it, `(0)` included, and the turn ends, as at step 5. Otherwise — or with no
+   register from the reviewer within `DG_WAIT_MINUTES` (step 4) — it escalates: the
+   full review runs on the same diff in the same turn, and the reply is that review,
+   its one `## Review:` header carrying
    `> Review: light check (<model>) escalated — <why>`, and the register printed once,
    as the verdict's `### Light check`, not on its own before it. The register reaches
-   the personas from round 2, as a pre-review's findings do; its not-landed and
-   pre-existing rows join that review's `## Decisions waiting`, still the reply's
-   last section. A light check has no rounds, personas, pre-review line, scan or
-   comic: the review that raised a finding scanned what the fix leaves unchanged. In
-   a PR body (`pr-create` 2b) the header line and the verdict go in as a full
-   review's do, headings one level down: `### Verdict`, `#### Light check`.
+   the personas from round 2, as a pre-review's findings do; its not-landed rows join
+   that review's `## Decisions waiting`, still the reply's last section. A light
+   check has no rounds, personas, pre-review line, scan or comic: the review that
+   raised a finding scanned what the fix leaves unchanged. In a PR body (`pr-create`
+   2b) the header line and the verdict go in as a full review's do, headings one
+   level down: `### Verdict`, `#### Light check`.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its
