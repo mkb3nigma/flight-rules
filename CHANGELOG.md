@@ -246,8 +246,8 @@ says how.
 - **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
   plan and review and which implement, the planning model stops at the plan, hands the
   work over through an issue carrying it, and reviews what comes back. In a review, the
-  top tier's part is the cold, independent read; the debate, and a light check of a fix
-  where `/dg` step 3 allows one, run on the tier below by default.
+  top tier's part is the cold, independent read; the debate runs on the tier below by
+  default.
 
 - **A warning of a direct change to a protected branch that is not PR-only** (#115,
   #144). A plain commit on `dev` passed every git hook: a probe script that lost its
@@ -304,21 +304,8 @@ says how.
   every pre-reviewer that counts, joined by ` · `, and every pre-review's IDs carry a
   prefix naming its reviewer. Where a project names its tiers, step 3 also says which
   runs which part: by default the pre-review on the top tier, the personas on the tier
-  below, their model named in the header (`> Personas:`). A fix's own diff may instead
-  get a light check, one cold reviewer on the tier below who checks the conditions
-  against the quoted record too, only when every change applies a finding
-  dispositioned as applied, changes nothing a rule, refusal, check, skill step,
-  session line, documented boundary or pinned claim requires or states (a test pinning
-  the fix aside), touches no code or configuration that guards, gates, stores or pays
-  and no dependency file, and applies no finding rated critical or Major. It passes
-  only on a register the orchestrator finds complete against its brief, each row one
-  allowed word, with every condition holding, every finding landed or not landed, and
-  nothing new; anything else, any doubt, or an incomplete reply escalates to the full
-  review in the same turn, which takes whatever register the light check gave. The
-  risk accepted: a qualifying fix gets one same-family read on the tier below, and the
-  conditions bound which fixes, checked against the record as the orchestrator quotes
-  it. With no tiers named, neither the split nor the light check applies: each part
-  runs as before.
+  below, their model named in the header (`> Personas:`). With no tiers named, the
+  split does not apply: each part runs as before.
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's

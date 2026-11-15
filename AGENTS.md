@@ -93,7 +93,7 @@ In `/dg` (step 3 says which part runs where): the pre-review on Codex where wire
 when its config names it), and on Fable where Codex is not wired or fails; where Codex
 reports a model below the top tier, Fable runs too, both runs are kept and the header
 names both; Gemini through Antigravity where wired is another cross-family pre-review;
-the personas and a light check on Opus.
+the personas on Opus.
 
 ## How to report here
 

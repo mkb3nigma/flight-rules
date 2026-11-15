@@ -76,9 +76,8 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    names which of its models plan and review (the most capable, and costliest, tier)
    and which implement, in its master rules, that is the regular course of work. A
    planning model stops at the plan and hands the work over; it reviews what comes
-   back. In a review, its part is the cold, independent read; the adversarial debate,
-   and a light check of a fix where `/dg` step 3 allows one, run on the tier below by
-   default. The handover is an issue in the project's tracker carrying the plan — what
+   back. In a review, its part is the cold, independent read; the adversarial debate
+   runs on the tier below by default. The handover is an issue in the project's tracker carrying the plan — what
    changes and where, the tests that must fail first, what is decided and what is still
    open — or a handover file where an issue does not fit; a plan left only in a chat or
    a model's memory is not one. Where the design is uncertain (a test may change it),
