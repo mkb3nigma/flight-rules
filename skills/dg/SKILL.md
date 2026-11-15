@@ -136,10 +136,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
    Where more than one pre-reviewer counts, the line names each, joined by ` · `, and
-   every one's findings reach round 2. Every pre-review's IDs carry a prefix naming
-   its reviewer (`C1`, `F1`), with one pre-reviewer as with several, so round 2's
-   answers by ID do not collide: each prefix distinct from the others, used by no ID
-   in an escalated light check's record (step 3), and never `A` or `D`, which the
+   every one's findings reach round 2. Every pre-review's IDs carry a prefix the
+   orchestrator gives in its brief, naming its reviewer (`C1`, `F1`), with one
+   pre-reviewer as with several, so round 2's answers by ID do not collide: each
+   prefix distinct from the others, used by no ID in an escalated light check's record
+   or register (step 3; its new rows are `L1`…), and never `A` or `D`, which the
    actions and decisions use.
 
    If captured, the personas get it from round 2 on, not in round 1: *"An independent
@@ -238,29 +239,34 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    missing entry puts that condition in doubt. The brief also carries what every
    brief here does: the no-edit and probe lines above, § Review Domains for code, and
    the project's extensions. Its `## Verdict` is one register: a row per condition,
-   holds, does not or in doubt; a row per applied finding, landed, not landed (no
-   change made for it) or beyond the finding (a change past it, or one that claims it
-   and misses); then a row per new finding under `New`, or `New: none`. The brief
-   asks for `LIGHT CHECK COMPLETE: <n> new` as its last line, verbatim and
-   unformatted, `<n>` the count of new findings, `0` included, read as step 2 reads a
-   subagent's: the last non-empty line of its own reply. The line shows only that the
-   reply reached its end. The register is complete only with that line, a row for
-   each of (a)–(c) and for each applied finding the brief names, by its ID, and `<n>`
-   equal to its new findings: the orchestrator checks this against the brief it
-   wrote, and never takes it from the reviewer. If it is complete, every condition
-   holds, nothing is beyond a finding and `<n>` is 0, `## Decisions waiting` follows,
-   the not-landed findings in it, `(0)` included, and the turn ends, as at step 5.
-   Otherwise, or with no reply within `DG_WAIT_MINUTES` (step 4), it escalates: the
-   full review runs on the same diff in the same turn, and the reply is that review,
-   its one `## Review:` header carrying
+   `holds`, `does not` or `in doubt`; a row per applied finding, `landed`, `not landed`
+   (no change made for it) or `beyond` (a change past it, or one that claims it and
+   misses); each value that word alone, its reason beside it; then `New`, a row per
+   new finding numbered `L1`, `L2`…, or `New: none`. The brief asks for
+   `LIGHT CHECK COMPLETE: <n> new` as its last line, verbatim and unformatted, `<n>`
+   the count of `L` rows, `0` included, read as step 2 reads a subagent's: the last
+   non-empty line of its own reply. The line shows only that the reply reached its
+   end. The register is complete only with that line; exactly one row for each of
+   (a)–(c) and exactly one for each applied finding the brief names, by its ID, and
+   for no other, each holding one of its words; `New`; nothing else in the reply but
+   the `## Verdict` heading; and `<n>` equal to the `L` rows. The orchestrator checks
+   this against the brief it wrote, and never takes it from the reviewer; whether each
+   row is true is the reviewer's judgment, which no such check reaches, and that is
+   the risk accepted. A complete register passes only if every condition reads
+   `holds`, every finding `landed` or `not landed`, and `<n>` is 0: then
+   `## Decisions waiting` follows, the not-landed findings in it, `(0)` included, and
+   the turn ends, as at step 5. Otherwise, or with no reply within `DG_WAIT_MINUTES`
+   (step 4), it escalates: the full review runs on the same diff in the same turn, and
+   the reply is that review, its one `## Review:` header carrying
    `> Review: light check (<model>) escalated — <why>`, and the register printed once,
    as the verdict's `### Light check`, not on its own before it. An incomplete one is
-   printed as given, under `incomplete — <what is missing>`; with no reply,
-   `### Light check` holds the `<why>` alone, and a reviewer still running at the
-   limit is stopped, as step 4 stops a pre-reviewer. The register, complete or not,
-   reaches the personas from round 2, as a pre-review's findings do; its not-landed
-   rows join that review's `## Decisions waiting`, still the reply's last section. A
-   light check that did not escalate has no rounds, personas, pre-review line, scan or comic: the review that
+   printed as given, inside a fence longer than any backtick run in it (step 6's
+   rule), under `incomplete — <what is missing>`; with no reply, `### Light check`
+   holds the `<why>` alone, and a reviewer still running at the limit is stopped, as
+   step 4 stops a pre-reviewer. The register, complete or not, reaches the personas
+   from round 2, as a pre-review's findings do; its not-landed rows join that review's
+   `## Decisions waiting`, still the reply's last section. A light check that did not
+   escalate has no rounds, personas, pre-review line, scan or comic: the review that
    raised a finding scanned what the fix leaves unchanged. In a PR body (`pr-create`
    2b) the header line and the verdict go in as a full review's do, headings one
    level down: `### Verdict`, `#### Light check`.
@@ -376,7 +382,7 @@ place a long verdict turns back into paragraphs.
 ### Disputed (severity differed)
 ### Dinesh only / Gilfoyle only
 ### Pre-review-only (neither persona raised independently)
-### Light check (only when one escalated: its register, marked incomplete where it is, or the `<why>` alone where no reply came; step 3)
+### Light check (only when one escalated: its register, fenced and marked incomplete where it is, or the `<why>` alone where no reply came; step 3)
 ### Dependency scan
 ### Recommended Actions
 A1. <the action>

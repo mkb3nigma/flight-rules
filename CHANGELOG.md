@@ -4,7 +4,7 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
-## 0.29.0 — 2026-11-14
+## 0.29.0 — 2026-11-15
 
 Every stop now prints the one command that goes ahead anyway —
 `FLIGHT_RULES_GO_AHEAD=1` in front of the command that finishes what was stopped — so
@@ -298,22 +298,27 @@ says how.
 - **`/diagnose`** step 6: the regression test is seen to fail without the fix, and a red
   got by breaking code or a fixture on purpose is trusted only once `git diff` shows the
   break landed (from `mattpocock/skills`, re-pinned).
-- **`/dg`** step 3: a reviewer's probe runs in a scratch directory it made, in the same
-  script as its git commands, never in the repository under review, and stops after
-  `git init` unless git's repository is the one it made there. Where a project names
-  its tiers, step 3 also says which runs which part: by default the pre-review on the
-  top tier, the personas on the tier below, their model named in the header
-  (`> Personas:`). A fix's own diff may instead get a light check, one cold reviewer
-  on the tier below who checks the conditions against the quoted record too, only
-  when every change applies a finding dispositioned as applied, changes nothing a
-  rule, refusal, check, skill step, session line, documented boundary or pinned claim
-  requires or states (a test pinning the fix aside), touches no code or configuration
-  that guards, gates, stores or pays and no dependency file, and applies no finding
-  rated critical or Major; anything else, any doubt, or an incomplete reply escalates
-  to the full review in the same turn, which takes whatever register the light check
-  gave. The risk accepted: a qualifying fix gets one same-family read on the tier
-  below, and the conditions bound which fixes. With no tiers named, nothing here
-  applies: each part runs as before.
+- **`/dg`** steps 2 and 3: a reviewer's probe runs in a scratch directory it made, in
+  the same script as its git commands, never in the repository under review, and stops
+  after `git init` unless git's repository is the one it made there. The header names
+  every pre-reviewer that counts, joined by ` · `, and every pre-review's IDs carry a
+  prefix naming its reviewer. Where a project names its tiers, step 3 also says which
+  runs which part: by default the pre-review on the top tier, the personas on the tier
+  below, their model named in the header (`> Personas:`). A fix's own diff may instead
+  get a light check, one cold reviewer on the tier below who checks the conditions
+  against the quoted record too, only when every change applies a finding
+  dispositioned as applied, changes nothing a rule, refusal, check, skill step,
+  session line, documented boundary or pinned claim requires or states (a test pinning
+  the fix aside), touches no code or configuration that guards, gates, stores or pays
+  and no dependency file, and applies no finding rated critical or Major. It passes
+  only on a register the orchestrator finds complete against its brief, each row one
+  allowed word, with every condition holding, every finding landed or not landed, and
+  nothing new; anything else, any doubt, or an incomplete reply escalates to the full
+  review in the same turn, which takes whatever register the light check gave. The
+  risk accepted: a qualifying fix gets one same-family read on the tier below, and the
+  conditions bound which fixes, checked against the record as the orchestrator quotes
+  it. With no tiers named, neither the split nor the light check applies: each part
+  runs as before.
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's
