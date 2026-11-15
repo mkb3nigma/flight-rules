@@ -301,12 +301,12 @@ says how.
 - **`/dg`** steps 2 and 3: a reviewer's probe runs in a scratch directory it made, in
   the same script as its git commands, never in the repository under review, and stops
   after `git init` unless git's repository is the one it made there. The header names
-  every pre-reviewer that counts, joined by ` · `, a pre-reviewer below the top tier
-  marked `(<model>, below the top tier)`, and every pre-review's IDs carry a prefix
-  naming its reviewer. Where a project names its tiers, step 3 also says which runs
-  which part: by default the pre-review on the top tier, the personas on the tier
-  below, their model named in the header (`> Personas:`). With no tiers named, the
-  split does not apply: each part runs as before.
+  every pre-reviewer that counts, joined by ` · `, and, where tiers are named, marks
+  one below the top tier `(<model>, below the top tier)`; every pre-review's IDs carry
+  a prefix naming its reviewer. Where a project names its tiers, step 3 also says
+  which runs which part: by default the pre-review on the top tier, the personas on
+  the tier below, their model named in the header (`> Personas:`). With no tiers
+  named, the split does not apply: each part runs as before.
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
   from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
   local branch, since origin's lacks it (#143); a hotfix only with the person's

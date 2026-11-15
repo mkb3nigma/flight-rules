@@ -131,8 +131,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `✅ <reviewer> (<model>, not cross-family)` — a wired CLI ran, but on a
      same-family or unreported model (`pre-review-cli.md`, its last point);
    - `✅ <reviewer> (<model>, below the top tier)` — where tiers are named and the
-     model that ran, CLI or subagent, is below the top tier;
-     `(<model>, not cross-family, below the top tier)` where both apply;
+     model that ran, CLI or subagent, is below the top tier, the fallback's
+     `<same-family reviewer>` below included; `(<model>, not cross-family, below the
+     top tier)` where both apply;
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
