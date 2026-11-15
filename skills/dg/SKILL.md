@@ -131,12 +131,13 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `✅ <reviewer> (<model>, not cross-family)` — a wired CLI ran, but on a
      same-family or unreported model (`pre-review-cli.md`, its last point), or
      `(<model>, below the top tier)` where tiers are named and the model it reports is
-     below the top tier;
+     below the top tier, or `(<model>, not cross-family, below the top tier)` for both;
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
    Where more than one pre-reviewer counts, the line names each, joined by ` · `, and
-   every one's findings reach round 2.
+   every one's findings reach round 2, their IDs prefixed by reviewer (`C1`, `F1`) so
+   round 2's answers by ID do not collide.
 
    If captured, the personas get it from round 2 on, not in round 1: *"An independent
    senior reviewer flagged the following — agree, escalate, or dispute each point as
@@ -235,21 +236,22 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the project's extensions. Its `## Verdict` is one register: a row per condition,
    holds, does not or in doubt; a row per applied finding, landed, not landed (no
    change made for it) or beyond the finding (a change past it, or one that claims it
-   and misses); then anything new the diff introduces. A defect that predates the
-   diff is listed as pre-existing and does not escalate. If every condition holds,
-   nothing is beyond a finding and nothing is new, `## Decisions waiting` follows, the
-   not-landed and pre-existing rows in it, `(0)` included, and the turn ends, as at
-   step 5. Otherwise — or with no register from the reviewer within `DG_WAIT_MINUTES`
-   (step 4) — it escalates: the full review runs on the same diff in the same turn,
-   and the reply is that review, its one `## Review:` header carrying
+   and misses); then anything new. If every condition holds, nothing is beyond a
+   finding and nothing is new, `## Decisions waiting` follows, the not-landed findings
+   in it, `(0)` included, and the turn ends, as at step 5. Otherwise — or with no
+   register from the reviewer within `DG_WAIT_MINUTES` (step 4) — it escalates: the
+   full review runs on the same diff in the same turn, and the reply is that review,
+   its one `## Review:` header carrying
    `> Review: light check (<model>) escalated — <why>`, and the register printed once,
-   as the verdict's `### Light check`, not on its own before it. The register reaches
-   the personas from round 2, as a pre-review's findings do; its not-landed and
-   pre-existing rows join that review's `## Decisions waiting`, still the reply's
-   last section. A light check has no rounds, personas, pre-review line, scan or
-   comic: the review that raised a finding scanned what the fix leaves unchanged. In
-   a PR body (`pr-create` 2b) the header line and the verdict go in as a full
-   review's do, headings one level down: `### Verdict`, `#### Light check`.
+   as the verdict's `### Light check`, not on its own before it. A light reviewer that
+   gave no register is stopped, as step 4 stops a pre-reviewer; the `<why>` says so,
+   and `### Light check` holds that one line. The register reaches the personas from
+   round 2, as a pre-review's findings do; its not-landed rows join that review's
+   `## Decisions waiting`, still the reply's last section. A light check that did not
+   escalate has no rounds, personas, pre-review line, scan or comic: the review that
+   raised a finding scanned what the fix leaves unchanged. In a PR body (`pr-create`
+   2b) the header line and the verdict go in as a full review's do, headings one
+   level down: `### Verdict`, `#### Light check`.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its
@@ -297,7 +299,7 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
      or the score into a PR, issue or commit: the owner added both for levity, and not
      every reader shares the taste (2026-10-17). Ignored when `DG_COMIC=never`.
 
-   A light check (step 3) has no comic: it has no rounds.
+   A light check that did not escalate (step 3) has no comic: it has no rounds.
 
    The comic: up to 8 panels of the best banter, at least one per round, in a block
    fenced with more backticks than any run inside it (a quoted ` ``` ` would close a
@@ -340,10 +342,10 @@ place a long verdict turns back into paragraphs.
 
 ````markdown
 ## Review: <subject>
-> Review: light check (<model>) — <why it qualifies> | light check (<model>) escalated — <why>   (a light check only, step 3)
+> Review: light check (<model>) — <why it qualifies> | light check (<model>) escalated — <why>   (a light check only, step 3; one that did not escalate has no other header line, no comic and no personas)
 > Pre-review: <one of the forms in step 2>
 > Dependency scan: ✅ <tool> — <n> findings | ⚠️ not run — <why> | n/a (no dependency files, or not code)
-> Personas: <model>   (where tiers are named, step 3)
+> Personas: <model>   (where tiers are named, a full review, step 3)
 
 ## Comic
 ```
@@ -374,7 +376,8 @@ D1. **<the decision>** — what it is, why it came up, the evidence, what each o
 Add the comic to the PR? (y/N)
 ````
 
-A light check (step 3) has no `## Comic` section, whatever `DG_COMIC` says.
+A light check that did not escalate (step 3) has no `## Comic` section, whatever
+`DG_COMIC` says.
 The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
 with `DG_COMIC_PR=ask` on a review that is for a PR. The decisions are the reply's last
 section — only that optional line follows them — where a reader in a terminal lands;
@@ -385,8 +388,8 @@ of sentences wrapped past reading at terminal width (2026-10-24). With none, the
 screen is the one scrolled past. Each decision is decidable from its item alone, as §7
 asks.
 
-`## Verdict` ends at Recommended Actions, so wherever a PR body takes "the verdict", it
-takes neither the comic, nor the round tables' BANTER lines, nor the decisions (the PR
+`## Verdict` ends at Recommended Actions (a light check's is its register), so wherever
+a PR body takes "the verdict", it takes neither the comic, nor the round tables' BANTER lines, nor the decisions (the PR
 body records each finding's disposition instead); the comic follows only by
 `DG_COMIC_PR`.
 
