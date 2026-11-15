@@ -50,8 +50,8 @@ is the one review with every piece in view at once.
    follow the owner's reply. Put the header lines — `> Pre-review:`,
    `> Dependency scan:`, and `> Personas:` and a light check's `> Review:` where the
    review has them; a light check that did not escalate has only its `> Review:` line —
-   the verdict (it ends at Recommended Actions; a light check's is its register) and
-   every finding's disposition in the PR body under **Adversarial review**, each of
+   the verdict (it ends at Recommended Actions; a light check's that did not escalate
+   is its register) and every finding's disposition in the PR body under **Adversarial review**, each of
    the verdict's headings one level down (`###`, `####`; the review's own `## Review`
    title too)
    — a `##` inside the section ends it (outside a code fence), and the check below then finds it empty. No
