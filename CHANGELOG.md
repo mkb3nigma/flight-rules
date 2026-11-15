@@ -309,9 +309,9 @@ says how.
   applied, changes nothing a rule, refusal, check, skill step, session line, documented
   boundary or pinned claim requires or states (a test pinning the fix aside), touches
   no code or configuration that guards, gates, stores or pays and no dependency file,
-  and applies no finding rated critical or Major; anything else, or any doubt,
-  escalates to the full review in the same turn, which takes the light check's
-  register. The risk accepted: a qualifying fix gets one same-family read on the tier
+  and applies no finding rated critical or Major; anything else, any doubt, or a
+  reply without its completion line escalates to the full review in the same turn,
+  which takes the light check's register. The risk accepted: a qualifying fix gets one same-family read on the tier
   below, and the conditions bound which fixes. With no tiers named, nothing here
   applies: each part runs as before.
 - **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts

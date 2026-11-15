@@ -236,12 +236,16 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the project's extensions. Its `## Verdict` is one register: a row per condition,
    holds, does not or in doubt; a row per applied finding, landed, not landed (no
    change made for it) or beyond the finding (a change past it, or one that claims it
-   and misses); then anything new. If every condition holds, nothing is beyond a
-   finding and nothing is new, `## Decisions waiting` follows, the not-landed findings
-   in it, `(0)` included, and the turn ends, as at step 5. Otherwise — or with no
-   register from the reviewer within `DG_WAIT_MINUTES` (step 4) — it escalates: the
-   full review runs on the same diff in the same turn, and the reply is that review,
-   its one `## Review:` header carrying
+   and misses); then anything new. The brief asks for `LIGHT CHECK COMPLETE: <n> new`
+   as its last line, verbatim and unformatted, `<n>` a number, `0` included, read as
+   step 2 reads a subagent's: the last non-empty line of its own reply. A reply without
+   it, or whose `<n>` is not the register's count of new rows, gave no register; an
+   `<n>` other than 0 is something new. If every condition holds, nothing is beyond a
+   finding and the line states `0` new — never silence — `## Decisions waiting`
+   follows, the not-landed findings in it, `(0)` included, and the turn ends, as at
+   step 5. Otherwise — or with no register from the reviewer within `DG_WAIT_MINUTES`
+   (step 4) — it escalates: the full review runs on the same diff in the same turn,
+   and the reply is that review, its one `## Review:` header carrying
    `> Review: light check (<model>) escalated — <why>`, and the register printed once,
    as the verdict's `### Light check`, not on its own before it. A light reviewer that
    gave no register is stopped, as step 4 stops a pre-reviewer; the `<why>` says so,
