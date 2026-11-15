@@ -137,7 +137,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
 
    Where more than one pre-reviewer counts, the line names each, joined by ` · `, and
    every one's findings reach round 2, their IDs prefixed by reviewer (`C1`, `F1`) so
-   round 2's answers by ID do not collide.
+   round 2's answers by ID do not collide: each prefix distinct from the others and
+   from every ID in the brief's record (an escalated light check's register cites the
+   earlier review's), and never `A` or `D`, which the actions and decisions use.
 
    If captured, the personas get it from round 2 on, not in round 1: *"An independent
    senior reviewer flagged the following — agree, escalate, or dispute each point as
@@ -199,7 +201,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    pre-review's close reading against sources. Both halves of the split are testimony:
    which part keeps its findings on the tier below has not been measured. To measure
    it, where tiers are named the header records `> Personas: <model>` (the session's
-   model where the tool could not choose one); with no tiers named, no line.
+   model where the tool could not choose one); with no tiers named, no line, nor on a
+   light check that did not escalate.
 
    **A light check**, where tiers are named, may replace the full review of a fix's
    own diff only when all three hold: (a) every change applies a finding dispositioned
@@ -392,10 +395,10 @@ of sentences wrapped past reading at terminal width (2026-10-24). With none, the
 screen is the one scrolled past. Each decision is decidable from its item alone, as §7
 asks.
 
-`## Verdict` ends at Recommended Actions (a light check's is its register), so wherever
-a PR body takes "the verdict", it takes neither the comic, nor the round tables' BANTER lines, nor the decisions (the PR
-body records each finding's disposition instead); the comic follows only by
-`DG_COMIC_PR`.
+`## Verdict` ends at Recommended Actions (a light check's that did not escalate is its
+register), so wherever a PR body takes "the verdict", it takes neither the comic, nor
+the round tables' BANTER lines, nor the decisions (the PR body records each finding's
+disposition instead); the comic follows only by `DG_COMIC_PR`.
 
 **Banter score** is a tongue-in-cheek tally of who won the arguments — banter, not a
 measure of the work, and it lives in the comic, ahead of the findings and kept out of
