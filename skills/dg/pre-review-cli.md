@@ -31,7 +31,8 @@ whichever CLI it has in its extensions. The command:
   or log, else `model unreported`. A CLI is not a family: `agy` also serves Claude
   models. A run whose model is the same family as the one running this skill, or
   unreported, counts but not as cross-family: `✅ <reviewer> (<model>, not
-  cross-family)`.
+  cross-family)` (where tiers are named and that model is below the top tier, `/dg`
+  step 2 adds `below the top tier`).
 
 E.g. from Claude Code:
 `out=$(mktemp) err=$(mktemp);`
