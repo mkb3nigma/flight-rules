@@ -129,9 +129,10 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `✅ <reviewer>` — it ran (name the model; a same-family one with none wired is
      no warning);
    - `✅ <reviewer> (<model>, not cross-family)` — a wired CLI ran, but on a
-     same-family or unreported model (`pre-review-cli.md`, its last point), or
-     `(<model>, below the top tier)` where tiers are named and the model it reports is
-     below the top tier, or `(<model>, not cross-family, below the top tier)` for both;
+     same-family or unreported model (`pre-review-cli.md`, its last point);
+   - `✅ <reviewer> (<model>, below the top tier)` — where tiers are named and the
+     model that ran, CLI or subagent, is below the top tier;
+     `(<model>, not cross-family, below the top tier)` where both apply;
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
