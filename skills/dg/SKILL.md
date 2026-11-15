@@ -136,10 +136,11 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    - `⚠️ unavailable — <why>` — no pre-review counted.
 
    Where more than one pre-reviewer counts, the line names each, joined by ` · `, and
-   every one's findings reach round 2, their IDs prefixed by reviewer (`C1`, `F1`) so
-   round 2's answers by ID do not collide: each prefix distinct from the others and
-   from every ID in the brief's record (an escalated light check's register cites the
-   earlier review's), and never `A` or `D`, which the actions and decisions use.
+   every one's findings reach round 2. Every pre-review's IDs carry a prefix naming
+   its reviewer (`C1`, `F1`), with one pre-reviewer as with several, so round 2's
+   answers by ID do not collide: each prefix distinct from the others, used by no ID
+   in an escalated light check's record (step 3), and never `A` or `D`, which the
+   actions and decisions use.
 
    If captured, the personas get it from round 2 on, not in round 1: *"An independent
    senior reviewer flagged the following — agree, escalate, or dispute each point as
