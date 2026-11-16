@@ -364,7 +364,7 @@ says how.
   and unexpected survivors so far, rate and time left, the machine, and a breakdown by
   file and suite. A run prints a one-line form of it every ten minutes.
 - A whole-kit mutation run is made on the release commit: the tip of local `dev`,
-  with nothing changed and origin's `dev` in it. Otherwise it stops before any work
+  with nothing changed and origin's `dev` in it. Otherwise it stops before its baseline
   and prints `MUTATION_ANY_COMMIT=1` to run anyway.
 
 ## 0.28.0 — 2026-10-30

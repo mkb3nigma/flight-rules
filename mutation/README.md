@@ -19,15 +19,18 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 of `{TEST_COMMANDS}`.
 
 For a release it belongs on `dev` once every change is in, just before the `dev` →
-`main` PR (owner, 2026-11-16). A whole-kit run checks this before any work. It
-stops, naming what is off, unless all of these hold:
+`main` PR (owner, 2026-11-16). A whole-kit run checks this before its baseline, and
+stops, naming what is off and leaving nothing behind, unless all of these hold:
 - HEAD is the tip of local `dev` (the conf's `INTEGRATION_BRANCH`);
 - no tracked file differs from it;
 - origin's `dev` holds nothing HEAD lacks. This is read with `ls-remote`, so it needs
   the network and writes nothing.
 
 The stop prints the route and the way past. `MUTATION_ANY_COMMIT=1` runs it on any
-commit: for the major change before it merges, say. A selection is not checked.
+commit: for the major change before it merges, say. The run then says, at the start
+and at the end, that it was not checked. A selection is not checked. Each way past a
+stop prints carries the `MUTATION_*` settings the run was given, so a second stop's
+command keeps the first one's.
 
 A whole-kit run starts with the suites on Linux as well. After the baseline, it runs
 them once in Docker's `ubuntu:latest` (`MUTATION_LINUX_IMAGE` names another, which

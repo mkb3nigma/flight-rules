@@ -146,16 +146,34 @@ else
 fi
 echo "mutation: $N mutant(s) from $FROM, -j $J, work in $W"
 
+# way_past VAR=value: the command that goes ahead anyway, with every MUTATION_* setting
+# this run was given and VAR=value added. Each stop printing only its own variable made
+# two stops send the person back and forth: the commit check's command lacked the skip,
+# the Linux stop's lacked MUTATION_ANY_COMMIT (the release-commit check's /dg, DN1).
+way_past() {
+    local v out="" new=${1%%=*}
+    for v in MUTATION_ANY_COMMIT MUTATION_LINUX MUTATION_LINUX_IMAGE MUTATION_TIMEOUT; do
+        [ "$v" = "$new" ] && continue
+        [ -n "${!v:-}" ] && out="$out$v=$(printf '%q' "${!v}") "
+    done
+    printf '%s%s mutation/run.sh -j %s' "$out" "$1" "$J"
+}
+ANY_NOTE=""
+
 # The release commit: a whole-kit run is hours, and its stamp vouches for one commit, so
 # it runs on the tip of the integration branch with every change in, just before the
 # dev → main PR (owner, 2026-11-16: "they should ideally run on dev when all changes are
-# done and just before dev->main PR"). Before any work it checks that HEAD is that tip,
+# done and just before dev->main PR"). Before the baseline it checks that HEAD is that tip,
 # with no tracked file changed, and that origin's branch holds nothing it lacks (read
 # with ls-remote: the checkout is not written). Anything else stops it, named, with the
 # route and the way past: MUTATION_ANY_COMMIT=1, for a run the owner called for on
-# another commit (a major change before it merges, mutation/README.md). A selection is
-# not the release run and is not checked.
-if [ "$SCOPE" = all ] && [ "$REPO" -eq 1 ] && [ "${MUTATION_ANY_COMMIT:-}" != 1 ]; then
+# another commit (a major change before it merges, mutation/README.md), said at the
+# start and the end when given. A stop removes the copy it made. A selection is not the
+# release run and is not checked.
+if [ "$SCOPE" = all ] && [ "${MUTATION_ANY_COMMIT:-}" = 1 ]; then
+    ANY_NOTE="⚠️  not checked as the release commit (MUTATION_ANY_COMMIT=1)"
+    echo "$ANY_NOTE"
+elif [ "$SCOPE" = all ] && [ "$REPO" -eq 1 ]; then
     INT=$(sed -n 's/^[[:space:]]*INTEGRATION_BRANCH[[:space:]]*=[[:space:]]*//p' "$ROOT/.flight-rules/conf" 2>/dev/null \
           | tail -1 | sed -e 's/[[:space:]]*#.*$//' -e "s/^[\"']//" -e "s/[\"']$//")
     INT=${INT:-dev}
@@ -172,13 +190,14 @@ if [ "$SCOPE" = all ] && [ "$REPO" -eq 1 ] && [ "${MUTATION_ANY_COMMIT:-}" != 1 
     else
         rsha=${remote%%[[:space:]]*}
         git -C "$ROOT" merge-base --is-ancestor "$rsha" "$head_sha" 2>/dev/null \
-            || off+=("origin's $INT ($rsha) has commits HEAD lacks: bring them into $INT first (git pull --ff --no-rebase origin $INT)")
+            || off+=("origin's $INT ($rsha) has commits HEAD lacks: bring them into $INT first, in the $INT checkout (git pull --ff --no-rebase origin $INT), then make the worktree again")
     fi
     if [ "${#off[@]}" -gt 0 ]; then
         printf '❌ not the release commit, so no mutant is run: %s\n' "${off[@]}" >&2
         echo "   a release run is on the tip of local $INT, every change in, just before the $INT → main PR (AGENTS.md → Releasing):" >&2
-        echo "   git worktree add --detach .flight-rules/worktrees/mutation $INT   and run it there" >&2
-        echo "   to run on this commit anyway (a run the owner called for): MUTATION_ANY_COMMIT=1 mutation/run.sh -j $J" >&2
+        echo "   git worktree add --detach .flight-rules/worktrees/mutation $INT   and run it there (one left from an earlier run: git worktree remove .flight-rules/worktrees/mutation first)" >&2
+        echo "   to run on this commit anyway (a run the owner called for): $(way_past MUTATION_ANY_COMMIT=1)" >&2
+        rm -rf "${W:?}"   # the copy made above: nothing of a run that never started is left
         exit 2
     fi
 fi
@@ -228,7 +247,7 @@ LINUX_IMAGE=${MUTATION_LINUX_IMAGE:-ubuntu:latest}
 LINUX_NOTE=""
 linux_stop() {   # <what went wrong> [<its log>]: the stop, its log, and the way on
     echo "❌ linux: $1 — its log: ${2:-$W/logs/linux.log}. No mutant was run, and nothing is stamped" >&2
-    echo "   to go on without the Linux leg (the release PR's CI is then the first Linux run): MUTATION_LINUX=skip mutation/run.sh -j $J" >&2
+    echo "   to go on without the Linux leg (the release PR's CI is then the first Linux run): $(way_past MUTATION_LINUX=skip)" >&2
     exit 2
 }
 if [ "$SCOPE" = all ] && [ "${MUTATION_LINUX:-}" = skip ]; then
@@ -257,9 +276,9 @@ elif [ "$SCOPE" = all ]; then
         useradd -m -s /bin/bash mut || { echo "linux-setup-failed: useradd"; exit 3; }
         . /etc/os-release; echo "linux-image: $PRETTY_NAME $(uname -m), bash $(bash -c "echo \$BASH_VERSION")"
         su mut -c "set -u; export LANG=C.UTF-8; to=\$1; shift
-            git config --global user.email mutation@invalid && git config --global user.name mutation \
-              && git config --global init.defaultBranch main && cp -R /src ~/w && cd ~/w && rm -rf .git \
-              && git init -q && git add -A && git -c core.hooksPath=/dev/null commit -qm base || { echo linux-setup-failed: copy; exit 3; }
+            cp -R /src ~/w && cd ~/w && rm -rf .git && git init -q && git add -A \
+              && git -c user.name=mutation -c user.email=mutation@invalid -c core.hooksPath=/dev/null commit -qm base \
+              || { echo linux-setup-failed: copy; exit 3; }
             for s in \"\$@\"; do timeout --kill-after=10 \"\$to\" bash \"\$s\" >~/out 2>&1; echo \"linux-suite: \$? \$s\"; cat ~/out; done" _ "$@"
     ' _ "$TIMEOUT" $(cat "$W/suites") >>"$W/logs/linux.log" 2>&1; lrc=$?
     nsuites=$(wc -l <"$W/suites" | tr -d ' ')
@@ -409,6 +428,7 @@ rc=$?
 # the same commit, the stamp written here replaces origin's.
 # How the Linux leg went, beside the closing lines: a skip is said hours later too.
 [ -n "$LINUX_NOTE" ] && echo "$LINUX_NOTE"
+[ -n "$ANY_NOTE" ] && echo "$ANY_NOTE"
 MERGE="git fetch origin refs/notes/mutation:refs/notes/mutation-origin && git notes --ref=mutation merge -s theirs refs/notes/mutation-origin"
 if [ -s "$W/stamp" ]; then
     merged=0
