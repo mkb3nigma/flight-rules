@@ -10,7 +10,8 @@
 # killed and every mutant applied. Exit 1: one survived that should not have, or one
 # did not apply. Exit 2: usage, or a suite failing with no mutant applied, at the
 # baseline, on Linux, or down the mutant path (the control) — then no result would mean
-# anything — or, for the whole kit, the Linux leg not run (no Docker, no image).
+# anything — or, for the whole kit, the Linux leg not run (no Docker, no image), or a
+# commit that is not the release commit (MUTATION_ANY_COMMIT=1 runs it anyway).
 set -u
 HERE=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 2
 ROOT=$(cd -P "$HERE/.." && pwd -P) || exit 2
@@ -88,7 +89,7 @@ J=1
 while getopts j:h o; do
     case $o in
         j) J=$OPTARG ;;
-        *) echo "usage: mutation/run.sh [-j N] [id …] | --status [<work dir>]  (MUTATION_TIMEOUT=<seconds per suite>, default 1200; MUTATION_LINUX=skip, MUTATION_LINUX_IMAGE=<image>, default ubuntu:latest)"; exit 2 ;;
+        *) echo "usage: mutation/run.sh [-j N] [id …] | --status [<work dir>]  (MUTATION_TIMEOUT=<seconds per suite>, default 1200; MUTATION_LINUX=skip, MUTATION_LINUX_IMAGE=<image>, default ubuntu:latest; MUTATION_ANY_COMMIT=1)"; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))
@@ -144,6 +145,43 @@ else
     DIRTY=""; FROM="$ROOT (not a repository)"
 fi
 echo "mutation: $N mutant(s) from $FROM, -j $J, work in $W"
+
+# The release commit: a whole-kit run is hours, and its stamp vouches for one commit, so
+# it runs on the tip of the integration branch with every change in, just before the
+# dev → main PR (owner, 2026-11-16: "they should ideally run on dev when all changes are
+# done and just before dev->main PR"). Before any work it checks that HEAD is that tip,
+# with no tracked file changed, and that origin's branch holds nothing it lacks (read
+# with ls-remote: the checkout is not written). Anything else stops it, named, with the
+# route and the way past: MUTATION_ANY_COMMIT=1, for a run the owner called for on
+# another commit (a major change before it merges, mutation/README.md). A selection is
+# not the release run and is not checked.
+if [ "$SCOPE" = all ] && [ "$REPO" -eq 1 ] && [ "${MUTATION_ANY_COMMIT:-}" != 1 ]; then
+    INT=$(sed -n 's/^[[:space:]]*INTEGRATION_BRANCH[[:space:]]*=[[:space:]]*//p' "$ROOT/.flight-rules/conf" 2>/dev/null \
+          | tail -1 | sed -e 's/[[:space:]]*#.*$//' -e "s/^[\"']//" -e "s/[\"']$//")
+    INT=${INT:-dev}
+    off=()
+    head_sha=$(git -C "$ROOT" rev-parse HEAD)
+    if ! int_sha=$(git -C "$ROOT" rev-parse -q --verify "refs/heads/$INT^{commit}"); then
+        off+=("there is no local $INT")
+    elif [ "$head_sha" != "$int_sha" ]; then
+        off+=("HEAD ($head_sha) is not the tip of local $INT ($int_sha)")
+    fi
+    [ -z "$DIRTY" ] || off+=("tracked files differ from the commit: $(printf '%s' "$DIRTY" | tr '\n' ' ')")
+    if ! remote=$(git -C "$ROOT" ls-remote --exit-code origin "refs/heads/$INT" 2>/dev/null); then
+        off+=("origin's $INT could not be read (offline, or no origin) to check it holds nothing HEAD lacks")
+    else
+        rsha=${remote%%[[:space:]]*}
+        git -C "$ROOT" merge-base --is-ancestor "$rsha" "$head_sha" 2>/dev/null \
+            || off+=("origin's $INT ($rsha) has commits HEAD lacks: bring them into $INT first (git pull --ff --no-rebase origin $INT)")
+    fi
+    if [ "${#off[@]}" -gt 0 ]; then
+        printf '❌ not the release commit, so no mutant is run: %s\n' "${off[@]}" >&2
+        echo "   a release run is on the tip of local $INT, every change in, just before the $INT → main PR (AGENTS.md → Releasing):" >&2
+        echo "   git worktree add --detach .flight-rules/worktrees/mutation $INT   and run it there" >&2
+        echo "   to run on this commit anyway (a run the owner called for): MUTATION_ANY_COMMIT=1 mutation/run.sh -j $J" >&2
+        exit 2
+    fi
+fi
 # What --status reads: the run's facts and this machine's, then each step as it begins.
 phase() { printf '%s\t%s\t%s\n' "$1" "$(date +%s)" "${2:-}" >>"$W/phases"; }
 python3 -I "$W/base/mutation/status.py" init "$W" "started=$(date +%s)" "pid=$$" "from=$FROM" "scope=$SCOPE" \

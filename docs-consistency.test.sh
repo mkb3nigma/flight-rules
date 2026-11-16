@@ -622,8 +622,9 @@ for s in "$@"; do
 done
 SH
 chmod +x "$MF/shim/docker"
-MENV=(env -u MUTATION_UNDER_TEST -u MUTATION_LINUX -u MUTATION_LINUX_IMAGE -u MUTATION_TIMEOUT -u MUTATION_PROGRESS)
-krun() { (cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 MUTATION_TIMEOUT=77 DOCKER_SHIM="$1" ${2:+MUTATION_LINUX=$2} bash mutation/run.sh 2>&1); }
+MENV=(env -u MUTATION_UNDER_TEST -u MUTATION_LINUX -u MUTATION_LINUX_IMAGE -u MUTATION_TIMEOUT -u MUTATION_PROGRESS -u MUTATION_ANY_COMMIT)
+# The fixture is no release commit (no dev, no origin): these cases go past that check.
+krun() { (cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 MUTATION_TIMEOUT=77 MUTATION_ANY_COMMIT=1 DOCKER_SHIM="$1" ${2:+MUTATION_LINUX=$2} bash mutation/run.sh 2>&1); }
 SKIPCMD='to go on without the Linux leg (the release PR'"'"'s CI is then the first Linux run): MUTATION_LINUX=skip mutation/run.sh -j 1'
 for c in "noinfo|Docker is not running, or not installed" \
          "pullfail|the container did not start or was not set up on ubuntu:latest (docker exited 125): docker: Error response from daemon: pull access denied for nosuch — its log" \
@@ -664,6 +665,37 @@ OUT=$(krun noinfo skip); RC=$?
   && ok "MUTATION_LINUX=skip: no Docker needed, the run goes on, and the skip is said at the start and the end" || bad "the skip (exit $RC: $(tail -6 <<<"$OUT" | tr '\n' ' '))"
 OUT=$(cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=noinfo bash mutation/run.sh X1 2>&1); RC=$?
 [ "$RC" -eq 0 ] && grep -q '— 1 killed' <<<"$OUT" && ! grep -q 'linux' <<<"$OUT" && ok "a selection skips the leg, and says nothing of it" || bad "a selection ran or named the Linux leg (exit $RC: $(grep linux <<<"$OUT" | head -2 | tr '\n' ' '))"
+
+echo "A whole-kit mutation run is made on the release commit, else stopped before any work:"
+# Hours long and stamping one commit, it belongs on the tip of the integration branch
+# with every change in, just before the dev → main PR (owner, 2026-11-16). The fixture
+# gets a dev and an origin of its own (a bare repository beside it: no network).
+"${GF[@]}" branch -f dev HEAD >/dev/null && git clone -q --bare "$MF" "$MF.origin" && "${GF[@]}" remote add origin "$MF.origin" \
+  || die "could not give the fixture a dev and an origin"
+rrun() { (cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=pass "$@" bash mutation/run.sh 2>&1); }
+WAY='to run on this commit anyway (a run the owner called for): MUTATION_ANY_COMMIT=1 mutation/run.sh -j 1'
+"${GF[@]}" checkout -q dev || die "no dev in the fixture"
+OUT=$(rrun); RC=$?
+[ "$RC" -eq 0 ] && grep -q '^baseline: ' <<<"$OUT" && grep -q '— 1 killed' <<<"$OUT" && ! grep -q 'not the release commit' <<<"$OUT" \
+  && ok "the tip of local dev, clean, origin's dev in it: the run goes on" || bad "the release commit was refused (exit $RC: $(grep -v '^ ' <<<"$OUT" | head -4 | tr '\n' ' '))"
+chk() {   # <desc> <what the stop names>: stopped before the baseline, named, the route and the way past printed
+  OUT=$(rrun); RC=$?
+  [ "$RC" -eq 2 ] && grep -qF "$2" <<<"$OUT" && grep -qF 'git worktree add --detach .flight-rules/worktrees/mutation dev' <<<"$OUT" && grep -qF "$WAY" <<<"$OUT" && ! grep -q '^baseline: ' <<<"$OUT" \
+    && ok "$1: stopped before any work, named, with the route and the way past" || bad "$1 (exit $RC: $(tail -4 <<<"$OUT" | tr '\n' ' '))"
+}
+"${GF[@]}" checkout -q -b feature/x && echo x >"$MF/x.txt" && "${GF[@]}" add x.txt && "${GF[@]}" commit -qm x || die "could not commit on feature/x"
+chk "HEAD past dev's tip" "is not the tip of local dev"
+OUT=$(rrun MUTATION_ANY_COMMIT=1); RC=$?
+[ "$RC" -eq 0 ] && grep -q '— 1 killed' <<<"$OUT" && ok "…and MUTATION_ANY_COMMIT=1 runs it there anyway" || bad "the way past did not go past (exit $RC: $(tail -3 <<<"$OUT" | tr '\n' ' '))"
+"${GF[@]}" checkout -q dev && printf 'changed\n' >>"$MF/f.txt"
+chk "a tracked file changed" "tracked files differ from the commit"
+"${GF[@]}" checkout -q -- f.txt
+_o=$(git -C "$MF.origin" commit-tree "$(git -C "$MF.origin" rev-parse 'dev^{tree}')" -p dev -m "pushed elsewhere") && git -C "$MF.origin" update-ref refs/heads/dev "$_o" \
+  || die "could not move origin's dev"
+chk "origin's dev ahead of HEAD" "origin's dev ($_o) has commits HEAD lacks"
+"${GF[@]}" remote set-url origin "$MF.nowhere"
+chk "origin out of reach" "origin's dev could not be read"
+rm -rf "$MF.origin"
 rm -rf "$MF"
 
 echo "Every mutation mutant's anchor occurs exactly once:"

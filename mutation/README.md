@@ -18,6 +18,17 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 (owner, 2026-11-04). It takes hours, so it is not a per-branch check, and it is not one
 of `{TEST_COMMANDS}`.
 
+For a release it belongs on `dev` once every change is in, just before the `dev` →
+`main` PR (owner, 2026-11-16). A whole-kit run checks this before any work. It
+stops, naming what is off, unless all of these hold:
+- HEAD is the tip of local `dev` (the conf's `INTEGRATION_BRANCH`);
+- no tracked file differs from it;
+- origin's `dev` holds nothing HEAD lacks. This is read with `ls-remote`, so it needs
+  the network and writes nothing.
+
+The stop prints the route and the way past. `MUTATION_ANY_COMMIT=1` runs it on any
+commit: for the major change before it merges, say. A selection is not checked.
+
 A whole-kit run starts with the suites on Linux as well. After the baseline, it runs
 them once in Docker's `ubuntu:latest` (`MUTATION_LINUX_IMAGE` names another, which
 must be pullable), pulled fresh each run. That is the newest Ubuntu LTS, which GitHub's `ubuntu-latest` runner
