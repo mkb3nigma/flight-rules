@@ -535,6 +535,7 @@ cat >"$MF/mutation/mutants.py" <<'PY' || die "could not write the fixture's muta
 import sys
 if sys.argv[1] == 'list': print('X1\tf.txt\tt.sh\tkilled'); sys.exit(0)
 if sys.argv[1] == 'apply': open(sys.argv[3] + '/f.txt', 'w').write('mutated\n'); sys.exit(0)
+if sys.argv[1] == 'check': print('1 mutants, 0 not anchored'); sys.exit(0)
 sys.exit(2)
 PY
 printf 'ok\n' >"$MF/f.txt"
@@ -567,7 +568,7 @@ OUT=$(cd "$MF" && TMPDIR="$MF/tmp" bash mutation/run.sh --status 2>&1); RC=$?
 LW="$MF/tmp/mutation.live"; mkdir -p "$LW/res" "$LW/m/X3" || die "could not make the live fixture"
 printf 'X1\tf.txt\tt.sh\tkilled\nX2\tg.txt\tt.sh\tkilled\nX3\tg.txt\tt.sh\tsurvives: not held\n' >"$LW/list"
 printf 'X1\tkilled\tt\t❌ x\n' >"$LW/res/X1"; printf 'X2\tsurvived\tt\t-\n' >"$LW/res/X2"
-sleep 300 & LP=$!
+sleep 300 >/dev/null 2>&1 & LP=$!
 T0=$(( $(date +%s) - 600 ))
 printf 'from=abc\nj=4\nn=3\npid=%s\nscope=all\nstarted=%s\ntimeout=1200\nos=TestOS 1\ncpus=8\n' "$LP" "$T0" >"$LW/run.info"
 printf 'baseline\t%s\t\ncontrol\t%s\t\nmutants\t%s\t\n' "$T0" "$((T0 + 60))" "$((T0 + 120))" >"$LW/phases"
@@ -590,6 +591,43 @@ printf '#!/bin/sh\nsleep 3; grep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commi
 OUT=$(cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" MUTATION_PROGRESS=1 bash mutation/run.sh X1 2>&1); RC=$?
 [ "$RC" -eq 0 ] && grep -qE '^mutation: mutants [01]/1 \(' <<<"$OUT" && grep -qF 'progress, any time: mutation/run.sh --status ' <<<"$OUT" \
   && ok "…and a run prints a progress line every MUTATION_PROGRESS seconds, and how to ask for more" || bad "no progress line in the run's output (exit $RC: $(grep -v '^ ' <<<"$OUT" | head -8 | tr '\n' ' '))"
+
+echo "A whole-kit mutation run checks the suites on Linux before any mutant:"
+# The leg shipped unable to pass (the container re-committed a committed tree), and no
+# case reached it: every run above is a selection, which skips it (release /dg, F1-F2).
+# A docker stand-in on PATH drives each way it decides; the real container is run by
+# hand before a release (mutation/README.md). No network here, as {TEST_COMMANDS} need.
+printf '#!/bin/sh\ngrep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a sound suite again' >/dev/null 2>&1 || die "could not commit the sound suite"
+mkdir -p "$MF/shim" && cat >"$MF/shim/docker" <<'SH' || die "could not write the docker stand-in"
+#!/bin/sh
+# DOCKER_SHIM: noinfo | pullfail | setup | fail | pass. After "_": the timeout, then the suites.
+[ "$1" = info ] && { [ "$DOCKER_SHIM" = noinfo ] && exit 1; exit 0; }
+[ "$DOCKER_SHIM" = pullfail ] && { echo "Unable to find image 'nosuch:latest' locally" >&2; exit 125; }
+[ "$DOCKER_SHIM" = setup ] && { echo "linux-setup-failed: apt-get (offline?)"; exit 3; }
+while [ "$#" -gt 0 ] && [ "$1" != _ ]; do shift; done; shift 2
+echo "linux-image: Shim OS 1 x86_64, bash 5.3"
+for s in "$@"; do
+  if [ "$DOCKER_SHIM" = fail ]; then echo "linux-suite: 1 $s"; else echo "linux-suite: 0 $s"; fi
+done
+SH
+chmod +x "$MF/shim/docker"
+krun() { (cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM="$1" ${2:+MUTATION_LINUX=$2} bash mutation/run.sh 2>&1); }
+SKIPCMD='to go on without the Linux leg (the release PR'"'"'s CI is then the first Linux run): MUTATION_LINUX=skip mutation/run.sh -j 1'
+for c in "noinfo|Docker is not running, or not installed" "pullfail|0 of 1 suite(s) passed on ubuntu:latest (docker exited 125)" \
+         "setup|❌ linux: linux-setup-failed: apt-get (offline?)" "fail|❌ linux: exited 1 — t.sh"; do
+  OUT=$(krun "${c%%|*}"); RC=$?
+  [ "$RC" -eq 2 ] && grep -qF "${c#*|}" <<<"$OUT" && grep -qF "$SKIPCMD" <<<"$OUT" && ! grep -q '^control:' <<<"$OUT" && ! grep -q '✅ stamped' <<<"$OUT" \
+    && ok "${c%%|*}: stops before the control, exit 2, says why and prints the skip" || bad "the Linux leg on ${c%%|*} (exit $RC: $(tail -4 <<<"$OUT" | tr '\n' ' '))"
+done
+OUT=$(krun pass); RC=$?
+[ "$RC" -eq 0 ] && grep -qF 'linux: 1 suite(s) pass on ubuntu:latest (Shim OS 1 x86_64, bash 5.3)' <<<"$OUT" && grep -q '^control: ' <<<"$OUT" && grep -q '— 1 killed' <<<"$OUT" \
+  && [ "$(grep -n 'linux: 1 suite(s) passed on' <<<"$OUT" | cut -d: -f1)" -gt "$(grep -n '^mutation: all 1 run' <<<"$OUT" | cut -d: -f1)" ] \
+  && ok "every suite passing: the run goes on, and its closing lines say the leg passed" || bad "the Linux leg on pass (exit $RC: $(tail -6 <<<"$OUT" | tr '\n' ' '))"
+OUT=$(krun noinfo skip); RC=$?
+[ "$RC" -eq 0 ] && [ "$(grep -c 'linux: skipped (MUTATION_LINUX=skip)' <<<"$OUT")" -eq 2 ] && grep -q '— 1 killed' <<<"$OUT" \
+  && ok "MUTATION_LINUX=skip: no Docker needed, the run goes on, and the skip is said at the start and the end" || bad "the skip (exit $RC: $(tail -6 <<<"$OUT" | tr '\n' ' '))"
+OUT=$(cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=noinfo bash mutation/run.sh X1 2>&1); RC=$?
+[ "$RC" -eq 0 ] && ! grep -q 'linux' <<<"$OUT" && ok "a selection skips the leg, and says nothing of it" || bad "a selection ran or named the Linux leg (exit $RC: $(grep linux <<<"$OUT" | head -2 | tr '\n' ' '))"
 rm -rf "$MF"
 
 echo "Every mutation mutant's anchor occurs exactly once:"

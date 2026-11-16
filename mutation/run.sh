@@ -9,7 +9,8 @@
 # run of the whole kit, a git note on refs/notes/mutation, origin's merged in first. Exit 0: every mutant expected killed was
 # killed and every mutant applied. Exit 1: one survived that should not have, or one
 # did not apply. Exit 2: usage, or a suite failing with no mutant applied, at the
-# baseline or down the mutant path (the control) — then no result would mean anything.
+# baseline, on Linux, or down the mutant path (the control) — then no result would mean
+# anything — or, for the whole kit, the Linux leg not run (no Docker, no image).
 set -u
 HERE=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 2
 ROOT=$(cd -P "$HERE/.." && pwd -P) || exit 2
@@ -172,49 +173,64 @@ echo "baseline: $(wc -l <"$W/suites" | tr -d ' ') suite(s) pass unmutated"
 # Linux: CI runs the suites on ubuntu-latest too, but sees dev only once it is pushed.
 # In 0.29.0 the runner had moved to Ubuntu 26.04 (bash 5.3) since the last push, and
 # its failures surfaced on the release PR after a six-hour stamped run, which had to
-# be made again (2026-11-16). So a whole-kit run first runs the same suites once in
-# Docker's ubuntu image, the one ubuntu-latest follows, as a user that is not root and
-# with en_US.UTF-8 installed, as on the runner. A suite failing there stops the run
-# before any mutant. No Docker stops it too, with the way on printed: the person
-# starts Docker, or goes on without this leg, and the release PR's CI is then the
-# first Linux run. A selection skips the leg: it is not the release run.
+# be made again (2026-11-16). So a whole-kit run first runs the same suites once on
+# Linux: in Docker's ubuntu:latest, the newest Ubuntu LTS, which GitHub's ubuntu-latest
+# runner tracks with a lag of its own, pulled fresh each run (a cached tag never
+# moves); as a user that is not root, LANG C.UTF-8 as on the runner, en_US.UTF-8
+# installed for the suites that name it. It is not the runner: on Apple silicon the
+# container is arm64, the runner x86_64, and it has only the tools installed below.
+# Each suite is cut off after MUTATION_TIMEOUT seconds; --init with the process-group
+# kill lets Ctrl-C reach the suites (--init alone did not, round 2 of its review). It
+# adds about a minute to set up, then one pass of the suites. A suite failing there,
+# or the leg not running at all, stops the run before any mutant, and every such stop
+# prints the way on: MUTATION_LINUX=skip, the person's to set, after which the release
+# PR's CI is the first Linux run. Either way the closing lines say how the leg went. A
+# selection skips the leg: it is not the release run.
 LINUX_IMAGE=${MUTATION_LINUX_IMAGE:-ubuntu:latest}
+LINUX_NOTE=""
+linux_stop() {   # <what went wrong>: the stop, its log, and the way on
+    echo "❌ linux: $1 — its log: $W/logs/linux.log. No mutant was run, and nothing is stamped" >&2
+    echo "   to go on without the Linux leg (the release PR's CI is then the first Linux run): MUTATION_LINUX=skip mutation/run.sh -j $J" >&2
+    exit 2
+}
 if [ "$SCOPE" = all ] && [ "${MUTATION_LINUX:-}" = skip ]; then
-    echo "⚠️  linux: skipped (MUTATION_LINUX=skip) — the release PR's CI is the first Linux run"
+    LINUX_NOTE="⚠️  linux: skipped (MUTATION_LINUX=skip) — the release PR's CI is the first Linux run"
+    echo "$LINUX_NOTE"; phase linux-skipped
 elif [ "$SCOPE" = all ]; then
     phase linux "$LINUX_IMAGE"
+    : >"$W/logs/linux.log"
     if ! docker info >/dev/null 2>&1; then
-        echo "❌ linux: Docker is not running, or not installed, so the suites could not run on Linux, as CI's ubuntu-latest will. Start Docker and run again, or go on without the Linux leg:" >&2
-        echo "   MUTATION_LINUX=skip mutation/run.sh -j $J" >&2
-        exit 2
+        linux_stop "Docker is not running, or not installed, so the suites could not run on Linux, as CI's ubuntu-latest will; start Docker and run again"
     fi
-    # The suites, one per line, passed to the container as arguments; its own script
-    # is single-quoted, so nothing here is expanded twice.
+    # The timeout and the suites, one per line, passed to the container as arguments;
+    # its own script is single-quoted, so nothing here is expanded twice. The copy's
+    # .git is the host's (the base commit made above, macOS settings and all): it goes,
+    # and the container commits the tree afresh, as a CI checkout has it.
     # shellcheck disable=SC2016
-    docker run --rm -v "$W/base":/src:ro "$LINUX_IMAGE" bash -c '
+    docker run --rm --pull always --init -e TINI_KILL_PROCESS_GROUP=1 -v "$W/base":/src:ro "$LINUX_IMAGE" bash -c '
         export DEBIAN_FRONTEND=noninteractive
-        { apt-get update -qq && apt-get install -y -qq git jq python3 procps locales zsh; } >/dev/null 2>&1 \
-            || { echo "linux-setup-failed: apt-get"; exit 3; }
-        sed -i "s/^# *en_US.UTF-8/en_US.UTF-8/" /etc/locale.gen && locale-gen >/dev/null 2>&1
+        { apt-get update -qq && apt-get install -y -qq git jq python3 procps locales zsh; } >/tmp/apt.log 2>&1 \
+            || { tail -20 /tmp/apt.log; echo "linux-setup-failed: apt-get (offline?)"; exit 3; }
+        { sed -i "s/^# *en_US.UTF-8/en_US.UTF-8/" /etc/locale.gen && locale-gen; } >/tmp/locale.log 2>&1 \
+            || { cat /tmp/locale.log; echo "linux-setup-failed: locale-gen"; exit 3; }
         useradd -m -s /bin/bash mut || { echo "linux-setup-failed: useradd"; exit 3; }
-        . /etc/os-release; echo "linux-image: $PRETTY_NAME, bash $(bash -c "echo \$BASH_VERSION")"
-        su mut -c "set -u; export LANG=C.UTF-8
+        . /etc/os-release; echo "linux-image: $PRETTY_NAME $(uname -m), bash $(bash -c "echo \$BASH_VERSION")"
+        su mut -c "set -u; export LANG=C.UTF-8; to=\$1; shift
             git config --global user.email mutation@invalid && git config --global user.name mutation \
-              && git config --global init.defaultBranch main && cp -R /src ~/w && cd ~/w \
+              && git config --global init.defaultBranch main && cp -R /src ~/w && cd ~/w && rm -rf .git \
               && git init -q && git add -A && git -c core.hooksPath=/dev/null commit -qm base || { echo linux-setup-failed: copy; exit 3; }
-            for s in \"\$@\"; do bash \"\$s\" >~/out 2>&1; echo \"linux-suite: \$? \$s\"; cat ~/out; done" _ "$@"
-    ' _ $(cat "$W/suites") >"$W/logs/linux.log" 2>&1; lrc=$?
+            for s in \"\$@\"; do timeout --kill-after=10 \"\$to\" bash \"\$s\" >~/out 2>&1; echo \"linux-suite: \$? \$s\"; cat ~/out; done" _ "$@"
+    ' _ "$TIMEOUT" $(cat "$W/suites") >>"$W/logs/linux.log" 2>&1; lrc=$?
     nsuites=$(wc -l <"$W/suites" | tr -d ' ')
     npass=$(grep -c '^linux-suite: 0 ' "$W/logs/linux.log")
     if [ "$lrc" -ne 0 ] || [ "$npass" -ne "$nsuites" ]; then
-        grep '^linux-suite: [1-9]' "$W/logs/linux.log" | sed 's/^linux-suite: \([0-9]*\) /❌ linux: exited \1 — /' >&2
-        if grep '^linux-setup-failed' "$W/logs/linux.log" >&2; then
-            echo "   the container could not be set up (offline?); to go on without the Linux leg: MUTATION_LINUX=skip mutation/run.sh -j $J" >&2
-        fi
-        echo "❌ linux: $npass of $nsuites suite(s) passed on $LINUX_IMAGE (docker exited $lrc) — its log: $W/logs/linux.log. No mutant was run, and nothing is stamped" >&2
-        exit 2
+        grep '^linux-setup-failed' "$W/logs/linux.log" | sed 's/^/❌ linux: /' >&2
+        grep '^linux-suite: 124 ' "$W/logs/linux.log" | sed "s/^linux-suite: 124 /❌ linux: timed out after ${TIMEOUT}s — /" >&2
+        grep -E '^linux-suite: [1-9]' "$W/logs/linux.log" | grep -v '^linux-suite: 124 ' | sed 's/^linux-suite: \([0-9]*\) /❌ linux: exited \1 — /' >&2
+        linux_stop "$npass of $nsuites suite(s) passed on $LINUX_IMAGE (docker exited $lrc)"
     fi
     lname=$(sed -n 's/^linux-image: //p' "$W/logs/linux.log")
+    LINUX_NOTE="linux: $nsuites suite(s) passed on $LINUX_IMAGE ($lname)"
     echo "linux: $nsuites suite(s) pass on $LINUX_IMAGE ($lname)"
     printf '%s\t%s\t%s\n' linux-passed "$(date +%s)" "$lname" >>"$W/phases"
 fi
@@ -340,6 +356,8 @@ rc=$?
 # notes ref, so origin's stamps are merged in first — a push from a machine that never
 # fetched them was rejected, and forcing it would have dropped the other machine's. On
 # the same commit, the stamp written here replaces origin's.
+# How the Linux leg went, beside the closing lines: a skip is said hours later too.
+[ -n "$LINUX_NOTE" ] && echo "$LINUX_NOTE"
 MERGE="git fetch origin refs/notes/mutation:refs/notes/mutation-origin && git notes --ref=mutation merge -s theirs refs/notes/mutation-origin"
 if [ -s "$W/stamp" ]; then
     merged=0

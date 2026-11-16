@@ -18,14 +18,24 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 (owner, 2026-11-04). It takes hours, so it is not a per-branch check, and it is not one
 of `{TEST_COMMANDS}`.
 
-A whole-kit run starts with the suites on Linux as well: after the baseline, it runs
-them once in Docker's `ubuntu:latest` (`MUTATION_LINUX_IMAGE` names another), the image
-GitHub's `ubuntu-latest` follows, and stops before any mutant unless every one passes.
-CI sees `dev` only once it is pushed: in 0.29.0 the runner had moved to Ubuntu 26.04
-since the last push, and its failures surfaced on the release PR after a stamped run,
-which had to be made again (2026-11-16). Without Docker the run stops and prints the
-way on, `MUTATION_LINUX=skip`; the release PR's CI is then the first Linux run. The
-container needs the network for its packages. A selection skips the leg.
+A whole-kit run starts with the suites on Linux as well. After the baseline, it runs
+them once in Docker's `ubuntu:latest` (`MUTATION_LINUX_IMAGE` names another), pulled
+fresh each run. That is the newest Ubuntu LTS, which GitHub's `ubuntu-latest` runner
+tracks with a lag of its own. The container is close to the runner, not the same: on
+Apple silicon it is arm64 where the runner is x86_64, and it has only the tools the
+run installs. Each suite is cut off after `MUTATION_TIMEOUT` seconds. It adds about a
+minute to set up, then one pass of the suites, and needs the network for the image
+and its packages.
+
+Unless every suite passes there, the run stops before any mutant. So does a leg that
+cannot run: no Docker, an image that cannot be pulled, a container that cannot be set
+up. Every such stop prints the way on, `MUTATION_LINUX=skip`. It is the person's to
+set, and the release PR's CI is then the first Linux run. The closing lines say how
+the leg went, a skip included. A selection skips the leg.
+
+Why: CI sees `dev` only once it is pushed. In 0.29.0 the runner had moved to Ubuntu
+26.04 since the last push, and its failures surfaced on the release PR after a stamped
+run, which had to be made again (2026-11-16).
 
 For a release, it runs last: on the final head, after the release's `/dg` (`pr-create`
 2b) and every finding it applied, just before the push — one run, not one per applied
