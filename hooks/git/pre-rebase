@@ -69,11 +69,14 @@ case "$_full" in refs/heads/?*) BRANCH=${_full#refs/heads/} ;; esac
 # A pattern that does not compile matches every branch, not none: [[ =~ ]] returns 2
 # for it, which read as "no match" and turned the gate off (#103). Case-insensitively,
 # as the agent guard matches: `^MAIN$` let main be rebased (#103 review).
+# 2>/dev/null: bash 5.3 prints its own warning for a pattern that does not compile,
+# ahead of the hook's own words for it (Ubuntu 26.04 CI, 0.29.0); the ref gate's greps
+# are silenced the same way.
 re_rc() {
     local r=0
     [ "$2" = "off" ] && return 1
     shopt -s nocasematch
-    [[ "$1" =~ $2 ]] || r=$?
+    [[ "$1" =~ $2 ]] 2>/dev/null || r=$?
     shopt -u nocasematch
     return "$r"
 }

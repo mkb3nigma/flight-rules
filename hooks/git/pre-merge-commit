@@ -140,9 +140,12 @@ broken_box() {
 # none: [[ =~ ]] returns 2 for it, which read as "no match" and let every merge through
 # (#103). Case-insensitively, as the agent guard matches: `^MAIN$` let a local merge
 # into main through (#103 review).
+# 2>/dev/null: bash 5.3 prints its own warning for a pattern that does not compile,
+# ahead of the hook's own words for it (Ubuntu 26.04 CI, 0.29.0); the ref gate's greps
+# are silenced the same way.
 [ "$PR_ONLY_RE" = "off" ] && exit 0
 shopt -s nocasematch
-_rc=0; [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]] || _rc=$?
+_rc=0; [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]] 2>/dev/null || _rc=$?
 shopt -u nocasematch
 if [ "$_rc" -ne 1 ] && go_ahead "a local merge into $CURRENT_BRANCH, a PR-only branch"; then
     exit 0

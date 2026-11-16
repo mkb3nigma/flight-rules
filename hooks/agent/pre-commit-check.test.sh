@@ -230,6 +230,20 @@ broken_conf "broken pattern, checkout -b: denied, naming the pattern" feature/x 
 # said fixing it would let it through (group A fix review round 2, F7).
 broken_conf "broken pattern, mirror push: the protected-branch block" feature/x 'git push --mirror origin' \
   deny 'protected branch \"every branch (--mirror)\"' 'is not a pattern bash can read'
+# bash 5.3 prints its own warning for a pattern that does not compile; the hook keeps it
+# off stderr and says it in its own words (Ubuntu 26.04 CI, 0.29.0). Both patterns read
+# by the guard, each paired with the deny over the same run.
+for kv in PROTECTED_BRANCHES='^(trunk' PR_ONLY_BRANCHES='^(main'; do
+  D=$(make_repo feature/x); mkdir -p "$D/.flight-rules"; printf '%s\n' "$kv" > "$D/.flight-rules/conf"
+  ERR=$( { cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<'{"tool_input":{"command":"git branch -D main"}}' >"$D.out"; } 2>&1); RC=$?
+  if [[ $RC -eq 0 ]] && grep -q '"permissionDecision": *"deny"' "$D.out" && ! grep -q 'invalid regular expression' <<<"$ERR"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: denied, with no warning of bash'"'"'s own on stderr\n' "${kv%%=*}"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s: rc=%s, stderr: %s\n' "${kv%%=*}" "$RC" "$ERR"
+  fi
+  rm -rf "$D" "$D.out"
+done
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR='.worktrees' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)

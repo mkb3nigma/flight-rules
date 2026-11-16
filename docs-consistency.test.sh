@@ -530,17 +530,21 @@ echo "The mutation run proves the path a mutant takes before any mutant:"
 # V4). A one-mutant kit on a fixture: its suite passes the tree, mutated or not, but
 # fails wherever MUTATION_UNDER_TEST is set — a fault in that path and nowhere else.
 MF=$(mktemp -d "${TMPDIR:-/tmp}/mctl.XXXXXX") && MF=$(cd -P "$MF" && pwd -P) || die "could not make the control fixture"
-mkdir -p "$MF/mutation" "$MF/tmp" && cp mutation/run.sh "$MF/mutation/" || die "could not copy run.sh into $MF"
+mkdir -p "$MF/mutation" "$MF/tmp" && cp mutation/run.sh mutation/status.py "$MF/mutation/" || die "could not copy run.sh into $MF"
 cat >"$MF/mutation/mutants.py" <<'PY' || die "could not write the fixture's mutants.py"
 import sys
 if sys.argv[1] == 'list': print('X1\tf.txt\tt.sh\tkilled'); sys.exit(0)
 if sys.argv[1] == 'apply': open(sys.argv[3] + '/f.txt', 'w').write('mutated\n'); sys.exit(0)
+if sys.argv[1] == 'check': print('1 mutants, 0 not anchored'); sys.exit(0)
 sys.exit(2)
 PY
 printf 'ok\n' >"$MF/f.txt"
 printf '#!/bin/sh\n[ -z "${MUTATION_UNDER_TEST:-}" ]\n' >"$MF/t.sh"
 GF=(git -C "$MF" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@invalid -c commit.gpgsign=false)
 { "${GF[@]}" init -q && "${GF[@]}" add -A && "${GF[@]}" commit -qm fixture; } >/dev/null 2>&1 || die "could not commit the control fixture"
+# An identity of its own: run.sh's stamp (git notes add) runs in it, and a machine with
+# no global identity (CI's runner) aborted this suite on it (the release check's /dg, F1).
+{ "${GF[@]}" config user.name t && "${GF[@]}" config user.email t@invalid && "${GF[@]}" config commit.gpgsign false; } || die "could not give the fixture an identity"
 # Unset here: under a mutation run of this suite, it is set in this suite's own environment.
 mrun() { (cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" bash mutation/run.sh X1 2>&1); }
 OUT=$(mrun); RC=$?
@@ -551,6 +555,170 @@ printf '#!/bin/sh\ngrep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a
 OUT=$(mrun); RC=$?
 [ "$RC" -eq 0 ] && grep -q '^control: 1 suite(s) pass down the path a mutant takes' <<<"$OUT" && grep -q '— 1 killed' <<<"$OUT" \
   && ok "…while a sound path passes the control, and the mutant is killed" || bad "the control refuses a sound mutant path, or the mutant was not judged (exit $RC: $(tail -3 <<<"$OUT" | tr '\n' ' '))"
+
+echo "A mutation run says how far it has got (--status, read-only, and a line every few minutes):"
+# A release run takes hours and said nothing between its control and its summary; the
+# only way to see progress was to count result files by hand (owner, 2026-11-15).
+snap() { (cd "$MF/tmp" && find . -type f -exec cksum {} + | sort); }
+BEFORE=$(snap)
+OUT=$(cd "$MF" && TMPDIR="$MF/tmp" bash mutation/run.sh --status 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -qE '^  state +finished, exit 0$' <<<"$OUT" && grep -qF ' 1 of 1 mutants (100%)' <<<"$OUT" \
+  && grep -qE '^  results +killed 1 ' <<<"$OUT" && grep -qE '^  system +.* CPUs · bash ' <<<"$OUT" && grep -qF 'unexpected survivors so far: none' <<<"$OUT" \
+  && ok "a finished run, found as the newest under TMPDIR: its state, progress, results and system" || bad "--status on a finished run (exit $RC: $(head -12 <<<"$OUT" | tr '\n' ' '))"
+[ "$(snap)" = "$BEFORE" ] && ok "…and it writes nothing" || bad "--status changed a file in the work directory"
+# A run in progress, as its files stand mid-run: one killed, one survived that should
+# have been killed, one running, its process alive; then gone with no summary.
+LW="$MF/tmp/mutation.live"; mkdir -p "$LW/res" "$LW/m/X3" || die "could not make the live fixture"
+printf 'X1\tf.txt\tt.sh\tkilled\nX2\tg.txt\tt.sh\tkilled\nX3\tg.txt\tt.sh\tsurvives: not held\n' >"$LW/list"
+printf 'X1\tkilled\tt\t❌ x\n' >"$LW/res/X1"; printf 'X2\tsurvived\tt\t-\n' >"$LW/res/X2"
+sleep 300 >/dev/null 2>&1 & LP=$!
+T0=$(( $(date +%s) - 600 ))
+printf 'from=abc\nj=4\nn=3\npid=%s\nscope=all\nstarted=%s\ntimeout=1200\nos=TestOS 1\ncpus=8\n' "$LP" "$T0" >"$LW/run.info"
+printf 'baseline\t%s\t\ncontrol\t%s\t\nmutants\t%s\t\n' "$T0" "$((T0 + 60))" "$((T0 + 120))" >"$LW/phases"
+OUT=$(cd "$MF" && bash mutation/run.sh --status "$LW" 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -qE '^  state +running$' <<<"$OUT" && grep -qF ' 2 of 3 mutants' <<<"$OUT" && grep -qE '^  running +X3 \(' <<<"$OUT" \
+  && grep -qF '❌ survived, expected killed: X2 (g.txt)' <<<"$OUT" && grep -qE '^    g.txt +1 of 2 ' <<<"$OUT" \
+  && ok "a run in progress: running, what is done and running now, an unexpected survivor named, by file" || bad "--status mid-run (exit $RC: $(head -14 <<<"$OUT" | tr '\n' ' '))"
+OUT=$(python3 -I "$MF/mutation/status.py" line "$LW" 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -qF 'mutation: mutants 2/3 (66%) · killed 1 · survived 1 (1 unexpected) · 1 running' <<<"$OUT" \
+  && ok "…and in one line, as the run prints it" || bad "the progress line (exit $RC: $OUT)"
+kill "$LP" 2>/dev/null; wait "$LP" 2>/dev/null
+OUT=$(cd "$MF" && bash mutation/run.sh --status "$LW" 2>&1)
+grep -qE "^  state +stopped: its process \($LP\) is gone and it wrote no summary$" <<<"$OUT" \
+  && ok "…and a run whose process is gone, with no summary, is said to have stopped" || bad "--status on a stopped run: $(head -3 <<<"$OUT" | tr '\n' ' ')"
+OUT=$(cd "$MF" && bash mutation/run.sh --status "$MF/f.txt" 2>&1); RC=$?
+[ "$RC" -eq 1 ] && grep -qF 'is not a mutation run' <<<"$OUT" && ok "…and a path that is not a run's work directory is refused, named" || bad "--status on a non-run (exit $RC: $OUT)"
+rm -rf "$LW"
+# The line in the run's own output: a suite slow enough for a one-second tick to land.
+printf '#!/bin/sh\nsleep 3; grep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a slow suite' >/dev/null 2>&1 || die "could not commit the slow suite"
+OUT=$(cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" MUTATION_PROGRESS=1 bash mutation/run.sh X1 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -qE '^mutation: mutants [01]/1 \(' <<<"$OUT" && grep -qF 'progress, any time: mutation/run.sh --status ' <<<"$OUT" \
+  && ok "…and a run prints a progress line every MUTATION_PROGRESS seconds, and how to ask for more" || bad "no progress line in the run's output (exit $RC: $(grep -v '^ ' <<<"$OUT" | head -8 | tr '\n' ' '))"
+
+echo "A whole-kit mutation run checks the suites on Linux before any mutant:"
+# The leg shipped unable to pass (the container re-committed a committed tree), and no
+# case reached it: every run above is a selection, which skips it (release /dg, F1-F2).
+# A docker stand-in on PATH drives each way it decides, and keeps what it was handed,
+# so the flags and the container script are checked too. The release run is the only
+# run of the real container (mutation/README.md). No network here, as {TEST_COMMANDS}
+# need. The run's own MUTATION_* settings are cleared: this suite runs inside a release
+# run, and MUTATION_LINUX=skip inherited here turned these cases, and so the run's
+# baseline, red; the skip every stop prints led to a stop of its own (its /dg, F1).
+printf '#!/bin/sh\ngrep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a sound suite again' >/dev/null 2>&1 || die "could not commit the sound suite"
+mkdir -p "$MF/shim" && cat >"$MF/shim/docker" <<'SH' || die "could not write the docker stand-in"
+#!/bin/sh
+# DOCKER_SHIM: noinfo | infowarn | pullfail | setup | setupquiet | fail | t124 | t137 | pass.
+# After "_": the timeout, then the suites. A healthy info says what a real one says.
+if [ "$1" = info ]; then
+  [ "$DOCKER_SHIM" = noinfo ] && { echo "Cannot connect to the Docker daemon"; exit 1; }
+  [ "$DOCKER_SHIM" = infowarn ] && echo "WARNING: Plugin /x/docker-y is not valid: failed to fetch metadata"
+  printf ' Server Version: 29.0.0\n Live Restore Enabled: false\n'; exit 0
+fi
+for a in "$@"; do printf '%s\n' "$a"; done >"$(dirname "$0")/argv"
+case "$DOCKER_SHIM" in pullfail|infowarn) printf 'Status: pulling\ndocker: Error response from daemon: pull access denied for nosuch\nRun '"'"'docker run --help'"'"' for more information\n' >&2; exit 125 ;; esac
+[ "$DOCKER_SHIM" = setup ] && { echo "E: Could not resolve archive.ubuntu.com"; echo "linux-setup-failed: apt-get (offline?)"; exit 3; }
+[ "$DOCKER_SHIM" = setupquiet ] && { echo "linux-setup-failed: useradd"; exit 3; }
+while [ "$#" -gt 0 ] && [ "$1" != _ ]; do shift; done; shift 2
+echo "linux-image: Shim OS 1 x86_64, bash 5.3"
+for s in "$@"; do
+  case "$DOCKER_SHIM" in fail) echo "linux-suite: 1 $s" ;; t124) echo "linux-suite: 124 $s" ;; t137) echo "linux-suite: 137 $s" ;; *) echo "linux-suite: 0 $s" ;; esac
+done
+SH
+chmod +x "$MF/shim/docker"
+MENV=(env -u MUTATION_UNDER_TEST -u MUTATION_LINUX -u MUTATION_LINUX_IMAGE -u MUTATION_TIMEOUT -u MUTATION_PROGRESS -u MUTATION_ANY_COMMIT)
+# The fixture is no release commit (no dev, no origin): these cases go past that check.
+krun() { (cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 MUTATION_TIMEOUT=77 MUTATION_ANY_COMMIT=1 DOCKER_SHIM="$1" ${2:+MUTATION_LINUX=$2} bash mutation/run.sh 2>&1); }
+# The way past carries the run's own settings (krun's MUTATION_ANY_COMMIT and timeout).
+SKIPCMD='to go on without the Linux leg (the release PR'"'"'s CI is then the first Linux run): MUTATION_ANY_COMMIT=1 MUTATION_TIMEOUT=77 MUTATION_LINUX=skip mutation/run.sh -j 1'
+for c in "noinfo|Docker is not running, or not installed" \
+         "pullfail|the container did not start or was not set up on ubuntu:latest (docker exited 125): docker: Error response from daemon: pull access denied for nosuch — its log" \
+         "infowarn|the container did not start or was not set up on ubuntu:latest (docker exited 125): docker: Error response from daemon: pull access denied for nosuch — its log" \
+         "setup|(docker exited 3): linux-setup-failed: apt-get (offline?) — its log" \
+         "setupquiet|(docker exited 3): linux-setup-failed: useradd — its log" "fail|❌ linux: exited 1 — t.sh" \
+         "t124|❌ linux: timed out after 77s (exit 124) — t.sh" "t137|❌ linux: timed out after 77s (exit 137) — t.sh"; do
+  OUT=$(krun "${c%%|*}"); RC=$?
+  [ "$RC" -eq 2 ] && grep -qF "${c#*|}" <<<"$OUT" && grep -qF "$SKIPCMD" <<<"$OUT" && ! grep -q '^control:' <<<"$OUT" && ! grep -q '✅ stamped' <<<"$OUT" \
+    && ok "${c%%|*}: stops before the control, exit 2, says why and prints the skip" || bad "the Linux leg on ${c%%|*} (exit $RC: $(tail -4 <<<"$OUT" | tr '\n' ' '))"
+done
+# docker info's output is in a log of its own, which the no-Docker stop names; a line
+# of a healthy one is never given as the cause of a failure after it (its third /dg, F1).
+OUT=$(krun noinfo); IL=$(sed -n 's/.*— its log: \(.*docker-info\.log\)\. No mutant.*/\1/p' <<<"$OUT")
+[ -n "$IL" ] && grep -qF 'Cannot connect to the Docker daemon' "$IL" && ok "…the no-Docker stop names docker info's own log, which holds what Docker said" || bad "the no-Docker stop's log: '$IL'"
+OUT=$( { krun infowarn; krun setupquiet; krun pullfail; } ); [ "$(grep -c 'the container did not start or was not set up' <<<"$OUT")" -ne 3 ] || grep -qE 'Plugin|Live Restore|Server Version' <<<"$OUT" \
+  && bad "a line of a healthy docker info was named as a cause: $(grep -E 'Plugin|Live Restore|Server Version' <<<"$OUT" | head -1)" || ok "…and no line of a healthy docker info is named as a cause"
+OUT=$(krun fail); grep -qF '❌ linux: 0 of 1 suite(s) passed on ubuntu:latest — its log' <<<"$OUT" && ! grep -qF '(docker exited' <<<"$OUT" \
+  && ok "…and a suite failing names no docker exit, which was 0" || bad "a suite failing in a container that exited 0: $(grep '❌ linux: 0 of' <<<"$OUT")"
+# The same stop with the skip and another image set in the environment this suite runs
+# in, as a release run's baseline runs it: the cases hold.
+OUT=$(MUTATION_LINUX=skip MUTATION_LINUX_IMAGE=elsewhere:1 krun fail); RC=$?
+[ "$RC" -eq 2 ] && grep -qF '❌ linux: exited 1 — t.sh' <<<"$OUT" && ! grep -q 'skipped' <<<"$OUT" \
+  && ok "…and with MUTATION_LINUX=skip and another image in the suite's own environment, as a skipped release run's baseline has them" || bad "the leg's cases took the suite's environment (exit $RC: $(tail -3 <<<"$OUT" | tr '\n' ' '))"
+OUT=$(krun pass); RC=$?
+A=$(cat "$MF/shim/argv")
+[ "$RC" -eq 0 ] && grep -qF 'linux: 1 suite(s) pass on ubuntu:latest (Shim OS 1 x86_64, bash 5.3)' <<<"$OUT" && grep -q '^control: ' <<<"$OUT" && grep -q '— 1 killed' <<<"$OUT" \
+  && [ "$(grep -n 'linux: 1 suite(s) passed on' <<<"$OUT" | cut -d: -f1)" -gt "$(grep -n '^mutation: all 1 run' <<<"$OUT" | cut -d: -f1)" ] \
+  && ok "every suite passing: the run goes on, and its closing lines say the leg passed" || bad "the Linux leg on pass (exit $RC: $(tail -6 <<<"$OUT" | tr '\n' ' '))"
+# What Docker is handed: pulled fresh (a cached tag never moves), an init that passes
+# Ctrl-C to the suites' group, the host's .git dropped before the fresh commit, each
+# suite under timeout, and the timeout then the suites after "_".
+grep -qx -- '--pull' <<<"$A" && grep -qx 'always' <<<"$A" && grep -qx -- '--init' <<<"$A" && grep -qx 'TINI_KILL_PROCESS_GROUP=1' <<<"$A" \
+  && grep -qF 'cd ~/w && rm -rf .git' <<<"$A" && grep -qF 'timeout --kill-after=10' <<<"$A" && [ "$(sed -n '/^_$/{n;p;q;}' <<<"$A")" = 77 ] && [ "$(tail -1 <<<"$A")" = t.sh ] \
+  && ok "…handed --pull always, --init with the group kill, a fresh .git, each suite under the timeout, then the timeout and the suites" || bad "docker was handed something else: $(tr '\n' ' ' <<<"$A" | cut -c1-300)"
+OUT=$(krun noinfo skip); RC=$?
+[ "$RC" -eq 0 ] && [ "$(grep -c 'linux: skipped (MUTATION_LINUX=skip)' <<<"$OUT")" -eq 2 ] && grep -q '— 1 killed' <<<"$OUT" \
+  && ok "MUTATION_LINUX=skip: no Docker needed, the run goes on, and the skip is said at the start and the end" || bad "the skip (exit $RC: $(tail -6 <<<"$OUT" | tr '\n' ' '))"
+OUT=$(cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=noinfo bash mutation/run.sh X1 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -q '— 1 killed' <<<"$OUT" && ! grep -q 'linux' <<<"$OUT" && ok "a selection skips the leg, and says nothing of it" || bad "a selection ran or named the Linux leg (exit $RC: $(grep linux <<<"$OUT" | head -2 | tr '\n' ' '))"
+
+echo "A whole-kit mutation run is made on the release commit, else stopped before the baseline:"
+# Hours long and stamping one commit, it belongs on the tip of the integration branch
+# with every change in, just before the dev → main PR (owner, 2026-11-16). The fixture
+# gets a dev and an origin of its own (a bare repository beside it: no network).
+"${GF[@]}" branch -f dev HEAD >/dev/null && git clone -q --bare "$MF" "$MF.origin" && "${GF[@]}" remote add origin "$MF.origin" \
+  || die "could not give the fixture a dev and an origin"
+rrun() { (cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=pass "$@" bash mutation/run.sh 2>&1); }
+WAY='to run on this commit anyway (a run the owner called for): MUTATION_ANY_COMMIT=1 mutation/run.sh -j 1'
+"${GF[@]}" checkout -q dev || die "no dev in the fixture"
+OUT=$(rrun); RC=$?
+[ "$RC" -eq 0 ] && grep -q '^baseline: ' <<<"$OUT" && grep -q '— 1 killed' <<<"$OUT" && ! grep -q 'not the release commit' <<<"$OUT" \
+  && ok "the tip of local dev, clean, origin's dev in it: the run goes on" || bad "the release commit was refused (exit $RC: $(grep -v '^ ' <<<"$OUT" | head -4 | tr '\n' ' '))"
+# The usual state at a release: local dev ahead of origin's, unpushed, and the run made
+# from a detached worktree of it, as the route prints (the release check's /dg, F2).
+echo y >"$MF/y.txt" && "${GF[@]}" add y.txt && "${GF[@]}" commit -qm "unpushed" && "${GF[@]}" worktree add -q --detach "$MF.wt" dev \
+  || die "could not put dev ahead of origin's in a worktree"
+OUT=$(cd "$MF.wt" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=pass bash mutation/run.sh 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -q '— 1 killed' <<<"$OUT" && ! grep -q 'not the release commit' <<<"$OUT" \
+  && ok "…and from a detached worktree of dev, dev ahead of origin's (unpushed): the run goes on" || bad "the release route with dev unpushed was refused (exit $RC: $(grep -v '^ ' <<<"$OUT" | head -4 | tr '\n' ' '))"
+"${GF[@]}" worktree remove --force "$MF.wt" || die "could not remove the fixture's worktree"
+chk() {   # <desc> <what the stop names>: stopped before the baseline, named, the route and the way past printed, nothing left
+  local before; before=$(ls -d "$MF"/tmp/mutation.* 2>/dev/null | wc -l)
+  OUT=$(rrun); RC=$?
+  [ "$RC" -eq 2 ] && grep -qF "$2" <<<"$OUT" && grep -qF 'git worktree add --detach .flight-rules/worktrees/mutation dev' <<<"$OUT" && grep -qF "$WAY" <<<"$OUT" && ! grep -q '^baseline: ' <<<"$OUT" \
+    && [ "$(ls -d "$MF"/tmp/mutation.* 2>/dev/null | wc -l)" -eq "$before" ] \
+    && ok "$1: stopped before the baseline, named, with the route and the way past, its copy removed" || bad "$1 (exit $RC: $(tail -4 <<<"$OUT" | tr '\n' ' '))"
+}
+"${GF[@]}" checkout -q -b feature/x && echo x >"$MF/x.txt" && "${GF[@]}" add x.txt && "${GF[@]}" commit -qm x || die "could not commit on feature/x"
+chk "HEAD past dev's tip" "is not the tip of local dev"
+OUT=$(rrun MUTATION_ANY_COMMIT=1); RC=$?
+[ "$RC" -eq 0 ] && grep -q '— 1 killed' <<<"$OUT" && [ "$(grep -c 'not checked as the release commit (MUTATION_ANY_COMMIT=1)' <<<"$OUT")" -eq 2 ] \
+  && ok "…and MUTATION_ANY_COMMIT=1 runs it there anyway, said at the start and the end" || bad "the way past did not go past, or went silently (exit $RC: $(tail -3 <<<"$OUT" | tr '\n' ' '))"
+# Both stops in one run (off dev, no Docker): each printed command, followed as printed,
+# goes on; the second carries the first's variable, not one or the other (its /dg, DN1).
+frun() { (cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=noinfo bash -c "$1" 2>&1); }
+C1=$(frun 'bash mutation/run.sh' | sed -n 's/.*a run the owner called for): //p')
+C2=$(frun "$C1" | sed -n 's/.*the first Linux run): //p')
+OUT=$(frun "$C2"); RC=$?
+[ "$C1" = 'MUTATION_ANY_COMMIT=1 mutation/run.sh -j 1' ] && [ "$C2" = 'MUTATION_ANY_COMMIT=1 MUTATION_LINUX=skip mutation/run.sh -j 1' ] && [ "$RC" -eq 0 ] && grep -q '— 1 killed' <<<"$OUT" \
+  && ok "…and with both stops in one run, their printed commands, followed as printed, go through" || bad "the ways past did not combine: '$C1' then '$C2' (exit $RC: $(tail -2 <<<"$OUT" | tr '\n' ' '))"
+"${GF[@]}" checkout -q dev && printf 'changed\n' >>"$MF/f.txt"
+chk "a tracked file changed" "tracked files differ from the commit"
+"${GF[@]}" checkout -q -- f.txt
+_o=$(git -C "$MF.origin" -c user.name=t -c user.email=t@invalid -c commit.gpgsign=false commit-tree "$(git -C "$MF.origin" rev-parse 'dev^{tree}')" -p dev -m "pushed elsewhere") && git -C "$MF.origin" update-ref refs/heads/dev "$_o" \
+  || die "could not move origin's dev"
+chk "origin's dev ahead of HEAD" "origin's dev ($_o) has commits HEAD lacks"
+"${GF[@]}" remote set-url origin "$MF.nowhere"
+chk "origin out of reach" "origin's dev could not be read"
+rm -rf "$MF.origin"
 rm -rf "$MF"
 
 echo "Every mutation mutant's anchor occurs exactly once:"

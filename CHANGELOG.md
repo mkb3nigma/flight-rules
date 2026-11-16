@@ -4,7 +4,7 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
-## 0.29.0 — 2026-11-15
+## 0.29.0 — 2026-11-16
 
 Every stop now prints the one command that goes ahead anyway —
 `FLIGHT_RULES_GO_AHEAD=1` in front of the command that finishes what was stopped — so
@@ -199,6 +199,11 @@ says how.
 - **The doctor read `PROTECTED_BRANCHES=off  # trunk only` and `'off'` as patterns**
   (#127), and beside its ⚠️ that protection was off printed a ✅ about a derived note
   gate; `none` was not handled there. It now reads the conf with the hooks' own reader.
+- **Under bash 5.3, a branch pattern that does not compile brought a warning of bash's
+  own** (`invalid regular expression`) ahead of what the hooks say of it, on the
+  terminal and on the session-start hook's stderr. The git hooks, the agent guard and
+  `session-start` now keep it off stderr, as the ref gate's greps already did; what they
+  decide is unchanged. Found when CI's Ubuntu runner moved to 26.04.
 
 ### Added
 
@@ -351,6 +356,16 @@ says how.
   CI; the test suites share one harness and had duplicates cut, and each gap the mutants
   found was closed or recorded as a known survivor (`survives: not held` in
   `mutation/mutants.py`).
+- A whole-kit mutation run first runs the suites once on Linux, in Docker's ubuntu
+  image, and stops before any mutant unless they pass: CI sees `dev` only once it is
+  pushed, and 0.29.0's Ubuntu 26.04 failures surfaced on the release PR after a
+  stamped run. With no Docker it stops and prints `MUTATION_LINUX=skip` to go on.
+- `mutation/run.sh --status` reports how far a run has got: phase, progress, results
+  and unexpected survivors so far, rate and time left, the machine, and a breakdown by
+  file and suite. A run prints a one-line form of it every ten minutes.
+- A whole-kit mutation run is made on the release commit: the tip of local `dev`,
+  with nothing changed and origin's `dev` in it. Otherwise it stops before its baseline
+  and prints `MUTATION_ANY_COMMIT=1` to run anyway.
 
 ## 0.28.0 — 2026-10-30
 

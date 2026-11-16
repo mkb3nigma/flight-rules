@@ -271,7 +271,10 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   fi
   _check=""; _bad=""
   if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
-    shopt -s nocasematch; [[ "$_br" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+    # 2>/dev/null: bash 5.3 prints its own warning for a pattern that does not compile,
+    # ahead of the hook's own words for it (Ubuntu 26.04 CI, 0.29.0); the ref gate's greps
+    # are silenced the same way.
+    shopt -s nocasematch; [[ "$_br" =~ $_prot ]] 2>/dev/null; _m=$?; shopt -u nocasematch
     [ "$_m" -eq 0 ] && _check=--check-only
     # 2: a pattern bash cannot compile. Taken as protected, and said — writing is the
     # failure that costs work (fix review, F5).
@@ -452,7 +455,7 @@ OPEN_MSG=$(
     # A pattern that does not compile (2) protects, as the sync above takes it — and the
     # count is then not made, said so: silent, it read as under the limit (fourth review).
     if [ "$_prot" != off ] && [ "$_prot" != none ]; then
-      shopt -s nocasematch; [[ "$_b" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+      shopt -s nocasematch; [[ "$_b" =~ $_prot ]] 2>/dev/null; _m=$?; shopt -u nocasematch
       [ "$_m" -eq 2 ] && { echo "?OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted"; exit 0; }
       [ "$_m" -eq 1 ] || continue
     fi

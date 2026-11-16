@@ -55,9 +55,12 @@ rm -rf "$D"
 D=$(mkrepo)
 git -C "$D" checkout -q -b feature/big dev
 echo big > "$D/fb"; git -C "$D" add -A; git -C "$D" commit -qm "feature: big"
-git -C "$D" notes --ref=pre-merge-check add -f \
-  -m "passed: 2026-10-31T00:00:00Z branch:feature/big tree:$(git -C "$D" rev-parse 'HEAD^{tree}')" \
-  -m "ran: ./test.sh → exit 0, 3 passed" -m "$(awk 'BEGIN { for (i = 0; i < 4000; i++) print "log line " i " of the suites this check ran, kept in the note" }')" HEAD
+# From a file, not -m: Linux caps one argument at 128 KB, so the note was never written
+# there and the case failed on the fixture, not the gate (Ubuntu 26.04 CI, 0.29.0).
+{ printf 'passed: 2026-10-31T00:00:00Z branch:feature/big tree:%s\n\nran: ./test.sh → exit 0, 3 passed\n\n' "$(git -C "$D" rev-parse 'HEAD^{tree}')"
+  awk 'BEGIN { for (i = 0; i < 4000; i++) print "log line " i " of the suites this check ran, kept in the note" }'; } > "$D.note"
+git -C "$D" notes --ref=pre-merge-check add -f -F "$D.note" HEAD || die "could not write the big note"
+rm -f "$D.note"
 git -C "$D" checkout -q dev
 OUT=$(cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/big -m "merge" 2>&1); RC=$?
 say "$RC$(grep -c 'Pre-merge check verified' <<<"$OUT")$([ "$(git -C "$D" notes --ref=pre-merge-check show feature/big | wc -c)" -gt 200000 ] && echo big)" "01big" "a passing note of over 200 KB: read whole, and the merge lands"
@@ -405,7 +408,13 @@ mkdir -p "$HB/shim"; { printf '#!/bin/sh\n'
 { printf '#!/bin/sh\n%s "$@"\n' "$(command -v ps)"
   # Each forged row fails one check only — the pid, or the time — so each check is tested.
   printf 'printf "%%s\\n" "  4242 00:01 srv %s" ";touch\\${IFS}PWNED6 00:01 %s" "4243 ;touch\\${IFS}PWNED7 %s"\n' "$UWT/a" "$UWT/b" "$UWT/c"; } > "$HB/shim/ps"; chmod +x "$HB/shim/ps"
-OUT=$(cd "$HR" && PATH="$HB/shim:$PATH" LC_ALL=en_US.UTF-8 FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
+# A UTF-8 locale the machine has: named en_US.UTF-8 where none is installed, ps fell back
+# to C and printed ß as ??, and the two processes named by path went unlisted (Ubuntu
+# 26.04 container, 0.29.0).
+U8=$(locale -a 2>/dev/null | grep -ixE 'en_US\.utf-?8' | head -1 || true)
+[ -n "$U8" ] || U8=$(locale -a 2>/dev/null | grep -ixE 'C\.utf-?8' | head -1 || true)
+[ -n "$U8" ] || die "no UTF-8 locale installed to run the hostile-names case under"
+OUT=$(cd "$HR" && PATH="$HB/shim:$PATH" LC_ALL="$U8" FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-verify --no-edit fix/q 2>&1); RC=$?
 kill $HS $HS2 $HS3 2>/dev/null
 say "$RC" "0" "a merge with a hostile branch name and a quoted worktree path lands"
 HNOTE="$HR/.claude/post-merge-note.md"
@@ -719,6 +728,7 @@ git -C "$D" checkout -q dev; BEFORE=$(git -C "$D" rev-parse dev)
 OUT=$(cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/x -m merge 2>&1); RC=$?
 say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a stamped, authorised merge into dev is refused"
 say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — LOCAL MERGE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+say "$(grep -c 'invalid regular expression' <<<"$OUT")" "0" "…and no warning of bash's own before it (bash 5.3)"
 say "$(grep -cF '  ^(main' <<<"$OUT")" "1" "…naming the pattern"
 say "$(git -C "$D" rev-parse dev)" "$BEFORE" "…and dev does not move"
 say "$(route "$OUT" PR_ONLY_BRANCHES | tail -1)" "git commit --no-edit" "…printing the command that finishes the merge it left"
@@ -741,6 +751,7 @@ git -C "$D" checkout -q feature/r
 OUT=$(cd "$D" && git rebase main 2>&1); RC=$?
 say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a rebase is refused"
 say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — REBASE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+say "$(grep -c 'invalid regular expression' <<<"$OUT")" "0" "…and no warning of bash's own before it (bash 5.3)"
 git -C "$D" rebase --abort 2>/dev/null
 rm -rf "$D"
 
@@ -752,6 +763,7 @@ git -C "$D" merge --squash --ff feature/s >/dev/null 2>&1
 OUT=$(cd "$D" && git commit -m "squash" 2>&1); RC=$?
 say "$RC" "1" "PR_ONLY_BRANCHES that does not compile: a squash merge's commit is refused"
 say "$(grep -c 'PR_ONLY_BRANCHES DOES NOT COMPILE — SQUASH MERGE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+say "$(grep -c 'invalid regular expression' <<<"$OUT")" "0" "…and no warning of bash's own before it (bash 5.3)"
 rm -rf "$D"
 
 # commit-msg's note gate: a broken NOTE_GATED_BRANCHES, or PROTECTED_BRANCHES with none
@@ -763,6 +775,7 @@ for KEY in NOTE_GATED_BRANCHES PROTECTED_BRANCHES; do
   OUT=$(cd "$D" && git merge --no-ff feature/n -m merge 2>&1); RC=$?
   say "$RC" "1" "$KEY that does not compile: an unstamped merge into dev is refused"
   say "$(grep -cF "Gated because $KEY (^(dev)" <<<"$OUT")" "1" "…saying the pattern is why"
+  say "$(grep -c 'invalid regular expression' <<<"$OUT")" "0" "…and no warning of bash's own before it (bash 5.3)"
   git -C "$D" merge --abort 2>/dev/null
   stamp "$D" feature/n feature/n
   (cd "$D" && FLIGHT_RULES_MERGE_AUTHORISED=1 git merge --no-ff feature/n -m merge) >/dev/null 2>&1
@@ -1399,6 +1412,7 @@ for a in refs/heads/dev heads/dev; do
 done
 rb 'PROTECTED_BRANCHES=^(dev' feature/r;             say "$RC" "1" "a PROTECTED_BRANCHES that does not compile refuses every rebase"
 say "$(grep -c 'PROTECTED_BRANCHES DOES NOT COMPILE — REBASE BLOCKED' <<<"$OUT")" "1" "…by the broken-pattern box"
+say "$(grep -c 'invalid regular expression' <<<"$OUT")" "0" "…and no warning of bash's own before it (bash 5.3)"
 
 echo "pull.rebase=true: a dev that is only behind still pulls; one with commits of its own is refused (#118):"
 PQ=$(tmpd); U="$PQ/up"

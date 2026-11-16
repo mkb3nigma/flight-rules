@@ -162,11 +162,14 @@ broken_box() {
 # case-insensitively, `^main$` took a branch anyone can make — `MAIN`, or `Main` pushed
 # to origin — for main, and passed it as a reviewed back-merge (#103 review). A pattern
 # in the wrong case then gates what it meant to exempt: the note gate's box refuses it.
+# 2>/dev/null: bash 5.3 prints its own warning for a pattern that does not compile,
+# ahead of the hook's own words for it (Ubuntu 26.04 CI, 0.29.0); the ref gate's greps
+# are silenced the same way.
 re_rc() {
     local r=0
     [ "$2" = "off" ] && return 1
     [ "${3:-}" = exact ] || shopt -s nocasematch
-    [[ "$1" =~ $2 ]] || r=$?
+    [[ "$1" =~ $2 ]] 2>/dev/null || r=$?
     shopt -u nocasematch
     return "$r"
 }
