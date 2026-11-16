@@ -1142,6 +1142,12 @@ say "$(ctx <<<"$J" | grep -c '^rc=0$')" "1" "PROTECTED_BRANCHES that does not co
 say "$(usr <<<"$J" | grep -c 'PROTECTED_BRANCHES')" "1" "…doctor's ❌ names it"
 say "$(usr <<<"$J" | grep -c 'branches are open')" "0" "…and no branch is counted as open"
 say "$(ctx <<<"$J" | grep -c 'OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted')" "1" "…and the assistant is told the count was not made"
+# bash 5.3 prints its own warning for the pattern; the count keeps it off stderr. OB()
+# drops stderr, so one run keeps it apart, paired with the line above (Ubuntu 26.04 CI).
+rm -f "$D"/fakehome/.claude/hooks/.worktree-check-*
+E=$( (cd "$D" && HOME="$D/fakehome" bash "$HOOK" 2>&1 >"$D.ob") )
+say "$(ctx <"$D.ob" | grep -c 'OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted')$(grep -c 'invalid regular expression' <<<"$E")" "10" "…with no warning of bash's own on stderr (bash 5.3)"
+rm -f "$D.ob"
 # Without the conf, the project does not use flight-rules: not told how to run branches.
 # A main for the default INTEGRATION_BRANCH to find, so it is the conf that silences it.
 git -C "$D" branch main trunk || die "could not make main"
