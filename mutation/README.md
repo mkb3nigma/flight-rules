@@ -18,6 +18,15 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 (owner, 2026-11-04). It takes hours, so it is not a per-branch check, and it is not one
 of `{TEST_COMMANDS}`.
 
+A whole-kit run starts with the suites on Linux as well: after the baseline, it runs
+them once in Docker's `ubuntu:latest` (`MUTATION_LINUX_IMAGE` names another), the image
+GitHub's `ubuntu-latest` follows, and stops before any mutant unless every one passes.
+CI sees `dev` only once it is pushed: in 0.29.0 the runner had moved to Ubuntu 26.04
+since the last push, and its failures surfaced on the release PR after a stamped run,
+which had to be made again (2026-11-16). Without Docker the run stops and prints the
+way on, `MUTATION_LINUX=skip`; the release PR's CI is then the first Linux run. The
+container needs the network for its packages. A selection skips the leg.
+
 For a release, it runs last: on the final head, after the release's `/dg` (`pr-create`
 2b) and every finding it applied, just before the push — one run, not one per applied
 finding (owner, 2026-11-07). The run stamps the commit. After a clean run of the whole kit on a
@@ -84,6 +93,30 @@ commit-msg, post-merge and pre-commit mutants, and each survives run alone. So w
 `-j` above 1, every kill by an abort, a timeout, merge-gate, or a case with a time bound
 is run again alone, and counts only if it repeats; one that does not is named in the
 summary. That adds about two hours at `-j 4`. Keep `-j` at 4 or so.
+
+### How far it has got
+
+```bash
+mutation/run.sh --status              # the newest run under $TMPDIR
+mutation/run.sh --status <work dir>   # a given run; its first lines name the directory
+```
+
+`--status` reads the run's work directory and writes nothing (`status.py`). It reports:
+- whether the run is running, finished, or stopped with no summary;
+- the commit, the scope, `-j` and the suite timeout;
+- the machine: OS, kernel, CPUs, load, and the bash, git and Python versions;
+- each phase and how long it took (baseline, Linux, control, mutants, re-runs);
+- progress, and the mutants running now;
+- the results so far, unexpected survivors named;
+- the kills waiting to be re-run alone;
+- the rate, and the time left;
+- the mutants by file and the kills by suite.
+
+While the mutants run, the run prints a one-line form of it every `MUTATION_PROGRESS`
+seconds (default 600; `0` for none). The facts it reads are written at the start
+(`run.info`) and as each phase begins (`phases`). A run from before this has neither,
+and its report says so. Asked for by the owner, 2026-11-15: a release run is hours
+long, and until then the only view of it was counting `res/` by hand.
 
 ## Upkeep
 

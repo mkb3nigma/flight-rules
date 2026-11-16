@@ -356,6 +356,13 @@ says how.
   CI; the test suites share one harness and had duplicates cut, and each gap the mutants
   found was closed or recorded as a known survivor (`survives: not held` in
   `mutation/mutants.py`).
+- A whole-kit mutation run first runs the suites once on Linux, in Docker's ubuntu
+  image, and stops before any mutant unless they pass: CI sees `dev` only once it is
+  pushed, and 0.29.0's Ubuntu 26.04 failures surfaced on the release PR after a
+  stamped run. With no Docker it stops and prints `MUTATION_LINUX=skip` to go on.
+- `mutation/run.sh --status` reports how far a run has got: phase, progress, results
+  and unexpected survivors so far, rate and time left, the machine, and a breakdown by
+  file and suite. A run prints a one-line form of it every ten minutes.
 
 ## 0.28.0 — 2026-10-30
 

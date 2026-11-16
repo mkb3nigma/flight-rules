@@ -530,7 +530,7 @@ echo "The mutation run proves the path a mutant takes before any mutant:"
 # V4). A one-mutant kit on a fixture: its suite passes the tree, mutated or not, but
 # fails wherever MUTATION_UNDER_TEST is set — a fault in that path and nowhere else.
 MF=$(mktemp -d "${TMPDIR:-/tmp}/mctl.XXXXXX") && MF=$(cd -P "$MF" && pwd -P) || die "could not make the control fixture"
-mkdir -p "$MF/mutation" "$MF/tmp" && cp mutation/run.sh "$MF/mutation/" || die "could not copy run.sh into $MF"
+mkdir -p "$MF/mutation" "$MF/tmp" && cp mutation/run.sh mutation/status.py "$MF/mutation/" || die "could not copy run.sh into $MF"
 cat >"$MF/mutation/mutants.py" <<'PY' || die "could not write the fixture's mutants.py"
 import sys
 if sys.argv[1] == 'list': print('X1\tf.txt\tt.sh\tkilled'); sys.exit(0)
@@ -551,6 +551,45 @@ printf '#!/bin/sh\ngrep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a
 OUT=$(mrun); RC=$?
 [ "$RC" -eq 0 ] && grep -q '^control: 1 suite(s) pass down the path a mutant takes' <<<"$OUT" && grep -q '— 1 killed' <<<"$OUT" \
   && ok "…while a sound path passes the control, and the mutant is killed" || bad "the control refuses a sound mutant path, or the mutant was not judged (exit $RC: $(tail -3 <<<"$OUT" | tr '\n' ' '))"
+
+echo "A mutation run says how far it has got (--status, read-only, and a line every few minutes):"
+# A release run takes hours and said nothing between its control and its summary; the
+# only way to see progress was to count result files by hand (owner, 2026-11-15).
+snap() { (cd "$MF/tmp" && find . -type f -exec cksum {} + | sort); }
+BEFORE=$(snap)
+OUT=$(cd "$MF" && TMPDIR="$MF/tmp" bash mutation/run.sh --status 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -qE '^  state +finished, exit 0$' <<<"$OUT" && grep -qF ' 1 of 1 mutants (100%)' <<<"$OUT" \
+  && grep -qE '^  results +killed 1 ' <<<"$OUT" && grep -qE '^  system +.* CPUs · bash ' <<<"$OUT" && grep -qF 'unexpected survivors so far: none' <<<"$OUT" \
+  && ok "a finished run, found as the newest under TMPDIR: its state, progress, results and system" || bad "--status on a finished run (exit $RC: $(head -12 <<<"$OUT" | tr '\n' ' '))"
+[ "$(snap)" = "$BEFORE" ] && ok "…and it writes nothing" || bad "--status changed a file in the work directory"
+# A run in progress, as its files stand mid-run: one killed, one survived that should
+# have been killed, one running, its process alive; then gone with no summary.
+LW="$MF/tmp/mutation.live"; mkdir -p "$LW/res" "$LW/m/X3" || die "could not make the live fixture"
+printf 'X1\tf.txt\tt.sh\tkilled\nX2\tg.txt\tt.sh\tkilled\nX3\tg.txt\tt.sh\tsurvives: not held\n' >"$LW/list"
+printf 'X1\tkilled\tt\t❌ x\n' >"$LW/res/X1"; printf 'X2\tsurvived\tt\t-\n' >"$LW/res/X2"
+sleep 300 & LP=$!
+T0=$(( $(date +%s) - 600 ))
+printf 'from=abc\nj=4\nn=3\npid=%s\nscope=all\nstarted=%s\ntimeout=1200\nos=TestOS 1\ncpus=8\n' "$LP" "$T0" >"$LW/run.info"
+printf 'baseline\t%s\t\ncontrol\t%s\t\nmutants\t%s\t\n' "$T0" "$((T0 + 60))" "$((T0 + 120))" >"$LW/phases"
+OUT=$(cd "$MF" && bash mutation/run.sh --status "$LW" 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -qE '^  state +running$' <<<"$OUT" && grep -qF ' 2 of 3 mutants' <<<"$OUT" && grep -qE '^  running +X3 \(' <<<"$OUT" \
+  && grep -qF '❌ survived, expected killed: X2 (g.txt)' <<<"$OUT" && grep -qE '^    g.txt +1 of 2 ' <<<"$OUT" \
+  && ok "a run in progress: running, what is done and running now, an unexpected survivor named, by file" || bad "--status mid-run (exit $RC: $(head -14 <<<"$OUT" | tr '\n' ' '))"
+OUT=$(python3 -I "$MF/mutation/status.py" line "$LW" 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -qF 'mutation: mutants 2/3 (66%) · killed 1 · survived 1 (1 unexpected) · 1 running' <<<"$OUT" \
+  && ok "…and in one line, as the run prints it" || bad "the progress line (exit $RC: $OUT)"
+kill "$LP" 2>/dev/null; wait "$LP" 2>/dev/null
+OUT=$(cd "$MF" && bash mutation/run.sh --status "$LW" 2>&1)
+grep -qE "^  state +stopped: its process \($LP\) is gone and it wrote no summary$" <<<"$OUT" \
+  && ok "…and a run whose process is gone, with no summary, is said to have stopped" || bad "--status on a stopped run: $(head -3 <<<"$OUT" | tr '\n' ' ')"
+OUT=$(cd "$MF" && bash mutation/run.sh --status "$MF/f.txt" 2>&1); RC=$?
+[ "$RC" -eq 1 ] && grep -qF 'is not a mutation run' <<<"$OUT" && ok "…and a path that is not a run's work directory is refused, named" || bad "--status on a non-run (exit $RC: $OUT)"
+rm -rf "$LW"
+# The line in the run's own output: a suite slow enough for a one-second tick to land.
+printf '#!/bin/sh\nsleep 3; grep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a slow suite' >/dev/null 2>&1 || die "could not commit the slow suite"
+OUT=$(cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" MUTATION_PROGRESS=1 bash mutation/run.sh X1 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -qE '^mutation: mutants [01]/1 \(' <<<"$OUT" && grep -qF 'progress, any time: mutation/run.sh --status ' <<<"$OUT" \
+  && ok "…and a run prints a progress line every MUTATION_PROGRESS seconds, and how to ask for more" || bad "no progress line in the run's output (exit $RC: $(grep -v '^ ' <<<"$OUT" | head -8 | tr '\n' ' '))"
 rm -rf "$MF"
 
 echo "Every mutation mutant's anchor occurs exactly once:"

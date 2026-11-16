@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Mutation run: break one line of a hook (mutants.py), run the suites that should
-# notice, and record whether one did. Usage: mutation/run.sh [-j N] [id …]
+# notice, and record whether one did. Usage: mutation/run.sh [-j N] [id …]; how far a
+# run has got, read-only: mutation/run.sh --status [<work dir>] (status.py).
 #
 # Every mutant runs in its own copy of the tree, taken once at the start — the files git
 # tracks, as they stand — with a fresh index, so docs-consistency.test.sh's `git ls-files`
@@ -76,11 +77,17 @@ if [ "${1:-}" = --mutant ]; then
     exit 0
 fi
 
+# How far a run has got: read-only, from its work directory (the newest under $TMPDIR
+# when none is named). It changes no result, stamp or exit status (issue: progress).
+if [ "${1:-}" = --status ]; then
+    exec python3 -I "$HERE/status.py" status "${2:-}"
+fi
+
 J=1
 while getopts j:h o; do
     case $o in
         j) J=$OPTARG ;;
-        *) echo "usage: mutation/run.sh [-j N] [id …]  (MUTATION_TIMEOUT=<seconds per suite>, default 1200)"; exit 2 ;;
+        *) echo "usage: mutation/run.sh [-j N] [id …] | --status [<work dir>]  (MUTATION_TIMEOUT=<seconds per suite>, default 1200; MUTATION_LINUX=skip, MUTATION_LINUX_IMAGE=<image>, default ubuntu:latest)"; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))
@@ -136,6 +143,12 @@ else
     DIRTY=""; FROM="$ROOT (not a repository)"
 fi
 echo "mutation: $N mutant(s) from $FROM, -j $J, work in $W"
+# What --status reads: the run's facts and this machine's, then each step as it begins.
+phase() { printf '%s\t%s\t%s\n' "$1" "$(date +%s)" "${2:-}" >>"$W/phases"; }
+python3 -I "$W/base/mutation/status.py" init "$W" "started=$(date +%s)" "pid=$$" "from=$FROM" "scope=$SCOPE" \
+    "n=$N" "j=$J" "timeout=$TIMEOUT" "bash=$BASH_VERSION" "git=$(git --version 2>/dev/null)" \
+    || echo "⚠️  could not write $W/run.info: --status will say less about this run" >&2
+echo "   progress, any time: mutation/run.sh --status $W"
 if [ -n "$DIRTY" ]; then
     printf '%s\n' "⚠️  these differ from the commit, so the release review check will not take this run:" "$DIRTY" \
         "   for a release, run it from a clean worktree of the commit (mutation/README.md):" \
@@ -143,6 +156,7 @@ if [ -n "$DIRTY" ]; then
 fi
 
 # Baseline: every suite the selection uses must pass on the unmutated copy.
+phase baseline
 cut -f3 "$W/list" | tr ' ' '\n' | sort -u | grep . >"$W/suites"
 mkdir -p "$W/m/base"; cp -R "$W/base" "$W/m/base/tree"
 bad=0
@@ -155,11 +169,62 @@ rm -rf "${W:?}/m/base"
 [ "$bad" -eq 0 ] || exit 2
 echo "baseline: $(wc -l <"$W/suites" | tr -d ' ') suite(s) pass unmutated"
 
+# Linux: CI runs the suites on ubuntu-latest too, but sees dev only once it is pushed.
+# In 0.29.0 the runner had moved to Ubuntu 26.04 (bash 5.3) since the last push, and
+# its failures surfaced on the release PR after a six-hour stamped run, which had to
+# be made again (2026-11-16). So a whole-kit run first runs the same suites once in
+# Docker's ubuntu image, the one ubuntu-latest follows, as a user that is not root and
+# with en_US.UTF-8 installed, as on the runner. A suite failing there stops the run
+# before any mutant. No Docker stops it too, with the way on printed: the person
+# starts Docker, or goes on without this leg, and the release PR's CI is then the
+# first Linux run. A selection skips the leg: it is not the release run.
+LINUX_IMAGE=${MUTATION_LINUX_IMAGE:-ubuntu:latest}
+if [ "$SCOPE" = all ] && [ "${MUTATION_LINUX:-}" = skip ]; then
+    echo "⚠️  linux: skipped (MUTATION_LINUX=skip) — the release PR's CI is the first Linux run"
+elif [ "$SCOPE" = all ]; then
+    phase linux "$LINUX_IMAGE"
+    if ! docker info >/dev/null 2>&1; then
+        echo "❌ linux: Docker is not running, or not installed, so the suites could not run on Linux, as CI's ubuntu-latest will. Start Docker and run again, or go on without the Linux leg:" >&2
+        echo "   MUTATION_LINUX=skip mutation/run.sh -j $J" >&2
+        exit 2
+    fi
+    # The suites, one per line, passed to the container as arguments; its own script
+    # is single-quoted, so nothing here is expanded twice.
+    # shellcheck disable=SC2016
+    docker run --rm -v "$W/base":/src:ro "$LINUX_IMAGE" bash -c '
+        export DEBIAN_FRONTEND=noninteractive
+        { apt-get update -qq && apt-get install -y -qq git jq python3 procps locales zsh; } >/dev/null 2>&1 \
+            || { echo "linux-setup-failed: apt-get"; exit 3; }
+        sed -i "s/^# *en_US.UTF-8/en_US.UTF-8/" /etc/locale.gen && locale-gen >/dev/null 2>&1
+        useradd -m -s /bin/bash mut || { echo "linux-setup-failed: useradd"; exit 3; }
+        . /etc/os-release; echo "linux-image: $PRETTY_NAME, bash $(bash -c "echo \$BASH_VERSION")"
+        su mut -c "set -u; export LANG=C.UTF-8
+            git config --global user.email mutation@invalid && git config --global user.name mutation \
+              && git config --global init.defaultBranch main && cp -R /src ~/w && cd ~/w \
+              && git init -q && git add -A && git -c core.hooksPath=/dev/null commit -qm base || { echo linux-setup-failed: copy; exit 3; }
+            for s in \"\$@\"; do bash \"\$s\" >~/out 2>&1; echo \"linux-suite: \$? \$s\"; cat ~/out; done" _ "$@"
+    ' _ $(cat "$W/suites") >"$W/logs/linux.log" 2>&1; lrc=$?
+    nsuites=$(wc -l <"$W/suites" | tr -d ' ')
+    npass=$(grep -c '^linux-suite: 0 ' "$W/logs/linux.log")
+    if [ "$lrc" -ne 0 ] || [ "$npass" -ne "$nsuites" ]; then
+        grep '^linux-suite: [1-9]' "$W/logs/linux.log" | sed 's/^linux-suite: \([0-9]*\) /❌ linux: exited \1 — /' >&2
+        if grep '^linux-setup-failed' "$W/logs/linux.log" >&2; then
+            echo "   the container could not be set up (offline?); to go on without the Linux leg: MUTATION_LINUX=skip mutation/run.sh -j $J" >&2
+        fi
+        echo "❌ linux: $npass of $nsuites suite(s) passed on $LINUX_IMAGE (docker exited $lrc) — its log: $W/logs/linux.log. No mutant was run, and nothing is stamped" >&2
+        exit 2
+    fi
+    lname=$(sed -n 's/^linux-image: //p' "$W/logs/linux.log")
+    echo "linux: $nsuites suite(s) pass on $LINUX_IMAGE ($lname)"
+    printf '%s\t%s\t%s\n' linux-passed "$(date +%s)" "$lname" >>"$W/phases"
+fi
+
 # The control: those suites once more, down the path a mutant takes — its own copy of
 # the tree, TMPDIR under it, MUTATION_UNDER_TEST set, the verdict as a mutant's is
 # written — with nothing applied. A kill is any non-zero suite exit, and the baseline
 # runs another path, so a fault in this one alone read as every mutant killed, and a
 # whole-kit run stamped clean (0.29.0 release review, second pass, V4).
+phase control
 printf '%s\t-\t%s\tkilled\n' "$CONTROL" "$(tr '\n' ' ' <"$W/suites" | sed 's/ $//')" >"$W/control"
 bash "$W/base/mutation/run.sh" --mutant "$W" "$CONTROL"
 cv=no-result; cby=-; cwhy=""
@@ -171,6 +236,19 @@ fi
 rm -f "$W/res/$CONTROL"
 echo "control: $(wc -l <"$W/suites" | tr -d ' ') suite(s) pass down the path a mutant takes, with nothing mutated"
 
+# A line of progress every MUTATION_PROGRESS seconds (default 600; 0: none) while the
+# mutants run, so a run of hours says how far it has got without being asked. It stops
+# with the run, and if the run is killed: it checks the run is still there each time.
+# The sleep holds no output: killed with the loop, it would hold the run's stdout open
+# for up to EVERY seconds after the summary, and a caller reading that waited.
+phase mutants
+EVERY=${MUTATION_PROGRESS:-600}
+case "$EVERY" in ''|*[!0-9]*) EVERY=600 ;; esac
+TICK=""
+if [ "$EVERY" -gt 0 ]; then
+    ( while sleep "$EVERY" >/dev/null 2>&1 && kill -0 $$ 2>/dev/null; do python3 -I "$W/base/mutation/status.py" line "$W"; done ) &
+    TICK=$!
+fi
 cut -f1 "$W/list" | xargs -P "$J" -n 1 bash "$W/base/mutation/run.sh" --mutant "$W"
 
 # A kill under load is believed only if it repeats alone: an abort or a timeout can be
@@ -189,11 +267,15 @@ if [ "$J" -gt 1 ]; then
     n=$(find "$W/first" -type f | wc -l | tr -d ' ')
     if [ "$n" -gt 0 ]; then
         echo "re-running alone $n kill(s) made under load (aborts, timeouts, merge-gate, time bounds)"
+        phase rerun "$n"
         (cd "$W/first" && ls) | xargs -n 1 bash "$W/base/mutation/run.sh" --mutant "$W"
     fi
 fi
 
+[ -n "$TICK" ] && { kill "$TICK" 2>/dev/null; wait "$TICK" 2>/dev/null; }
+
 # --- summary ---------------------------------------------------------------------------
+phase summary
 python3 -I - "$W" "$FROM" "$SCOPE" <<'PY'
 import os, sys
 W, FROM, SCOPE = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -283,4 +365,5 @@ else
     echo "not stamped: $(cat "$W/unstamped") — a release needs a clean run of the whole kit from a clean worktree of its commit (mutation/README.md)"
 fi
 rm -rf "${W:?}/m" "${W:?}/base"
+phase done "$rc"
 exit "$rc"
