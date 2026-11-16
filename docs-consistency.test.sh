@@ -604,11 +604,17 @@ echo "A whole-kit mutation run checks the suites on Linux before any mutant:"
 printf '#!/bin/sh\ngrep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a sound suite again' >/dev/null 2>&1 || die "could not commit the sound suite"
 mkdir -p "$MF/shim" && cat >"$MF/shim/docker" <<'SH' || die "could not write the docker stand-in"
 #!/bin/sh
-# DOCKER_SHIM: noinfo | pullfail | setup | fail | t124 | t137 | pass. After "_": the timeout, then the suites.
-[ "$1" = info ] && { [ "$DOCKER_SHIM" = noinfo ] && { echo "Cannot connect to the Docker daemon"; exit 1; }; exit 0; }
+# DOCKER_SHIM: noinfo | infowarn | pullfail | setup | setupquiet | fail | t124 | t137 | pass.
+# After "_": the timeout, then the suites. A healthy info says what a real one says.
+if [ "$1" = info ]; then
+  [ "$DOCKER_SHIM" = noinfo ] && { echo "Cannot connect to the Docker daemon"; exit 1; }
+  [ "$DOCKER_SHIM" = infowarn ] && echo "WARNING: Plugin /x/docker-y is not valid: failed to fetch metadata"
+  printf ' Server Version: 29.0.0\n Live Restore Enabled: false\n'; exit 0
+fi
 for a in "$@"; do printf '%s\n' "$a"; done >"$(dirname "$0")/argv"
-[ "$DOCKER_SHIM" = pullfail ] && { echo "Unable to find image 'nosuch:latest' locally" >&2; exit 125; }
-[ "$DOCKER_SHIM" = setup ] && { echo "linux-setup-failed: apt-get (offline?)"; exit 3; }
+case "$DOCKER_SHIM" in pullfail|infowarn) printf 'Status: pulling\ndocker: Error response from daemon: pull access denied for nosuch\nRun '"'"'docker run --help'"'"' for more information\n' >&2; exit 125 ;; esac
+[ "$DOCKER_SHIM" = setup ] && { echo "E: Could not resolve archive.ubuntu.com"; echo "linux-setup-failed: apt-get (offline?)"; exit 3; }
+[ "$DOCKER_SHIM" = setupquiet ] && { echo "linux-setup-failed: useradd"; exit 3; }
 while [ "$#" -gt 0 ] && [ "$1" != _ ]; do shift; done; shift 2
 echo "linux-image: Shim OS 1 x86_64, bash 5.3"
 for s in "$@"; do
@@ -620,13 +626,21 @@ MENV=(env -u MUTATION_UNDER_TEST -u MUTATION_LINUX -u MUTATION_LINUX_IMAGE -u MU
 krun() { (cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 MUTATION_TIMEOUT=77 DOCKER_SHIM="$1" ${2:+MUTATION_LINUX=$2} bash mutation/run.sh 2>&1); }
 SKIPCMD='to go on without the Linux leg (the release PR'"'"'s CI is then the first Linux run): MUTATION_LINUX=skip mutation/run.sh -j 1'
 for c in "noinfo|Docker is not running, or not installed" \
-         "pullfail|the container did not start or was not set up on ubuntu:latest (docker exited 125): Unable to find image 'nosuch:latest' locally" \
-         "setup|❌ linux: linux-setup-failed: apt-get (offline?)" "fail|❌ linux: exited 1 — t.sh" \
+         "pullfail|the container did not start or was not set up on ubuntu:latest (docker exited 125): docker: Error response from daemon: pull access denied for nosuch — its log" \
+         "infowarn|the container did not start or was not set up on ubuntu:latest (docker exited 125): docker: Error response from daemon: pull access denied for nosuch — its log" \
+         "setup|(docker exited 3): linux-setup-failed: apt-get (offline?) — its log" \
+         "setupquiet|(docker exited 3): linux-setup-failed: useradd — its log" "fail|❌ linux: exited 1 — t.sh" \
          "t124|❌ linux: timed out after 77s (exit 124) — t.sh" "t137|❌ linux: timed out after 77s (exit 137) — t.sh"; do
   OUT=$(krun "${c%%|*}"); RC=$?
   [ "$RC" -eq 2 ] && grep -qF "${c#*|}" <<<"$OUT" && grep -qF "$SKIPCMD" <<<"$OUT" && ! grep -q '^control:' <<<"$OUT" && ! grep -q '✅ stamped' <<<"$OUT" \
     && ok "${c%%|*}: stops before the control, exit 2, says why and prints the skip" || bad "the Linux leg on ${c%%|*} (exit $RC: $(tail -4 <<<"$OUT" | tr '\n' ' '))"
 done
+# docker info's output is in a log of its own, which the no-Docker stop names; a line
+# of a healthy one is never given as the cause of a failure after it (its third /dg, F1).
+OUT=$(krun noinfo); IL=$(sed -n 's/.*— its log: \(.*docker-info\.log\)\. No mutant.*/\1/p' <<<"$OUT")
+[ -n "$IL" ] && grep -qF 'Cannot connect to the Docker daemon' "$IL" && ok "…the no-Docker stop names docker info's own log, which holds what Docker said" || bad "the no-Docker stop's log: '$IL'"
+OUT=$( { krun infowarn; krun setupquiet; krun pullfail; } ); [ "$(grep -c 'the container did not start or was not set up' <<<"$OUT")" -ne 3 ] || grep -qE 'Plugin|Live Restore|Server Version' <<<"$OUT" \
+  && bad "a line of a healthy docker info was named as a cause: $(grep -E 'Plugin|Live Restore|Server Version' <<<"$OUT" | head -1)" || ok "…and no line of a healthy docker info is named as a cause"
 OUT=$(krun fail); grep -qF '❌ linux: 0 of 1 suite(s) passed on ubuntu:latest — its log' <<<"$OUT" && ! grep -qF '(docker exited' <<<"$OUT" \
   && ok "…and a suite failing names no docker exit, which was 0" || bad "a suite failing in a container that exited 0: $(grep '❌ linux: 0 of' <<<"$OUT")"
 # The same stop with the skip and another image set in the environment this suite runs

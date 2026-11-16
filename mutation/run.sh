@@ -188,8 +188,8 @@ echo "baseline: $(wc -l <"$W/suites" | tr -d ' ') suite(s) pass unmutated"
 # selection skips the leg: it is not the release run.
 LINUX_IMAGE=${MUTATION_LINUX_IMAGE:-ubuntu:latest}
 LINUX_NOTE=""
-linux_stop() {   # <what went wrong>: the stop, its log, and the way on
-    echo "❌ linux: $1 — its log: $W/logs/linux.log. No mutant was run, and nothing is stamped" >&2
+linux_stop() {   # <what went wrong> [<its log>]: the stop, its log, and the way on
+    echo "❌ linux: $1 — its log: ${2:-$W/logs/linux.log}. No mutant was run, and nothing is stamped" >&2
     echo "   to go on without the Linux leg (the release PR's CI is then the first Linux run): MUTATION_LINUX=skip mutation/run.sh -j $J" >&2
     exit 2
 }
@@ -198,9 +198,12 @@ if [ "$SCOPE" = all ] && [ "${MUTATION_LINUX:-}" = skip ]; then
     echo "$LINUX_NOTE"; phase linux-skipped
 elif [ "$SCOPE" = all ]; then
     phase linux "$LINUX_IMAGE"
+    # docker info's output has a log of its own: in linux.log it came first, and a
+    # healthy line of it ("… failed to fetch metadata", or its last line) was named as
+    # the cause of a pull or setup failure (the leg's third /dg, F1).
     : >"$W/logs/linux.log"
-    if ! docker info >>"$W/logs/linux.log" 2>&1; then
-        linux_stop "Docker is not running, or not installed, so the suites could not run on Linux, as CI's ubuntu-latest will; start Docker and run again"
+    if ! docker info >"$W/logs/docker-info.log" 2>&1; then
+        linux_stop "Docker is not running, or not installed, so the suites could not run on Linux, as CI's ubuntu-latest will; start Docker and run again" "$W/logs/docker-info.log"
     fi
     # The timeout and the suites, one per line, passed to the container as arguments;
     # its own script is single-quoted, so nothing here is expanded twice. The copy's
@@ -225,15 +228,15 @@ elif [ "$SCOPE" = all ]; then
     npass=$(grep -c '^linux-suite: 0 ' "$W/logs/linux.log")
     if [ "$lrc" -ne 0 ] || [ "$npass" -ne "$nsuites" ]; then
         # A container that never started (an image that cannot be pulled, Ctrl-C during
-        # the pull) ran no suite: said as that, with Docker's own last word, not as
-        # every suite failing.
-        if ! grep -q '^linux-image: ' "$W/logs/linux.log"; then
-            grep '^linux-setup-failed' "$W/logs/linux.log" | sed 's/^/❌ linux: /' >&2
-            why=$(grep -v '^linux-' "$W/logs/linux.log" | grep -iE -m1 'error|unable|denied|cannot|failed')
+        # the pull) or was not set up ran no suite: said as that, not as every suite
+        # failing. The cause named is the setup step that failed, else the first error
+        # Docker wrote, else its last line; linux.log holds only what docker run wrote.
+        if grep -q '^linux-setup-failed' "$W/logs/linux.log" || ! grep -q '^linux-image: ' "$W/logs/linux.log"; then
+            why=$(grep -m1 '^linux-setup-failed' "$W/logs/linux.log")
+            [ -n "$why" ] || why=$(grep -v '^linux-' "$W/logs/linux.log" | grep -iE -m1 'error|unable|denied|cannot|failed')
             [ -n "$why" ] || why=$(grep -v '^linux-' "$W/logs/linux.log" | grep . | tail -1)
-            linux_stop "the container did not start or was not set up on $LINUX_IMAGE (docker exited $lrc): $why"
+            linux_stop "the container did not start or was not set up on $LINUX_IMAGE (docker exited $lrc)${why:+: $why}"
         fi
-        grep '^linux-setup-failed' "$W/logs/linux.log" | sed 's/^/❌ linux: /' >&2
         # 124: timeout's TERM ended it; 137: it ignored TERM and --kill-after killed it.
         grep -E '^linux-suite: (124|137) ' "$W/logs/linux.log" | sed -E "s/^linux-suite: (124|137) /❌ linux: timed out after ${TIMEOUT}s (exit \1) — /" >&2
         grep -E '^linux-suite: [1-9]' "$W/logs/linux.log" | grep -vE '^linux-suite: (124|137) ' | sed 's/^linux-suite: \([0-9]*\) /❌ linux: exited \1 — /' >&2
