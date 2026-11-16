@@ -563,9 +563,12 @@ resolve_target() {
   # such as `^(trunk` turned the branch policy off with nothing said (#103). Fail
   # closed: every branch is protected, and the block names the pattern (owner,
   # 2026-10-21). `.`, not `.*`: a detached HEAD has no branch to protect.
+  # 2>/dev/null: bash 5.3 prints its own warning for a pattern that does not compile,
+  # ahead of the hook's own words for it (Ubuntu 26.04 CI, 0.29.0); the ref gate's greps
+  # are silenced the same way.
   PATTERN_BAD=""
   if [[ $GUARD_OFF -eq 0 ]]; then
-    [[ "" =~ $PROTECTED_RE ]]
+    [[ "" =~ $PROTECTED_RE ]] 2>/dev/null
     [[ $? -eq 2 ]] && { PATTERN_BAD="$PROTECTED_RE"; PROTECTED_RE='.'; }
   fi
   # A PR-only branch is not deleted either, whatever PROTECTED_BRANCHES names: the ref
@@ -580,7 +583,7 @@ resolve_target() {
     _pro="${FLIGHT_RULES_PR_ONLY_BRANCHES:-$(read_conf PR_ONLY_BRANCHES "$CONF_FILE")}"
     _pro="${_pro:-^main\$}"
     if [[ "$_pro" != off && "$_pro" != none ]]; then
-      [[ "" =~ $_pro ]]
+      [[ "" =~ $_pro ]] 2>/dev/null
       if [[ $? -eq 2 ]]; then PRONLY_BAD="$_pro"; DELETE_RE='.'; else DELETE_RE="($PROTECTED_RE)|($_pro)"; fi
     fi
   fi

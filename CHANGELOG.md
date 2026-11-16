@@ -4,7 +4,7 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
-## 0.29.0 — 2026-11-15
+## 0.29.0 — 2026-11-16
 
 Every stop now prints the one command that goes ahead anyway —
 `FLIGHT_RULES_GO_AHEAD=1` in front of the command that finishes what was stopped — so
@@ -199,6 +199,11 @@ says how.
 - **The doctor read `PROTECTED_BRANCHES=off  # trunk only` and `'off'` as patterns**
   (#127), and beside its ⚠️ that protection was off printed a ✅ about a derived note
   gate; `none` was not handled there. It now reads the conf with the hooks' own reader.
+- **Under bash 5.3, a branch pattern that does not compile brought a warning of bash's
+  own** (`invalid regular expression`) ahead of what the hooks say of it, on the
+  terminal and on the session-start hook's stderr. The git hooks, the agent guard and
+  `session-start` now keep it off stderr, as the ref gate's greps already did; what they
+  decide is unchanged. Found when CI's Ubuntu runner moved to 26.04.
 
 ### Added
 
