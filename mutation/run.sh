@@ -199,7 +199,7 @@ if [ "$SCOPE" = all ] && [ "${MUTATION_LINUX:-}" = skip ]; then
 elif [ "$SCOPE" = all ]; then
     phase linux "$LINUX_IMAGE"
     : >"$W/logs/linux.log"
-    if ! docker info >/dev/null 2>&1; then
+    if ! docker info >>"$W/logs/linux.log" 2>&1; then
         linux_stop "Docker is not running, or not installed, so the suites could not run on Linux, as CI's ubuntu-latest will; start Docker and run again"
     fi
     # The timeout and the suites, one per line, passed to the container as arguments;
@@ -224,10 +224,20 @@ elif [ "$SCOPE" = all ]; then
     nsuites=$(wc -l <"$W/suites" | tr -d ' ')
     npass=$(grep -c '^linux-suite: 0 ' "$W/logs/linux.log")
     if [ "$lrc" -ne 0 ] || [ "$npass" -ne "$nsuites" ]; then
+        # A container that never started (an image that cannot be pulled, Ctrl-C during
+        # the pull) ran no suite: said as that, with Docker's own last word, not as
+        # every suite failing.
+        if ! grep -q '^linux-image: ' "$W/logs/linux.log"; then
+            grep '^linux-setup-failed' "$W/logs/linux.log" | sed 's/^/❌ linux: /' >&2
+            why=$(grep -v '^linux-' "$W/logs/linux.log" | grep -iE -m1 'error|unable|denied|cannot|failed')
+            [ -n "$why" ] || why=$(grep -v '^linux-' "$W/logs/linux.log" | grep . | tail -1)
+            linux_stop "the container did not start or was not set up on $LINUX_IMAGE (docker exited $lrc): $why"
+        fi
         grep '^linux-setup-failed' "$W/logs/linux.log" | sed 's/^/❌ linux: /' >&2
-        grep '^linux-suite: 124 ' "$W/logs/linux.log" | sed "s/^linux-suite: 124 /❌ linux: timed out after ${TIMEOUT}s — /" >&2
-        grep -E '^linux-suite: [1-9]' "$W/logs/linux.log" | grep -v '^linux-suite: 124 ' | sed 's/^linux-suite: \([0-9]*\) /❌ linux: exited \1 — /' >&2
-        linux_stop "$npass of $nsuites suite(s) passed on $LINUX_IMAGE (docker exited $lrc)"
+        # 124: timeout's TERM ended it; 137: it ignored TERM and --kill-after killed it.
+        grep -E '^linux-suite: (124|137) ' "$W/logs/linux.log" | sed -E "s/^linux-suite: (124|137) /❌ linux: timed out after ${TIMEOUT}s (exit \1) — /" >&2
+        grep -E '^linux-suite: [1-9]' "$W/logs/linux.log" | grep -vE '^linux-suite: (124|137) ' | sed 's/^linux-suite: \([0-9]*\) /❌ linux: exited \1 — /' >&2
+        linux_stop "$npass of $nsuites suite(s) passed on $LINUX_IMAGE$([ "$lrc" -ne 0 ] && echo " (docker exited $lrc)")"
     fi
     lname=$(sed -n 's/^linux-image: //p' "$W/logs/linux.log")
     LINUX_NOTE="linux: $nsuites suite(s) passed on $LINUX_IMAGE ($lname)"

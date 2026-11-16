@@ -595,39 +595,61 @@ OUT=$(cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" MUTATION_PROGRESS=
 echo "A whole-kit mutation run checks the suites on Linux before any mutant:"
 # The leg shipped unable to pass (the container re-committed a committed tree), and no
 # case reached it: every run above is a selection, which skips it (release /dg, F1-F2).
-# A docker stand-in on PATH drives each way it decides; the real container is run by
-# hand before a release (mutation/README.md). No network here, as {TEST_COMMANDS} need.
+# A docker stand-in on PATH drives each way it decides, and keeps what it was handed,
+# so the flags and the container script are checked too. The release run is the only
+# run of the real container (mutation/README.md). No network here, as {TEST_COMMANDS}
+# need. The run's own MUTATION_* settings are cleared: this suite runs inside a release
+# run, and MUTATION_LINUX=skip inherited here turned these cases, and so the run's
+# baseline, red; the skip every stop prints led to a stop of its own (its /dg, F1).
 printf '#!/bin/sh\ngrep -qx ok f.txt\n' >"$MF/t.sh" && "${GF[@]}" commit -qam 'a sound suite again' >/dev/null 2>&1 || die "could not commit the sound suite"
 mkdir -p "$MF/shim" && cat >"$MF/shim/docker" <<'SH' || die "could not write the docker stand-in"
 #!/bin/sh
-# DOCKER_SHIM: noinfo | pullfail | setup | fail | pass. After "_": the timeout, then the suites.
-[ "$1" = info ] && { [ "$DOCKER_SHIM" = noinfo ] && exit 1; exit 0; }
+# DOCKER_SHIM: noinfo | pullfail | setup | fail | t124 | t137 | pass. After "_": the timeout, then the suites.
+[ "$1" = info ] && { [ "$DOCKER_SHIM" = noinfo ] && { echo "Cannot connect to the Docker daemon"; exit 1; }; exit 0; }
+for a in "$@"; do printf '%s\n' "$a"; done >"$(dirname "$0")/argv"
 [ "$DOCKER_SHIM" = pullfail ] && { echo "Unable to find image 'nosuch:latest' locally" >&2; exit 125; }
 [ "$DOCKER_SHIM" = setup ] && { echo "linux-setup-failed: apt-get (offline?)"; exit 3; }
 while [ "$#" -gt 0 ] && [ "$1" != _ ]; do shift; done; shift 2
 echo "linux-image: Shim OS 1 x86_64, bash 5.3"
 for s in "$@"; do
-  if [ "$DOCKER_SHIM" = fail ]; then echo "linux-suite: 1 $s"; else echo "linux-suite: 0 $s"; fi
+  case "$DOCKER_SHIM" in fail) echo "linux-suite: 1 $s" ;; t124) echo "linux-suite: 124 $s" ;; t137) echo "linux-suite: 137 $s" ;; *) echo "linux-suite: 0 $s" ;; esac
 done
 SH
 chmod +x "$MF/shim/docker"
-krun() { (cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM="$1" ${2:+MUTATION_LINUX=$2} bash mutation/run.sh 2>&1); }
+MENV=(env -u MUTATION_UNDER_TEST -u MUTATION_LINUX -u MUTATION_LINUX_IMAGE -u MUTATION_TIMEOUT -u MUTATION_PROGRESS)
+krun() { (cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 MUTATION_TIMEOUT=77 DOCKER_SHIM="$1" ${2:+MUTATION_LINUX=$2} bash mutation/run.sh 2>&1); }
 SKIPCMD='to go on without the Linux leg (the release PR'"'"'s CI is then the first Linux run): MUTATION_LINUX=skip mutation/run.sh -j 1'
-for c in "noinfo|Docker is not running, or not installed" "pullfail|0 of 1 suite(s) passed on ubuntu:latest (docker exited 125)" \
-         "setup|❌ linux: linux-setup-failed: apt-get (offline?)" "fail|❌ linux: exited 1 — t.sh"; do
+for c in "noinfo|Docker is not running, or not installed" \
+         "pullfail|the container did not start or was not set up on ubuntu:latest (docker exited 125): Unable to find image 'nosuch:latest' locally" \
+         "setup|❌ linux: linux-setup-failed: apt-get (offline?)" "fail|❌ linux: exited 1 — t.sh" \
+         "t124|❌ linux: timed out after 77s (exit 124) — t.sh" "t137|❌ linux: timed out after 77s (exit 137) — t.sh"; do
   OUT=$(krun "${c%%|*}"); RC=$?
   [ "$RC" -eq 2 ] && grep -qF "${c#*|}" <<<"$OUT" && grep -qF "$SKIPCMD" <<<"$OUT" && ! grep -q '^control:' <<<"$OUT" && ! grep -q '✅ stamped' <<<"$OUT" \
     && ok "${c%%|*}: stops before the control, exit 2, says why and prints the skip" || bad "the Linux leg on ${c%%|*} (exit $RC: $(tail -4 <<<"$OUT" | tr '\n' ' '))"
 done
+OUT=$(krun fail); grep -qF '❌ linux: 0 of 1 suite(s) passed on ubuntu:latest — its log' <<<"$OUT" && ! grep -qF '(docker exited' <<<"$OUT" \
+  && ok "…and a suite failing names no docker exit, which was 0" || bad "a suite failing in a container that exited 0: $(grep '❌ linux: 0 of' <<<"$OUT")"
+# The same stop with the skip and another image set in the environment this suite runs
+# in, as a release run's baseline runs it: the cases hold.
+OUT=$(MUTATION_LINUX=skip MUTATION_LINUX_IMAGE=elsewhere:1 krun fail); RC=$?
+[ "$RC" -eq 2 ] && grep -qF '❌ linux: exited 1 — t.sh' <<<"$OUT" && ! grep -q 'skipped' <<<"$OUT" \
+  && ok "…and with MUTATION_LINUX=skip and another image in the suite's own environment, as a skipped release run's baseline has them" || bad "the leg's cases took the suite's environment (exit $RC: $(tail -3 <<<"$OUT" | tr '\n' ' '))"
 OUT=$(krun pass); RC=$?
+A=$(cat "$MF/shim/argv")
 [ "$RC" -eq 0 ] && grep -qF 'linux: 1 suite(s) pass on ubuntu:latest (Shim OS 1 x86_64, bash 5.3)' <<<"$OUT" && grep -q '^control: ' <<<"$OUT" && grep -q '— 1 killed' <<<"$OUT" \
   && [ "$(grep -n 'linux: 1 suite(s) passed on' <<<"$OUT" | cut -d: -f1)" -gt "$(grep -n '^mutation: all 1 run' <<<"$OUT" | cut -d: -f1)" ] \
   && ok "every suite passing: the run goes on, and its closing lines say the leg passed" || bad "the Linux leg on pass (exit $RC: $(tail -6 <<<"$OUT" | tr '\n' ' '))"
+# What Docker is handed: pulled fresh (a cached tag never moves), an init that passes
+# Ctrl-C to the suites' group, the host's .git dropped before the fresh commit, each
+# suite under timeout, and the timeout then the suites after "_".
+grep -qx -- '--pull' <<<"$A" && grep -qx 'always' <<<"$A" && grep -qx -- '--init' <<<"$A" && grep -qx 'TINI_KILL_PROCESS_GROUP=1' <<<"$A" \
+  && grep -qF 'cd ~/w && rm -rf .git' <<<"$A" && grep -qF 'timeout --kill-after=10' <<<"$A" && [ "$(sed -n '/^_$/{n;p;q;}' <<<"$A")" = 77 ] && [ "$(tail -1 <<<"$A")" = t.sh ] \
+  && ok "…handed --pull always, --init with the group kill, a fresh .git, each suite under the timeout, then the timeout and the suites" || bad "docker was handed something else: $(tr '\n' ' ' <<<"$A" | cut -c1-300)"
 OUT=$(krun noinfo skip); RC=$?
 [ "$RC" -eq 0 ] && [ "$(grep -c 'linux: skipped (MUTATION_LINUX=skip)' <<<"$OUT")" -eq 2 ] && grep -q '— 1 killed' <<<"$OUT" \
   && ok "MUTATION_LINUX=skip: no Docker needed, the run goes on, and the skip is said at the start and the end" || bad "the skip (exit $RC: $(tail -6 <<<"$OUT" | tr '\n' ' '))"
-OUT=$(cd "$MF" && env -u MUTATION_UNDER_TEST TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=noinfo bash mutation/run.sh X1 2>&1); RC=$?
-[ "$RC" -eq 0 ] && ! grep -q 'linux' <<<"$OUT" && ok "a selection skips the leg, and says nothing of it" || bad "a selection ran or named the Linux leg (exit $RC: $(grep linux <<<"$OUT" | head -2 | tr '\n' ' '))"
+OUT=$(cd "$MF" && "${MENV[@]}" TMPDIR="$MF/tmp" PATH="$MF/shim:$PATH" MUTATION_PROGRESS=0 DOCKER_SHIM=noinfo bash mutation/run.sh X1 2>&1); RC=$?
+[ "$RC" -eq 0 ] && grep -q '— 1 killed' <<<"$OUT" && ! grep -q 'linux' <<<"$OUT" && ok "a selection skips the leg, and says nothing of it" || bad "a selection ran or named the Linux leg (exit $RC: $(grep linux <<<"$OUT" | head -2 | tr '\n' ' '))"
 rm -rf "$MF"
 
 echo "Every mutation mutant's anchor occurs exactly once:"

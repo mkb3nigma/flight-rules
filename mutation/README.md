@@ -19,8 +19,8 @@ Before every `dev` → `main` promotion, on the commit being promoted (`AGENTS.m
 of `{TEST_COMMANDS}`.
 
 A whole-kit run starts with the suites on Linux as well. After the baseline, it runs
-them once in Docker's `ubuntu:latest` (`MUTATION_LINUX_IMAGE` names another), pulled
-fresh each run. That is the newest Ubuntu LTS, which GitHub's `ubuntu-latest` runner
+them once in Docker's `ubuntu:latest` (`MUTATION_LINUX_IMAGE` names another, which
+must be pullable), pulled fresh each run. That is the newest Ubuntu LTS, which GitHub's `ubuntu-latest` runner
 tracks with a lag of its own. The container is close to the runner, not the same: on
 Apple silicon it is arm64 where the runner is x86_64, and it has only the tools the
 run installs. Each suite is cut off after `MUTATION_TIMEOUT` seconds. It adds about a
@@ -31,7 +31,9 @@ Unless every suite passes there, the run stops before any mutant. So does a leg 
 cannot run: no Docker, an image that cannot be pulled, a container that cannot be set
 up. Every such stop prints the way on, `MUTATION_LINUX=skip`. It is the person's to
 set, and the release PR's CI is then the first Linux run. The closing lines say how
-the leg went, a skip included. A selection skips the leg.
+the leg went, a skip included. A selection skips the leg. The suites' own cases of
+the leg run a stand-in for Docker, and check what it is handed; the release run is the
+only run of the real container.
 
 Why: CI sees `dev` only once it is pushed. In 0.29.0 the runner had moved to Ubuntu
 26.04 since the last push, and its failures surfaced on the release PR after a stamped

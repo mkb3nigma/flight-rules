@@ -78,7 +78,7 @@ and the five questions asked of each subsystem; a critical finding is the owner'
 arrives through a branch merged to `dev`, then 2a again on the new tip and `/dg` on the
 fix's own diff), then — last, on the final head, once 2b has nothing left to apply —
 `mutation/run.sh -j 4` from a worktree of it (it runs the suites on Linux first, in
-Docker's newest Ubuntu, and stops unless they pass), and the stamp it writes pushed
+Docker's newest Ubuntu LTS, and stops unless they pass), and the stamp it writes pushed
 (`git push origin refs/notes/mutation`, printed by the run; the `release review` check
 requires a clean stamp on the PR's head, so a commit after it means running it again,
 and an assistant never writes one by hand — `mutation/README.md`), and `--base main`. That promotion is the one PR whose head is
