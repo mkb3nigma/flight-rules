@@ -35,6 +35,17 @@ Compare the returned SHA to the row's pinned ref.
 For a **gist** (e.g. the docs-lint concept source), there is no branch HEAD — open the
 gist's *Revisions* tab and compare against the pinned revision/date.
 
+For a **W3C spec**, open its latest-version URL and compare the Recommendation date it
+states with the pinned one; a newer date, or a newer version (WCAG 2.2 → 3.0), is a
+change to review. For a **web page**, fetch it and compare what it says with what the pin
+records (its values, "as read" on a date); a published or updated date newer than that
+is a prompt to re-read it, not a change in itself.
+
+For a source that feeds `skills/ux/`, a change is judged rule by rule:
+`skills/ux/sources.md` names the rules that rest on each source. Re-read those rules
+against the source's new text, and report each as unaffected, needing an edit, or
+needing the owner's call.
+
 If the network is unavailable, say so per source rather than reporting a false
 "up to date".
 

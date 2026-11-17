@@ -18,10 +18,17 @@ set -euo pipefail
 # this line used to abort the hook with "unbound variable" on every hand-wired install
 # — so the path documented in hooks/README.md injected NO rules at all, which is the
 # exact failure that README section exists to warn about. Fall back to the script's own
-# location, which is correct for every install shape: the plugin directory, .ai/hooks/,
-# or hooks/ in the playbook repo itself.
+# location: rules/ beside its folder, which is right for the plugin directory and for
+# hooks/ in the playbook repo itself.
 RULES_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 RULES="$RULES_ROOT/rules/engineering-principles.md"
+# Not for a copy hand-wired from .flight-rules/hooks/: beside it is .flight-rules/rules/,
+# which nothing creates, since a project's copied rules stay in .ai/rules/ — and the
+# hook exited 0 having injected nothing (0.29.0 release review, second pass, V2).
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ ! -r "$RULES" ]; then
+  _top=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel 2>/dev/null) || _top=""
+  [ -z "$_top" ] || RULES="$_top/.ai/rules/engineering-principles.md"
+fi
 [ -r "$RULES" ] || exit 0
 
 # Name the version in the header. The rules are injected ONCE, at session start, and
@@ -41,25 +48,31 @@ RULES="$RULES_ROOT/rules/engineering-principles.md"
 # shape before committing; a version is worth nothing if reading it costs the rules.
 VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
   "$RULES_ROOT/.claude-plugin/plugin.json" 2>/dev/null | head -1 || true)
+# The file opens with a front-matter header (`trigger: always_on`) that Antigravity reads to
+# load it into every session (2026-11-01). It means nothing to the model, so it is not
+# injected here. Only a block that opens on line 1 is stripped, CRLF or not; one that never
+# closes would strip everything, so then the file goes in whole (fix review, 2026-11-01).
+BODY=$(awk '{ l = $0; sub(/\r$/, "", l) } NR==1 && l=="---" {fm=1; next} fm && l=="---" {fm=0; next} !fm' "$RULES")
+[ -n "$BODY" ] || BODY=$(cat "$RULES")
 HEADER="The flight-rules plugin${VERSION:+ $VERSION} is active. These engineering principles govern how you work in this session — follow them. They were injected when this session started: if the plugin has been updated since, a new session is what picks the change up."
 
 if command -v jq >/dev/null 2>&1; then
-  jq -Rs --arg h "$HEADER" \
-    '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:($h + "\n\n" + .)}}' \
-    "$RULES"
+  printf '%s\n' "$BODY" | jq -Rs --arg h "$HEADER" \
+    '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:($h + "\n\n" + .)}}'
 elif command -v python3 >/dev/null 2>&1; then
   # -I: the hook runs in the project, and a json.py there was imported and run in
   # place of the standard library's (security review, 2026-10-13 — reproduced).
-  python3 -I - "$RULES" "$HEADER" <<'PY'
+  # The text — the header too, whose em dash is not ASCII — arrives on stdin as UTF-8
+  # bytes, not as an argument a non-UTF-8 locale could mis-decode (fix review,
+  # 2026-11-01, for the rules; #140 for the header).
+  printf '%s\n\n%s\n' "$HEADER" "$BODY" | python3 -I -c '
 import json, sys
-text = open(sys.argv[1], encoding="utf-8").read()
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "SessionStart",
-        "additionalContext": sys.argv[2] + "\n\n" + text,
+        "additionalContext": sys.stdin.buffer.read().decode("utf-8"),
     }
-}))
-PY
+}))'
 else
   # No JSON tool available — skip injection rather than emit malformed output.
   exit 0

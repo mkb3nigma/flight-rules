@@ -7,9 +7,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
-PASS=0; FAIL=0
-ok()  { PASS=$((PASS+1)); echo "  ✅ $1"; }
-bad() { FAIL=$((FAIL+1)); echo "  ❌ $1"; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../hooks/test-lib.sh" || exit 2
 
 SKILLS=$(find skills -mindepth 1 -maxdepth 1 -type d | sed 's|skills/||' | sort)
 
@@ -137,12 +135,98 @@ for s in $SKILLS; do
 done
 [ "$MISS" -eq 0 ] && ok "$NREF named, all present; no file unnamed"
 
+echo "A guide's topic files: rule shape, unique IDs, size, and the source map:"
+# A guide is a skill with topic files beside SKILL.md (skills/ux/, #159). Every rule line
+# is `- **<ID>** [<kind>] …`, so a reader knows how far to trust it; IDs are unique so a
+# finding can cite one; files stay small enough to load for a small task; and
+# sources.md names the rules each source carries, so an update to a source says which
+# rules to re-read (/upstream-check). An ID is a capital and a number (A1), or that
+# behind a guide's prefix of two to four capitals and a hyphen (UX-A01): §7 of the
+# principles labels a reply's actions A1… and decisions D1…, so /ux's own A1 read two
+# ways (owner, 2026-11-12). guide_verdict <dir>: one line per problem.
+GID='([A-Z]{2,4}-)?[A-Z][0-9]+'
+guide_verdict() {
+  local d="$1" f n ids dup mapped
+  [ -f "$d/SKILL.md" ] && [ "$(wc -l < "$d/SKILL.md")" -gt 120 ] && echo "$d/SKILL.md is over 120 lines"
+  for f in "$d"/*.md; do
+    case "$(basename "$f")" in SKILL.md|sources.md) continue ;; esac
+    n=$(wc -l < "$f" | tr -d ' '); [ "$n" -gt 150 ] && echo "$f is $n lines, over 150"
+    grep -n '^- \*\*' "$f" | grep -vE '^[0-9]+:- \*\*'"$GID"'\*\* \[(standard|finding|rule of thumb)\] [^ ]' \
+      | sed "s|^|$f:|; s|$| — not a rule line: - **<ID>** [standard\|finding\|rule of thumb] <rule>|"
+  done
+  ids=$(cat "$d"/*.md | sed -n -E 's/^- \*\*('"$GID"')\*\* .*/\1/p')
+  dup=$(sort <<<"$ids" | uniq -d | tr '\n' ' '); [ -n "$dup" ] && echo "$d: rule IDs used twice: $dup"
+  [ -f "$d/sources.md" ] || return 0
+  mapped=$(sed -n -E 's/^\|.*\| (living|fixed) \| (.*) \|$/\2/p' "$d/sources.md" | tr ' ' '\n' | sed '/^$/d' | sort -u)
+  for n in $mapped; do grep -qx "$n" <<<"$ids" || echo "$d/sources.md names $n, which no topic file has"; done
+  for n in $(cat "$d"/*.md | sed -n -E 's/^- \*\*('"$GID"')\*\* \[(standard|finding)\].*/\1/p'); do
+    grep -qx "$n" <<<"$mapped" || echo "$d: $n is a [standard] or [finding] rule no source in sources.md carries"
+  done
+}
+G=0
+for d in skills/*/; do
+  d=${d%/}; [ "$(find "$d" -maxdepth 1 -name '*.md' ! -name SKILL.md | xargs grep -lE '^- \*\*'"$GID"'\*\* \[' 2>/dev/null)" ] || continue
+  G=$((G+1)); v=$(guide_verdict "$d")
+  if [ -z "$v" ]; then ok "$d: every rule well formed, IDs unique, within size, every standard and finding sourced"
+  else while IFS= read -r l; do bad "$l"; done <<<"$v"; fi
+done
+[ "$G" -gt 0 ] || bad "no guide found — this test is reading the wrong thing"
+# Each check, shown to fail on a fixture that breaks it: a check no input reaches is none.
+T=$(mktemp -d) || { bad "could not make a temp dir for the guide fixture"; T=""; }
+if [ -n "$T" ]; then
+  { printf -- '---\nname: g\n---\n'; for i in $(seq 120); do echo filler; done; } > "$T/SKILL.md"
+  { printf -- '- **A1** [standard] Fine.\n- **A2** [opinion] Not a kind.\n- **A1** [finding] Twice.\n- **B9** [finding] Unsourced.\n'
+    # The prefixed form: well formed, and caught twice and unsourced; a prefix in lower
+    # case, or a prefix with no letter and number after it, is no ID.
+    printf -- '- **UX-A01** [standard] Fine.\n- **UX-A01** [finding] Twice.\n- **UX-B09** [finding] Unsourced.\n'
+    printf -- '- **ux-A03** [standard] Lower-case prefix.\n- **UX-** [standard] Bare prefix.\n- **UXABC-A04** [standard] Long prefix.\n'
+    for i in $(seq 150); do echo filler; done; } > "$T/topic.md"
+  printf '| Src | Kind | Rules |\n|---|---|---|\n| X | fixed | A1 Z7 UX-A01 UX-Z07 |\n' > "$T/sources.md"
+  v=$(guide_verdict "$T")
+  for want in "SKILL.md is over 120" "over 150" "A2" "used twice: A1 UX-A01" "names Z7" "B9 is a" \
+      "names UX-Z07" "UX-B09 is a" "Lower-case prefix" "Bare prefix" "Long prefix"; do
+    grep -q -- "$want" <<<"$v" && ok "the fixture's \"$want\" is caught" || bad "the fixture's \"$want\" was not caught: $v"
+  done
+  rm -rf "$T"
+fi
+
 echo "Plugin description names every skill that has a slash command in it:"
 for s in $(grep -oE '/[a-z-]+' .claude-plugin/plugin.json | tr -d / | sort -u); do
   grep -q "^$s\$" <<<"$SKILLS" || bad "plugin.json mentions /$s, which does not ship"
 done
 ok "plugin.json mentions only shipped skills"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+# The hooks read .ai/flight-rules.conf where .flight-rules/conf is absent; a skill or rule
+# naming only the new path ran on built-in defaults in a project not yet moved, while its
+# hooks kept the project's policy (0.29.0 release review, M1).
+echo "Every skill or rule that names the conf names the old path it falls back to:"
+# conf_fallback <dir>…: "read <file>" for each file naming the new path, and a line for
+# each that does not name the old. Test files are not read: this one names both, so the
+# read-nothing guard below could never fire, and the ok line printed after a failure
+# too (0.29.0 release review, second pass, V25).
+conf_fallback() {
+  local f
+  for f in $(grep -rl --exclude='*.test.sh' '\.flight-rules/conf' "$@"); do
+    echo "read $f"
+    grep -q '\.ai/flight-rules\.conf' "$f" || echo "$f names .flight-rules/conf but not the .ai/flight-rules.conf fallback"
+  done
+}
+v=$(conf_fallback skills rules); n=$(grep -c '^read ' <<<"$v"); p=$(grep -v '^read ' <<<"$v")
+if [ "$n" -eq 0 ]; then bad "no skill or rule names .flight-rules/conf — the check above read nothing"
+elif [ -n "$p" ]; then while IFS= read -r l; do bad "$l"; done <<<"$p"
+else ok "$n files name both"
+fi
+T=$(mktemp -d) || { bad "could not make a temp dir for the conf fixture"; T=""; }
+if [ -n "$T" ]; then
+  mkdir -p "$T/none" "$T/some"
+  printf 'reads .flight-rules/conf\n' > "$T/some/new-only.md"
+  printf 'reads .flight-rules/conf, or .ai/flight-rules.conf\n' > "$T/some/both.md"
+  printf '.flight-rules/conf\n' > "$T/none/x.test.sh"
+  v=$(conf_fallback "$T/some")
+  [ "$(grep -c '^read ' <<<"$v")" = 2 ] && grep -q 'new-only.md names .flight-rules/conf but not' <<<"$v" && ! grep -q 'both.md names' <<<"$v" \
+    && ok "the fixture's file naming only the new path is caught, and the one naming both is not" || bad "the conf fixture was misread: $v"
+  [ "$(conf_fallback "$T/none" | grep -c '^read ')" = 0 ] && ok "…and a test file is not read, so a tree of only that reads nothing" || bad "a test file was read by the conf check"
+  rm -rf "$T"
+fi
+
+finish

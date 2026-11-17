@@ -33,7 +33,9 @@
 # skills/pre-merge-check/SKILL.md; skills/catalogue.test.sh fails until all three
 # match.
 #
-# Bypass — the owner's call, for a reviewed false positive:  git commit --no-verify
+# Way through — the person's call, for a reviewed false positive: the refusal prints
+# FLIGHT_RULES_GO_AHEAD=1 <the same command> (#151). `git commit --no-verify` also skips
+# this hook, and every other one with it.
 
 set -uo pipefail
 # Bytes, not characters: a staged binary or Latin-1 file must not make grep stop at
@@ -117,16 +119,25 @@ fi
 # Accepted cost: a blobless partial clone, offline, refuses a commit that changes or
 # deletes a file whose blob was never fetched — git fetches it before the diff can be
 # filtered, and fails (/dg, 2026-10-12). The error says so; online, it goes through.
+# go_ahead <what is passed>: the way through that every stop prints (MISSION.md,
+# principle 5) — FLIGHT_RULES_GO_AHEAD=1 in front of the command. Going ahead is the
+# person's decision, so it is said every time it is used (#151).
+go_ahead() {
+  [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1
+  echo "⚠️  flight-rules: going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — $1. That is the person's decision, never an assistant's own." >&2
+}
 unread() {
   local rc=$1 what=$2 err=""; shift 2
+  go_ahead "a commit the secret scan could not read ($what exited $rc), so that part goes unscanned" && return 0
   [ $# -eq 0 ] || err=$("$@" 2>&1 >/dev/null | tail -n 3)
   cat >&2 <<EOF
 🔐 flight-rules: commit refused — the secret scan could not read what is staged
 ($what exited $rc), so nothing was scanned.${err:+
 $err}
 
-Fix the cause, then commit again. Committing unscanned is the repo owner's decision,
-not an agent's: stop and ask them.
+Fix the cause, then commit again. Committing unscanned is the person's decision, never
+an assistant's own, and it is said when it is used:
+  FLIGHT_RULES_GO_AHEAD=1 <the same command>
 EOF
   exit 1
 }
@@ -137,11 +148,13 @@ STAGED_DIFF=$("${DIFF[@]}" 2>/dev/null | tr -d '\000') || unread $? "${DIFF[*]} 
 # A .env is flagged for every change except its removal (--diff-filter=d): deleting or
 # untracking one is the clean-up. Editing one already tracked is refused like adding it
 # (owner's call, 2026-10-05) — a password typed into committed defaults has no format
-# for the patterns below to catch. A project that commits one on purpose uses
-# --no-verify, deliberately. A rename or copy is listed under its new name only, so
-# its source is added: `git mv .env config.txt` keeps the secrets tracked under a name
-# nothing watches. -M because diff.renames=false lists a rename as a delete and an add,
-# and the delete is filtered out.
+# for the patterns below to catch. The refusal prints its way through,
+# FLIGHT_RULES_GO_AHEAD=1 <the same command>, the person's to run (#151); a project
+# that commits one on purpose takes it, or --no-verify, which skips this hook. A rename
+# or copy is listed under its new name only, so its source is added: `git mv .env
+# config.txt` keeps the secrets tracked under a name nothing watches. -M because
+# diff.renames=false lists a rename as a delete and an add, and the delete is filtered
+# out.
 STAGED_FILES=$("${NAMES[@]}" 2>/dev/null) || unread $? "${NAMES[*]}" "${NAMES[@]}"
 RENAMED_FROM=$("${RENAMES[@]}" 2>/dev/null | awk -F '\t' '{print $2}') || unread $? "${RENAMES[*]} | awk" "${RENAMES[@]}"
 STAGED_FILES="$STAGED_FILES
@@ -194,6 +207,7 @@ if hit 'BEGIN [A-Z ]*PRIVATE KEY'; then
 fi
 
 [ -z "$FINDINGS" ] && run_local "$@"
+go_ahead "a commit whose staged changes look like they hold a secret:$FINDINGS" && run_local "$@"
 
 # Concluding a merge, unstaging a file commits HEAD's copy of it: the merge records the
 # other side as merged and drops its change, with nothing said (0.27.0 release review).
@@ -207,6 +221,7 @@ cat >&2 <<EOF
 
 $UNSTAGE If it is a false positive (a test fixture,
 say), build the value at run time instead of writing it literally. Committing it as
-is is the repo owner's decision, not an agent's: stop and ask them.
+is is the person's decision, never an assistant's own, and it is said when it is used:
+  FLIGHT_RULES_GO_AHEAD=1 <the same command>
 EOF
 exit 1

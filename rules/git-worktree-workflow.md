@@ -5,7 +5,8 @@ Branch discipline for AI-assisted development. Parameterized: a project defines
 through a reviewed PR), `{NOTE_GATED_BRANCHES}` (a local merge needs a passing
 `pre-merge-check` note — unset, this is *protected but not PR-only*),
 `{INTEGRATION_BRANCH}` (where feature work merges), and `{WORKTREE_DIR}`
-(e.g. `.ai/worktrees/`). All five live in `.ai/flight-rules.conf`.
+(e.g. `.flight-rules/worktrees/`). All five live in `.flight-rules/conf` — or, where that is
+absent, in `.ai/flight-rules.conf`, the hooks reading it as well.
 
 ## Why worktrees
 
@@ -19,7 +20,9 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
 (no gate, but `post-merge` shows it at the merge and `session-start.sh` at the next session).
 
 ### 🚫 Forbidden
-1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook
+1. Direct commits to any of `{PROTECTED_BRANCHES}` — hook (the agent guard refuses one an
+   assistant types; the ref gate refuses one on a PR-only branch and warns of one on the
+   others, as `pre-push` does when it is pushed)
 2. Multiple features in one branch — one purpose per branch: two changes in one branch
    are reviewed, reverted and released as one, so a defect in either holds back or takes
    out both — skill (`pre-merge-check` 9, ⚠️)
@@ -51,21 +54,27 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    `FLIGHT_RULES_MERGE_AUTHORISED=1 git merge …`, which is recorded in the merge commit
    as a `Merge-authorisation:` trailer. Setting that variable when the user did not ask
    is the thing this forbids — the hook cannot tell, the trailer makes it auditable.
+   Two clean merges need no instruction and carry no trailer: a back-merge of a PR-only
+   branch's tip, all of it already reviewed, and the merge of its upstream,
+   `origin/<the branch>`, into it when the two have diverged — what a fast-forward would
+   bring; `feature-start` 4's pull makes it.
    A project that does not want the check sets `MERGE_NEEDS_INSTRUCTION=off`; that is
    recorded in the trailer too — hook (`commit-msg`)
 
 ### ✅ Required
 1. All branches created as worktrees under `{WORKTREE_DIR}` — hook for "as worktrees"
-   (Forbidden 6), enforced while you are on a protected branch, which is when a branch
-   made in place puts feature work in the checkout you meant to keep clean; the location
-   is advisory
+   (Forbidden 6); the location is advisory
 2. Branch names prefixed: `feature/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`,
    `hotfix/` — the prefix is what a pull request is routed by (`hotfix/` to `main`, the
-   rest to `{INTEGRATION_BRANCH}`); a branch without one is routed only by asking, every
+   rest to `{INTEGRATION_BRANCH}`; a `hotfix/` branch only with the person's approval,
+   cut from `origin/main` — *Merge flow*); a branch without one is routed only by asking, every
    time — skill
    (`feature-start` 3; `pr-create` routes on it)
-3. Conventional commit messages using the same prefixes (`hotfix/` branches commit as
-   `fix:` — there is no `hotfix:` message prefix) — the prefix says what kind of change
+3. Conventional commit messages using the same prefixes, plus `ci:` for a change to the
+   CI (`hotfix/` branches commit as `fix:` — there is no `hotfix:` message prefix, and no
+   `ci/` branch; a prefix may carry a scope, `<type>(<scope>):`, and git's own
+   `Revert "<subject>"`, which the revert route under *Merge flow* makes, passes as it
+   is) — the prefix says what kind of change
    each commit is, which a reviewer and whoever writes the release notes read off the
    log; without it, each commit has to be opened to tell — skill (`commit` 4,
    `pre-merge-check` 8)
@@ -82,7 +91,39 @@ Each item says how it is enforced — **hook**, **skill**, **advisory**, or **re
    skill (`pre-merge-check` 21, for what the checks started), reminded (`post-merge`
    prints what still runs from the worktree, containers included, at the merge;
    `session-start`)
-8. New branches derive from **`origin/{INTEGRATION_BRANCH}`** after a `git fetch` — never a stale local base. When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
+8. New branches derive from the local **`{INTEGRATION_BRANCH}`** once origin's commits it lacks are brought in — never a stale one (*Which branch new work starts from*, below). When `{INTEGRATION_BRANCH}` differs from `main` and `main` holds content it lacks, that content reaches it first — a fast-forward the person pushes (`feature-start` 4 prints it) — and if the two have diverged, **stop and ask** — skill (`feature-start` 4)
+
+## Which branch new work starts from
+
+The local `{INTEGRATION_BRANCH}` is authoritative: it is the base every new branch is
+cut from — a revert of a merge already pushed to a protected branch, and a hotfix the
+person approved, aside (*Merge flow*, below), which start from that branch, and from `main`, on origin
+(owner, 2026-11-08). It holds origin's work once that
+is brought in, and the merges made here and not yet pushed, which origin's lacks: a
+branch cut from origin's missed the very merge it was meant to fix (2026-11-01).
+So before a branch is cut, `git fetch origin`, then origin's commits it lacks come in:
+
+- checked out in a live worktree: `git pull --ff --no-rebase origin
+  {INTEGRATION_BRANCH}` there;
+- missing: `git branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`;
+- checked out nowhere: a fast-forward, only if origin's has anything new — `git
+  merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} || git
+  fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}`. Refused — diverged, never
+  pushed or unreachable; git's message says which — **stop and ask**: merging diverged
+  branches needs a checkout. If the worktree that held it is gone (`git worktree list`
+  marks it `prunable`), **stop and ask** before any of it: git cannot tell one moved
+  (`git worktree repair <new path>`) from one deleted (`git worktree prune`, which
+  clears every worktree it cannot find); one whose folder is there and only its `.git`
+  file gone or broken, `git worktree repair <path>` restores, staged work included.
+
+`feature-start` 4 does this; the guard's and the ref gate's refusals print it — skill.
+A `git worktree add` by hand is advisory: no hook checks a start point, because
+legitimate branches start elsewhere (a revert, from that branch on origin; a hotfix,
+from `origin/main`) and a check
+would refuse them. A project that branches from origin's instead
+(one that merges only by PR has nothing local to keep) says so in its own rules, which
+override these; the hooks' printed routes name the local branch all the
+same.
 
 ## The cwd-drift trap (learned the hard way)
 
@@ -124,28 +165,30 @@ git-flow:  feature/* ──▶ {INTEGRATION_BRANCH} ──▶ (staging) ──PR
   `git revert -m 1 <merge-sha>` there. It goes back the way the branch allows — a PR to a
   PR-only branch, the usual merge into any other. A branch cut from
   `{INTEGRATION_BRANCH}` to revert `main` would carry its unreleased work into `main`.
+  A merge made here and not yet pushed is not on origin, so a branch cut from there
+  lacks it and the revert fails: cut that one from the local branch, which holds it
+  (owner, 2026-11-10).
+- A hotfix — a fix that goes straight to `main`, skipping `{INTEGRATION_BRANCH}` and the
+  review there — is for an urgent fix, and only the person decides one is urgent: a
+  `hotfix/` branch is made only with their approval, and without it the fix is an
+  ordinary `fix/` branch off the local `{INTEGRATION_BRANCH}`. Approved, it is cut from
+  `origin/main` (one cut from `{INTEGRATION_BRANCH}` would carry its unreleased work
+  into `main`) and merges into `main` through the PR `main` requires; an issue is
+  filed for it, saying it bypassed `{INTEGRATION_BRANCH}`, was cut from `origin/main`
+  and was merged straight into `main`, and its PR links that issue. `feature-start` 4's
+  reconcile brings it back into `{INTEGRATION_BRANCH}` — skill (`feature-start` 3 and 6,
+  `pr-create`)
 
 ## Enforcement (optional but recommended)
 
 Ready-made templates for all of the below live in this repo's `hooks/` directory.
-Commit the hooks into the project (e.g. `.ai/hooks/`) and point git at them once per clone:
+Commit the hooks into the project (e.g. `.flight-rules/hooks/`) and point git at them once per clone:
 
-- The merge gate, **five git hooks** (`install.sh` refuses to install unless all five
-  are present, then runs `git config core.hooksPath <dir>` and
-  `git config merge.ff false` — the second matters: a fast-forward creates no merge
-  commit, so without it no gate hook ever fires):
-  `reference-transaction` is the backstop and the one Forbidden 7 rests on — a PR-only
-  branch may only move to a commit already on its upstream, whatever command moved it;
-  `pre-merge-commit` blocks a local merge into a **PR-only** branch
-  (`{PR_ONLY_BRANCHES}`, default `main`) and gives the early, specific message;
-  `commit-msg` requires a passing `pre-merge-check` note to merge into a **note-gated**
-  branch (`{NOTE_GATED_BRANCHES}`), exempting back-merges of `main`, refuses squash
-  merges into a PR-only branch, and refuses a merge that does not say who asked for it;
-  `pre-rebase` refuses to rebase any protected branch; `post-merge` writes the cleanup
-  note.
-  They read `.ai/flight-rules.conf` from a state the incoming branch cannot edit —
-  `reference-transaction` from the **upstream**, the rest **as committed on the merge
-  target** — so a branch cannot relax the rule judging it.
+- The git hooks in `hooks/git/` — install all of them: `install.sh` refuses an incomplete
+  set, then sets `core.hooksPath` and `merge.ff false` (a fast-forward creates no merge
+  commit, so without it no gate hook fires). They read `.flight-rules/conf` from a
+  state the incoming branch cannot edit, so a branch cannot relax the rule judging it.
+  One entry per hook: `hooks/README.md` → *Git hooks*.
 - `hooks/agent/pre-commit-check.sh`, the assistant-side guard — commits, tree
   destroyers, rebases and force-pushes on a protected branch; staged secrets anywhere.
   Ships with the Claude Code plugin. Details: `hooks/README.md`.

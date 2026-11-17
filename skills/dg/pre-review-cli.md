@@ -28,10 +28,11 @@ whichever CLI it has in its extensions. The command:
   prompt only as an argument gets a large range split by subsystem, as in `/dg` step 1;
 - **keeps the final message and stderr apart**, for the completion check;
 - **reports the model that actually ran** in the header, read from the CLI's output
-  or log, else `model unreported`. A CLI is not a family: `agy` also serves Claude
-  models. A run whose model is the same family as the one running this skill, or
-  unreported, counts but not as cross-family: `✅ <reviewer> (<model>, not
-  cross-family)`.
+  or log, else `model unreported`; where tiers are named and that model is below the
+  top tier, `/dg` step 2 marks it `below the top tier`. A CLI is not a family: `agy`
+  also serves Claude models. A run whose model is the same family as the one running
+  this skill, or unreported, counts but not as cross-family: `✅ <reviewer> (<model>,
+  not cross-family)`.
 
 E.g. from Claude Code:
 `out=$(mktemp) err=$(mktemp);`

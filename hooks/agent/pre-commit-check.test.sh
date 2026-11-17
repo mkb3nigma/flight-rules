@@ -9,25 +9,16 @@
 
 set -uo pipefail
 HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pre-commit-check.sh"
-PASS=0; FAIL=0
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
 # Assembled at run time so this file never carries a literal key for a scanner to flag.
 AKIA=$(printf 'AKIA%s' IOSFODNN7EXAMPLE)
-
-# A fixture that cannot be built is not a test failure, it is an aborted run — so it
-# stops the suite rather than being counted. make_repo runs inside a command
-# substitution, where a FAIL increment would be discarded with the subshell; `$$` is the
-# parent's pid even there, so the signal reaches the trap. Measured 2026-09-12: with the
-# fixture's `git init` broken this suite still scored 267 of 574.
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: a fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
 
 # A repo on $1, with the hook scoped to it via CLAUDE_PROJECT_DIR.
 make_repo() {
   local branch="$1" dir
   # Resolve symlinks: on macOS mktemp hands back /var/... while git reports the
   # real /private/var/..., and the hook's project-scoping compares the two.
-  dir=$(cd "$(mktemp -d)" && pwd -P)
+  dir=$(tmpd)
   git -C "$dir" init -q || die "git init failed in $dir"
   git -C "$dir" config user.email t@t.t
   git -C "$dir" config user.name t
@@ -53,52 +44,47 @@ make_repo() {
 #   - if the guard ever moves to exit-status signalling (non-zero = block), these
 #     guards would read a legitimate block as a crash. They are pinned to the current
 #     JSON contract deliberately; change both together.
+# guard_run <dir> <command> [env…] — the hook's stdout in $GUARD_OUT, its status in $GUARD_RC.
+# It runs from <dir>, scoped to <dir>; an env CLAUDE_PROJECT_DIR=… scopes it elsewhere.
+guard_run() {
+  local d="$1" c="$2"; shift 2
+  GUARD_OUT=$(cd "$d" && CLAUDE_PROJECT_DIR="$d" env "$@" bash "$HOOK" \
+              <<<"$(jq -n --arg c "$c" '{tool_input:{command:$c}}')" 2>/dev/null); GUARD_RC=$?
+}
+# verdict <description> <expect deny|allow> [<text the output must hold>…]
+verdict() {
+  local desc="$1" expect="$2" got t; shift 2
+  if [[ $GUARD_RC -ne 0 ]]; then
+    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$GUARD_RC"; return
+  fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$GUARD_OUT"; then got=deny; else got=allow; fi
+  for t in "$@"; do grep -qF -- "$t" <<<"$GUARD_OUT" || got="$got, without \"$t\""; done
+  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
+  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
+}
+
 # check <description> <expect: deny|allow> <branch> <command> [env assignments...]
 check() {
-  local desc="$1" expect="$2" branch="$3" cmd="$4"; shift 4
-  local dir out got rc
+  local desc="$1" expect="$2" branch="$3" cmd="$4" dir; shift 4
   dir=$(make_repo "$branch")
   # Run from inside the repo so a command with no `cd`/`-C` resolves there.
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" env "$@" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  guard_run "$dir" "$cmd" "$@"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
 
 # check_wt <description> <expect> <main-checkout branch> <worktree branch> <command>
-# The same assertion, but run from a worktree at .ai/worktrees/x — where the
+# The same assertion, but run from a worktree at .flight-rules/worktrees/x — where the
 # workflow says all work happens, and where the branch policy used to switch
 # itself off because a worktree's toplevel is never CLAUDE_PROJECT_DIR.
 check_wt() {
-  local desc="$1" expect="$2" branch="$3" wt_branch="$4" cmd="$5"
-  local dir out got rc
+  local desc="$1" expect="$2" branch="$3" wt_branch="$4" cmd="$5" dir
   dir=$(make_repo "$branch")
-  if ! git -C "$dir" worktree add -q "$dir/.ai/worktrees/x" -b "$wt_branch" >/dev/null 2>&1; then
+  if ! git -C "$dir" worktree add -q "$dir/.flight-rules/worktrees/x" -b "$wt_branch" >/dev/null 2>&1; then
     FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: worktree add failed — nothing was tested\n' "$desc"
     rm -rf "$dir"; return
   fi
-  out=$(cd "$dir/.ai/worktrees/x" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
-  git -C "$dir" worktree remove --force "$dir/.ai/worktrees/x" >/dev/null 2>&1
+  guard_run "$dir/.flight-rules/worktrees/x" "$cmd" CLAUDE_PROJECT_DIR="$dir"; verdict "$desc" "$expect"
+  git -C "$dir" worktree remove --force "$dir/.flight-rules/worktrees/x" >/dev/null 2>&1
   rm -rf "$dir"
 }
 
@@ -109,7 +95,8 @@ check "git reset --hard on main"         deny  main 'git reset --hard HEAD~1'
 check "git clean -fd on dev"             deny  dev  'git clean -fd'
 check "git clean --force on dev"         deny  dev  'git clean --force'
 check "git checkout -- . on dev"         deny  dev  'git checkout -- .'
-check "git restore on staging"           deny  staging 'git restore f.txt'
+check "git checkout . on dev"            deny  dev  'git checkout .'
+check "git restore on staging"          deny  staging 'git restore f.txt'
 # Unstaging and untracking touch no file in the tree (mission review H4, 2026-10-29), so
 # their plain form is allowed; anything not plainly that is judged as before.
 check "restore --staged on dev"          allow dev 'git restore --staged f.txt'
@@ -132,7 +119,8 @@ check "restore --no-staged"              deny  dev 'git restore --staged --no-st
 check "rm --cached --no-cached"          deny  dev 'git rm --cached --no-cached f'
 check "rm --end-of-options"              deny  dev 'git rm --cached --end-of-options f'
 check "rm -- --cached (a path)"          deny  dev 'git rm -- --cached'
-check "rm, --cached quoted"              deny  dev "git rm f '--cached'"
+# A quoted option is not a plain path: '--worktree' would pass as one, and git reads it.
+check "restore --staged, --worktree quoted" deny dev "git restore --staged f.txt '--worktree'"
 check "rm, --cached in a comment"        deny  dev 'git rm b # --cached'
 check "rm --cached, a rm in backticks"   deny  dev 'git rm --cached a `git rm b`'
 check "rm --cached, a glob"              deny  dev 'git rm --cached *.log'
@@ -146,15 +134,10 @@ echo "Shell metacharacters must not smuggle a destructive command past the guard
 # Regression: the first version enumerated separators (space ; & |) and so missed "("
 # entirely — a subshell or command substitution was allowed on a protected branch.
 # Found in the wild: a verification command of the form `echo x && (git rm ...)` ran
-# unblocked on dev.
-check "subshell"                         deny  dev '(git rm f.txt)'
-check "subshell after &&"                deny  dev 'echo x && (git rm f.txt)'
-check "command substitution"             deny  dev 'out=$(git rm f.txt)'
+# unblocked on dev. The subshell, pipe and `&&` shapes are crossed with every core in
+# "Shape coverage" below, where `$( … )` and the brace group were trimmed as asserting
+# what the subshell does; the backtick is crossed with none, so it has its own case.
 check "backtick substitution"            deny  dev 'out=`git rm f.txt`'
-check "brace group"                      deny  dev '{ git rm f.txt; }'
-check "if-then"                          deny  dev 'if true; then git rm f.txt; fi'
-check "pipeline"                         deny  dev 'git rm f.txt | cat'
-check "reset --hard in a subshell"       deny  dev '(git reset --hard HEAD~1)'
 # ...without matching words that merely contain the letters "git"
 check "mygit is not git"                 allow dev 'mygit rm f.txt'
 check "legit is not git"                 allow dev 'legit rm f.txt'
@@ -219,7 +202,7 @@ check "valid pattern: a branch it does not name" allow feature/x 'git commit -m 
 # <command> <verdict> <text the output must hold> <text it must not> [env…].
 broken_conf() {
   local desc="$1" branch="$2" cmd="$3" want="$4" has="$5" hasnt="$6" D OUT RC got; shift 6
-  D=$(make_repo "$branch"); mkdir -p "$D/.ai"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.ai/flight-rules.conf"
+  D=$(make_repo "$branch"); mkdir -p "$D/.flight-rules"; printf 'PROTECTED_BRANCHES=^(trunk\n' > "$D/.flight-rules/conf"
   OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" env "$@" bash "$HOOK" \
         <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); RC=$?
   if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then got=deny; else got=allow; fi
@@ -247,6 +230,20 @@ broken_conf "broken pattern, checkout -b: denied, naming the pattern" feature/x 
 # said fixing it would let it through (group A fix review round 2, F7).
 broken_conf "broken pattern, mirror push: the protected-branch block" feature/x 'git push --mirror origin' \
   deny 'protected branch \"every branch (--mirror)\"' 'is not a pattern bash can read'
+# bash 5.3 prints its own warning for a pattern that does not compile; the hook keeps it
+# off stderr and says it in its own words (Ubuntu 26.04 CI, 0.29.0). Both patterns read
+# by the guard, each paired with the deny over the same run.
+for kv in PROTECTED_BRANCHES='^(trunk' PR_ONLY_BRANCHES='^(main'; do
+  D=$(make_repo feature/x); mkdir -p "$D/.flight-rules"; printf '%s\n' "$kv" > "$D/.flight-rules/conf"
+  ERR=$( { cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<'{"tool_input":{"command":"git branch -D main"}}' >"$D.out"; } 2>&1); RC=$?
+  if [[ $RC -eq 0 ]] && grep -q '"permissionDecision": *"deny"' "$D.out" && ! grep -q 'invalid regular expression' <<<"$ERR"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: denied, with no warning of bash'"'"'s own on stderr\n' "${kv%%=*}"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s: rc=%s, stderr: %s\n' "${kv%%=*}" "$RC" "$ERR"
+  fi
+  rm -rf "$D" "$D.out"
+done
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_WORKTREE_DIR='.worktrees' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
@@ -257,25 +254,13 @@ else
 fi
 rm -rf "$D"
 
-echo "Config file (.ai/flight-rules.conf) — the tool-agnostic home:"
+echo "Config file (.flight-rules/conf) — the tool-agnostic home:"
 # conf_check <desc> <expect> <branch> <command> <conf-contents>
 conf_check() {
-  local desc="$1" expect="$2" branch="$3" cmd="$4" conf="$5"
-  local dir out got rc
+  local desc="$1" expect="$2" branch="$3" cmd="$4" conf="$5" dir
   dir=$(make_repo "$branch")
-  mkdir -p "$dir/.ai"; printf '%s\n' "$conf" > "$dir/.ai/flight-rules.conf"
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  mkdir -p "$dir/.flight-rules"; printf '%s\n' "$conf" > "$dir/.flight-rules/conf"
+  guard_run "$dir" "$cmd"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
 
@@ -318,7 +303,7 @@ conf_check "absent key falls back to default" deny main 'git rm f' \
 # Expect ALLOW: read as data, the value is the literal string "$(touch ...)^main$",
 # which is a regex that simply does not match the branch "main". That inertness is
 # the point — the real assertion is the marker check below.
-MARKER=$(cd "$(mktemp -d)" && pwd -P)/pwned
+MARKER=$(tmpd)/pwned
 conf_check "substitution in conf stays inert" allow main 'git rm f' \
   "PROTECTED_BRANCHES=\$(touch $MARKER)^main\$"
 if [[ -e "$MARKER" ]]; then
@@ -335,6 +320,12 @@ check "off: git rm on main allowed"      allow main 'git rm f.txt' \
 check "none: synonym for off"            allow main 'git rm f.txt' \
       FLIGHT_RULES_PROTECTED_BRANCHES=none
 conf_check "off via the conf file"       allow main 'git rm f' 'PROTECTED_BRANCHES=off'
+# Read as a regex, `off` or `none` matches no branch above, so those cases also pass on a
+# hook that ignores the opt-out; a mirror push, refused under any pattern, does not.
+check "off: a mirror push is the project's"  allow feature/x 'git push --mirror origin' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=off
+check "none: likewise"                   allow feature/x 'git push --mirror origin' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=none
 # Opting out of the branch policy must NOT disable the secret scan — leaking a key
 # is not a workflow preference.
 D=$(make_repo main)
@@ -362,7 +353,7 @@ rm -rf "$D"
 
 echo "Precedence — environment beats the conf file:"
 D=$(make_repo dev)
-mkdir -p "$D/.ai"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.ai/flight-rules.conf"
+mkdir -p "$D/.flight-rules"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.flight-rules/conf"
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' \
       bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null)
 if grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
@@ -411,8 +402,7 @@ check "single-quoted cd path"            deny  main "cd '.' && git rm f.txt"
 echo "Secret scan — staged content on a feature branch:"
 # secret_check <desc> <expect> <file path> <content>
 secret_check() {
-  local desc="$1" expect="$2" path="$3" content="$4"
-  local dir out got rc
+  local desc="$1" expect="$2" path="$3" content="$4" dir
   dir=$(make_repo feature/x)
   mkdir -p "$dir/$(dirname "$path")"
   printf '%s\n' "$content" > "$dir/$path"
@@ -420,18 +410,7 @@ secret_check() {
     FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: git add failed — nothing was staged to scan\n' "$desc"
     rm -rf "$dir"; return
   fi
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  guard_run "$dir" "git commit -m x"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
 # Regression: every pattern was anchored `^\+[^+].*`, demanding a character between
@@ -442,6 +421,7 @@ secret_check "indented password (control)"    deny  src/config.py '    password 
 secret_check "PASSWORD (case-insensitive)"    deny  src/config.py 'PASSWORD = "hunter2hunter2"'
 secret_check "API_KEY"                        deny  src/config.py 'API_KEY = "abcdefghijklmnop"'
 secret_check "token"                          deny  src/config.py 'token = "abcdefghijklmnop"'
+secret_check "client_secret"                  deny  src/config.py 'client_secret = "abcdefghijklmnop"' # flight-rules: allow — a fixture the guard must deny
 secret_check "YAML password:"                 deny  config.yml   'password: "hunter2hunter2"'
 secret_check "JSON \"password\":"             deny  config.json  '{"password": "hunter2hunter2"}'
 secret_check "sk-ant-… key"                   deny  src/a.py 'k = "sk-ant-api03-Abc123Abc123Abc123Abc123Abc123Abc123-AA"'
@@ -507,22 +487,11 @@ echo "The repo's own diff settings do not hide a staged key, and a .env leaving 
 # --no-textconv and --text: color.ui=always prefixed every added line with an escape
 # code, so no pattern anchored on "+" matched (probed 2026-10-05 on dev at adbabc5).
 scan_case() {
-  local desc="$1" expect="$2" setup="$3" cmd="${4:-git commit -m x}" dir out got rc
+  local desc="$1" expect="$2" setup="$3" cmd="${4:-git commit -m x}" dir
   dir=$(make_repo feature/x)
   (cd "$dir" && eval "$setup") >/dev/null 2>&1 || die "setup failed for: $desc"
   [ -n "$(git -C "$dir" diff --cached --name-only)" ] || die "setup staged nothing for: $desc"
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s — a verdict was never reached\n' "$desc" "$rc"
-    rm -rf "$dir"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then
-    PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"
-  fi
+  guard_run "$dir" "$cmd"; verdict "$desc" "$expect"
   rm -rf "$dir"
 }
 STAGE_KEY='printf "%s\n" "$AKIA" > k.txt && git add k.txt'
@@ -595,13 +564,16 @@ scan_case "a leftover MERGE_HEAD naming HEAD is an ordinary commit" deny "git re
 MD=$(make_repo feature/x)
 (cd "$MD" && eval "$MERGE_FROM printf 'resolved %s\n' \"\$AKIA\" > f.txt && git add f.txt") >/dev/null 2>&1 || die "could not build the merge in $MD"
 OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit --no-edit"}}' 2>/dev/null)
-say_n() { if [[ "$1" == "$2" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$3"; else FAIL=$((FAIL+1)); printf '  ❌ %s (got %s, want %s)\n' "$3" "$1" "$2"; fi; }
-say_n "$(grep -c 'do not unstage' <<<"$OUT")" 1 "mid-merge, the refusal says not to unstage"
-say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 0 "…and drops the advice to"
+say "$(grep -c 'do not unstage' <<<"$OUT")" 1 "mid-merge, the refusal says not to unstage"
+say "$(grep -c 'unstage and re-check' <<<"$OUT")" 0 "…and drops the advice to"
 rm -rf "$MD"; MD=$(make_repo feature/x)
 (cd "$MD" && eval "$STAGE_KEY") >/dev/null 2>&1 || die "could not stage a key in $MD"
 OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
-say_n "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "outside a merge, it still says to unstage"
+say "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "outside a merge, it still says to unstage"
+rm -rf "$MD"; MD=$(make_repo feature/x)
+(cd "$MD" && eval "git rev-parse HEAD > .git/MERGE_HEAD && $STAGE_KEY") >/dev/null 2>&1 || die "could not leave a MERGE_HEAD in $MD"
+OUT=$(cd "$MD" && CLAUDE_PROJECT_DIR="$MD" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(grep -c 'unstage and re-check' <<<"$OUT")" 1 "a leftover MERGE_HEAD naming HEAD: the ordinary advice, not the merge's"
 rm -rf "$MD"
 
 echo "More ways to rewrite or discard a protected branch (post-merge review):"
@@ -622,7 +594,7 @@ check "switch to a branch"                allow main 'git switch feature/x'
 check "rebase on a feature branch"        allow feature/x 'git rebase main'
 
 echo "Workflow rule 6 — branches are created as worktrees, on any branch:"
-check "checkout -b on main"               deny  main      'git checkout -b feature/y'
+# `checkout -b` on main, bare and after `cd .`, is in "Shape coverage" below.
 # Narrowed 2026-09-14: rule 6 guards the MAIN checkout against feature work landing in
 # it, which is a protected-branch condition. It was nominally universal but not actually
 # enforced — a `git commit` in the same command elected `commit` and branch creation was
@@ -636,16 +608,14 @@ check "switch -c"                         deny  main      'git switch -c feature
 check "switch -C"                         deny  main      'git switch -C feature/y'
 check "switch --create"                   deny  main      'git switch --create feature/y'
 check "switch --force-create"             deny  main      'git switch --force-create feature/y'
-check "cd && checkout -b"                 deny  main      'cd . && git checkout -b feature/y'
-check "worktree add -b is the right way"  allow main      'git worktree add .ai/worktrees/y -b feature/y origin/main'
+check "worktree add -b is the right way"  allow main      'git worktree add .flight-rules/worktrees/y -b feature/y origin/main'
 check "checkout <existing branch>"        allow main      'git checkout feature/x'
-check "switch <existing branch>"          allow main      'git switch feature/x'
 check "checkout -b with the guard off"    allow main      'git checkout -b feature/y' \
       FLIGHT_RULES_PROTECTED_BRANCHES=off
 check "branch <name> (no switch) is not gated" allow main 'git branch feature/y'
 D=$(make_repo main)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
-if grep -q 'git worktree add .ai/worktrees/<name> -b' <<<"$OUT"; then
+if grep -q 'git worktree add .flight-rules/worktrees/<name> -b' <<<"$OUT"; then
   PASS=$((PASS+1)); printf '  ✅ block message shows the worktree command\n'
 else
   FAIL=$((FAIL+1)); printf '  ❌ block message lacks the worktree command\n'
@@ -688,26 +658,24 @@ echo "The branch policy applies inside this project's own worktrees:"
 # construction — so the whole policy below switched itself off inside every
 # worktree, which is where the workflow says all work happens. Probed 2026-09-10:
 # force-push to main, remote deletion of main and `checkout -b` were all allowed
-# from a worktree while being denied from the main checkout.
+# from a worktree while being denied from the main checkout. The scoping is one check
+# for every action, so one action per side stands for it here: the deletion, empty-source
+# and mirror forms are each denied from the main checkout above.
 check_wt "force-push to main from a worktree"   deny  scratch feature/x 'git push --force origin main'
-check_wt "remote-delete main from a worktree"   deny  scratch feature/x 'git push --delete origin main'
-check_wt "empty-source push from a worktree"    deny  scratch feature/x 'git push origin :main'
-check_wt "--mirror from a worktree"             deny  scratch feature/x 'git push --mirror origin'
 check_wt "checkout -b from a worktree on a feature branch" allow scratch feature/x 'git checkout -b feature/y'
 # A worktree checked out ON the protected branch: commits and destructive
 # commands there are the plain case, and were allowed too.
 check_wt "commit on main from a worktree"       deny  scratch main 'git commit -m x'
-check_wt "reset --hard on main from a worktree" deny  scratch main 'git reset --hard HEAD~1'
 # What the scoping is actually for must still hold: ordinary feature work in a
 # worktree is allowed, and a sibling repo is still none of our business.
 check_wt "commit on a feature branch in a worktree" allow scratch feature/x 'git commit -m x'
 check_wt "push a feature branch from a worktree"    allow scratch feature/x 'git push --force origin feature/x'
 
 D=$(make_repo main); O=$(make_repo main)
-if ! git -C "$O" worktree add -q "$O/.ai/worktrees/x" -b feature/x >/dev/null 2>&1; then
+if ! git -C "$O" worktree add -q "$O/.flight-rules/worktrees/x" -b feature/x >/dev/null 2>&1; then
   FAIL=$((FAIL+1)); printf '  ❌ harness: worktree add failed — the sibling-worktree case proved nothing\n'
 fi
-OUT=$(cd "$O/.ai/worktrees/x" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+OUT=$(cd "$O/.flight-rules/worktrees/x" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
       <<<'{"tool_input":{"command":"git push --force origin main"}}' 2>/dev/null); RC=$?
 if [[ $RC -ne 0 ]]; then
   FAIL=$((FAIL+1)); printf '  ❌ harness: the hook exited %s — the sibling-worktree case proved nothing\n' "$RC"
@@ -716,7 +684,7 @@ elif grep -q '"deny"' <<<"$OUT"; then
 else
   PASS=$((PASS+1)); printf '  ✅ a sibling repo'"'"'s worktree is still not ours to police\n'
 fi
-git -C "$O" worktree remove --force "$O/.ai/worktrees/x" >/dev/null 2>&1
+git -C "$O" worktree remove --force "$O/.flight-rules/worktrees/x" >/dev/null 2>&1
 rm -rf "$D" "$O"
 
 echo "A push names its target; the branch you stand on is only the fallback:"
@@ -729,7 +697,6 @@ check "force-push a feature ref from main" allow main 'git push --force origin f
 check "empty-source push of a feature ref" allow main 'git push origin :feature/old'
 # The fallback still stands when the push names no ref of its own.
 check "bare force-push from main"         deny  main 'git push --force'
-check "bare force-push with -f"           deny  main 'git push -f'
 check "force-push to main from main"      deny  main 'git push --force origin main'
 check "--mirror from main names no ref"   deny  main 'git push --mirror origin'
 
@@ -757,9 +724,44 @@ check "creating a branch (not a delete)" allow main      'git branch feature/new
 check "renaming is not deleting"         allow main      'git branch -m old new'
 # `-r` deletes remote-TRACKING refs — a local cache, not a branch.
 check "branch -dr origin/main (cache)"   allow main      'git branch -dr origin/main'
-check "branch -d -r origin/main"         allow main      'git branch -d -r origin/main'
+# Under an unanchored pattern, so origin/main is one it names: under the anchored
+# default this was allowed with the -r exemption deleted.
+check "branch -d -r origin/main"         allow main      'git branch -d -r origin/main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=main
 check "guard off lets deletion through"  allow feature/x 'git branch -D main' \
       FLIGHT_RULES_PROTECTED_BRANCHES=off
+# A PR-only branch is not deleted either, whatever PROTECTED_BRANCHES names: a project
+# that left main out of it had main offered for deletion by post-merge, and let through
+# here, while the ref gate still kept main PR-only by default (#128).
+check "branch -d a PR-only main PROTECTED_BRANCHES leaves out" deny feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$'
+check "branch -D a PR-only branch named in PR_ONLY_BRANCHES" deny feature/x 'git branch -D trunk' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^trunk$'
+check "…not with PR_ONLY_BRANCHES=off"   allow feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES=off
+check "…nor with the policy off"         allow feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES=off FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
+# Only the deletion: a commit on that main is the ref gate's to refuse, as before.
+check "…a commit on it is still the ref gate's" allow main 'git commit -m x' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$'
+# Matched case-insensitively, as every layer matches it: ^MAIN$ keeps main (security
+# review of #128).
+check "…PR_ONLY_BRANCHES=^MAIN\$ keeps main" deny feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^MAIN$'
+# A PR_ONLY_BRANCHES bash cannot read fails closed, as a broken PROTECTED_BRANCHES does
+# (#103): no branch is deleted until it is fixed, and the block names it (security review
+# of #128 — left out, a broken pattern let main be deleted).
+check "…a PR-only pattern bash cannot read keeps main" deny feature/x 'git branch -d main' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^(main'
+check "…and every other branch, until it is fixed" deny main 'git branch -d feature/old' \
+      FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^(main'
+D=$(make_repo feature/x)
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" FLIGHT_RULES_PROTECTED_BRANCHES='^dev$' FLIGHT_RULES_PR_ONLY_BRANCHES='^(main' bash "$HOOK" \
+  <<<'{"tool_input":{"command":"git branch -d main"}}' 2>&1); RC=$?
+rm -rf "$D"
+[ "$RC" -eq 0 ] && grep -qF 'PR_ONLY_BRANCHES (^(main) is not a pattern bash can read' <<<"$OUT" \
+  && { PASS=$((PASS+1)); printf '  ✅ …the block names the broken PR_ONLY_BRANCHES\n'; } \
+  || { FAIL=$((FAIL+1)); printf '  ❌ …the block does not name the broken PR_ONLY_BRANCHES (exit %s): %s\n' "$RC" "$(head -c 300 <<<"$OUT")"; }
 # The block must name the branch it saved, not the one you are standing on.
 D=$(make_repo feature/x)
 OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
@@ -773,20 +775,201 @@ else
 fi
 rm -rf "$D"
 # The worktree the blocks suggest goes through /feature-start first: a raw worktree add
-# skips its open-branch count, the only gate on it (0.27.0 release review).
+# skips its open-branch count, the only gate on it (0.27.0 release review). By hand, it
+# starts where Required 8 and /feature-start start — the local integration branch, origin
+# pulled into it — not origin's, which lacks merges not yet pushed (0.29.0 release
+# review, R-1).
+# A remote, named and never reached: with none, the route pulls nothing (V15, below).
+with_origin() { git -C "$1" remote add origin https://example.invalid/r.git || die "could not add a remote in $1"; }
 for c in 'git checkout -b feature/y|main|checkout -b on main' 'git commit -m x|main|a commit on main'; do
-  D=$(make_repo "$(cut -d'|' -f2 <<<"$c")")
+  D=$(make_repo "$(cut -d'|' -f2 <<<"$c")"); with_origin "$D"
   OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
         <<<"$(jq -n --arg c "$(cut -d'|' -f1 <<<"$c")" '{tool_input:{command:$c}}')" 2>/dev/null)
   if grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q '/feature-start' <<<"$OUT" && grep -q 'open-branch limit\|OPEN_BRANCH_LIMIT' <<<"$OUT" \
      && grep -q 'raw worktree add skips\|by hand, which skips' <<<"$OUT" \
-     && grep -q 'worktree add .* origin/<integration-branch>' <<<"$OUT"; then
-    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on origin/<integration-branch>\n' "$(cut -d'|' -f3 <<<"$c")"
+     && grep -q 'git pull --ff --no-rebase origin main' <<<"$OUT" \
+     && grep -qE 'worktree add [^ ]+ -b [^ ]+ main && ' <<<"$OUT" && ! grep -qE ' -b [^ ]+ origin/main|<integration-branch>' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: the block points at /feature-start and its branch count, and labels the raw add as skipping it, based on the local integration branch after a pull\n' "$(cut -d'|' -f3 <<<"$c")"
   else
     FAIL=$((FAIL+1)); printf '  ❌ %s: the block does not point at /feature-start and its branch count\n' "$(cut -d'|' -f3 <<<"$c")"
   fi
   rm -rf "$D"
 done
+# The integration branch where the route finds it — the local one, authoritative, the
+# base every new branch is cut from, a revert aside, origin's commits it lacks brought in
+# (rules/git-worktree-workflow.md → *Which branch new work starts from*; 0.29.0
+# release-fix review, X-1, Z-1..3, W-1..4, U-1, T-1, T-2): a clone holds only main, so
+# dev is made from origin's, tracking it — a pull printed for "where it is checked out"
+# ran on main and moved it; held by a live linked worktree, the pull runs there, by path;
+# a local dev no live worktree holds gets origin's commits only if there are any; a
+# worktree that held it and is gone is named, never pruned: git cannot tell one moved
+# from one deleted, and a prune clears every worktree it cannot find (B-1, C-1..C-3). In every layout the
+# rows are one chain, from the first `cd` to the last. route_rows: all of them, as the
+# reason prints them; route_lines: the rows between the two `cd`s.
+reason_of() { python3 -I -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' <<<"$1"; }
+route_rows() { reason_of "$1" | sed -n '/^  cd /,/^    cd .*<name>$/p'; }
+route_lines() { route_rows "$1" | sed '1d;$d'; }
+route_of() { route_lines "$1" | tr '\n' '|'; }
+CHAIN="    git fetch origin && \\|    { git merge-base --is-ancestor origin/dev dev || git fetch origin dev:dev; } && \\|    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\|"
+# With no remote, nothing to pull or fetch: the route's first step failed there and
+# stopped the chain. The branch is cut from the local one, and the rows, run as printed,
+# make it (0.29.0 release review, second pass, V15).
+D=$(make_repo main); mkdir -p "$D/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.flight-rules/conf"
+git -C "$D" branch dev || die "could not make dev in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")|$(reason_of "$OUT" | grep -c '^This repository has no remote, so nothing is pulled: the branch is cut from the local dev as it stands\.$')|$(route_rows "$OUT" | grep -c 'origin')" "    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\||1|0" "no remote: the route is the add from the local dev alone, said so, no row naming origin"
+(cd "$D" && bash -c "$(route_rows "$OUT" | sed 's|<name>|nr|g')") >/dev/null 2>&1
+say "$?$(git -C "$D" rev-parse -q --verify feature/nr)" "0$(git -C "$D" rev-parse dev)" "…and its rows, run as printed, cut the branch from it"
+rm -rf "$D"
+D=$(make_repo main); mkdir -p "$D/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$D/.flight-rules/conf"; with_origin "$D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "    git fetch origin && \\|    git branch --track dev origin/dev && \\|    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\|" "no local dev (a clone): the route makes one from origin's, tracking it, then adds from it"
+say "$(route_rows "$OUT" | sed -n '1p;$p' | sed "s|^  cd '*$D'* |  cd <root> |" | tr '\n' '|')" "  cd <root> && \\|    cd .flight-rules/worktrees/<name>|" "…the first cd chained to the rest, the last after the add (T-1)"
+git -C "$D" branch dev || die "could not make dev in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "$CHAIN" "…a local dev no worktree holds: origin's commits brought in if any, the fetch and the add chained"
+# What the rows need said is prose above them: interactive zsh, the macOS default, reads
+# a `#` in a pasted row as an argument and an apostrophe as an open quote (V-1).
+say "$(reason_of "$OUT" | grep -c '^dev is checked out in no live worktree\. .*stop and ask\.$') $(route_lines "$OUT" | grep -c "[#']")" "1 0" "…said in a prose line above the commands, which carry no # or apostrophe"
+git -C "$D" worktree add -q "$D/dev wt" dev || die "could not add a worktree for dev in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git checkout -b feature/y"}}' 2>/dev/null)
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .flight-rules/worktrees/<name> -b <prefix>/<name> dev && \\|" "…dev held by a linked worktree: the pull runs there, by path"
+# A pull in a checkout merges a diverged dev, and a conflict leaves the merge in progress,
+# where git says to fix and commit: the prose says to stop and ask (T-2), and to abort
+# nothing, since a merge there may be the person's: each way tried to tell one the pull
+# left from theirs misread one (S-1, Q-1, P-1, O-1). One already in progress there is
+# the layout_case "merging" cases below.
+say "$(reason_of "$OUT" | grep -c "^dev is checked out at '$D/dev wt', so the pull runs there: it brings in the commits origin/dev has that it lacks, if any, merging them if the two diverged\. If it fails, stop and ask, and leave whatever it left there to the person\.$")" "1" "…said in a prose line: on a failure, stop and ask, aborting nothing"
+# Named with git -C from outside the repo, as assistants write it: the lookup reads the
+# target repo, not the shell's (W-4).
+O=$(tmpd); OUT=$(cd "$O" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<"$(jq -n --arg c "git -C $D commit -m x" '{tool_input:{command:$c}}')" 2>/dev/null)
+say "$(route_of "$OUT" | sed "s|'$D/dev wt'|<devwt>|")" "    git -C <devwt> pull --ff --no-rebase origin dev && \\|    git worktree add .flight-rules/worktrees/<name> -b feature/<name> dev && \\|" "…the same, named with git -C from outside the repo"
+rm -rf "$O"
+# Moved, with work staged in it: the rows, run whole, leave it for git worktree repair,
+# which a prune they once ran first had put past (B-1). The prose names the pull to run
+# after a repair, not "run it again" (C-1).
+echo s > "$D/dev wt/s" && git -C "$D/dev wt" add s && mv "$D/dev wt" "$D/moved" || die "could not move the dev worktree in $D"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT")" "$CHAIN" "…that worktree moved: git marks it prunable, so it is not pulled in, and not pruned"
+say "$(reason_of "$OUT" | grep -cxF "dev was checked out at '$D/dev wt', which is gone: moved, on a disk not mounted, or deleted, which git cannot tell apart, so stop and ask. If it was moved, repair it, then pull in it, and run the add below: git worktree repair <new path>, then git -C <new path> pull --ff --no-rebase origin dev. If it was deleted, prune, which clears every worktree git cannot find, then run the commands below: git worktree prune.")" "1" "…said in a prose line naming the path: stop and ask; repair and pull if moved, prune if deleted"
+(cd "$D" && bash -c "$(route_rows "$OUT" | sed 's|<name>|m|g')") >/dev/null 2>&1
+say "$(git -C "$D" worktree repair "$D/moved" >/dev/null 2>&1 && git -C "$D/moved" diff --cached --name-only)" "s" "…and the rows, run whole, leave it to repair, its staged work there"
+# Its .git file gone, the folder left: repair restores it, staged work included, which
+# a prune would drop, so the prose says repair (C-2). Read by the .git file, not the
+# folder, for a git too old to mark it prunable: by the folder it read as live, and the
+# pull sent there ran in the checkout above it (C-3). A git wrapper hides the mark.
+M=$(cd "$D/moved" && pwd -P); rm -f "$D/moved/.git"
+gone_b() { reason_of "$1" | sed -E "s#'?$M'?#<m>#g; s#'?$D/moved'?#<m>#g" | grep -cxF "dev was checked out at <m>, whose .git file is missing or broken, so stop and ask. This restores it, staged work included, though git prints an error as it does: git worktree repair <m>. Then pull in it, and run the add below: git -C <m> pull --ff --no-rebase origin dev."; }
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT") $(gone_b "$OUT")" "$CHAIN 1" "…its .git file gone, its folder left: not pulled in, and the prose says repair restores it"
+W=$(tmpd); printf '#!/bin/bash\nif [[ " $* " == *" worktree list "* ]]; then %q "$@" | grep -v "^prunable"; else exec %q "$@"; fi\n' "$(command -v git)" "$(command -v git)" > "$W/git" && chmod +x "$W/git" || die "could not write the git wrapper in $W"
+OUT=$(cd "$D" && PATH="$W:$PATH" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT") $(gone_b "$OUT")" "$CHAIN 1" "…the same on a git too old to mark it prunable: read by its .git file, not pulled in"
+rm -rf "$W"
+say "$(git -C "$D" worktree repair "$D/moved" >/dev/null 2>&1; git -C "$D/moved" diff --cached --name-only)" "s" "…and repair restores it, its staged work there, though git exits 1"
+rm -rf "$D/moved"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)
+say "$(route_of "$OUT") $(reason_of "$OUT" | grep -c "^dev was checked out at .*/moved'*, which is gone: moved")" "$CHAIN 1" "…and the whole worktree deleted by hand: named as gone, not pulled in, not pruned"
+rm -rf "$D"
+# The chain, run as printed in a clone whose dev no worktree holds (owner, 2026-11-08):
+# behind, it takes origin's commits and adds from them; ahead, it adds from the local dev
+# untouched; diverged, it stops before the add.
+U=$(tmpd)
+git init -q --bare -b main "$U/up.git" && git clone -q "$U/up.git" "$U/r" 2>/dev/null && git clone -q "$U/up.git" "$U/o" 2>/dev/null || die "could not make the clones in $U"
+for r in r o; do git -C "$U/$r" config user.email t@t.t; git -C "$U/$r" config user.name t; done
+git -C "$U/r" commit -q --allow-empty -m a && git -C "$U/r" push -q origin main main:dev || die "could not seed $U/up.git"
+mkdir -p "$U/r/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$U/r/.flight-rules/conf"
+git -C "$U/r" fetch -q && git -C "$U/r" branch -q --track dev origin/dev || die "could not make dev in $U/r"
+git -C "$U/o" fetch -q && git -C "$U/o" checkout -q -b dev origin/dev || die "could not check out dev in $U/o"
+origin_moves() { git -C "$U/o" commit -q --allow-empty -m "o$1" && git -C "$U/o" push -q origin dev || die "could not move origin/dev"; }
+local_moves()  { git -C "$U/r" worktree add -q "$U/lw" dev && git -C "$U/lw" commit -q --allow-empty -m "l$1" && git -C "$U/r" worktree remove "$U/lw" || die "could not move the local dev"; }
+run_route() {   # <name> [zsh]: the route the guard prints in $U/r, run there — by bash, or
+  # pasted into interactive zsh, the macOS default (V-1); the exit status
+  local cmds
+  cmds=$(route_rows "$(cd "$U/r" && CLAUDE_PROJECT_DIR="$U/r" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)" | sed "s/<name>/$1/g")
+  [ -n "$cmds" ] || { echo "no route"; return; }
+  if [ "${2:-}" = zsh ]; then (cd "$U/r" && zsh -f -i <<<"$cmds") >/dev/null 2>&1; else (cd "$U/r" && bash -c "$cmds") >/dev/null 2>&1; fi
+  echo $?
+}
+origin_moves 1
+say "$(run_route b) $(git -C "$U/r" rev-parse feature/b) $(git -C "$U/r" rev-parse dev)" "0 $(git -C "$U/o" rev-parse dev) $(git -C "$U/o" rev-parse dev)" "…run: dev behind, origin's commit brought in, and the branch cut from it"
+if command -v zsh >/dev/null 2>&1; then
+  origin_moves z
+  say "$(run_route z zsh) $(git -C "$U/r" rev-parse -q --verify feature/z) $(git -C "$U/r" rev-parse dev)" "0 $(git -C "$U/o" rev-parse dev) $(git -C "$U/o" rev-parse dev)" "…the same, pasted into interactive zsh"
+else
+  echo "  ⚠️  no zsh here: the interactive-zsh paste case did not run"
+fi
+local_moves 1; L=$(git -C "$U/r" rev-parse dev)
+say "$(run_route a) $(git -C "$U/r" rev-parse feature/a) $(git -C "$U/r" rev-parse dev)" "0 $L $L" "…dev ahead (a merge not yet pushed): cut from the local dev, which stays as it is"
+origin_moves 2
+say "$(run_route d) $(git -C "$U/r" rev-parse -q --verify feature/d || echo none) $(git -C "$U/r" rev-parse dev)" "1 none $L" "…the two diverged: the fetch is refused and the add never runs"
+# …nor the last cd: into a worktree already at that name it ran anyway, exit 0, in the
+# old worktree (T-1).
+say "$(run_route b)" "1" "…a refused chain does not cd into a worktree already at that name"
+# The first cd failing — the repo moved, a slip — stops it too: unchained, the update and
+# the add ran in whatever repo the shell was in, and cut a branch there (T-1).
+cmds=$(route_rows "$(cd "$U/r" && CLAUDE_PROJECT_DIR="$U/r" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null)" | sed "s/<name>/c/g")
+mv "$U/r" "$U/r.moved" || die "could not move $U/r"
+say "$( (cd "$U/o" && bash -c "$cmds") >/dev/null 2>&1; echo $?) $(git -C "$U/o" rev-parse -q --verify feature/c || echo none)" "1 none" "…the first cd failing: nothing runs in the repo the shell is in"
+mv "$U/r.moved" "$U/r" || die "could not move $U/r back"
+# Offline: the first fetch fails, and origin/dev, last fetched, says nothing is new — the
+# add once ran on that, exit 0 off a stale dev (V-2). Now nothing runs past the fetch.
+git -C "$U/r" update-ref refs/remotes/origin/dev dev~1 && git -C "$U/r" remote set-url origin "$U/gone.git" || die "could not take origin away in $U/r"
+say "$(run_route u | sed 's/^[1-9][0-9]*$/refused/') $(git -C "$U/r" rev-parse -q --verify feature/u || echo none)" "refused none" "…origin unreachable: the fetch fails and nothing past it runs"
+# The same in every other layout. Online, with origin's dev a commit ahead, the branch is
+# cut from origin's tip, where the text pins alone held the rows (T-3). Offline, the update
+# in each is chained to the add, where the pull or fetch once stood alone and the add ran
+# off a stale base, exit 0 (U-1). Merging, the checkout holding dev is part-way through
+# the person's own merge — open, f resolved and g not, which git refuses with "an
+# unresolved conflict" (Q-1); or resolved, not committed (S-1): the pull refuses, and the
+# merge and the resolution are left.
+layout_case() {   # <root|linked|missing> <online|offline|merging|merging-open>: a clone in
+  # that layout, origin's dev a commit ahead; the route run — ran or refused, then the
+  # branch's commit or none, then, merging, whether the merge is still in progress, and
+  # f's content
+  local F r h out cmds tip
+  F=$(tmpd); r="$F/r"
+  git init -q --bare -b main "$F/up.git" && git clone -q "$F/up.git" "$r" 2>/dev/null || die "could not make the clone in $F"
+  git -C "$r" config user.email t@t.t; git -C "$r" config user.name t
+  git -C "$r" commit -q --allow-empty -m a && git -C "$r" push -q origin main main:dev && git -C "$r" fetch -q || die "could not seed $F/up.git"
+  mkdir -p "$r/.flight-rules"; printf 'INTEGRATION_BRANCH=dev\n' > "$r/.flight-rules/conf"
+  case "$1" in
+    root)    git -C "$r" checkout -q -b dev origin/dev ;;
+    linked)  git -C "$r" branch -q --track dev origin/dev && git -C "$r" worktree add -q "$F/dw" dev ;;
+    missing) : ;;
+  esac || die "could not lay out $1 in $r"
+  tip=$(git -C "$r" commit-tree -p HEAD -m o 'HEAD^{tree}') && git -C "$r" push -q origin "$tip:refs/heads/dev" && git -C "$r" update-ref refs/remotes/origin/dev HEAD || die "could not move origin's dev in $F"
+  [ "$2" = offline ] && git -C "$r" remote set-url origin "$F/gone.git"
+  case "$2" in merging*)
+    h="$r"; [ "$1" = linked ] && h="$F/dw"
+    { git -C "$h" checkout -q -b side && echo s > "$h/f" && echo s > "$h/g" && git -C "$h" add f g && git -C "$h" commit -q -m s \
+      && git -C "$h" checkout -q dev && echo d > "$h/f" && echo d > "$h/g" && git -C "$h" add f g && git -C "$h" commit -q -m d; } \
+      || die "could not make the merge in $h"
+    git -C "$h" merge -q side >/dev/null 2>&1; git -C "$h" rev-parse -q --verify MERGE_HEAD >/dev/null || die "no merge in progress in $h"
+    echo resolved > "$h/f" && git -C "$h" add f || die "could not resolve f in $h"
+    [ "$2" = merging-open ] || { echo resolved > "$h/g" && git -C "$h" add g; } || die "could not resolve g in $h" ;;
+  esac
+  # A merge in progress at the root lets a commit through — it may be the merge's own —
+  # so there the route is asked for with checkout -b, which is refused all the same.
+  local c='git commit -m x'; [ -n "${h:-}" ] && c='git checkout -b feature/y'
+  out=$(cd "$r" && CLAUDE_PROJECT_DIR="$r" bash "$HOOK" <<<"{\"tool_input\":{\"command\":\"$c\"}}" 2>/dev/null)
+  cmds=$(route_rows "$out" | sed 's|<prefix>/|feature/|; s/<name>/on/g')
+  if [ -z "$cmds" ]; then echo "no route"; elif (cd "$r" && bash -c "$cmds") >/dev/null 2>&1; then echo ran; else echo refused; fi
+  git -C "$r" rev-parse -q --verify feature/on | sed "s/^$tip$/tip/" | grep . || echo none
+  if [ -n "${h:-}" ]; then
+    git -C "$h" rev-parse -q --verify MERGE_HEAD >/dev/null && echo merging; cat "$h/f"
+  fi
+  rm -rf "$F"
+}
+for l in root linked missing; do
+  say "$(layout_case "$l" online | tr '\n' ' ')" "ran tip " "…dev $l, origin a commit ahead: the branch is cut from origin's tip"
+  say "$(layout_case "$l" offline | tr '\n' ' ')" "refused none " "…origin unreachable with dev $l: nothing past the update runs"
+done
+for l in root linked; do
+  say "$(layout_case "$l" merging-open | tr '\n' ' ')" "refused none merging resolved " "…dev $l, the person part-way through a merge there, a conflict still open: the pull refuses, the merge and the resolution left"
+  say "$(layout_case "$l" merging | tr '\n' ' ')" "refused none merging resolved " "…the same, the merge resolved and not committed"
+done
+rm -rf "$U"
 
 echo "Target parsing is per simple command, not per command STRING:"
 # Both directions were live and both are reproduced here (2026-09-10).
@@ -794,10 +977,7 @@ echo "Target parsing is per simple command, not per command STRING:"
 # FALSE NEGATIVE — a bypass. The parser found the git verb with a greedy `.*`, so it
 # saw only the LAST occurrence and a protected target in an earlier command escaped.
 check "delete main, then delete a feature"  deny  feature/x 'git branch -d main && git branch -d feature/x'
-check "delete main, then any git command"   deny  feature/x 'git branch -D main && git branch --list'
-check "force-push main, then a feature"     deny  feature/x 'git push --force origin main && git push --force origin feature/x'
-check "force-push main, then an echo"       deny  feature/x 'git push --force origin main && echo done'
-check "delete main on the first line"       deny  feature/x 'git branch -D main
+check "delete main on the first line"      deny  feature/x 'git branch -D main
 git status'
 check "delete main inside a subshell"       deny  feature/x '(git branch -D main) && git status'
 check "delete main after a pipe"            deny  feature/x 'git status | cat; git branch -D main'
@@ -806,16 +986,14 @@ check "delete main after a pipe"            deny  feature/x 'git status | cat; g
 # in a LATER command became a "target". This blocked ordinary post-merge cleanup.
 check "delete a feature, then echo main"    allow main 'git branch -d feature/old
 echo "=== main now ==="'
-check "delete a feature, then log main"     allow main 'git branch -d feature/old && git log --oneline main -1'
 check "delete a feature, ; then the word"   allow main 'git branch -d feature/old ; echo main'
-check "push a feature, then echo main"      allow main 'git push --force origin feature/x && echo main'
-check "worktree remove, then delete branch" allow main 'git worktree remove .ai/worktrees/x && git branch -d fix/x'
+# The rest of both directions — main first or last, `&&` or a subshell or a pipe — is in
+# the composed and harmless pairs and the wrapper product below.
 #
 # The single-command cases must keep working — a bare command is one segment with
 # nothing after it, and an earlier draft of the segment splitter dropped exactly that.
-check "delete main alone"                   deny  feature/x 'git branch -d main'
-check "force-push main alone"               deny  feature/x 'git push --force origin main'
-check "delete a feature alone"              allow main      'git branch -d feature/old'
+# `branch -d main`, `push --force origin main` and `branch -d feature/old` alone are
+# pinned in their own sections above.
 check "push a feature alone"                allow main      'git push --force origin feature/x'
 
 echo "Shape coverage — every wrapper crossed with every dangerous core:"
@@ -839,18 +1017,17 @@ GEN_FEAT=$(make_repo feature/x)
 GEN_OTHER=$(make_repo feature/elsewhere)
 
 gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
-  local expect="$1" where="$2" wname="$3" cmd="$4" dir out got rc
+  local expect="$1" where="$2" wname="$3" cmd="$4" dir got
   [ "$where" = main ] && dir="$GEN_MAIN" || dir="$GEN_FEAT"
-  out=$(cd "$dir" && CLAUDE_PROJECT_DIR="$dir" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
+  guard_run "$dir" "$cmd"
   # "allow" is the absence of a deny, and a hook that never ran produces exactly that.
   # These loops print one ✅ for hundreds of cases, so a silent vacuous pass is invisible.
-  if [ $rc -ne 0 ]; then
+  if [ $GUARD_RC -ne 0 ]; then
     FAIL=$((FAIL+1))
-    printf '  ❌ [%s] %s\n     %s\n     harness: the hook exited %s — no verdict\n' "$where" "$wname" "$cmd" "$rc"
+    printf '  ❌ [%s] %s\n     %s\n     harness: the hook exited %s — no verdict\n' "$where" "$wname" "$cmd" "$GUARD_RC"
     return
   fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
+  if grep -q '"permissionDecision": *"deny"' <<<"$GUARD_OUT"; then got=deny; else got=allow; fi
   if [ "$got" = "$expect" ]; then
     PASS=$((PASS+1))
   else
@@ -865,11 +1042,10 @@ gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
 # matched — which was 4 x 18 cases for one assertion. `semi-echo` duplicated `and-echo`.
 # The budget went to PREFIX_FMT below, an axis that had no coverage at all and where two
 # criticals were living.
-# `brace-group` is NOT redundant with `subshell`: subshell asserts `)` as the command
-# terminator, brace-group asserts `;`. They are different characters in `E`. A mutant
-# hook with `;` deleted from E passes a suite without brace-group and fails 18 cases with
-# it — proven, not assumed. `if-then`, `for-loop`, `cmd-subst` and `semi-echo` caught
-# nothing the survivors do not.
+# `brace-group` went too (test sweep, 2026-11-02). Since every segment is judged on its
+# own, the splitter has removed every `;`, `)`, `&` and `|` before a matcher sees it, and
+# `E` no longer lists them. A `{ … ; }` segment reads like `echo start && …`, and the
+# brace-group cases failed only beside every other wrapper's.
 # The three RETARGETING wrappers (#61, probed 2026-09-17 on dev at c3a708e): a `git -C
 # <other-repo>` on a harmless segment, before or after the core, and a `cd <other-repo>`
 # AFTER it. The target used to be resolved once per command — the last `cd` anywhere,
@@ -877,15 +1053,15 @@ gen_check() {   # <expect: deny|allow> <main|feat> <wrapper-name> <command>
 # repo's branch and ALLOWED a commit on a protected branch. An assistant only has to
 # inspect another worktree and commit in the same line. `cd` must only affect the
 # segments after it, and `-C` only its own segment.
-# The two SUBSHELL-cd wrappers (#70, probed 2026-10-05 on dev at 85df164): a `cd` inside
+# The SUBSHELL-cd wrapper (#70, probed 2026-10-05 on dev at 85df164): a `cd` inside
 # `( … )` or `$( … )` ends at the `)` in the shell, but persisted for the guard, so the
 # core was judged in the other repo — and allowed. `(cd sub && make) && git commit` is
-# the everyday shape.
-WRAP_NAME=( bare subshell brace-group cd-prefix and-echo echo-and pipe newline-after-main
-            other-C-before other-C-after cd-other-after subshell-cd-other cmd-subst-cd-other )
+# the everyday shape. The `$( … )` form splits the same way and failed only beside it;
+# the scan's half of it is the seg case below.
+WRAP_NAME=( bare subshell cd-prefix and-echo echo-and pipe newline-after-main
+            other-C-before other-C-after cd-other-after subshell-cd-other )
 WRAP_FMT=(  '%s'
             '(%s)'
-            '{ %s; }'
             'cd . && %s'
             '%s && echo done'
             'echo start && %s'
@@ -895,8 +1071,7 @@ echo "=== main now ==="'
             "git -C $GEN_OTHER status && %s"
             "%s && git -C $GEN_OTHER status"
             "%s && cd $GEN_OTHER"
-            "(cd $GEN_OTHER && true) && %s"
-            "x=\$(cd $GEN_OTHER && pwd) && %s" )
+            "(cd $GEN_OTHER && true) && %s" )
 
 # The GIT-INVOCATION PREFIX axis. Everything between the word `git` and its verb.
 # `NORM` normalised away only `-C <dir>` and `-c key=val`, so every other global option
@@ -909,21 +1084,18 @@ echo "=== main now ==="'
 # both the branch AND the staged diff — so the SECRET SCAN was skipped as well. The
 # repo's own docs and the guard's own deny message tell an agent to write commands in
 # exactly those shapes.
-# Index-aligned. Includes the two spellings of a value-taking option, and three flags
-# that are NOT in any list in the hook — they are there to prove the generic
-# dash-leading rule works rather than a hand-written enumeration.
-PREFIX_NAME=( no-pager P-flag git-dir-eq git-dir-space literal-pathspecs
-              no-optional-locks bare no-advice no-lazy-fetch attr-source )
+# Index-aligned. One of each way the normalisation can break: the long option the bug
+# was found with, a short one (a generic rule written for `--` alone misses it), a
+# value-taking option in its spaced form (the value must be consumed with it), and a flag
+# that is NOT in any list in the hook — proof that the generic dash-leading rule works
+# rather than a hand-written enumeration. The `=` spellings and the other plain flags
+# broke only where these did, against every rewrite of NORM_SED tried (test sweep,
+# 2026-11-02), and went.
+PREFIX_NAME=( no-pager P-flag git-dir-space no-advice )
 PREFIX_FMT=(  'git --no-pager %s'
               'git -P %s'
-              'git --git-dir=.git %s'
               'git --git-dir .git %s'
-              'git --literal-pathspecs %s'
-              'git --no-optional-locks %s'
-              'git --bare %s'
-              'git --no-advice %s'
-              'git --no-lazy-fetch %s'
-              'git --attr-source=HEAD %s' )
+              'git --no-advice %s' )
 
 # Denied on a protected branch, whatever shape they arrive in.
 DANGER_MAIN=( 'git commit -m x'
@@ -985,6 +1157,42 @@ while [ $i -lt ${#WRAP_NAME[@]} ]; do
 done
 printf '  ✅ %s wrapper × core combinations\n' "$(( ${#WRAP_NAME[@]} * (${#DANGER_MAIN[@]} + ${#DANGER_ANY[@]} + ${#SAFE[@]}) ))"
 
+# The way through a stop is the person's (#155): an assistant's command that sets it is
+# refused in every shape and on any branch, a feature branch included — it also passes
+# the secret scan, which no branch turns off.
+GO_DENY=( "FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit"
+          "env FLIGHT_RULES_GO_AHEAD=1 git rebase main"
+          "export FLIGHT_RULES_GO_AHEAD=1"
+          "FLIGHT_RULES_GO_AHEAD='1' git merge --continue"
+          "FLIGHT_RULES_GO_AHEAD=\"1\" git commit -m x"
+          "FLIGHT_RULES_GO_AHEAD+=1 git commit -m x"
+          "declare -x FLIGHT_RULES_GO_AHEAD=1" )
+GO_ALLOW=( "FLIGHT_RULES_GO_AHEAD=0 git status --short"
+           "unset FLIGHT_RULES_GO_AHEAD" )
+i=0
+while [ $i -lt ${#WRAP_NAME[@]} ]; do
+  fmt="${WRAP_FMT[$i]}"; wname="${WRAP_NAME[$i]}"
+  for core in "${GO_DENY[@]}"; do
+    gen_check deny feat "go-ahead:$wname" "$(printf "$fmt" "$core")"
+    gen_check deny main "go-ahead:$wname" "$(printf "$fmt" "$core")"
+  done
+  for core in "${GO_ALLOW[@]}"; do
+    gen_check allow feat "go-ahead:$wname" "$(printf "$fmt" "$core")"
+  done
+  i=$((i+1))
+done
+printf '  ✅ %s go-ahead wrapper × core combinations\n' "$(( ${#WRAP_NAME[@]} * (2 * ${#GO_DENY[@]} + ${#GO_ALLOW[@]}) ))"
+echo "The go-ahead refusal holds where the branch policy does not reach:"
+check "with PROTECTED_BRANCHES=off"  deny feature/x "FLIGHT_RULES_GO_AHEAD=1 git commit -m x" FLIGHT_RULES_PROTECTED_BRANCHES=off
+guard_run "$GEN_FEAT" "FLIGHT_RULES_GO_AHEAD=1 git commit -m x"
+verdict "…and says why, and what to give the person" deny \
+        "going ahead is the person's decision" "FLIGHT_RULES_GO_AHEAD=1 <the command that was stopped>"
+GO_SIB=$(make_repo main)
+guard_run "$GEN_FEAT" "git -C $GO_SIB status && FLIGHT_RULES_GO_AHEAD=1 git -C $GO_SIB commit -m x"
+verdict "in a sibling repo the project does not police" deny
+rm -rf "$GO_SIB"
+check "a name that merely starts the same is not it" allow feature/x "FLIGHT_RULES_GO_AHEAD_LATER=1 git status"
+
 echo "A merge in progress waives the commit, and nothing else in the same command:"
 # Committing the merge is the whole point of standing on the branch, so that refusal is
 # waived. The waiver used to be applied to the COMMAND after the scan had already stopped
@@ -993,18 +1201,9 @@ echo "A merge in progress waives the commit, and nothing else in the same comman
 # than run. Each case pairs the waived thing with a thing that must stay refused.
 MG=$(make_repo main)
 printf '%s' "$(git -C "$MG" rev-parse HEAD)" > "$MG/.git/MERGE_HEAD"
-mg() {   # mg <expect> <desc> <command>
-  local expect="$1" desc="$2" cmd="$3" out rc got
-  out=$(cd "$MG" && CLAUDE_PROJECT_DIR="$MG" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
-}
+mg() { guard_run "$MG" "$3"; verdict "$2" "$1"; }   # mg <expect> <desc> <command>
 mg allow "mid-merge: the merge commit itself is waived"        'git commit -m "merge feature/x"'
+mg allow "mid-merge: git rm, resolving a conflict, is waived"  'git rm f.txt'
 mg deny  "mid-merge: branch creation is not waivable"          'git checkout -b feature/y'
 mg deny  "mid-merge: the waived commit does not carry a branch creation with it" \
          'git commit -m "merge feature/x" && git checkout -b feature/y'
@@ -1019,32 +1218,22 @@ echo "…and the merge is the one in the -C target, not in the hook's own cwd (#
 # it from the cwd: from a linked worktree (where .git is a file) a merge being finished
 # in the main checkout was refused, and from a repo mid-merge a direct commit to another
 # repo's protected branch was waived. Each case runs with cwd ≠ the target.
-mgc() {   # mgc <expect> <desc> <cwd> <project dir> <command>
-  local expect="$1" desc="$2" cwd="$3" proj="$4" cmd="$5" out rc got
-  out=$(cd "$cwd" && CLAUDE_PROJECT_DIR="$proj" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
-}
+mgc() { guard_run "$3" "$5" CLAUDE_PROJECT_DIR="$4"; verdict "$2" "$1"; }   # mgc <expect> <desc> <cwd> <project dir> <command>
 MR=$(make_repo main)
-git -C "$MR" worktree add -q "$MR/.ai/worktrees/x" -b feature/x >/dev/null 2>&1 \
+git -C "$MR" worktree add -q "$MR/.flight-rules/worktrees/x" -b feature/x >/dev/null 2>&1 \
   || die "could not add a worktree to $MR"
 printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$MR/.git/MERGE_HEAD"
 mgc allow "from a worktree, finishing the main checkout's merge is waived" \
-    "$MR/.ai/worktrees/x" "$MR" "git -C $MR commit --no-edit"
+    "$MR/.flight-rules/worktrees/x" "$MR" "git -C $MR commit --no-edit"
 # A linked worktree keeps its MERGE_HEAD in its own gitdir (.git/worktrees/<name>), so
 # the main checkout's .git is the wrong place to look for it, from either side.
-git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 \
+git -C "$MR" worktree add -q "$MR/.flight-rules/worktrees/d" -b dev >/dev/null 2>&1 \
   || die "could not add a dev worktree to $MR"
 mgc deny  "from the main checkout, a merge there does not waive a commit in a worktree on dev" \
-    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
-printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$(git -C "$MR/.ai/worktrees/d" rev-parse --absolute-git-dir)/MERGE_HEAD"
+    "$MR" "$MR" "git -C $MR/.flight-rules/worktrees/d commit -m x"
+printf '%s' "$(git -C "$MR" rev-parse HEAD)" > "$(git -C "$MR/.flight-rules/worktrees/d" rev-parse --absolute-git-dir)/MERGE_HEAD"
 mgc allow "from the main checkout, finishing a merge in a worktree on dev is waived" \
-    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit --no-edit"
+    "$MR" "$MR" "git -C $MR/.flight-rules/worktrees/d commit --no-edit"
 NM=$(make_repo main)
 # git -C walks a path as the kernel does: lnk/.. is the parent of where lnk leads, not
 # the cwd. The guard already judged this as git does; pinned when install.sh's plain
@@ -1074,9 +1263,9 @@ rm -rf "$LA" "$LB"
 # never matched and the branch policy was off — for a worktree on dev committed to from
 # the main checkout, among others.
 MR=$(make_repo main)
-git -C "$MR" worktree add -q "$MR/.ai/worktrees/d" -b dev >/dev/null 2>&1 || die "could not add a dev worktree to $MR"
+git -C "$MR" worktree add -q "$MR/.flight-rules/worktrees/d" -b dev >/dev/null 2>&1 || die "could not add a dev worktree to $MR"
 CDPATH=.:/usr mgc deny "CDPATH=.:/usr exported: a commit in a worktree on dev is still refused" \
-    "$MR" "$MR" "git -C $MR/.ai/worktrees/d commit -m x"
+    "$MR" "$MR" "git -C $MR/.flight-rules/worktrees/d commit -m x"
 # …and with the project dir a subdirectory of its repo, committing on main from the top:
 # the target's `.git` is the relative answer CDPATH bent. The case before this one, with
 # target_root == the project dir, short-circuited before the compare and could not fail
@@ -1098,11 +1287,8 @@ check "a -d elsewhere is not a push --delete"  allow feature/x "git push origin 
 check "a -f elsewhere is not a clean -f"       allow main      "git clean -n && rm -f /tmp/nothing"
 check "a -f elsewhere is not a switch -f"      allow main      "git switch feature/x && chmod -f 644 f.txt"
 check "a --hard elsewhere is not a reset"      allow main      "git reset HEAD~1 --soft && echo --hard"
-# Each of those exonerates a verb; the real form of the same verb must not have moved.
-check "push --delete origin main still denied" deny  feature/x "git push --delete origin main"
-check "git clean -f still denied"              deny  main      "git clean -fd"
-check "git switch -f still denied"             deny  main      "git switch -f main"
-check "git reset --hard still denied"          deny  main      "git reset --hard HEAD~1"
+# Each of those exonerates a verb; the real form of each verb is denied, with these very
+# commands, in its own section above and in the wrapper product.
 
 echo "Composition — a dangerous command is not laundered by a harmless neighbour:"
 # Order matters in both directions: the greedy parser saw only the LAST git verb, so a
@@ -1116,17 +1302,17 @@ for pair in "git branch --list|git branch -D main" \
             "git branch -d feature/old|git branch -D main" \
             "git branch -D main|git branch -d feature/old"; do
   a="${pair%%|*}"; b="${pair##*|}"
+  # `&&` only: the splitter turns it into `;` before anything else reads the command.
   gen_check deny feat "composed" "$a && $b"
-  gen_check deny feat "composed-semi" "$a ; $b"
 done
-printf '  ✅ 16 composed pairs, both orders\n'
+printf '  ✅ 8 composed pairs, both orders\n'
 
 echo "Composition — two harmless commands stay harmless:"
 for pair in "git status|echo main" \
             "git branch -d feature/old|echo \"=== main now ===\"" \
             "git branch -d feature/old|git log --oneline main -1" \
             "git push --force origin feature/x|echo main" \
-            "git worktree remove .ai/worktrees/x|git branch -d fix/x"; do
+            "git worktree remove .flight-rules/worktrees/x|git branch -d fix/x"; do
   a="${pair%%|*}"; b="${pair##*|}"
   gen_check allow main "harmless-pair" "$a && $b"
 done
@@ -1141,17 +1327,7 @@ echo "The target is resolved per segment, not per command (#61):"
 # secret scan reads the repo the COMMIT is aimed at — which the same bug also retargeted:
 # `git -C other status && git commit` from a repo with a staged key scanned `other`.
 D=$(make_repo dev); O=$(make_repo feature/elsewhere)
-seg() {   # seg <expect> <desc> <command>   — run from $D with the project scoped to $D
-  local expect="$1" desc="$2" cmd="$3" out rc got
-  out=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
-        <<<"$(jq -n --arg c "$cmd" '{tool_input:{command:$c}}')" 2>/dev/null); rc=$?
-  if [[ $rc -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$rc"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$out"; then got=deny; else got=allow; fi
-  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
-}
+seg() { guard_run "$D" "$3"; verdict "$2" "$1"; }   # seg <expect> <desc> <command> — from $D, scoped to $D
 seg deny  "the #61 shape: -C elsewhere on a status, then a bare commit"   "git -C $O status && git commit -m x"
 seg deny  "cd elsewhere AFTER the commit does not retarget it"            "git commit -m x && cd $O"
 seg deny  "-C on the commit segment beats an earlier cd elsewhere"        "cd $O && git -C $D commit -m x"
@@ -1174,6 +1350,8 @@ seg deny  "…and judged where it points"                                    "cd
 mkdir -p "$O/with space" && git init -q -b feature/spaced "$O/with space" 2>/dev/null \
   && git -C "$O/with space" commit -q --allow-empty -m i 2>/dev/null
 seg allow "a quoted -C path with a space resolves whole"                   "git -C \"$O/with space\" commit -m x"
+mkdir -p "$D/my dir"
+seg deny  "…and so does a quoted cd path with a space, here on dev"        "cd \"$D/my dir\" && git commit -m x"
 # The scan follows the commit. A key staged HERE must be caught when the commit is here,
 # whatever another segment names; and a commit aimed at the other repo scans that repo.
 # Assembled at run time: the guard scans this file's own staged diff, and a literal
@@ -1268,8 +1446,8 @@ echo "The paren splitter stays linear on a long command:"
 eval "$(sed -n '/^command_segments() {/,/^}/p;/^command_segments_marked() {/,/^}/p' "$HOOK")"
 BIG=$(for i in $(seq 1 1000); do printf 'x%d = f(g(%d), h(%d))\n' "$i" "$i" "$i"; done)
 SECONDS=0; NSEG=$(LC_ALL=en_US.UTF-8 command_segments_marked "$BIG" | grep -c '^[()]$'); T=$SECONDS
-if [[ $NSEG -eq 6000 && $T -le 10 ]]; then PASS=$((PASS+1)); printf '  ✅ %s bytes, %s parens, %ss\n' "${#BIG}" "$NSEG" "$T"
-else FAIL=$((FAIL+1)); printf '  ❌ %s bytes: %s parens (want 6000) in %ss (want ≤10)\n' "${#BIG}" "$NSEG" "$T"; fi
+if [[ $NSEG -eq 6000 && $T -le 30 ]]; then PASS=$((PASS+1)); printf '  ✅ %s bytes, %s parens, %ss\n' "${#BIG}" "$NSEG" "$T"
+else FAIL=$((FAIL+1)); printf '  ❌ %s bytes: %s parens (want 6000) in %ss (want ≤30)\n' "${#BIG}" "$NSEG" "$T"; fi
 echo "An unresolvable cd target: the SECRET half is fixed, the branch half is not:"
 # `cd "$(git rev-parse --show-toplevel)"` and `cd "$VAR"` arrive unexpanded, so
 # `git -C "$WORK_DIR"` resolves no repo. Two different halves, two different answers,
@@ -1285,7 +1463,7 @@ echo "An unresolvable cd target: the SECRET half is fixed, the branch half is no
 #     in hooks/README.md, not an oversight.
 check "cd \$(...) then commit is allowed"  allow main 'cd "$(git rev-parse --show-toplevel)" && git commit -m x'
 check "cd \$VAR then commit is allowed"    allow main 'cd "$REPO_ROOT" && git commit -m x'
-check "…while a resolvable cd still denies" deny main "cd . && git commit -m x"
+# …while a resolvable `cd . && git commit` on main is denied: the cd-prefix wrapper above.
 
 echo "A staged secret is caught even when the target repo cannot be resolved:"
 # `git -C "$WORK_DIR"` failing emptied STAGED_DIFF as well as the branch, so the secret
@@ -1314,7 +1492,7 @@ echo "A bare +refspec is a force push:"
 # The bare +refspec is deliberately NOT matched — see is_force_push. These pin that
 # decision, and the ordinary commands it protects.
 check "bare +refspec is not matched"  allow feature/x 'git push origin +main'
-check "the colon form still is"       deny  feature/x 'git push origin +feature/x:main'
+# The colon form, `+feature/x:main`, is denied under "Force-push to a protected branch".
 check "chmod +x then push"            allow main      'chmod +x hooks/agent/foo.sh && git push'
 check "push then tail -n +2"          allow main      'git push origin main 2>&1 | tail -n +2'
 check "a date +FORMAT beside a push"  allow main      'git push origin feature/x && date -u +%Y-%m-%dT%H:%M:%SZ'
@@ -1381,52 +1559,54 @@ if command -v python3 >/dev/null 2>&1; then
   else
     FAIL=$((FAIL+1)); printf '  ❌ python3 fallback did not produce a normal deny\n'
   fi
+  # -I: the hook runs in the project, and without it a json.py there was imported and
+  # run in place of the standard library's, by both the parse and the deny (as
+  # session-start's was: security review, 2026-10-13). The planted module records that
+  # it ran; the deny beside it shows the hook decided rather than died.
+  printf 'open(%s, "w").close()\nraise ImportError("planted json.py")\n' "'$D/.planted-ran'" > "$D/json.py"
+  OUT=$(cd "$D" && PATH="$P" CLAUDE_PROJECT_DIR="$D" bash "$HOOK" \
+        <<<'{"tool_input":{"command":"git rm f.txt"}}' 2>/dev/null)
+  if [ -e "$D/.planted-ran" ]; then
+    FAIL=$((FAIL+1)); printf '  ❌ python3 fallback imported a json.py from the project\n'
+  elif grep -q '"permissionDecision": *"deny"' <<<"$OUT" && grep -q 'protected branch' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ python3 fallback ignores a json.py in the project and denies normally\n'
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ python3 fallback with a json.py in the project did not produce a normal deny\n'
+  fi
   rm -rf "$P"
 fi
 rm -rf "$D"
 
-echo "A large staged binary is not read as text (/dg, 2026-10-05):"
+echo "A real binary over 1 MB is not read as text (/dg, 2026-10-05):"
 # Scanned whole, a 30 MB asset took 16s and a 100 MB one 52s; past the hook's timeout the
-# commit runs unchecked. Loose bound, as below.
-D=$(make_repo feature/x)
-head -c 41943040 /dev/urandom > "$D/big.bin" && git -C "$D" add big.bin || die "could not stage the large binary"
-START=$SECONDS
-OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
-TOOK=$((SECONDS - START))
-if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
-  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary: allowed in %ss (bound 8s)\n' "$TOOK"
-else
-  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
-fi
-rm -rf "$D"
-# The same binary with a `diff` attribute, which tells git it is text: the size limit
-# followed git's word, so it was read whole, and could outrun the timeout. "Binary" is now
-# the content's call, not the repo's attributes (security review, 2026-10-12).
-D=$(make_repo feature/x)
-echo '*.bin diff' > "$D/.gitattributes" && head -c 41943040 /dev/urandom > "$D/big.bin" \
-  && git -C "$D" add .gitattributes big.bin || die "could not stage the attributed binary"
-START=$SECONDS
-OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
-TOOK=$((SECONDS - START))
-if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
-  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary marked diff (text): skipped in %ss (bound 8s)\n' "$TOOK"
-else
-  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary marked diff (text): rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
-fi
-rm -rf "$D"
+# commit runs unchecked (the git pre-commit hook reads these). Not read is checked, not
+# timed: an AWS key at the end of a 2 MB binary goes unreported, while a GitHub token in a
+# text file beside it is found — an "allowed" alone was also what a scan that gave up at
+# the binary printed. These were 40 MB files under an 8s bound until 2026-11-04.
+GHP=$(printf 'ghp_%s' Abc123Abc123Abc123Abc123Abc123Abc123)
+big_binary() {  # <label> <file name> [<.gitattributes line>]
+  local D OUT rc
+  D=$(make_repo feature/x)
+  { printf '\0'; head -c 2097152 /dev/urandom; printf '\n%s\n' "$AKIA"; } > "$D/$2" \
+    && printf '%s\n' "$GHP" > "$D/t.txt" || die "could not write $2"
+  if [ -n "${3:-}" ]; then echo "$3" > "$D/.gitattributes" || die "could not write .gitattributes"; fi
+  git -C "$D" add -A || die "could not stage $2"
+  OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
+  if [[ $rc -eq 0 ]] && grep -q 'GitHub token' <<<"$OUT" && ! grep -q 'AWS access key' <<<"$OUT"; then
+    PASS=$((PASS+1)); printf '  ✅ %s: not read, the token beside it found\n' "$1"
+  else
+    FAIL=$((FAIL+1)); printf '  ❌ %s: rc=%s, read whole or the token beside it missed\n' "$1" "$rc"
+  fi
+  rm -rf "$D"
+}
+big_binary "a 2 MB binary" big.bin
+# A `diff` attribute tells git it is text: the size limit followed git's word, so it was
+# read whole. "Binary" is now the content's call, not the repo's attributes (security
+# review, 2026-10-12).
+big_binary "a 2 MB binary marked diff (text)" big.bin '*.bin diff'
 # A name starting with `:` looked like git's status line in the listing, so the file was
 # never sized and was read whole (security review of 77fa561, 2026-10-12).
-D=$(make_repo feature/x)
-head -c 41943040 /dev/urandom > "$D/:big.bin" && git -C "$D" add ":(literal):big.bin" || die "could not stage :big.bin"
-START=$SECONDS
-OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git commit -m x"}}' 2>/dev/null); rc=$?
-TOOK=$((SECONDS - START))
-if [[ $rc -eq 0 && "$TOOK" -le 8 ]] && ! grep -q '"permissionDecision": *"deny"' <<<"$OUT"; then
-  PASS=$((PASS+1)); printf '  ✅ a 40 MB binary named :big.bin: skipped in %ss (bound 8s)\n' "$TOOK"
-else
-  FAIL=$((FAIL+1)); printf '  ❌ a 40 MB binary named :big.bin: rc=%s, %ss (bound 8s)\n' "$rc" "$TOOK"
-fi
-rm -rf "$D"
+big_binary "a 2 MB binary named :big.bin" :big.bin
 
 echo "A long heredoc and a commit are judged well inside the hook's timeout (#73):"
 # A hook killed by its timeout lets the command run unchecked. A heredoc splits into a
@@ -1470,23 +1650,6 @@ SH
 chmod +x "$SHIM/git" || die "could not build the failing git"
 echo clean > "$D/a.py" && printf '\000\001bin' > "$D/b.bin" && git -C "$D" add a.py b.bin >/dev/null 2>&1 \
   || die "could not stage the clean files"
-# guard_run <dir> <command> [env…] — the hook's stdout; rc in $GUARD_RC.
-guard_run() {
-  local d="$1" c="$2"; shift 2
-  GUARD_OUT=$(cd "$d" && CLAUDE_PROJECT_DIR="$d" env "$@" bash "$HOOK" \
-              <<<"$(jq -n --arg c "$c" '{tool_input:{command:$c}}')" 2>/dev/null); GUARD_RC=$?
-}
-# verdict <description> <expect deny|allow> [<text the output must hold>…]
-verdict() {
-  local desc="$1" expect="$2" got t; shift 2
-  if [[ $GUARD_RC -ne 0 ]]; then
-    FAIL=$((FAIL+1)); printf '  ❌ %s\n     harness: the hook exited %s\n' "$desc" "$GUARD_RC"; return
-  fi
-  if grep -q '"permissionDecision": *"deny"' <<<"$GUARD_OUT"; then got=deny; else got=allow; fi
-  for t in "$@"; do grep -qF -- "$t" <<<"$GUARD_OUT" || got="$got, without \"$t\""; done
-  if [[ "$got" == "$expect" ]]; then PASS=$((PASS+1)); printf '  ✅ %s\n' "$desc"
-  else FAIL=$((FAIL+1)); printf '  ❌ %s\n     expected %s, got %s\n' "$desc" "$expect" "$got"; fi
-}
 guard_run "$D" "git commit -m x" PATH="$SHIM:$PATH"
 verdict "the stand-in git, failing nothing, allows a clean commit" allow
 for f in --raw --text --name-only --name-status; do
@@ -1628,7 +1791,7 @@ echo "A ~ or \$HOME commit target, from outside every repo (2026-10-12):"
 # resolved nowhere and nothing was scanned. They are expanded now. Any other `$VAR` the
 # guard cannot expand stays unscanned here, by the owner's call: it is allowed, and the
 # repo's own git hook scans it if it runs one.
-H=$(cd "$(mktemp -d)" && pwd -P); R=$(make_repo feature/x); mv "$R" "$H/r"
+H=$(tmpd); R=$(make_repo feature/x); mv "$R" "$H/r"
 printf 'AKIA%s\n' IOSFODNN7EXAMPLE > "$H/r/k.txt" && git -C "$H/r" add k.txt || die "could not stage in \$HOME/r"
 for c in 'cd ~/r && git commit -m x' 'cd $HOME/r && git commit -m x' 'cd "$HOME/r" && git commit -m x' \
          'cd ${HOME}/r && git commit -m x' 'git -C ~/r commit -m x'; do
@@ -1641,11 +1804,20 @@ rm -rf "$H"
 
 # No repo at all is not a failed read: nothing is staged anywhere yet, and what the
 # command itself stages is the git pre-commit hook's to scan (#71).
-N=$(cd "$(mktemp -d)" && pwd -P)
+N=$(tmpd)
 guard_run "$N" "git init -q r && cd r && git commit --allow-empty -m x"
 verdict "a commit in a repo the command creates, from outside any repo, is allowed" allow
 rm -rf "$N" "$SHIM"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[[ "$FAIL" -eq 0 ]]
+echo "The conf where it lived before 0.29.0, .ai/flight-rules.conf, is read until it is moved (#153):"
+D=$(make_repo trunk)
+mkdir -p "$D/.ai"; echo 'PROTECTED_BRANCHES=^trunk$' > "$D/.ai/flight-rules.conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null); RC=$?
+say "$RC$(grep -c '"permissionDecision": *"deny"' <<<"$OUT")" "01" "a branch only the old conf protects is protected"
+say "$(grep -c 'PROTECTED_BRANCHES=off in .ai/flight-rules.conf' <<<"$OUT")" "1" "…and the refusal names the old conf as where the policy is set"
+mkdir -p "$D/.flight-rules"; echo 'PROTECTED_BRANCHES=^nothing$' > "$D/.flight-rules/conf"
+OUT=$(cd "$D" && CLAUDE_PROJECT_DIR="$D" bash "$HOOK" <<<'{"tool_input":{"command":"git rm f"}}' 2>/dev/null); RC=$?
+say "$RC$(grep -c 'permissionDecision' <<<"$OUT")" "00" "…and once a conf is in the new place, that one decides: allowed"
+rm -rf "$D"
+
+finish

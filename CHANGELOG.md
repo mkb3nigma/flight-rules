@@ -4,6 +4,369 @@ What changes for someone who installs a new version — behaviour first, because
 what arrives without being asked for. Each entry says what the old version did and what
 this one does; every verdict below was run against both, not reasoned about.
 
+## 0.29.0 — 2026-11-16
+
+Every stop now prints the one command that goes ahead anyway —
+`FLIGHT_RULES_GO_AHEAD=1` in front of the command that finishes what was stopped — so
+flight-rules never blocks the developer; it is the person's to run, and the agent guard
+refuses an assistant's command that sets it. New branches start from the local
+integration branch, with origin's work pulled into it first, so a merge made here and
+not yet pushed is in them; the routes the hooks print when they refuse now say the
+same, and work in every layout they were tried in. A `pre-merge-check` note now has to
+show the check ran. A direct change to a protected branch that is not PR-only is warned
+of, never refused, at the move and at the push. What flight-rules keeps in a project
+moves from `.ai/` to `.flight-rules/`. A first guide ships: `/ux`, read only when an
+interface is built, changed or audited.
+
+### Upgrading
+
+**Git hooks changed** — `commit-msg`, `pre-commit`, `pre-merge-commit`, `pre-rebase`,
+`post-merge`, `reference-transaction` and `install.sh` — **and there is a seventh,
+`pre-push`**. Sync them, as for 0.28.0:
+`HOOK_SYNC=auto`, or `install.sh --stale-only`, copies `pre-push` in beside the others,
+and `install.sh` now refuses a set without it. The agent guard and the session-start
+hooks and the doctor arrive with the plugin.
+
+**What flight-rules keeps in a project moved from `.ai/` to `.flight-rules/`** (#153):
+the conf is `.flight-rules/conf`, the committed hook copies are `.flight-rules/hooks/`,
+and the default worktree folder is `.flight-rules/worktrees/`. `.ai/skills/`,
+`.ai/rules/` and `.ai/master-rules.md` stay where they are. The conf and the hooks
+keep working before a project moves: every hook and skill reads `.ai/flight-rules.conf`
+where the new conf is absent, `core.hooksPath` goes on naming `.ai/hooks` and the sync
+updates the copies there until the moved set exists beside them, and a fresh clone's `install.sh` wires them there. The
+worktree folder does not fall back: a project on the default puts its next worktree in
+`.flight-rules/worktrees/` (below). To move:
+
+- **The conf**, in two steps, like the hooks: a 0.28.0 hook or plugin reads only
+  `.ai/flight-rules.conf`, and finding none falls back to its built-in defaults without
+  a word — a custom branch pattern, the note gate, `PROTECTED_BRANCHES=off` undone. On a
+  branch, `mkdir -p .flight-rules && cp .ai/flight-rules.conf .flight-rules/conf`, and
+  commit both; 0.29.0 reads the new file, 0.28.0 the old. Later, once the committed
+  hook copies are 0.29.0's and every clone's plugin is on 0.29.0, on a branch: `git rm
+  .ai/flight-rules.conf`. Until then a change to the policy goes in both; the doctor
+  says which file it read, and when the two differ.
+- **The hooks**, in three steps, so that every checkout runs hooks throughout — the old
+  folder's until the setting changes, the moved ones after. `core.hooksPath` is one
+  setting for a clone and all its worktrees, and resolves in each. On a branch, `mkdir
+  -p .flight-rules && cp -R .ai/hooks .flight-rules/hooks`, commit and merge it; the old
+  folder gates that merge. Then, once every checkout and the local integration branch
+  have the copy — each by its branch's usual route: a pull, the integration branch
+  merged into a work branch, the PR of a branch that moves only by PR; the doctor names
+  any checkout without it, and the local integration branch, and prints the command only
+  then — in every clone, `git config core.hooksPath .flight-rules/hooks`. A checkout
+  without the copy then runs no hooks: the doctor, there or in any checkout that has the
+  copy, names it and how the move reaches it, with the setting that runs the old folder's
+  hooks meanwhile. Then, on a later branch,
+  `git rm -r .ai/hooks`. A clone left naming the old folder — gone, or still there with
+  something left in it — is told by the doctor, with the command. A
+  `.claude/settings.json` that `exec`s `.ai/hooks/agent/…` is changed with the copy.
+- **The worktrees**: a project that sets `WORKTREE_DIR` changes nothing. One on the
+  default either sets `WORKTREE_DIR=.ai/worktrees` to stay, or adds
+  `.flight-rules/worktrees/` to `.gitignore`; worktrees already made stay where they
+  are, and the session-start reminder still lists the merged ones there. The doctor
+  says so until `.gitignore` covers the new folder or `WORKTREE_DIR` is set — a ⚠️, so
+  to the assistant at session start and on the full report, not on the screen; and
+  `/feature-start` names the line when it makes a worktree in a folder not ignored.
+
+**A project with its own `pre-push`** (git-lfs installs one) renames it
+`pre-push.local` first. flight-rules' `pre-push` runs it after its own check, with the
+same arguments and input, and its exit status decides the push — as `pre-commit` runs
+`pre-commit.local`. Until it is renamed, `install.sh` refuses and prints the `mv`, the
+sync leaves it alone and names the rename, and the doctor says it does not look like
+flight-rules' hook. A first install that finds one in `.git/hooks` names it, with the
+way to keep it. The doctor also names a missing `pre-push`, and a `pre-push.local` that
+is not executable, which `pre-push` skips without a word.
+
+**Every `pre-merge-check` note made before this release is refused once** (#107). The
+note gate now takes a note only when its `passed:` line names the tree of the commit
+being merged and it has a `ran:` line. Run `/pre-merge-check` again on any branch
+stamped before the upgrade. A developer working alone writes both by hand, with `-f`
+over the old note (`hooks/README.md` → `commit-msg` has the command), or goes ahead with
+the command the refusal prints, which the merge's trailer records.
+
+**New branches are cut from the local integration branch** (#125), once origin's
+commits it lacks are pulled in; before, from `origin/<integration branch>`. A project
+that merges only by PR loses nothing: its local branch fast-forwards to origin's. One
+that wants branches cut from origin's says so in its own rules, which override; the
+hooks' printed routes still name the local branch until a switch exists (#141).
+
+**Rules changed**: `rules/git-worktree-workflow.md`, `rules/multi-ai-setup.md`, and
+`rules/engineering-principles.md` — injected into every session — which now opens with
+a `trigger: always_on` header for Antigravity (the session-start hook strips it before
+injecting), and changes three things an assistant does: it never takes the way through
+a stop prints, even when told to go ahead; it does not push to a protected branch
+unless the person asks in that session or the project's own written rules do; and a reply that reports work or asks for a
+decision assumes the reader remembers none of the earlier context and ends with the
+decisions it needs, each decidable alone, last (§7), with no two of its lists sharing a
+numbering — the Situation, Background, Assessment, Recommendation headings are this
+repo's own convention, not the shipped rule. A project that copied them runs `/rules-sync` to fold the changes in; one
+that reads the plugin's copy needs nothing.
+
+**Skills changed**: `/commit`, `/dg`, `/feature-start`, `/pr-create`,
+`/pre-merge-check` and `/rules-sync`, and a new one, `/ux`. Plugin users need do
+nothing; a project that copied one into `.ai/skills/` runs `/rules-sync`.
+
+**Antigravity users reinstall the plugin** to have the principles loaded into every
+session. **Codex users** may add the `SessionStart` entry in README → Consuming. In
+neither tool does the doctor run, so the git hooks are wired by hand there; the README
+says how.
+
+**What an adopter set that behaves differently:**
+- `PR_ONLY_BRANCHES`: a branch it names is no longer deleted by the agent guard, nor
+  offered for deletion by `post-merge`, when `PROTECTED_BRANCHES` leaves it out (#128).
+  A project that deletes a local PR-only branch on purpose runs the delete itself, or
+  sets `PR_ONLY_BRANCHES` so it no longer names it.
+- `PROTECTED_BRANCHES=off` (or `none`) also turns off the new warnings. With
+  `PR_ONLY_BRANCHES=off`, `main` is warned of as `dev` is, where before nothing was said.
+  It does not turn off the agent guard's refusal of a command that sets
+  `FLIGHT_RULES_GO_AHEAD`, which holds in any repo, on any branch.
+- `FLIGHT_RULES_GO_AHEAD` exported in a shell passes every stop there; the doctor
+  reports it as a ❌. Only the value `1` counts.
+- `.cursorrules` and `.windsurfrules` are gone from `multi-ai-setup.md`'s layout; a
+  project that has them keeps them working. `AGENTS.md` is the one to add, and
+  `GEMINI.md` for Gemini CLI.
+
+### Fixed
+
+- **A hand-written note passed the note gate** (#107). It took any note beginning
+  `passed:` as proof that `/pre-merge-check` ran, and an assistant wrote that note by
+  hand 12 times. `commit-msg` now needs the merged commit's tree on the `passed:` line
+  and a non-empty `ran:` line. Otherwise it refuses under "THE NOTE DOES NOT SHOW THE
+  CHECK", naming what the note lacks — no tree, a tree that is not a full, lowercase
+  hash, no space before `tree:`, or no `passed:` line at all, which before fell through
+  to the generic box (#124) — and prints the `/pre-merge-check` route and the one for a
+  person working alone. It still cannot tell a hand-written note from a real run: it
+  stops the bare shortcut, and a note carried onto a commit it never checked.
+  `session-start` and `/feature-start` count a branch as waiting to merge only when the
+  gate would take its note.
+- **A new branch missed merges not yet pushed** (#125). `/feature-start` cut it from
+  `origin/<integration branch>`, so a developer who keeps merges local until a release
+  could not branch a fix to one of them. Step 4 now runs `git pull --ff --no-rebase
+  origin <integration branch>` in the checkout that has it and cuts from the local
+  branch: behind, it fast-forwards; ahead, nothing moves; diverged, it merges its own
+  upstream, which `commit-msg` lets through when clean. A merge already in progress
+  there stops the step before the pull, as the person's. A pull that fails stops and
+  shows git's output; the skill aborts nothing and never stashes or touches the
+  person's edits. A branch tracking nothing gets its upstream set first.
+- **The route the agent guard and the ref gate print built on a stale base.** The
+  guard's refusal of a commit on a protected branch or a branch made in place, and the
+  ref gate's refusal on a PR-only branch, printed `git fetch origin` and `git worktree
+  add … origin/<integration-branch>`. They now print the base `/feature-start` 4 uses,
+  for where the branch is: checked out at the repo root, the pull there; in a linked
+  worktree, `git -C <that path> pull …`; missing, `git branch --track` from origin's;
+  checked out nowhere, a fast-forward only if origin's has anything new, which git
+  refuses when the two have diverged, the branch was never pushed or origin is
+  unreachable. The guard reads `INTEGRATION_BRANCH` from the conf, in place of a
+  placeholder, and the ref gate now prints the `cd` to the repo root.
+- **The printed route is one chain, from its first `cd` to its last**, so a `cd` that
+  fails, a fetch with the network down, or any refusal stops it before a branch is cut
+  off a stale base or in another repo. It pastes into interactive zsh, the macOS
+  default, as into bash: no command row carries a `#` or an apostrophe. It cleans up
+  nothing for the person: a failed pull is left to them, and it never says to abort a
+  merge. A worktree that held the branch and is gone from its path is named, with
+  `git worktree repair` if it was moved and `git worktree prune` if it was deleted, for
+  the person to choose — a prune clears every worktree git cannot find, so one that was
+  moved lost its staged work. One whose `.git` file alone is missing gets the repair,
+  which keeps its staged work. `/feature-start` 4 and the rules say the same.
+- **The guard's `python3` fallback ran a project's `json.py`.** With no `jq`, the guard
+  parsed its input with `python3 -c`, which imports from the working directory first, so
+  a `json.py` in the project ran in place of the standard library's, and every git
+  command was then denied as unreadable. It runs `python3 -I` now.
+- **The session-start header could arrive garbled** without `jq`, under a non-UTF-8
+  Linux locale: `python3` was given it as an argument. It goes on stdin with the rules
+  now (#140).
+- **`post-merge` printed the feature-merge block on a fast-forward pull of a merged
+  PR** (#131), and "Earlier merges left …" on every such pull while cleanup was pending,
+  so a project that promotes by PR saw it on every pull. It now reads the reflog: a
+  fast-forward prints nothing. The note file is still written.
+- **A PR-only branch was offered for deletion, and the guard let the delete through**
+  (#128), in a project whose `PROTECTED_BRANCHES` left out `main`, which is PR-only by
+  default. `post-merge` now reads `PR_ONLY_BRANCHES` too, so merging `main` in is the
+  back-merge it is and prints nothing, and the guard refuses `git branch -d` or `-D` of
+  a PR-only branch. Both stand down with `PR_ONLY_BRANCHES=off` or `none`, or
+  `PROTECTED_BRANCHES=off`. A `PR_ONLY_BRANCHES` that does not compile keeps every
+  branch from deletion until it is fixed, and the guard's block names it. A `main` that neither names is a branch like any other:
+  merging it into the integration branch prints its cleanup lines, where before it
+  printed nothing.
+- **The hook sync told an adopter to mark its own hook adapted.** On a `pre-commit` or
+  `pre-push` with no flight-rules marker — a linter's, git-lfs's — `install.sh
+  --stale-only` said to add `# flight-rules: adapted`, which would have kept
+  flight-rules' hook out for good. It now names the rename to `.local`.
+- **`git fetch origin main:main` was refused** (#145) when it brought `main` to exactly
+  origin's new commit: the ref gate compared `main`'s new value with `origin/main` as it
+  was before the same fetch moved it. It now accepts a value on the upstream's new value
+  in that transaction.
+- **The doctor read `PROTECTED_BRANCHES=off  # trunk only` and `'off'` as patterns**
+  (#127), and beside its ⚠️ that protection was off printed a ✅ about a derived note
+  gate; `none` was not handled there. It now reads the conf with the hooks' own reader.
+- **Under bash 5.3, a branch pattern that does not compile brought a warning of bash's
+  own** (`invalid regular expression`) ahead of what the hooks say of it, on the
+  terminal and on the session-start hook's stderr. The git hooks, the agent guard and
+  `session-start` now keep it off stderr, as the ref gate's greps already did; what they
+  decide is unchanged. Found when CI's Ubuntu runner moved to 26.04.
+
+### Added
+
+- **Every stop prints its way through** (#151, #152). The secret scan (a secret found,
+  or a scan that could not read), the PR-only gates, the rebase gate and the note gate
+  each print `FLIGHT_RULES_GO_AHEAD=1` in front of the command that goes ahead; before,
+  the secret scan and the PR-only gates had none, and the note gate's route for a person
+  working alone was a note written by hand. Where a refusal leaves an operation
+  half-done, the command printed is the one that finishes it: `git commit --no-edit` for
+  a merge, `git cherry-pick --continue`, `git am --continue`, `git rebase --continue`,
+  `git revert --continue` (a revert of several commits: `git commit --no-edit` first).
+  Going ahead is said on the screen every time, with what was passed, and a merge taken
+  past the note gate or the instruction check records it in its `Merge-authorisation`
+  trailer: past the instruction check, `went ahead (FLIGHT_RULES_GO_AHEAD)`; past the
+  note gate, `went ahead with no pre-merge-check note (FLIGHT_RULES_GO_AHEAD)`, or `went
+  ahead past the note gate:` and the cause its box named (a note that did not check
+  this merge, a note the gate does not take, a catch-up, a merge git could not check). `pre-commit.local` still runs. The
+  instruction check's own route, `FLIGHT_RULES_MERGE_AUTHORISED=1`, is unchanged.
+- **The agent guard refuses an assistant's command that sets `FLIGHT_RULES_GO_AHEAD`**
+  (#155) — in front of a command, after `env` or `export`, quoted or not — on any branch,
+  in any repo, with the branch policy off. The refusal gives the person the command to
+  run themselves. Text that names the variable with a value is refused too: the guard's
+  accepted trade on prose.
+- **`/ux`, a first guide** (#154, #159, #167): interface guidance, read only when an
+  interface is built, changed or audited; a project that never calls it pays only its
+  description. 101 rules in four topic files — accessibility (WCAG 2.2 A and AA, with the
+  criteria it does not cover listed), states, forms and basic UX principles — each
+  labelled a standard, a finding or a rule of thumb, what a standard rule asks beyond
+  its criterion marked as practice, and `sources.md` mapping every source to its rules.
+  It loads only the topics a task needs, and keeps the project's design record
+  (`.ai/design.md` by default), starting it with the project's first interface. A build
+  is reviewed against evidence that can show each rule, with set passes — Tab through
+  the main task, Back and reload, no hover, 320 px, 200% zoom, each state forced, the
+  longest content, reduced motion — each reported done or not checked; the report gives
+  the evidence for what the eye cannot judge and a short script for checking by eye.
+  A finding is rated by its effect: Major if it stops a person, keyboard and
+  screen-reader users included, or loses their work or money; a failed criterion is
+  never below Medium. `audit.md` audits an existing interface and changes nothing unless
+  asked: the main task walked first and every screen named, one 0–5 score per area
+  worked out from the findings register and shown with its counts, an area mostly
+  unchecked left unscored, and no total across areas. Rule IDs carry the guide's
+  prefix — `UX-A01`, `UX-F01` — so they never read as a reply's actions (A1…) or
+  decisions (D1…); the IDs UX-P14, UX-P17, UX-P19 and UX-S07 are unused and are never
+  reused.
+- **`rules/multi-ai-setup.md` principle 6** (#156): where a project names which models
+  plan and review and which implement, the planning model stops at the plan, hands the
+  work over through an issue carrying it, and reviews what comes back. In a review, the
+  top tier's part is the cold, independent read; the debate runs on the tier below by
+  default.
+
+- **A warning of a direct change to a protected branch that is not PR-only** (#115,
+  #144). A plain commit on `dev` passed every git hook: a probe script that lost its
+  `cd` committed on local `dev`, inside a script the agent guard never read. The ref
+  gate now warns when such a branch moves to a commit that is not on its upstream, not
+  a merge made on it, not a value its own reflog has held, and not on `origin/<a PR-only
+  branch>`: a commit, an amend (of a merge too), a cherry-pick, a revert, a squash, a
+  fast-forward or `branch -f` onto it. The new `pre-push` warns when a push puts commits
+  on a protected branch that no merge brought in, naming up to five and counting the
+  rest. Both name the commit and say the move or push goes ahead. A merge, a pull, an
+  undo or redo of a local merge, `git fetch origin dev:dev`, a normal push of `dev`
+  after local merges, and `/feature-start`'s push of `main` into `dev` say nothing.
+  What they do not see — output sent to `/dev/null`, `git push --no-verify`, a branch
+  with no upstream, a branch's first push, an amended merge at the push, a remote not
+  called `origin` — is in `hooks/README.md`.
+- **Codex and Antigravity installs**, in README → Consuming: how to install the plugin
+  from a clone, what each gets, and how to wire the git hooks by hand. Antigravity
+  converts the plugin and now loads `engineering-principles.md` into every session;
+  before, it got the skills and nothing else. Codex runs no plugin hooks; the README
+  gives a `SessionStart` entry for `~/.codex/hooks.json` that injects the principles
+  from the newest installed version and does nothing without the plugin.
+
+### Changed
+
+- **Where flight-rules keeps its own files in a project**: `.flight-rules/`, not `.ai/`
+  (#153) — the conf, the hook copies, the worktrees. `.ai/` is a name another tool, or
+  the developer, may already use; what is left in it is the project's own rules and
+  skill extensions. The hooks, the skills and the docs name the new places; a refusal
+  that says where the policy is set names the conf it read. *Upgrading* has the moves.
+  The doctor checks them: a conf or hooks left in the old place, `core.hooksPath` left
+  naming `.ai/hooks` however spelled, a pre-conf guard copy in either folder, and a
+  worktree folder `.gitignore` does not cover; its update hint names the conf the
+  project has. The session-start reminder lists merged worktrees in `.ai/worktrees/` as
+  well as the configured folder.
+- **`/feature-start`**: step 4 pulls into the local integration branch, as above, and
+  step 6 cuts from it. A `hotfix/` branch now needs the person's approval as urgent
+  (#143): without it the skill creates nothing and names `fix/` as the route; with it,
+  the branch is cut from `origin/main` with `--no-track`, and an issue is filed saying
+  it bypassed the integration branch, which its PR links (`/pr-create`).
+- **Commit prefixes**: `ci:` is allowed, for a change to the CI; a prefix may carry a
+  scope, `fix(hooks):` (#139); and git's own `Revert "<subject>"` passes as it is
+  (#136), since the rule's route for a bad merge is a revert. In `/commit`,
+  `/pre-merge-check` item 8 and Required 3.
+- **`/pre-merge-check`** stamps the tree it checked and one `ran:` line per command,
+  with its exit status and last line, single-quoted. Uncommitted changes get a ⚠️ row:
+  the stamp vouches for the commit, but the tests ran with those edits on disk. Items 17
+  and 18 read `AGENTS.md` beside `CLAUDE.md`.
+- **`/diagnose`** step 6: the regression test is seen to fail without the fix, and a red
+  got by breaking code or a fixture on purpose is trusted only once `git diff` shows the
+  break landed (from `mattpocock/skills`, re-pinned).
+- **`/dg`** steps 2 and 3: a reviewer's probe runs in a scratch directory it made, in
+  the same script as its git commands, never in the repository under review, and stops
+  after `git init` unless git's repository is the one it made there. The header names
+  every pre-reviewer that counts, joined by ` · `, and, where tiers are named, marks
+  one below the top tier `(<model>, below the top tier)`; every pre-review's IDs carry
+  a prefix naming its reviewer. Where a project names its tiers, step 3 also says
+  which runs which part: by default the pre-review on the top tier, the personas on
+  the tier below, their model named in the header (`> Personas:`). With no tiers
+  named, the split does not apply: each part runs as before.
+- **`rules/git-worktree-workflow.md`**: a new section, *Which branch new work starts
+  from*, which Required 8 points to; a revert of a merge not yet pushed is cut from the
+  local branch, since origin's lacks it (#143); a hotfix only with the person's
+  approval, from `origin/main` (#143); Forbidden 1 says how each layer enforces it,
+  warnings included; Forbidden 8 says the two clean merges `commit-msg` has always let
+  through — a back-merge of a PR-only branch's tip, and the merge of a branch's own
+  upstream when the two have diverged — need no instruction and carry no trailer; the
+  Enforcement section points at `hooks/README.md` → *Git hooks* in place of a summary
+  that still said five hooks.
+- **`rules/multi-ai-setup.md`**: the layout's pointer files are `CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md` and Copilot's; `.cursorrules`, which Cursor's docs call
+  legacy, and `.windsurfrules` are gone. Gemini CLI reads `GEMINI.md`, not `AGENTS.md`,
+  by default.
+- **`commit-msg`'s back-merge exemption** no longer looks up `origin` ignoring case.
+  A hand-typed `^MAIN$` with a hand-made `MAIN` now lands as a back-merge when origin
+  has no `MAIN` or has one holding the commit, and a stale `origin/Main` beside
+  `origin/main` no longer blocks a real back-merge of `main`; every state that code
+  handled was made on purpose. Under a `GIT_TRACE*` variable, the could-not-check box may
+  quote a trace line as git's error.
+- **`hooks/README.md`** says the guard's open gap: a redirect written against a git
+  word, `git commit>/dev/null`, hides that word from it (#138). 0.28.0 had the same gap.
+  The README and `hooks/README.md` lose stale counts and histories the CHANGELOG and
+  tests already carry.
+
+### Changed — this repo
+
+- `AGENTS.md` holds how work is done here; `CLAUDE.md` and `GEMINI.md` import it and
+  `MISSION.md`. It names this repo's planning and implementing models, and which runs
+  each part of `/dg`, and holds the Situation, Background, Assessment, Recommendation
+  reply headings §7 no longer ships.
+- `MISSION.md`: a stop that prints its way through is not a block, and flight-rules
+  never blocks the developer; the person runs the way through, an assistant leaves it to
+  them; guides sit beside the core, costing a project that never calls one its skill
+  description. The catastrophe of a commit on a protected branch is narrowed to what the
+  hooks do: anyone's on a PR-only branch, an assistant's on any; a person's commit on
+  another protected branch is warned of, not stopped. It carries no issue numbers.
+- `UPSTREAMS.md` pins the sources `/ux` adapts and `ATTRIBUTIONS.md` credits them;
+  `/upstream-check` checks a W3C spec or a web page, which has no ref, by its date, and
+  judges a change to a `/ux` source rule by rule through `skills/ux/sources.md`.
+- A release PR into `main` must carry an `## Upstream check` section and a clean
+  mutation stamp of its head commit, written by the new `mutation/` kit and checked by
+  CI; the test suites share one harness and had duplicates cut, and each gap the mutants
+  found was closed or recorded as a known survivor (`survives: not held` in
+  `mutation/mutants.py`).
+- A whole-kit mutation run first runs the suites once on Linux, in Docker's ubuntu
+  image, and stops before any mutant unless they pass: CI sees `dev` only once it is
+  pushed, and 0.29.0's Ubuntu 26.04 failures surfaced on the release PR after a
+  stamped run. With no Docker it stops and prints `MUTATION_LINUX=skip` to go on.
+- `mutation/run.sh --status` reports how far a run has got: phase, progress, results
+  and unexpected survivors so far, rate and time left, the machine, and a breakdown by
+  file and suite. A run prints a one-line form of it every ten minutes.
+- A whole-kit mutation run is made on the release commit: the tip of local `dev`,
+  with nothing changed and origin's `dev` in it. Otherwise it stops before its baseline
+  and prints `MUTATION_ANY_COMMIT=1` to run anyway.
+
 ## 0.28.0 — 2026-10-30
 
 Each refusal, step and rule was re-checked against what flight-rules is for. What had no failure behind it is gone,

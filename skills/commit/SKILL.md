@@ -12,8 +12,9 @@ Read `.ai/skills/commit/EXTENSIONS.md` first if the project has one: extra or
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
-restating one is invisible to enforcement, so the conf wins.
+come **only** from the conf the hooks read — `.flight-rules/conf`, or, where that is
+absent, `.ai/flight-rules.conf` (a project not yet moved) — an extension restating one
+is invisible to enforcement, so the conf wins.
 
 ## Division of labour
 
@@ -26,8 +27,11 @@ The hooks enforce the hard gates; this skill covers what a hook cannot judge.
   warning.
 
 ## Rules
-- Message starts with `feature:`, `fix:`, `refactor:`, `test:`, `docs:`, or `chore:`
-  (a `hotfix/` branch carries `fix:` commits — there is no `hotfix:` prefix)
+- Message starts with `feature:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`, or
+  `ci:` (a `hotfix/` branch carries `fix:` commits — there is no `hotfix:` prefix; `ci:`
+  is a change to the project's CI, on whichever branch carries it — there is no `ci/`).
+  A prefix may carry a scope, `<type>(<scope>):` (`fix(hooks):`); git's own
+  `Revert "<subject>"`, which `git revert` writes, passes as it is
 - Commits happen on feature worktrees, not `{PROTECTED_BRANCHES}` (hook-enforced)
 - Env files and secrets are never committed (hook-enforced)
 

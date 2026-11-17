@@ -11,14 +11,10 @@
 
 set -uo pipefail
 HOOK_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pre-commit"
-PASS=0; FAIL=0
-TMPROOT=$(cd "$(mktemp -d)" && pwd -P)
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../test-lib.sh" || exit 2
+TMPROOT=$(tmpd)
 trap 'rm -rf "$TMPROOT"' EXIT
 
-MAINPID=$$
-trap 'printf "\n%s\n" "ABORTED: the fixture could not be built — no result above is meaningful" >&2; exit 2' TERM
-die() { printf '  ❌ harness: %s\n' "$1" >&2; kill -s TERM "$MAINPID"; exit 2; }
-say() { if [ "$1" = "$2" ]; then PASS=$((PASS+1)); echo "  ✅ $3"; else FAIL=$((FAIL+1)); echo "  ❌ $3 (got '$1', want '$2')"; fi; }
 
 AWS=$(printf 'AKIA%s' IOSFODNN7EXAMPLE)
 SK=$(printf 'sk-%s' ant-api03-abcdefghijklmnopqrstuvwx)
@@ -108,6 +104,8 @@ blocks "Google key"        'echo "k=$GOOG" > f && git add f && git commit -qm x'
 blocks "PEM private key"   'echo "$PEM" > f && git add f && git commit -qm x'
 blocks ".env staged"       'echo X=1 > .env && git add .env && git commit -qm x'
 blocks "nested .env.local" 'mkdir -p a && echo X=1 > a/.env.local && git add a && git commit -qm x'
+# core.quotePath=false: quoted, a non-ASCII path ends in `"` and the .env went unseen.
+blocks ".env in a non-ASCII-named directory" 'mkdir -p cönf && echo X=1 > cönf/.env && git add . && git commit -qm x'
 blocks "key in a test file" 'mkdir tests && echo "k=$AWS" > tests/x_test.py && git add tests && git commit -qm x'
 blocks "key in a non-ASCII-named file" 'echo "k=$AWS" > cönfig.py && git add . && git commit -qm x'
 
@@ -251,7 +249,7 @@ else
   h=$(git -C "$R" rev-parse HEAD)
   OUT=$(git -C "$R" commit -qm merge 2>&1)
   say "$(landed "$R" "$h")" yes "reftable: a conflicted merge whose incoming side holds a key concludes"
-  say "$(grep -c 'scanning the conflict resolution' <<<"$OUT")" 1 "…scanning the resolution, not everything"
+  say "$(grep -c "beyond git's own merge" <<<"$OUT")" 1 "…scanning the resolution against git's own merge, not merge-tree's or everything"
   R=$(make_repo armed reftable); cmerge "$R" "resolved, token=$GHP"
   h=$(git -C "$R" rev-parse HEAD)
   OUT=$(git -C "$R" commit -qm merge 2>&1)
@@ -268,8 +266,8 @@ echo "The notice names the commit coming in and prescribes no command (final rel
 CM_SRC="$(dirname "$HOOK_SRC")/commit-msg"
 gated() {   # gated <repo>: the real commit-msg, and the branch note-gated in the committed conf
   cp "$CM_SRC" "$1/.hooks/commit-msg" && chmod +x "$1/.hooks/commit-msg" || die "could not install commit-msg"
-  mkdir -p "$1/.ai" && printf 'PROTECTED_BRANCHES=^feature$\nNOTE_GATED_BRANCHES=^feature$\n' > "$1/.ai/flight-rules.conf"
-  git -C "$1" add .ai && git -C "$1" commit -qm conf --no-verify || die "could not commit the conf"
+  mkdir -p "$1/.flight-rules" && printf 'PROTECTED_BRANCHES=^feature$\nNOTE_GATED_BRANCHES=^feature$\n' > "$1/.flight-rules/conf"
+  git -C "$1" add .flight-rules && git -C "$1" commit -qm conf --no-verify || die "could not commit the conf"
 }
 for how in leftover refused leftover-gated; do
   R=$(make_repo armed)
@@ -402,6 +400,32 @@ say "$(landed "$R" "$h")" yes "a 1 MB binary commits"
 [ "$TOOK" -le 8 ] && say yes yes "…in ${TOOK}s (bound 8s)" || say no yes "…took ${TOOK}s (bound 8s)"
 rm -rf "$R"
 
-echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+echo "The secret stop prints its way through, and takes it (#151):"
+R=$(make_repo armed); h=$(git -C "$R" rev-parse HEAD)
+echo "k=$AWS" > "$R/a.cfg"; git -C "$R" add a.cfg
+OUT=$(cd "$R" && git commit -m x 2>&1); RC=$?
+say "$RC$(landed "$R" "$h")$(grep -c '^  FLIGHT_RULES_GO_AHEAD=1 <the same command>$' <<<"$OUT")" "1no1" "a staged key: refused, and the refusal prints the command that goes ahead"
+OUT=$(cd "$R" && FLIGHT_RULES_GO_AHEAD=1 git commit -m x 2>&1); RC=$?
+say "$RC$(landed "$R" "$h")$(grep -c 'going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — a commit whose staged changes look like they hold a secret' <<<"$OUT")$(grep -c 'AWS access key' <<<"$OUT")" "0yes11" "…which commits it, saying what it went past and what was found"
+h=$(git -C "$R" rev-parse HEAD); echo clean > "$R/b"; git -C "$R" add b
+OUT=$(cd "$R" && FLIGHT_RULES_GO_AHEAD=1 git commit -m y 2>&1); RC=$?
+say "$RC$(landed "$R" "$h")$(grep -c 'going ahead' <<<"$OUT")" "0yes0" "with the variable set and nothing found, nothing is said"
+# The project's own pre-commit still runs on the way through.
+h=$(git -C "$R" rev-parse HEAD); printf '#!/bin/sh\necho "local ran" >&2; exit 3\n' > "$R/.hooks/pre-commit.local"; chmod +x "$R/.hooks/pre-commit.local"
+echo "k2=$AWS" > "$R/c.cfg"; git -C "$R" add c.cfg
+OUT=$(cd "$R" && FLIGHT_RULES_GO_AHEAD=1 git commit -m z 2>&1); RC=$?
+say "$([ "$RC" -ne 0 ] && echo stopped)$(landed "$R" "$h")$(grep -c 'local ran' <<<"$OUT")" "stoppedno1" "going ahead still runs pre-commit.local, whose exit decides"
+rm -rf "$R"
+
+# A scan that could not read what is staged: the same way through, said.
+R=$(make_repo armed); REAL_GIT=$(command -v git)
+mkdir -p "$R/shim" \
+  && printf '#!/bin/sh\nfor a; do [ "$a" = "$FAIL_ON" ] && { echo "git-said-$FAIL_ON" >&2; exit 128; }; done\nexec "%s" "$@"\n' "$REAL_GIT" > "$R/shim/git" \
+  && chmod +x "$R/shim/git" && echo clean > "$R/f" && git -C "$R" add f || die "could not build the failing-git fixture"
+out=$( (cd "$R" && FAIL_ON=--name-only PATH="$R/shim:$PATH" ./.hooks/pre-commit 2>&1); echo "rc=$?")
+say "${out##*rc=}$(grep -c '^  FLIGHT_RULES_GO_AHEAD=1 <the same command>$' <<<"$out")" "11" "a scan that could not read what is staged: refused, printing the command that goes ahead"
+out=$( (cd "$R" && FAIL_ON=--name-only FLIGHT_RULES_GO_AHEAD=1 PATH="$R/shim:$PATH" ./.hooks/pre-commit 2>&1); echo "rc=$?")
+say "${out##*rc=}$(grep -c 'going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — a commit the secret scan could not read' <<<"$out")" "01" "…which goes ahead, saying the part that went unscanned"
+rm -rf "$R"
+
+finish

@@ -1,3 +1,6 @@
+---
+trigger: always_on
+---
 # Engineering Principles for AI Assistants
 
 > Adapted from [andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills).
@@ -16,12 +19,20 @@
 **Not yours to override.**
 
 - A blocked command is information, not an obstacle: read the reason, do what it says,
-  re-run. Never slip past a guard by editing it or its config, adding `--no-verify`, or
-  reshaping the command to dodge it. A person may still run it, told that it was
-  refused, by what and why: that is a decision you are asking for (§7). Never one that
-  writes a `pre-merge-check` note by hand: the note says the check ran, and only
-  running it may write one. If the block is wrong, or refuses a step the project's own
-  workflow requires, stop and say so; that is a finding, and the owner decides
+  re-run. Never slip past a guard by editing it or its config, adding `--no-verify`,
+  reshaping the command to dodge it, or running the command its message prints for
+  going ahead anyway — that one is the person's to run, even when they say go ahead; a
+  command the message gives you for when the person asked (finishing a merge they asked
+  for) is yours. A person may still run the go-ahead command, told that it was refused,
+  by what and why: that is a decision you are asking for (§7). Never one that writes a
+  `pre-merge-check` note by hand: the note says the check ran, and only running it may
+  write one. If the block is wrong, or refuses a step the project's own workflow
+  requires, stop and say so; that is a finding, and the owner decides
+- A push to a branch the project protects — its main line, the branch work integrates
+  on — is the person's to ask for, in this session or in the project's own written
+  rules: it publishes, and undoing it here does not unpublish it. Not asked, print the
+  command and say what it would move. Nothing checks this: to a hook, a push that was
+  asked for looks like one that was not
 - An action nothing can undo — force-pushing or rewriting shared history, deleting an
   unmerged branch, discarding uncommitted or stashed work you did not make, dropping
   data — needs a person's yes first; a request that names the action is that yes. With
@@ -105,13 +116,18 @@
 
 **Structure for the reader's decision, not for your narration.**
 
-- Lead with what needs deciding and your recommendation. Every decision you ask for is
-  decidable from that message alone — what it is, why it came up, the evidence (or that
-  there is none), what each option costs; one line for a small one. A label or ID may
-  name it, never stand in for it. A command you need the person to run is such a
-  decision; say also what waits on it, and how many such asks are open
+- A reply that reports work or asks for a decision assumes the reader remembers none of
+  the earlier context, and ends with what you would do and the decisions you need —
+  last, where the reader lands. Every decision you ask for is decidable from that
+  message alone — what it is, why it came up, the evidence (or that there is none), what
+  each option costs; one line for a small one. A label or ID may name it, never stand in
+  for it. A command you need the person to run is such a decision; say also what waits
+  on it, and how many such asks are open
 - Three or more findings is a register — one row each, stable IDs, severity. Issues
-  woven through paragraphs cannot be tracked back to the sentence that raised them
+  woven through paragraphs cannot be tracked back to the sentence that raised them.
+  Two lists in one reply never share a numbering: findings keep their IDs, recommended
+  actions are A1, A2…, decisions D1, D2…, so a bare number in the answer can mean only
+  one thing
 - Separate what you ran from what you concluded, and label which is which. Done means
   you can show the command, its exit status and last line of output, and the commit or
   working-tree state it ran on; if you could not run it, say so — never report what you

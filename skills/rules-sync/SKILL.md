@@ -76,11 +76,11 @@ one, report ✖ if: a step it replaces or inserts after no longer exists upstrea
 `{PLACEHOLDER}` it fills is no longer used, or is one of the five branch/path
 parameters (those live in the conf only — the hooks never read an extension); a rule it
 overrides has since become a hook.
-Then `.ai/flight-rules.conf`: the hooks ignore unknown keys, so a typo silently falls
+Then the conf (`.flight-rules/conf`, or `.ai/flight-rules.conf` where that is absent): the hooks ignore unknown keys, so a typo silently falls
 back to the default. ✖ any key outside those `hooks/flight-rules-doctor.sh` lists in `KNOWN` — read it rather than hard-coding a count. An absent key is NOT an error: every one has a default, and `NOTE_GATED_BRANCHES` is deliberately absent in the playbook itself.
 
 ## Step 3c — The git hooks
-The project's `.ai/hooks/` (or whatever `core.hooksPath` names) is a copy too, and the
+The project's `.flight-rules/hooks/` (or whatever `core.hooksPath` names) is a copy too, and the
 one a plugin update can never refresh: AppliHawk ran four 0.22.0 hooks under a 0.23.0
 plugin with nothing but a CHANGELOG paragraph to say so (2026-10-12). Run
 `bash {PLAYBOOK_PATH}/hooks/flight-rules-doctor.sh` and carry its hook lines into the

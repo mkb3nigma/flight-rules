@@ -2,7 +2,9 @@
 # reference-transaction hook — the ref gate for PR-only branches.
 #
 # ONE RULE:  a PR-only branch may only move to a commit that is already on its
-# upstream (refs/remotes/origin/<branch>).
+# upstream (refs/remotes/origin/<branch>). Any other protected branch moving off its
+# upstream to a commit that is not a merge made on it, not a value it has held, and not
+# on a PR-only branch's upstream is warned of, never refused (warn_direct).
 #
 # Why this hook and not another. Every other guard in this repo asks "what command
 # is this?" and then has to enumerate the commands that write to a branch. That set
@@ -20,12 +22,13 @@
 # nobody thought of cannot walk around it.
 #
 # What stays allowed: `git pull --ff-only origin main` and any other move onto a
-# commit already reviewed on the remote; every operation on a non-PR-only branch;
+# commit already reviewed on the remote; every operation on a non-PR-only branch, a
+# direct change to a protected one said as it goes ahead;
 # fetch, status, log, worktree add, and all feature work.
 #
 # Configuration — first match wins:
 #   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
-#   2. .ai/flight-rules.conf **as committed on the upstream**, then on HEAD
+#   2. .flight-rules/conf **as committed on the upstream**, then on HEAD
 #   3. The default below
 # Parsed as data, never sourced.
 #
@@ -36,23 +39,39 @@
 #    ships `PR_ONLY_BRANCHES=^nothing$` and then merges itself — does not change
 #    what the reviewed upstream says.
 #
-# Bypass: none. `--no-verify` does not apply to reference-transaction, which is the
-# point. To move a PR-only branch to something not on the remote, the owner turns
-# the policy off in the conf AND pushes that change through review.
+# The refusal prints its way through, FLIGHT_RULES_GO_AHEAD=1 <the command that finishes
+# what was refused>, the person's to run (#151). `--no-verify` is not one: it does not
+# reach reference-transaction, which is the point. A project that does not mean to gate
+# a branch changes the policy in the conf and pushes that change through review.
 
 set -uo pipefail
 
 DEFAULT_PR_ONLY='^main$'
-CONF_PATH='.ai/flight-rules.conf'
+DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
+CONF_PATH='.flight-rules/conf'
+LEGACY_CONF_PATH='.ai/flight-rules.conf'   # its home before 0.29.0 (#153)
 ZERO='0000000000000000000000000000000000000000'
 
 # Only the "prepared" phase can still refuse the transaction. "committed" and
 # "aborted" are notifications; exiting non-zero there does nothing but noise.
 [ "${1:-}" = "prepared" ] || exit 0
 
+# The conf as the messages name it: the one HEAD has. Worked out only where a box
+# prints it: on every prepared transaction, its two cat-files took a 32-commit rebase
+# from about 2.2 s to 3.2–3.8 s (0.29.0 release review, second pass, V10).
+conf_shown() {
+    if ! git cat-file -e "HEAD:$CONF_PATH" 2>/dev/null && git cat-file -e "HEAD:$LEGACY_CONF_PATH" 2>/dev/null; then
+        printf '%s' "$LEGACY_CONF_PATH"
+    else
+        printf '%s' "$CONF_PATH"
+    fi
+}
+
 read_conf_from() {   # <committish> <key>
     local ref="$1" key="$2" content
-    content=$(git show "${ref}:${CONF_PATH}" 2>/dev/null) || return 0
+    # The old home is read only where the new one is not committed on that ref.
+    content=$(git show "${ref}:${CONF_PATH}" 2>/dev/null) \
+        || content=$(git show "${ref}:${LEGACY_CONF_PATH}" 2>/dev/null) || return 0
     printf '%s\n' "$content" \
         | sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\1/p" \
         | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
@@ -78,8 +97,50 @@ box_bot() { printf '╚%s╝\n' "$(_rule ═)"; }
 box_row() {
     local s="${1:-}" adj="${2:-0}" pad
     pad=$(( BOX_W - ${#s} - 2 - adj ))
-    [ "$pad" -lt 0 ] && pad=0
-    printf '║ %s%*s ║\n' "$s" "$pad" ''
+    # A row too long for the box (a long path) runs on past it, unframed, rather than
+    # pushing out its right edge (0.29.0 release-fix review, Z-4).
+    if [ "$pad" -lt 0 ]; then printf '║ %s\n' "$s"; else printf '║ %s%*s ║\n' "$s" "$pad" ''; fi
+}
+# go_ahead <what is passed>: the way through that every stop prints (MISSION.md,
+# principle 5) — FLIGHT_RULES_GO_AHEAD=1 in front of the command. Going ahead is the
+# person's decision, so it is said every time it is used (#151).
+go_ahead() {
+    [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1
+    echo "⚠️  flight-rules: going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — $1. That is the person's decision, never an assistant's own." >&2
+}
+# go_ahead_rows <command>…: the rows a box prints for them, one per command, run in turn.
+go_ahead_rows() {
+    local c
+    box_row "Going ahead anyway is the person's decision, never an"
+    box_row "assistant's own, and it is said when it is used:"
+    for c in "$@"; do box_row "  FLIGHT_RULES_GO_AHEAD=1 $c"; done
+    box_row ""
+}
+# same_command <ref>: the command(s) that go ahead with what this refusal stopped, one
+# per line. A refused cherry-pick, revert, `git am` or merge is left half-done, and
+# running it again fails on the unfinished one; what lands it is what finishes it
+# (0.29.0 release review, M2, each one run in ref-gate.test.sh). Read from what the
+# operation left in this worktree's git dir, and only for the branch checked out here,
+# which is the one it moves.
+git_path() { git rev-parse --git-path "$1" 2>/dev/null; }
+same_command() {
+    local d
+    # A rebase detaches HEAD while it runs and names the branch it will move in head-name.
+    for d in rebase-merge rebase-apply; do
+        [ "$(cat "$(git_path "$d")/head-name" 2>/dev/null)" = "$1" ] && { echo "git rebase --continue"; return; }
+    done
+    [ "$(git symbolic-ref -q HEAD 2>/dev/null)" = "$1" ] || { echo "<the same command>"; return; }
+    if [ -e "$(git_path rebase-apply)/applying" ]; then echo "git am --continue"
+    elif [ -e "$(git_path CHERRY_PICK_HEAD)" ]; then echo "git cherry-pick --continue"
+    elif [ -e "$(git_path REVERT_HEAD)" ]; then echo "git revert --continue"
+    # A revert of several leaves no REVERT_HEAD, so `--continue` takes the refused one as
+    # done and fails on the next over its staged changes: commit it, then continue.
+    elif [ -d "$(git_path sequencer)" ]; then printf '%s\n' "git commit --no-edit" "git revert --continue"
+    elif [ -e "$(git_path MERGE_HEAD)" ]; then echo "git commit --no-edit"
+    # A revert of one commit leaves no state but its message.
+    elif grep -q '^This reverts commit [0-9a-f]\{7,\}' "$(git_path MERGE_MSG)" 2>/dev/null; then echo "git commit --no-edit"
+    else echo "<the same command>"
+    fi
 }
 
 # A refusal a broken pattern decided: the pattern named, where it is set, and the
@@ -98,7 +159,7 @@ broken_box() {
     box_row "  $2"
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
-    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "The project owner fixes it in $(conf_shown), on a"
     box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
     box_row "has landed, and if $4 is not a branch it means,"
     box_row "give the pattern meant in front of this command:"
@@ -110,6 +171,64 @@ broken_box() {
     echo ""
 }
 
+# warn_direct: a protected branch that is not PR-only (dev) moving to a commit that is
+# not on its upstream, not a merge made on it, not a value it has held, and not on a
+# PR-only branch's upstream — a commit made on it, an amend, a
+# cherry-pick, a revert, a reset, a fast-forward onto it — is said, never refused
+# (#115). A plain commit on dev passed every git hook: a probe script that lost its cd
+# committed on local dev, inside a script the agent guard never read (2026-10-25).
+# Anyone who means to change dev directly can (owner, 2026-11-09). Here, not in
+# commit-msg: a clean cherry-pick or revert runs no commit hook. A branch with no
+# upstream is left alone, as the rule below leaves it: there, a fresh repository's own
+# commits would be all it said.
+warn_direct() {
+    local m=0 cur up b
+    printf '%s' "$short" | grep -qiE -e "${PROT_RE:-$DEFAULT_PROTECTED}" 2>/dev/null || m=$?
+    [ "$m" -eq 1 ] && return 0
+    cur=$(git rev-parse -q --verify "$ref" 2>/dev/null) || return 0
+    # A no-op update would pass the reflog test below too; this only saves the git calls.
+    [ "$new" != "$cur" ] && [ "$new" != "$ZERO" ] || return 0
+    git rev-parse -q --verify "$upstream" >/dev/null 2>&1 || return 0
+    git merge-base --is-ancestor "$new" "$upstream" 2>/dev/null && return 0
+    # Where this transaction moves the upstream too: `git fetch origin dev:dev` updates
+    # both at once, and read before it lands, origin/dev lacked what it brought.
+    up=$(printf '%s\n' "$TX" | awk -v r="$upstream" '$3 == r { n = $2 } END { print n }')
+    [ -n "$up" ] && git merge-base --is-ancestor "$new" "$up" 2>/dev/null && return 0
+    # A merge made on the branch itself: its first parent is where the branch is now.
+    # Any merge was waved through, so an amend of dev's merge tip, or a fast-forward
+    # onto a feature tip that had dev merged in, said nothing (#144 review, E-1).
+    git rev-parse -q --verify "$new^2" >/dev/null 2>&1 \
+        && [ "$(git rev-parse -q --verify "$new^1" 2>/dev/null)" = "$cur" ] && return 0
+    # A value the branch has held, by its own reflog: an undo (reset --hard HEAD^ off the
+    # later of two local merges), a redo (ORIG_HEAD, @{1}), a branch -f back. It was
+    # judged when it first landed. A first-parent test caught the undo and missed the
+    # redo (#144 fix reviews, F-1, H-1). The branch's reflog, not HEAD's: HEAD has held
+    # every feature tip checked out. An amended merge has not been held, so it is said.
+    # A case, not a pipe into grep -q, which under pipefail could take a SIGPIPE for no
+    # match.
+    case $'\n'"$(git log -g --format=%H "$ref" 2>/dev/null)"$'\n' in
+        *$'\n'"$new"$'\n'*) return 0 ;;
+    esac
+    # On a PR-only branch's upstream (origin/main) it was reviewed there: a fast-forward
+    # of dev to a release merge on main warned once a merge had to be made on dev (#144
+    # fix review, F-2). The conf is trusted to name only reviewed branches. One grep over
+    # the list, not one per ref: with 2,000 origin refs that cost 3.9s a move (H-2). A
+    # ref name holds no space or glob character.
+    if [ "$PR_ONLY_RE" != off ]; then
+        for b in $(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/ \
+                   | grep -iE -e "$PR_ONLY_RE" 2>/dev/null); do
+            git merge-base --is-ancestor "$new" "refs/remotes/origin/$b" 2>/dev/null && return 0
+        done
+    fi
+    {
+        echo "⚠️  flight-rules: $short moves to $(git log -1 --format='%h (%s)' "$new"), which no merge brought in and origin/$short does not have."
+        echo "   $short is a protected branch: work reaches it by merging its own branch. The move goes ahead; nothing leaves this clone until $short is pushed."
+        [ "$m" -eq 0 ] || echo "   PROTECTED_BRANCHES (${PROT_RE:-$DEFAULT_PROTECTED}) is not a pattern that compiles, so every branch is taken as protected until it is fixed."
+    } >&2
+}
+
+# The whole transaction, read once: warn_direct looks in it for the upstream's update.
+TX=$(cat)
 while read -r _old new ref; do
     case "$ref" in
         refs/heads/*) short="${ref#refs/heads/}" ;;
@@ -127,7 +246,6 @@ while read -r _old new ref; do
     fi
     # `none` is `off`, as the doctor reads it (0.28.0 release review).
     [ "$PR_ONLY_RE" = none ] && PR_ONLY_RE=off
-    [ "$PR_ONLY_RE" = "off" ] && continue
 
     # PROTECTED_BRANCHES=off is the opt-out the README, the agent guard's own block
     # message and flight-rules-doctor.sh all name. It used to disable only the agent guard, so a
@@ -148,8 +266,8 @@ while read -r _old new ref; do
     # for it, which read as "no match" and let the move through (#103). -i, as the
     # agent guard matches; -e, or a pattern starting with `-` is read as an option
     # (#103 review).
-    _rc=0; printf '%s' "$short" | grep -qiE -e "$PR_ONLY_RE" 2>/dev/null || _rc=$?
-    [ "$_rc" -eq 1 ] && continue
+    _rc=1; [ "$PR_ONLY_RE" = off ] || { _rc=0; printf '%s' "$short" | grep -qiE -e "$PR_ONLY_RE" 2>/dev/null || _rc=$?; }
+    [ "$_rc" -eq 1 ] && { warn_direct; continue; }
 
     # A ref that does not exist yet is being CREATED (clone, `git branch <new>`),
     # not moved. `_old` cannot be used to detect this: `git update-ref <ref> <sha>`
@@ -174,7 +292,15 @@ while read -r _old new ref; do
 
     # THE RULE.
     git merge-base --is-ancestor "$new" "$upstream" 2>/dev/null && continue
+    # …and where this transaction moves the upstream too, the upstream's new value:
+    # `git fetch origin main:main` updates both at once, and read before it lands,
+    # origin/main lacked the very commit main was brought to (#145). As warn_direct reads it.
+    _up=$(printf '%s\n' "$TX" | awk -v r="$upstream" '$3 == r { n = $2 } END { print n }')
+    [ -n "$_up" ] && git merge-base --is-ancestor "$new" "$_up" 2>/dev/null && continue
 
+    if go_ahead "$short moves to a commit that is not on origin/$short, though it is PR-only"; then
+        continue
+    fi
     if [ "$_rc" -ne 0 ]; then
         {
             broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "REF MOVE" "$short" "<the same command>"
@@ -203,29 +329,108 @@ while read -r _old new ref; do
         box_row "revert, rebase, branch -f, update-ref, reset --hard —"
         box_row "the ref landing off-upstream is the violation."
         box_row ""
-        # From origin's integration branch into the project's worktree directory, as the
-        # guard and /feature-start say it: with no start point the branch was cut from
-        # HEAD, the PR-only branch itself (full release review, S3).
-        _wt="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf_from HEAD WORKTREE_DIR)}"; _wt="${_wt:-.ai/worktrees}"
+        # From the local integration branch, the authoritative base every new branch is cut
+        # from, a revert aside, with origin's commits it lacks brought in, the rows one
+        # chain from the `cd` to the add (U-1, T-1), into the project's worktree directory, as
+        # the guard, /feature-start and Required 8 say it (rules/git-worktree-workflow.md →
+        # *Which branch new work starts from*): with no start point the branch was cut from
+        # HEAD, the PR-only branch itself (full release review, S3); from origin's, it
+        # missed merges not yet pushed (0.29.0 release review, R-1). The layouts are the
+        # guard's `worktree_route`'s, and its comment says what each once got wrong, and
+        # why no command row carries a `#` or an apostrophe (V-1).
+        _wt="${FLIGHT_RULES_WORKTREE_DIR:-$(read_conf_from HEAD WORKTREE_DIR)}"; _wt="${_wt:-.flight-rules/worktrees}"
         _int=$(read_conf_from HEAD INTEGRATION_BRANCH); _int="${_int:-main}"
+        _root="" _holder="" _cur="" _stale="" _gone=""
+        while IFS= read -r _l; do
+            case "$_l" in
+                "worktree "*) _cur="${_l#worktree }"; [ -n "$_root" ] || _root="$_cur" ;;
+                "branch refs/heads/$_int") _holder="$_cur" ;;
+                prunable*) [ "$_cur" = "$_holder" ] && _stale=1 ;;
+            esac
+        done < <(git worktree list --porcelain 2>/dev/null)
+        # git's own mark first; the .git file for a git too old to print it (C-3).
+        [ -n "$_holder" ] && { [ -n "$_stale" ] || [ ! -e "$_holder/.git" ]; } && { _gone="$_holder"; _holder=""; }
+        _qi=$(shq "$_int")
+        # A failed pull is left for the person: a merge in progress in that checkout may
+        # be theirs, so the prose says to abort nothing. The guard's `worktree_route`
+        # comment says why (S-1, Q-1, P-1, O-1).
+        if [ -n "$_holder" ]; then
+            box_row "$_int is checked out, so the pull runs in that checkout."
+            box_row "It brings in the commits origin/$_int has that it lacks,"
+            box_row "if any, merging them if the two diverged. If it fails, stop"
+            box_row "and ask, and leave whatever it left there to the person."
+            box_row ""
+        elif git show-ref --verify --quiet "refs/heads/$_int"; then
+            # Gone, not pruned: moved and deleted look the same to git, and a prune
+            # clears every worktree it cannot find, past repair (B-1). After a repair,
+            # the pull named, not "run it again", which a refused merge blocks (C-1);
+            # the folder still there, repair restores it (C-2).
+            _qg=$(shq "$_gone")
+            if [ -d "$_gone" ]; then
+                box_row "$_int was checked out at"
+                box_row "  $_qg,"
+                box_row "whose .git file is missing or broken, so stop and ask."
+                box_row "This restores it, staged work included, though git"
+                box_row "prints an error as it does:"
+                box_row "  git worktree repair $_qg"
+                box_row "Then pull in it, and run the add below:"
+                box_row "  git -C $_qg pull --ff --no-rebase origin $_qi"
+                box_row ""
+            elif [ -n "$_gone" ]; then
+                box_row "$_int was checked out at"
+                box_row "  $_qg,"
+                box_row "which is gone: moved, on a disk not mounted, or deleted,"
+                box_row "which git cannot tell apart, so stop and ask. If it was"
+                box_row "moved, repair it, then pull in it, and run the add below:"
+                box_row "  git worktree repair <new path>"
+                box_row "  git -C <new path> pull --ff --no-rebase origin $_qi"
+                box_row "If it was deleted, prune, which clears every worktree git"
+                box_row "cannot find, then run the commands below:"
+                box_row "  git worktree prune"
+                box_row ""
+            fi
+            box_row "$_int is checked out in no live worktree."
+            box_row "The commands below bring in the commits origin/$_int"
+            box_row "has that it lacks, if any. If git refuses, read its"
+            box_row "message (diverged, never pushed, or unreachable), and"
+            box_row "stop and ask."
+            box_row ""
+        fi
         box_row "Do this instead:"
-        # Two rows: on one, the default route was 70 columns in a 66-column box.
-        box_row "  git worktree add $(shq "${_wt%/}")/<name> \\"
-        box_row "      -b <prefix>/<name> origin/$_int"
+        box_row "  cd $(shq "${_root:-.}") && \\"
+        if [ -n "$_holder" ] && [ "$_holder" = "$_root" ]; then
+            box_row "    git pull --ff --no-rebase origin $_qi && \\"
+        elif [ -n "$_holder" ]; then
+            box_row "    git -C $(shq "$_holder") \\"
+            box_row "        pull --ff --no-rebase origin $_qi && \\"
+        elif ! git show-ref --verify --quiet "refs/heads/$_int"; then
+            box_row "    git fetch origin && \\"
+            box_row "    git branch --track $_qi origin/$_qi && \\"
+        else
+            box_row "    git fetch origin && \\"
+            box_row "    { git merge-base --is-ancestor origin/$_qi $_qi ||"
+            box_row "        git fetch origin $_qi:$_qi; } && \\"
+        fi
+        # Two rows for the add: on one, the default route was 70 columns in a 66-column box.
+        box_row "    git worktree add $(shq "${_wt%/}")/<name> \\"
+        box_row "        -b <prefix>/<name> $_qi"
         box_row "  # commit there, push, open a PR"
         box_row ""
         box_row "To sync this branch:"
         box_row "  git pull --ff-only origin $short"
         box_row ""
         box_row "If this project does not gate $short, its owner changes"
-        box_row "PR_ONLY_BRANCHES in .ai/flight-rules.conf and pushes"
+        box_row "PR_ONLY_BRANCHES in $(conf_shown) and pushes"
         box_row "that through review. Editing your working tree copy"
         box_row "will not lift this: the rule is read from the remote."
         box_row ""
+        _same=() _c=""
+        while IFS= read -r _c; do _same+=("$_c"); done < <(same_command "$ref")
+        go_ahead_rows "${_same[@]}"
         box_bot
         echo ""
     } >&2
     exit 1
-done
+done <<<"$TX"
 
 exit 0

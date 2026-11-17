@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wire the repo's committed git hooks into git — and, with --from, bring them up to
 # date first. Run from anywhere inside the repo:
-#   bash .ai/hooks/install.sh                               # one-time setup
+#   bash .flight-rules/hooks/install.sh                               # one-time setup
 #   bash <flight-rules>/hooks/git/install.sh --from <flight-rules>/hooks/git
 #                                                           # after a plugin update
 #                                                           # (a worktree: --this-checkout)
@@ -13,7 +13,7 @@
 # A plugin update refreshes the agent hooks but cannot touch these: they are the
 # project's own committed files (AppliHawk, 2026-10-12: four hooks stayed at 0.22.0
 # after the update to 0.23.0, and the new pre-commit never arrived). --from copies the
-# six hooks and this script in from the release named, then installs as usual. The
+# seven hooks and this script in from the release named, then installs as usual. The
 # result is a working-tree diff for the owner to review and commit.
 #
 # --stale-only overwrites a hook only when it is byte-identical to some release in the
@@ -56,7 +56,7 @@ shq() {
 }
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
-HOOKS='pre-merge-commit post-merge commit-msg pre-rebase reference-transaction pre-commit'
+HOOKS='pre-merge-commit post-merge commit-msg pre-rebase reference-transaction pre-commit pre-push'
 
 FROM=""; STALE_ONLY=0; CHECK_ONLY=0; THIS_CHECKOUT=0
 while [ $# -gt 0 ]; do
@@ -79,7 +79,10 @@ done
 # because git expands a leading ~: read raw, ~/x was joined to the repo root and an
 # install wrote the hooks into a literal "~" directory there.
 HOOKS_PATH=$(git config --local --path core.hooksPath 2>/dev/null || true)
-HOOKS_DIR="$REPO_ROOT/.ai/hooks"; PATH_IS_SET=0
+HOOKS_DIR="$REPO_ROOT/.flight-rules/hooks"; PATH_IS_SET=0
+# A project that committed its copies before 0.29.0 has them in .ai/hooks: a fresh clone
+# of it wires those, and does not start a second set beside them (#153).
+if [ ! -d "$HOOKS_DIR" ] && [ -d "$REPO_ROOT/.ai/hooks" ]; then HOOKS_DIR="$REPO_ROOT/.ai/hooks"; fi
 if [ -n "$HOOKS_PATH" ]; then
     PATH_IS_SET=1
     case "$HOOKS_PATH" in /*) HOOKS_DIR="$HOOKS_PATH" ;; *) HOOKS_DIR="$REPO_ROOT/$HOOKS_PATH" ;; esac
@@ -164,6 +167,7 @@ hook_marker() {
         post-merge)                  printf 'post-merge-note' ;;
         reference-transaction)       printf 'PR_ONLY' ;;
         pre-commit)                  printf 'PRIVATE KEY' ;;
+        pre-push)                    printf 'pre-push.local' ;;
         install.sh)                  printf 'committed git hooks into git' ;;
         *)                           return 1 ;;
     esac
@@ -309,6 +313,13 @@ if [ -n "$FROM" ]; then
             elif [ "$_a" -ne 1 ]; then
                 echo "   $h: could not be read (grep exited $_a) — could not check it; left alone"
                 LEFT=$((LEFT+1))
+            # A pre-commit or pre-push that is not flight-rules' at all (a linter's,
+            # git-lfs's) is no adapted copy: marked so, it kept flight-rules' own out for
+            # good. It goes to .local, as the full install says (#144 review, E-4).
+            elif { [ "$h" = pre-commit ] || [ "$h" = pre-push ]; } \
+                 && { grep -qF -e "$(hook_marker "$h")" "$dst"; [ "$?" -eq 1 ]; }; then
+                echo "   $h: not flight-rules' $h — left alone. If it is your project's own, rename it $h.local (flight-rules' $h runs it after its own check) and run this again"
+                LEFT=$((LEFT+1))
             else
                 echo "   $h: differs from every flight-rules release in the plugin cache — left alone (adapted here? diff it against $src, and add a line '# flight-rules: adapted' if so)"
                 LEFT=$((LEFT+1))
@@ -346,12 +357,16 @@ if [ -n "$FROM" ]; then
         # The rename only where its target is free: `mv -n` onto a .orig mergetool left
         # behind did nothing and exited 0, and the re-run refused with the same message
         # (#97 review, G7). A line of its own, quoted (shq): it is pasted (0.26.0 fix review).
-        if [ "$h" = pre-commit ]; then
-            echo "❌ $dst is not flight-rules' pre-commit (a linter? lint-staged?) and would be lost."
+        # pre-commit and pre-push run a .local beside them; a project's own (a linter,
+        # git-lfs's pre-push) goes there.
+        if [ "$h" = pre-commit ] || [ "$h" = pre-push ]; then
+            if [ "$h" = pre-commit ]; then _who="a linter? lint-staged?"; _when="after a clean scan"
+            else _who="git-lfs's?"; _when="after its own check"; fi
+            echo "❌ $dst is not flight-rules' $h ($_who) and would be lost."
             if [ -e "$dst.local" ] || [ -L "$dst.local" ]; then
-                echo "   $dst.local already exists — merge this one into it by hand, then remove this one and re-run: the flight-rules one runs pre-commit.local after a clean scan."
+                echo "   $dst.local already exists — merge this one into it by hand, then remove this one and re-run: the flight-rules one runs $h.local $_when."
             else
-                echo "   Rename it first: the flight-rules one runs it after a clean scan."
+                echo "   Rename it first: the flight-rules one runs it $_when."
                 printf '   mv -n %s %s\n' "$(shq "$dst")" "$(shq "$dst.local")"
             fi
         else
@@ -406,6 +421,7 @@ for required in $HOOKS; do
         [ "$required" = "commit-msg" ] && echo "   Without it the note gate never runs and merges go unchecked."
         [ "$required" = "pre-rebase" ] && echo "   Without it a protected branch can be rewritten with a local rebase."
         [ "$required" = "pre-commit" ] && echo "   Without it nothing scans what \`git add f && git commit\` or \`commit -a\` stages for a key."
+        [ "$required" = "pre-push" ] && echo "   Without it nothing says when a push puts commits no merge brought in on a protected branch."
         [ "$required" = "reference-transaction" ] && echo "   Without it cherry-pick, revert, branch -f, update-ref and a CONFLICTED merge all reach a PR-only branch unguarded."
         exit 1
     fi
@@ -446,7 +462,7 @@ if [ "$PATH_IS_SET" -eq 0 ]; then
         for f in "$_old"/*; do
             [ -f "$f" ] && [ -x "$f" ] || continue
             case "${f##*/}" in *.sample) continue ;; esac
-            [ "${f##*/}" != pre-commit ] || { _pc=" pre-commit"; continue; }
+            case "${f##*/}" in pre-commit|pre-push) _pc="$_pc ${f##*/}"; continue ;; esac
             case " $HOOKS " in *" ${f##*/} "*) _ours="$_ours ${f##*/}" ;; *) _theirs="$_theirs ${f##*/}" ;; esac
         done
     fi
@@ -454,7 +470,7 @@ if [ "$PATH_IS_SET" -eq 0 ]; then
         echo "⚠️ git runs these hooks from $_old today, and stops once core.hooksPath points at $HOOKS_DIR:$_pc$_ours$_theirs"
         echo "   They are not moved or changed. To keep one running:"
         [ -z "$_theirs" ] || echo "   -$_theirs: copy it into $HOOKS_DIR under the same name."
-        [ -z "$_pc" ] || echo "   - pre-commit: copy it in as pre-commit.local; flight-rules' pre-commit runs it after a clean scan."
+        for f in $_pc; do echo "   - $f: copy it in as $f.local; flight-rules' $f runs it after its own check."; done
         [ -z "$_ours" ] || echo "   -$_ours: flight-rules' runs no other, so merge it into flight-rules' copy by hand."
         echo "   Running them where they are, in place of displacing them, is #111."
     fi

@@ -15,8 +15,8 @@
 # live 2.1.296 session, 2026-10-13: a plain-stdout marker reached the model and not the
 # screen, a systemMessage the screen and not the model).
 #
-# The screen is for projects that use flight-rules — a .ai/flight-rules.conf at the
-# repo root, or flight-rules' gate where git runs hooks from. (Committed .ai/hooks/ alone
+# The screen is for projects that use flight-rules — a .flight-rules/conf at the
+# repo root, or flight-rules' gate where git runs hooks from. (Committed .flight-rules/hooks/ alone
 # is not adoption: beside another tool's global hooksPath it put a daily `cp` into that
 # tool's directory on screen — fix review, 2026-10-13. A clone of that kind has no
 # hooksPath and gets the once-ever hint, which is where its wire-up command belongs.) A plugin
@@ -37,10 +37,11 @@ unset CDPATH
 # branch parameters went quietly to their defaults (full release review, S2).
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=$(pwd)
 
-# Parameters: .ai/flight-rules.conf when it has them (parsed as data, never
+# Parameters: .flight-rules/conf when it has them (parsed as data, never
 # sourced), else the defaults on the right.
 # read_conf <key> <file>: pre-commit-check.sh's, verbatim — quotes, trailing comments —
-# so a key reads here as the guard and doctor read it (session-start.test.sh compares).
+# so a key reads here as the guard and the doctor read it (session-start.test.sh and
+# flight-rules-doctor.test.sh compare).
 read_conf() {
   local key="$1" file="$2"
   [ -r "$file" ] || return 1
@@ -51,7 +52,14 @@ read_conf() {
 # conf_get <key>: read_conf on this project's conf. It had its own sed, which kept
 # single quotes: INTEGRATION_BRANCH='dev' counted open branches against a branch named
 # 'dev', quotes and all, while doctor showed ✅ (0.27.0 release review).
-conf_get() { read_conf "$1" "$PROJECT_ROOT/.ai/flight-rules.conf"; }
+conf_get() { read_conf "$1" "$PROJECT_ROOT/$CONF_REL"; }
+# conf_rel <root>: the conf's path under it — .flight-rules/conf, or .ai/flight-rules.conf,
+# its home before 0.29.0, while a project has not moved it (#153).
+conf_rel() {
+  if [ ! -f "$1/.flight-rules/conf" ] && [ -f "$1/.ai/flight-rules.conf" ]; then printf '.ai/flight-rules.conf'
+  else printf '.flight-rules/conf'; fi
+}
+CONF_REL=$(conf_rel "$PROJECT_ROOT")
 # shq <s>: <s> quoted for a shell to paste, bare when it is plain, else in '…' with each
 # ' written '\''. Not printf %q: macOS bash 3.2's splits a multibyte character and
 # leaves a raw byte, so `fix/ü-ß` printed as invalid UTF-8 (fix review, 2026-10-24).
@@ -70,7 +78,7 @@ shq() {
 INTEGRATION_BRANCH="$(conf_get INTEGRATION_BRANCH)"; INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-main}"  # {INTEGRATION_BRANCH}
 # The environment first, as the guard reads it: the conf alone, the stale-worktree
 # reminder looked where the guard did not send them (full release review, S6).
-WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(conf_get WORKTREE_DIR)}"; WORKTREE_DIR="${WORKTREE_DIR:-.ai/worktrees}"     # {WORKTREE_DIR}
+WORKTREE_DIR="${FLIGHT_RULES_WORKTREE_DIR:-$(conf_get WORKTREE_DIR)}"; WORKTREE_DIR="${WORKTREE_DIR:-.flight-rules/worktrees}"     # {WORKTREE_DIR}
 
 # Once a day PER PROJECT. The flag used to carry only the date, so the first
 # project opened each day took the reminder for all of them; and nothing pruned
@@ -166,7 +174,7 @@ fi
 # Protected as pre-commit-check.sh decides it: the environment first, then the conf
 # read by the same read_conf, the same default (session-start.test.sh compares them).
 # Read once, for the sync and the open-branch count below.
-PROT="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(read_conf PROTECTED_BRANCHES "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+PROT="${FLIGHT_RULES_PROTECTED_BRANCHES:-$(conf_get PROTECTED_BRANCHES)}"
 PROT="${PROT:-^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)}"
 
 # A headless session (`claude -p`, observed; other callers only if they set the variable
@@ -223,6 +231,19 @@ in_progress() {
 SYNC_MSG=$(
 if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
    && [ -n "$(git config --local core.hooksPath 2>/dev/null)" ]; then
+  # Moved, and this clone still names the old folder: install.sh writes where
+  # core.hooksPath points, so each update landed in the folder the project left, a diff
+  # to commit there (owner, 2026-11-11, #162). Nothing run, nothing said, in any mode
+  # below: doctor's ❌ on this run gives the git config line. The state as doctor's
+  # `_old_named` decides it, so the two agree; the pattern in a variable for bash 3.2.
+  _ohp=$(git config --path core.hooksPath 2>/dev/null)
+  [ "${_ohp#/}" != "$_ohp" ] || _ohp="$PROJECT_ROOT/$_ohp"
+  _ohp="${_ohp%/}"; _dot='/./'; _ohp="${_ohp//"$_dot"//}"
+  if [ "$_ohp" = "$PROJECT_ROOT/.ai/hooks" ]; then
+    for _h in pre-merge-commit commit-msg pre-rebase post-merge reference-transaction pre-commit pre-push; do
+      [ -f "$PROJECT_ROOT/.flight-rules/hooks/$_h" ] && exit 0
+    done
+  fi
   # On a protected branch nothing is written: the diff could not be committed there,
   # and `git restore` to clear it is refused as discarding work, so it sat in the
   # checkout blocking the very merge that would land it (AppliHawk, 2026-10-21, #99).
@@ -250,7 +271,10 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   fi
   _check=""; _bad=""
   if [ -n "$_br" ] && [ "$_prot" != off ] && [ "$_prot" != none ]; then
-    shopt -s nocasematch; [[ "$_br" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+    # 2>/dev/null: bash 5.3 prints its own warning for a pattern that does not compile,
+    # ahead of the hook's own words for it (Ubuntu 26.04 CI, 0.29.0); the ref gate's greps
+    # are silenced the same way.
+    shopt -s nocasematch; [[ "$_br" =~ $_prot ]] 2>/dev/null; _m=$?; shopt -u nocasematch
     [ "$_m" -eq 0 ] && _check=--check-only
     # 2: a pattern bash cannot compile. Taken as protected, and said — writing is the
     # failure that costs work (fix review, F5).
@@ -297,7 +321,7 @@ if [ "$HOOK_SYNC" = "auto" ] && [ -f "$GIT_HOOKS_SRC/install.sh" ] \
   fi
   if [ -n "$_check" ] && [ "$SYNC_RC" -eq 3 ]; then
     if [ -n "$_bad" ]; then
-      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. It is the project owner's to fix, in .ai/flight-rules.conf (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it. Behind or missing:"
+      echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: PROTECTED_BRANCHES ($_prot) is not a pattern bash can read, so \"$_br\" is taken as protected. It is the project owner's to fix, in $CONF_REL (or FLIGHT_RULES_PROTECTED_BRANCHES); an assistant does not edit it. Behind or missing:"
     else
       echo "⏸️ flight-rules HOOK_SYNC=auto did not update the git hooks: this checkout is on \"$_br\", a protected branch, where the change could not be committed. Behind or missing:"
     fi
@@ -380,7 +404,7 @@ if [ -n "$DOCTOR_SCREEN" ]; then
   case "$HP" in ""|/*) HP_DIR="$HP" ;; *) HP_DIR="$TOP/$HP" ;; esac
   if [ -z "$TOP" ]; then
     DOCTOR_SCREEN=""
-  elif [ -f "$TOP/.ai/flight-rules.conf" ] || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
+  elif [ -f "$TOP/$(conf_rel "$TOP")" ] || { [ -n "$HP_DIR" ] && fr_hooks "$HP_DIR"; }; then
     :   # adopted: shown daily
   elif [ -n "$HP" ]; then
     DOCTOR_SCREEN=""   # another tool's hooks; adopting flight-rules there is a choice
@@ -409,10 +433,10 @@ fi
 # "?" lines split off below: a missed reminder, but never one that reads as "under
 # the limit".
 OPEN_MSG=$(
-  [ -f "$PROJECT_ROOT/.ai/flight-rules.conf" ] || exit 0
-  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(read_conf OPEN_BRANCH_LIMIT "$PROJECT_ROOT/.ai/flight-rules.conf")}"
+  [ -f "$PROJECT_ROOT/$CONF_REL" ] || exit 0
+  _lim="${FLIGHT_RULES_OPEN_BRANCH_LIMIT:-$(conf_get OPEN_BRANCH_LIMIT)}"
   # Where it came from, said: raising it in the conf does nothing when the environment set it.
-  _src="in .ai/flight-rules.conf"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
+  _src="in $CONF_REL"; [ -n "${FLIGHT_RULES_OPEN_BRANCH_LIMIT-}" ] && _src="from FLIGHT_RULES_OPEN_BRANCH_LIMIT"
   [ "$_lim" = off ] && exit 0
   [[ "$_lim" =~ ^0*[1-9][0-9]*$ ]] && _lim=$((10#$_lim)) || _lim=5
   _base=""; _into=""
@@ -431,7 +455,7 @@ OPEN_MSG=$(
     # A pattern that does not compile (2) protects, as the sync above takes it — and the
     # count is then not made, said so: silent, it read as under the limit (fourth review).
     if [ "$_prot" != off ] && [ "$_prot" != none ]; then
-      shopt -s nocasematch; [[ "$_b" =~ $_prot ]]; _m=$?; shopt -u nocasematch
+      shopt -s nocasematch; [[ "$_b" =~ $_prot ]] 2>/dev/null; _m=$?; shopt -u nocasematch
       [ "$_m" -eq 2 ] && { echo "?OPEN_BRANCH_LIMIT: the protected pattern does not compile — open branches not counted"; exit 0; }
       [ "$_m" -eq 1 ] || continue
     fi
@@ -439,7 +463,11 @@ OPEN_MSG=$(
     _ahead=$(git rev-list --count "refs/heads/$_b" --not $_base 2>/dev/null) || { _fail="$_fail $_b"; continue; }
     [ "$_ahead" -gt 0 ] || continue
     _n=$((_n+1))
-    if git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null | grep -q '^passed:'; then
+    # Waiting only if the gate would take its note: the tip's tree, and a ran: line (#107).
+    _nt=$(git notes --ref=pre-merge-check show "refs/heads/$_b" 2>/dev/null)
+    _tr=$(printf '%s\n' "$_nt" | sed -n 's/^passed:.* tree:\([0-9a-f]\{40,64\}\).*$/\1/p' | head -1)
+    if [ -n "$_tr" ] && [ "$_tr" = "$(git rev-parse -q --verify "refs/heads/$_b^{tree}" 2>/dev/null)" ] \
+       && printf '%s\n' "$_nt" | grep -q '^ran:[[:space:]]*[^[:space:]]'; then
       _wait="$_wait $_b"
     else
       _work="$_work $_b"
@@ -462,14 +490,16 @@ FOR_USER="$FOR_USER${FOR_USER:+${OPEN_MSG:+
 
 WORKTREES_DIR="$PROJECT_ROOT/$WORKTREE_DIR"
 
-REMINDER=$(
-if [ ! -d "$WORKTREES_DIR" ]; then
-  exit 0
-fi
+# .ai/worktrees/ was the default before 0.29.0, with no fallback after it: the worktrees
+# left there are still read, until they are gone, or they would be reminded of nowhere
+# (0.29.0 release review, D1).
+OLD_WORKTREE_DIR=.ai/worktrees
+[ "${WORKTREE_DIR%/}" = "$OLD_WORKTREE_DIR" ] && OLD_WORKTREE_DIR=""
 
+REMINDER=$(
 # Find worktrees whose branches have been merged into the integration branch
 STALE=""
-for WORKTREE_PATH in "$WORKTREES_DIR"/*/; do
+for WORKTREE_PATH in "$WORKTREES_DIR"/*/ ${OLD_WORKTREE_DIR:+"$PROJECT_ROOT/$OLD_WORKTREE_DIR"/*/}; do
   [ -d "$WORKTREE_PATH" ] || continue
 
   BRANCH=$(git -C "$WORKTREE_PATH" branch --show-current 2>/dev/null)
@@ -486,8 +516,8 @@ for WORKTREE_PATH in "$WORKTREES_DIR"/*/; do
   # reason: a bare name there resolves to the tag. (Found by review, 2026-09-12.)
   if git for-each-ref --format='%(refname:lstrip=2)' --merged "refs/heads/$INTEGRATION_BRANCH" refs/heads 2>/dev/null \
        | grep -qxF "$BRANCH"; then
-    WORKTREE_NAME=$(basename "$WORKTREE_PATH")
-    STALE="$STALE\n  Branch: $BRANCH  →  $WORKTREE_DIR/$WORKTREE_NAME"
+    WORKTREE_REL="${WORKTREE_PATH#"$PROJECT_ROOT"/}"
+    STALE="$STALE\n  Branch: $BRANCH  →  ${WORKTREE_REL%/}"
   fi
 done
 
@@ -496,7 +526,7 @@ if [ -n "$STALE" ]; then
   echo -e "$STALE"
   echo ""
   echo "Clean up with:"
-  echo "  git worktree remove $WORKTREE_DIR/<name>"
+  echo "  git worktree remove <the folder named above>"
   echo "  git branch -d <branch-name>"
 fi
 )

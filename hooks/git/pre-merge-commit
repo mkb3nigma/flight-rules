@@ -22,12 +22,12 @@
 #
 # Configuration — first match wins:
 #   1. Environment            FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
-#   2. .ai/flight-rules.conf **as committed on the merge target** (see below)
+#   2. .flight-rules/conf **as committed on the merge target** (see below)
 #   3. The default below
-# Parsed as data, never sourced. Commit this file (e.g. into .ai/hooks/) and run
+# Parsed as data, never sourced. Commit this file (e.g. into .flight-rules/hooks/) and run
 # install.sh once per clone.
 #
-# ⚠️ The conf is read from `HEAD:.ai/flight-rules.conf` — the merge TARGET's committed
+# ⚠️ The conf is read from `HEAD:.flight-rules/conf` — the merge TARGET's committed
 #    state — NOT from the working tree. By the time this hook runs git has already
 #    updated the working tree with the merge result, so a working-tree read would let
 #    the incoming branch relax the very rule that judges it: a branch shipping
@@ -35,15 +35,20 @@
 #    to the default (not the working tree) when HEAD has no conf keeps that closed.
 #    See the longer note in the commit-msg hook alongside this one.
 #
-# No bypass is printed. `git merge --no-verify` skips this hook, but where origin has
-# the branch the ref gate (reference-transaction) still refuses the move it makes, and
-# --no-verify does not reach that hook; mid-merge it fails outright (full release
-# review, S4).
+# The refusal prints its way through, FLIGHT_RULES_GO_AHEAD=1 git commit --no-edit,
+# which concludes the merge it leaves open — the person's to run (#151). `git merge
+# --no-verify` is not one: it skips this hook, but where origin has the branch the ref
+# gate (reference-transaction) still refuses the move it makes, and --no-verify does not
+# reach that hook; mid-merge it fails outright (full release review, S4).
 
 set -euo pipefail
 
 DEFAULT_PR_ONLY='^main$'
-CONF_PATH='.ai/flight-rules.conf'   # repo-relative
+CONF_PATH='.flight-rules/conf'   # repo-relative
+# Where the conf lived before 0.29.0, read while a project has not moved it (#153).
+if ! git cat-file -e "HEAD:$CONF_PATH" 2>/dev/null && git cat-file -e 'HEAD:.ai/flight-rules.conf' 2>/dev/null; then
+  CONF_PATH='.ai/flight-rules.conf'
+fi
 
 read_conf_at_head() {
   local key="$1" path="$2" content
@@ -86,6 +91,20 @@ box_row() {
     [ "$pad" -lt 0 ] && pad=0
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
+# go_ahead <what is passed>: the way through that every stop prints (MISSION.md,
+# principle 5) — FLIGHT_RULES_GO_AHEAD=1 in front of the command. Going ahead is the
+# person's decision, so it is said every time it is used (#151).
+go_ahead() {
+    [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1
+    echo "⚠️  flight-rules: going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — $1. That is the person's decision, never an assistant's own." >&2
+}
+# go_ahead_rows <command>: the rows a box prints for it.
+go_ahead_rows() {
+    box_row "Going ahead anyway is the person's decision, never an"
+    box_row "assistant's own, and it is said when it is used:"
+    box_row "  FLIGHT_RULES_GO_AHEAD=1 $1"
+    box_row ""
+}
 
 # A refusal a broken pattern decided: the pattern named, where it is set, and the
 # command that gets past the gate it broke from where this refusal leaves you — the one
@@ -103,7 +122,7 @@ broken_box() {
     box_row "  $2"
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
-    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "The project owner fixes it in $CONF_PATH, on a"
     box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
     box_row "has landed, and if $4 is not a branch it means,"
     box_row "give the pattern meant in front of this command:"
@@ -121,10 +140,16 @@ broken_box() {
 # none: [[ =~ ]] returns 2 for it, which read as "no match" and let every merge through
 # (#103). Case-insensitively, as the agent guard matches: `^MAIN$` let a local merge
 # into main through (#103 review).
+# 2>/dev/null: bash 5.3 prints its own warning for a pattern that does not compile,
+# ahead of the hook's own words for it (Ubuntu 26.04 CI, 0.29.0); the ref gate's greps
+# are silenced the same way.
 [ "$PR_ONLY_RE" = "off" ] && exit 0
 shopt -s nocasematch
-_rc=0; [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]] || _rc=$?
+_rc=0; [[ "$CURRENT_BRANCH" =~ $PR_ONLY_RE ]] 2>/dev/null || _rc=$?
 shopt -u nocasematch
+if [ "$_rc" -ne 1 ] && go_ahead "a local merge into $CURRENT_BRANCH, a PR-only branch"; then
+    exit 0
+fi
 if [ "$_rc" -eq 2 ]; then
     # This refusal leaves the merge in progress, so the merge is finished by a commit.
     broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "LOCAL MERGE" "$CURRENT_BRANCH" "git commit --no-edit"
@@ -161,6 +186,7 @@ if [ "$_rc" -eq 0 ] && [ -n "$CATCHUP" ]; then
     box_row "  git merge --abort"
     box_row "  git pull --ff-only"
     box_row ""
+    go_ahead_rows "git commit --no-edit"
     box_bot
     echo ""
     exit 1
@@ -187,6 +213,7 @@ if [ "$_rc" -eq 0 ]; then
     box_row "  3. git checkout $CURRENT_BRANCH"
     box_row "     git pull --ff-only origin $CURRENT_BRANCH"
     box_row ""
+    go_ahead_rows "git commit --no-edit"
     box_row "Undo this half-finished merge:   git merge --abort"
     box_row ""
     box_bot

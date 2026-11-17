@@ -48,10 +48,6 @@ better approach is itself a failure mode. The wording here is original; the insi
 theirs. If the post resurfaces, credit the author and add the permalink here. There is
 nothing to track for updates, so this source has no [UPSTREAMS.md](UPSTREAMS.md) row.
 
-Principles 6 ("Judge Ideas on Their Merit") and 7 ("Report So It Can Be Acted On") are
-original to this repo and MIT-licensed like the rest. They are called out only because
-their neighbours are not.
-
 ## skills/diagnose/ — concept credit
 
 The diagnosis loop — reproduce → minimize → hypothesize → instrument → fix → verify →
@@ -76,6 +72,14 @@ step. Wording remains original throughout.
 Not adopted, deliberately: the enumerated ten-way catalogue of loop constructions and the
 human-in-the-loop script asset (too long and too tool-coupled for this playbook's
 register), and the handoff to an architecture skill this playbook does not have.
+
+A third review (2026-11-12, `8b78b531` to `4ae2317d`, 128 commits) folded in one check,
+from upstream commit `f3fc5632` (#1209, 2026-10-07): the regression test is watched
+failing before the fix, and a red forced by breaking code or a fixture is trusted only
+once a diff against a clean copy shows the break landed (step 6). Wording original.
+Not adopted, deliberately: upstream dropped the post-mortem question ("what would have
+prevented this bug?") into a separate `retro` skill; this playbook has none, so step 8
+keeps it.
 
 **This credit was missing until 2026-08-15.** It was recorded correctly in the source
 project when the skill was first written (AppliHawk commit `c307e69c`, 2026-06-11 —
@@ -115,3 +119,57 @@ contradiction/staleness checks by the LLM that maintains them is his.
 The skill-file conventions echo Anthropic's Claude Code skill/plugin format so the
 files double as plugin skills; the workflows themselves are original or attributed
 above.
+
+## skills/ux/ — interface guidance
+
+`accessibility.md` and part of `forms.md` follow the **[Web Content Accessibility
+Guidelines (WCAG) 2.2](https://www.w3.org/TR/WCAG22/)** (W3C Recommendation, 12 December
+2024), level AA, citing each success criterion by number; the wording is this skill's
+own summary, not the specification's text, and the thresholds were read from it. The
+practice they add beyond a criterion, and the markup they ask for, rest on W3C's
+supporting documents: the **[WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/)**
+(the modal dialog pattern, the keyboard interface, *Read Me First*, the sortable table),
+the **[WAI Tables Tutorial](https://www.w3.org/WAI/tutorials/tables/)**, *Understanding
+WCAG 2.2* for 1.3.2, 1.3.3, 1.4.13, 2.1.4, 2.4.2 and 2.5.2, techniques ARIA21 and G212,
+failures F54 and F101, and ACT rule b4f0c3; and on MDN's pages on the `dialog` element,
+the `hover` media feature and `aria-disabled`. `forms.md` also follows the **[GOV.UK
+Design System](https://design-system.service.gov.uk/)** (the error summary and the
+validation pattern, recording where it disputes a rule), the **[HTML
+Standard](https://html.spec.whatwg.org/)**'s form submission algorithm, and GDPR
+recital 32 on consent. Each is summarised in this skill's own words and named beside
+its rule.
+
+`principles.md`, `states.md` and `forms.md` restate published findings in their own
+words, each named with its source: Hick (1952) and Hyman (1953); Fitts (1954); the
+isolation effect (von Restorff 1933); the Gestalt principles, with common region (Palmer 1992) and
+uniform connectedness (Palmer and Rock 1994); working-memory capacity (Cowan 2001,
+revising Miller 1956); the serial position effect; the aesthetic-usability effect
+(Kurosu and Kashimura 1995); the peak-end rule (Kahneman); the goal-gradient effect
+(Kivetz, Urminsky and Zheng 2006); the Zeigarnik and Ovsiankina effects as weighed by
+Ghibellini and Meier (2025); response-time limits as given by Nielsen Norman Group;
+the Core Web Vitals responsiveness threshold and the layout-shift guidance (web.dev);
+Jakob's law, the second of the ten usability heuristics and *User Control and Freedom*
+(Nielsen and Nielsen Norman Group); Baymard Institute's benchmark of Back button
+expectations; Tesler's law; Postel's robustness principle (RFC 761).
+
+The starting list was **[The UX laws in my CLAUDE.md](https://adamhayes.xyz/blog/the-ux-laws-in-my-claude-md)**
+by Adam Hayes (2026-09-01), which states no licence; no text is taken from it. What
+changed in the taking: accessibility, states and forms added; each rule labelled as a
+standard, a finding or a rule of thumb, with its limit; Miller's seven replaced by
+Cowan's three to five; the 0.4 s response figure replaced by the 0.1 / 1 / 10 s limits
+and the web's 200 ms threshold; the Zeigarnik effect kept only as resumption;
+Parkinson's law and Occam's razor left out as not interface findings.
+
+The structure of `audit.md`, the scored audit of an existing interface, is adapted from
+**[Impeccable](https://github.com/pbakaus/impeccable)** (`pbakaus/impeccable`, Apache 2.0),
+`skill/reference/audit.md` and `skill/reference/critique.md` read at `b4bff162`; the
+idea only, no text taken. Taken: an audit documents and does not fix; one score per
+area beside the findings, with the key finding's ID; patterns, one problem recurring
+across the interface (a section, "Patterns & Systemic Issues", there; a rule under the
+findings register here); n/a for an area that does not apply (as `critique.md` scores a
+heuristic that cannot apply); and an area that could not be judged is not scored rather
+than passed. Not taken: its judged score levels (here a score is worked out from the
+findings register and can be recomputed), its totals and rating bands, its P0–P3
+severities (this guide rates Major, Medium and Minor by effect), the open-critique
+parts (gut reaction, personas, questions to consider, praise), its performance, theming
+and integrity areas, which have no rules here yet, and its saved-report scripts.

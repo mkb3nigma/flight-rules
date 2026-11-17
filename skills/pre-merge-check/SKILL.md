@@ -11,8 +11,9 @@ Read `.ai/skills/pre-merge-check/EXTENSIONS.md` first if the project has one: ex
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
-restating one is invisible to enforcement, so the conf wins.
+come **only** from the conf the hooks read — `.flight-rules/conf`, or, where that is
+absent, `.ai/flight-rules.conf` (a project not yet moved) — an extension restating one
+is invisible to enforcement, so the conf wins.
 
 Run every automated check before merging a feature branch into its destination
 (default: `{INTEGRATION_BRANCH}`). Prints a pass/fail report and stamps a git note when
@@ -52,10 +53,10 @@ locally with no PR, its commit messages.
 6. **Secrets scan** — run the guard's own patterns over the added lines of
    `git diff <dest>...HEAD`: the `+` lines inside hunks, as the guard's `ADDED` awk
    selects them — a `grep -v '^+++'` header filter also drops an added line that
-   begins `++ ` (#77). Prefer the guard's live source: the first of
+   begins `++ `. Prefer the guard's live source: the first of
    `${CLAUDE_PLUGIN_ROOT}/hooks/agent/pre-commit-check.sh`,
    `~/.claude/plugins/cache/*/flight-rules/*/hooks/agent/pre-commit-check.sh` (highest
-   version), `.ai/hooks/agent/pre-commit-check.sh`, `hooks/agent/pre-commit-check.sh`
+   version), `.flight-rules/hooks/agent/pre-commit-check.sh`, `hooks/agent/pre-commit-check.sh`
    that exists — the `hit '…'` lines, the `.env` rule, the credential-literal grep.
    **If none exists, scan with the list below rather than skipping the check** — in a
    plugin install `CLAUDE_PLUGIN_ROOT` is not exported to your shell and none of the
@@ -83,7 +84,11 @@ locally with no PR, its commit messages.
    it reports those too, as ⚠️. ❌ on any other hit (redact values).
 7. **Debug-logging check** — new `console.log` / stray print/debug lines: ⚠️ warn.
 8. **Conventional commits** — every commit on the branch starts with an allowed prefix
-   (`feature:` `fix:` `refactor:` `test:` `docs:` `chore:`; `hotfix/` branches use `fix:`).
+   (`feature:` `fix:` `refactor:` `test:` `docs:` `chore:` `ci:`; `hotfix/` branches use
+   `fix:`; `ci:`, a change to the CI, has no branch prefix of its own). A prefix may
+   carry a scope, `<type>(<scope>):` (`fix(hooks):`), and git's own `Revert "<subject>"`,
+   which `git revert` writes and the rule's revert route makes, passes as it is: either
+   refused, the remedy at merge time is a history rewrite.
 9. **Single-purpose scope** — commits describe one coherent concern; ⚠️ if clearly not.
 10. **Merge-conflict markers** — none added in the diff.
 11. **Dependency audits** — `npm audit --audit-level=high` / `pip-audit` (or the
@@ -107,20 +112,20 @@ locally with no PR, its commit messages.
     line — "for now", "temporary", "remove after", "until we" — with no issue and no
     condition. Judge comments and prose, not identifiers or string literals: a token
     grep over the diff flags enum members such as `ActionStatus.TODO`.
-16. *Retired (#119); numbered so later items keep theirs.*
+16. *Retired; numbered so later items keep theirs.*
 17. **Docs match the change** — ask **"what claims does this diff make false?"**, then
     go find them. Not a grep for renamed symbols: a change that renames nothing and only
     makes a sentence untrue leaves every grep empty. Run narrowly it has missed four
     times in this repo, the last on 2026-09-14 — a rule's **Required** entry was updated
     and its **Forbidden** entry, three lines away, still described the old behaviour.
-    Search `README*`, `docs/`, `rules/`, `skills/`, `CLAUDE.md` and code comments —
+    Search `README*`, `docs/`, `rules/`, `skills/`, `CLAUDE.md`, `AGENTS.md` and code comments —
     header and inline — for the BEHAVIOUR, including the places that state it as a rule
     rather than naming the code. ❌ if a doc still describes the old behaviour; ⚠️ if a
     behaviour change touched no doc and the PR does not say why. A deleted comment line
     that carries an anchor (issue, PR, sha, date) is ⚠️ unless the PR names the reason
     that went — age is not a reason.
 18. **Rules earn their place** — for every item the diff adds to or widens in a rules
-    file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`): the PR names the
+    file (`rules/`, `.ai/rules/`, `master-rules.md`, `CLAUDE.md`, `AGENTS.md`): the PR names the
     warrant, what goes wrong without it, and how it is enforced. The warrant is an
     event (commit/PR/sha/date/probe — a private-repo sha and date counts; a probe for a
     refusal or a check, one a slip could also reach), an
@@ -156,7 +161,7 @@ locally with no PR, its commit messages.
     stopped (`docker compose down`, `docker rm`): a stopped one still takes disk space.
     One left on purpose is reported as `LEFT RUNNING: <what> — <why>; stop with
     <command>`. ⚠️ on one with no reason: it outlives the branch, and once the worktree
-    is removed it runs from nowhere (AppliHawk, 2026-10-24, #109). `post-merge` prints
+    is removed it runs from nowhere (AppliHawk, 2026-10-24). `post-merge` prints
     what is still running from the worktree, and its Compose containers, when it lists
     it for removal; a container with no Compose label is tied to no directory, and only
     this item finds it.
@@ -168,9 +173,21 @@ status and its last line of output, so "passed" is evidence, not a claim. The tw
 disagree: a runner printing "402 passed" above a summary line while exiting 1 reads
 green to a human and red to CI — then:
 - Any ❌ → `Result: NOT READY` — do NOT stamp.
-- Clean → `Result: ✅ READY TO MERGE` and stamp:
+- `git status --porcelain` prints anything → a ⚠️ row naming the files: *uncommitted, not
+  reviewed*. The checks read `git diff <dest>...HEAD` and the stamp vouches for the
+  commit alone, but the tests ran with these edits on disk — say so; commit them and run
+  again if they belong to the branch. Advisory: no hook sees what was on disk when the
+  tests ran.
+- Clean → `Result: ✅ READY TO MERGE` and stamp — the tree it checked, and one `ran:` per
+  command run, with its exit status and last line of output, as the table has them. The
+  merge gate refuses a note without both. Each `ran:` goes in single quotes, so a
+  `"`, `$` or backtick in a command or its output is written as it is (a `'` in it is
+  written `'\''`):
   ```bash
-  git notes --ref=pre-merge-check add -f -m "passed: $(date -u +%Y-%m-%dT%H:%M:%SZ) branch:$(git branch --show-current)" HEAD
+  git notes --ref=pre-merge-check add -f \
+    -m "passed: $(date -u +%Y-%m-%dT%H:%M:%SZ) branch:$(git branch --show-current) tree:$(git rev-parse 'HEAD^{tree}')" \
+    -m 'ran: <command> → exit 0, <last line>' \
+    HEAD
   ```
 
 Always end with: this command does not merge or push; warnings are non-blocking but

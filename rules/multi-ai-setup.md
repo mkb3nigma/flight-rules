@@ -1,24 +1,27 @@
 # Multi-AI Rules Architecture
 
-One rules system that works across AI coding assistants (Claude Code, Cursor,
-Windsurf, Copilot, Codex, …). Rules are maintained in exactly one place per project;
+One rules system that works across AI coding assistants (Claude Code, Codex,
+Copilot, …). Rules are maintained in exactly one place per project;
 every assistant reaches them through a small pointer file.
 
 ## Layout
 
 ```
 .ai/
-├── flight-rules.conf        # Branch policy — the one file every hook and skill reads
 ├── master-rules.md          # The project's rules (tech stack, patterns, workflow)
 ├── rules/                   # Focused rule files (security, testing, …)
-├── skills/                  # Reusable AI workflows (plain Markdown, tool-agnostic)
-│   └── <name>/EXTENSIONS.md # This project's deltas to a shared skill
-└── hooks/                   # Git hooks (core.hooksPath); agent/ only when hand-wired
+└── skills/                  # Reusable AI workflows (plain Markdown, tool-agnostic)
+    └── <name>/EXTENSIONS.md # This project's deltas to a shared skill
+
+.flight-rules/               # What flight-rules itself keeps in the project
+├── conf                     # Branch policy — the one file every hook and skill reads
+├── hooks/                   # Git hooks (core.hooksPath); agent/ only when hand-wired
+└── worktrees/               # Feature worktrees, git-ignored (WORKTREE_DIR moves it)
 
 Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
 ├── CLAUDE.md                        # Claude Code
-├── .cursorrules                     # Cursor
-├── .windsurfrules                   # Windsurf
+├── AGENTS.md                        # Codex, and any assistant that reads AGENTS.md
+├── GEMINI.md                        # Gemini CLI, which reads it, not AGENTS.md, by default
 └── .github/copilot-instructions.md  # GitHub Copilot
 ```
 
@@ -44,9 +47,7 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    ```
 
    `name:` is not optional — it is what the assistant matches on, and this playbook's
-   own `skills/catalogue.test.sh` rejects a pointer without it. The template used to
-   omit it, so the rule telling projects how to write a pointer prescribed a shape the
-   playbook's own consistency check fails.
+   own `skills/catalogue.test.sh` rejects a pointer without it.
 
    The pointer may also pin a model (`model: opus`) for expensive skills. Logic never
    goes in the pointer — same rule as the root pointer files.
@@ -65,10 +66,25 @@ Root pointer files (each a few lines, all pointing at .ai/master-rules.md):
    scripts. Caveat: the scripts consume each tool's hook I/O protocol (Claude Code:
    JSON on stdin, structured deny output), so a second tool needs a small adapter —
    but the guard logic stays in one place.
-   Where the scripts physically live depends on how the playbook was installed, and
-   this is worth stating because an earlier version of this rule mandated
-   `.ai/hooks/agent/` unconditionally: **with the plugin the agent hooks are already
+   Where the scripts physically live depends on how the playbook was installed:
+   **with the plugin the agent hooks are already
    live from the plugin directory, and a local copy makes the guard run twice.** The
    git hooks are still copy-in — no plugin can set `core.hooksPath`. A project that
-   hand-wires everything does use `.ai/hooks/`; one that uses the plugin copies only
+   hand-wires everything does use `.flight-rules/hooks/`; one that uses the plugin copies only
    `hooks/git/`.
+6. **Planning models plan and review; implementation is handed over** — where a project
+   names which of its models plan and review (the most capable, and costliest, tier)
+   and which implement, in its master rules, that is the regular course of work. A
+   planning model stops at the plan and hands the work over; it reviews what comes
+   back. In a review, its part is the cold, independent read; the adversarial debate
+   runs on the tier below by default. The handover is an issue in the project's
+   tracker carrying the plan — what
+   changes and where, the tests that must fail first, what is decided and what is still
+   open — or a handover file where an issue does not fit; a plan left only in a chat or
+   a model's memory is not one. Where the design is uncertain (a test may change it),
+   the planning model may run a short spike first and hands over with what it found.
+   The implementing model reports where it departed from the plan, and why, so the
+   review knows where to look. The person can override this for any task, and a small
+   direct ask — a doc line, filing an issue — is done by whoever is asked. The rule
+   names roles, not models: model names change within months, and the project names
+   its own. Advisory: a hook cannot tell planning from implementing.

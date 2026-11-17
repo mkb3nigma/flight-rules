@@ -12,12 +12,13 @@ Read `.ai/skills/pr-create/EXTENSIONS.md` first if the project has one: extra or
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
-restating one is invisible to enforcement, so the conf wins.
+come **only** from the conf the hooks read — `.flight-rules/conf`, or, where that is
+absent, `.ai/flight-rules.conf` (a project not yet moved) — an extension restating one
+is invisible to enforcement, so the conf wins.
 
 Open a GitHub PR for the current feature branch. Project parameters:
 `{INTEGRATION_BRANCH}`, `{PROTECTED_BRANCHES}`, `{WORKTREE_DIR}`, `{TEST_COMMANDS}`
-(defaults: `main` / `main` / `.ai/worktrees/` / the project's test commands).
+(defaults: `main` / `main` / `.flight-rules/worktrees/` / the project's test commands).
 
 ## Constraints
 - Never open a PR from one of `{PROTECTED_BRANCHES}` — **except the release PR**, whose
@@ -25,7 +26,9 @@ Open a GitHub PR for the current feature branch. Project parameters:
   integration branch is usually protected too, so without this exception the skill
   forbids the release it describes in step 2a.
 - Base-branch routing: `feature/ fix/ refactor/ test/ docs/ chore/` branches target
-  `{INTEGRATION_BRANCH}`; `hotfix/*` targets `main`; anything else → ask the user.
+  `{INTEGRATION_BRANCH}`; `hotfix/*` targets `main`, and its body links the issue filed
+  for it when it was approved (`feature-start` 3) — none filed, file it first; anything
+  else → ask the user.
 - `/pre-merge-check` must be clean first — no ❌ items may remain. ⚠️ warnings are
   non-blocking but must be listed in the PR body.
 - A release PR (`{INTEGRATION_BRANCH}` → `main`) additionally needs the full
@@ -74,6 +77,8 @@ gh pr create \
   --body "$(cat <<'EOF'
 <STACK MEMBERS ONLY — delete this line otherwise:>
 > 📚 Layer <i> of a `gh stack`. Merges bottom-up with the layers below it.
+<HOTFIX PRs ONLY — delete this line otherwise:>
+> 🚑 Hotfix: bypasses `{INTEGRATION_BRANCH}`, cut from `origin/main`, merged straight into `main` — #<the issue filed for it>
 
 ## Summary
 <one user-facing bullet per commit, reworded from git log>

@@ -16,11 +16,11 @@
 # Configuration — first match wins:
 #   1. Environment              FLIGHT_RULES_NOTE_GATED_BRANCHES='^(dev|staging)$'
 #                               FLIGHT_RULES_PR_ONLY_BRANCHES='^main$'
-#   2. .ai/flight-rules.conf **as committed on the merge target** (see below)
+#   2. .flight-rules/conf **as committed on the merge target** (see below)
 #   3. The defaults below
 # Parsed as data, never sourced, so a cloned repo cannot execute code here.
 #
-# ⚠️ The conf is read from `HEAD:.ai/flight-rules.conf` — the merge TARGET's committed
+# ⚠️ The conf is read from `HEAD:.flight-rules/conf` — the merge TARGET's committed
 #    state — NOT from the working tree. During a merge git updates the working tree
 #    before this hook runs, so a working-tree read would hand the incoming branch
 #    control over the gate that judges it: a branch shipping
@@ -34,14 +34,14 @@
 #    uncommitted config edit SHOULD take effect immediately. Only the merge gate has
 #    to resist the thing it is gating.
 #
-# Install: commit this file into the project's hooks dir (e.g. .ai/hooks/) and run
+# Install: commit this file into the project's hooks dir (e.g. .flight-rules/hooks/) and run
 # install.sh once per clone.
 #
-# No bypass is printed. The note gate is what keeps unreviewed work out of the branch,
-# and a refusal that hands the reader a working skip — an assistant included, which no
-# guard stops from running it — undoes it; the one it used to print, `git merge
-# --no-verify`, failed mid-merge anyway (owner, 2026-10-26). Someone who means to
-# bypass a hook knows --no-verify (hooks/README.md, "What these hooks are").
+# The refusal prints its way through, FLIGHT_RULES_GO_AHEAD=1 in front of the command
+# that finishes what was refused — the person's to run, and said, and recorded in the
+# trailer, when it is used (#151). The agent guard refuses an assistant command that sets
+# it. The skip this used to print, `git merge --no-verify`, failed mid-merge (owner,
+# 2026-10-26), and is not printed.
 
 set -euo pipefail
 
@@ -54,7 +54,11 @@ set -euo pipefail
 # derived rather than named. An explicit NOTE_GATED_BRANCHES still wins.
 DEFAULT_PROTECTED='^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)'
 DEFAULT_PR_ONLY='^main$'
-CONF_PATH='.ai/flight-rules.conf'   # repo-relative
+CONF_PATH='.flight-rules/conf'   # repo-relative
+# Where the conf lived before 0.29.0, read while a project has not moved it (#153).
+if ! git cat-file -e "HEAD:$CONF_PATH" 2>/dev/null && git cat-file -e 'HEAD:.ai/flight-rules.conf' 2>/dev/null; then
+  CONF_PATH='.ai/flight-rules.conf'
+fi
 
 read_conf_at_head() {
   local key="$1" path="$2" content
@@ -106,6 +110,20 @@ box_row() {
     [ "$pad" -lt 0 ] && pad=0
     printf '║ %s%*s ║\n' "$s" "$pad" ''
 }
+# go_ahead <what is passed>: the way through that every stop prints (MISSION.md,
+# principle 5) — FLIGHT_RULES_GO_AHEAD=1 in front of the command. Going ahead is the
+# person's decision, so it is said every time it is used (#151).
+go_ahead() {
+    [ "${FLIGHT_RULES_GO_AHEAD:-}" = 1 ] || return 1
+    echo "⚠️  flight-rules: going ahead past a stop, as FLIGHT_RULES_GO_AHEAD=1 says — $1. That is the person's decision, never an assistant's own." >&2
+}
+# go_ahead_rows <command>: the rows a box prints for it.
+go_ahead_rows() {
+    box_row "Going ahead anyway is the person's decision, never an"
+    box_row "assistant's own, and it is said when it is used:"
+    box_row "  FLIGHT_RULES_GO_AHEAD=1 $1"
+    box_row ""
+}
 
 # A refusal a broken pattern decided: the pattern named, where it is set, and the
 # command that gets past the gate it broke from where this refusal leaves you — the one
@@ -123,7 +141,7 @@ broken_box() {
     box_row "  $2"
     box_row "so every branch is taken as matching it until it is fixed."
     box_row ""
-    box_row "The project owner fixes it in .ai/flight-rules.conf, on a"
+    box_row "The project owner fixes it in $CONF_PATH, on a"
     box_row "branch, or in FLIGHT_RULES_$1. Until that fix"
     box_row "has landed, and if $4 is not a branch it means,"
     box_row "give the pattern meant in front of this command:"
@@ -143,12 +161,15 @@ broken_box() {
 # unstamped merge into dev through (#103 review). An exemption matches `exact`: read
 # case-insensitively, `^main$` took a branch anyone can make — `MAIN`, or `Main` pushed
 # to origin — for main, and passed it as a reviewed back-merge (#103 review). A pattern
-# in the wrong case then gates what it meant to exempt, and the refusal says so.
+# in the wrong case then gates what it meant to exempt: the note gate's box refuses it.
+# 2>/dev/null: bash 5.3 prints its own warning for a pattern that does not compile,
+# ahead of the hook's own words for it (Ubuntu 26.04 CI, 0.29.0); the ref gate's greps
+# are silenced the same way.
 re_rc() {
     local r=0
     [ "$2" = "off" ] && return 1
     [ "${3:-}" = exact ] || shopt -s nocasematch
-    [[ "$1" =~ $2 ]] || r=$?
+    [[ "$1" =~ $2 ]] 2>/dev/null || r=$?
     shopt -u nocasematch
     return "$r"
 }
@@ -159,6 +180,10 @@ re_rc() {
 # following `git commit` would land the whole feature on a PR-only branch as one
 # ordinary commit. That commit is the one to refuse.
 _rc=0; re_rc "$CURRENT_BRANCH" "$PR_ONLY_RE" || _rc=$?
+if [ "$_rc" -ne 1 ] && [ -f "$GIT_DIR/SQUASH_MSG" ] \
+   && go_ahead "a squash merge committed on $CURRENT_BRANCH, a PR-only branch"; then
+    exit 0
+fi
 if [ "$_rc" -eq 2 ] && [ -f "$GIT_DIR/SQUASH_MSG" ]; then
     broken_box PR_ONLY_BRANCHES "$PR_ONLY_RE" "SQUASH MERGE" "$CURRENT_BRANCH" "git commit <same arguments>"
     echo "Undo:   git reset --merge   (drops the squashed changes)"
@@ -176,6 +201,7 @@ if [ "$_rc" -eq 0 ] && [ -f "$GIT_DIR/SQUASH_MSG" ]; then
     box_row "Undo:   git reset --merge   (drops the squashed changes)"
     box_row "Then open a PR from the feature branch instead."
     box_row ""
+    go_ahead_rows "git commit <same arguments>"
     box_bot
     echo ""
     exit 1
@@ -215,7 +241,7 @@ MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 # failed to work it out. Both exemptions below,
 # and a passing note, vouch for the incoming commit, not for a conflict resolved here or
 # anything else staged: either landed, untested, as "no note needed" or as "verified"
-# (fix reviews of 0.28.0's release review — CLAUDE.md: a conflict is never resolved in
+# (fix reviews of 0.28.0's release review — AGENTS.md: a conflict is never resolved in
 # the merge into a protected branch). A merge driver merge-tree honours passes, and so
 # does -X where it resolved nothing; a conflict -X resolved, or a replayed rerere
 # resolution, reads as not clean. `git write-tree` reads the index git hands this hook,
@@ -226,14 +252,14 @@ MERGE_SHA=$(cat "$MERGE_HEAD_FILE")
 # histories). Histories with no common commit are merged as git merge was told to
 # merge them, or it would not have got this far. MT_ERR keeps git's own first line.
 MT_ERR=""
-# git_error <args>: the first line git prints running <args> with every GIT_TRACE*
-# variable unset, so it is git's error and not a trace line before it. Matching the
-# trace formats missed GIT_TRACE_BARE and GIT_TRACE2_BRIEF (fix reviews of 44bc927 and
-# da203ed). Always a line: one that printed nothing says so.
+# git_error <args>: the first line git prints to stderr running <args> again. Always a
+# line: one that printed nothing says so. Under a GIT_TRACE* variable that line can be a
+# trace line: the refusal stands either way, and stripping the trace was cut as costing
+# more than it caught — a debug variable on a git that errors here (hook sweep,
+# 2026-11-01; it had been dc38aef, da203ed).
 git_error() {
-    local u=() v e
-    for v in $(env | sed -n 's/^\(GIT_TRACE[A-Za-z0-9_]*\)=.*/\1/p'); do u+=(-u "$v"); done
-    e=$(env ${u[@]+"${u[@]}"} git "$@" 2>&1 >/dev/null | head -1) || true
+    local e
+    e=$(git "$@" 2>&1 >/dev/null | head -1) || true
     printf '%s' "${e:-git $1 failed and printed nothing}"
 }
 git_has_write_tree() {
@@ -275,18 +301,12 @@ NOT_CLEAN=""
 # branch can be pointed anywhere (`git branch -f main feature/x`), when origin has
 # the branch the commit must actually be on it. PR_ONLY_BRANCHES is read from HEAD
 # like everything else here, so the incoming branch cannot declare itself PR-only.
-# The origin side is looked up ignoring case: a local MAIN, with origin holding main,
-# found no origin/MAIN and skipped that check, so a pattern given as ^MAIN$ passed an
-# unstamped commit as a reviewed back-merge (0.27.0 release review).
-# CASE_ONLY names a ref that matched only ignoring case, for the refusal to say.
-# OFF_REFS lists, space-separated (a refname has no spaces or glob characters), every
-# origin ref that matches a PR-only branch at this commit, ignoring case, and lacks it; OFF_SHORT names those branches, NO_EXACT the ones origin
-# has under no ref spelled as they are. The refusal states those facts and judges
-# nothing: three rounds of text that guessed which ref was real, stray or in the wrong
-# case each misled in a new shape, once advising deletion of origin/main (fix reviews).
-# MULTI is set when origin has more than one ref matching such a branch ignoring case,
-# the one shape where "which is the PR-only branch" is a question at all.
-CASE_ONLY=""; OFF_REFS=""; OFF_SHORT=""; NO_EXACT=""; MULTI=""
+# Origin refs a case apart (MAIN beside main) are not looked for: each state that needed
+# it was made on purpose — a hand-typed ^MAIN$ with a local MAIN, a MAIN pushed beside
+# main — and MISSION.md question 1 makes those no warrant (hook sweep, 2026-11-01; it had
+# been 5ebeb00, 601b2f9, c2b2c76).
+# OFF_REFS lists the origin refs of a PR-only branch at this commit that lack it.
+OFF_REFS=""
 while read -r ref sha; do
     case "$ref" in
         refs/heads/*)          short="${ref#refs/heads/}" ;;
@@ -297,43 +317,12 @@ while read -r ref sha; do
     # An exemption: only a real match, in the pattern's case, counts. Read as matching
     # every branch, a broken PR_ONLY_BRANCHES would take every merge for a back-merge
     # needing no note (#103); see re_rc for the case.
-    case_only=""
-    if ! re_rc "$short" "$PR_ONLY_RE" exact; then
-        re_rc "$short" "$PR_ONLY_RE" || continue
-        case_only=1
-    fi
-    # Every case variant origin has must hold the commit, not any one of them: anyone can
-    # push a MAIN beside main (security review of this fix).
-    exact=""; lacking=""; nmatch=0
-    while read -r oref osha; do
-        o=${oref#refs/remotes/origin/}
-        shopt -s nocasematch; m=""
-        [[ "$o" == "$short" ]] && m=1
-        shopt -u nocasematch
-        [ -n "$m" ] || continue
-        nmatch=$((nmatch+1))
-        [ "$o" = "$short" ] && exact=1
-        git merge-base --is-ancestor "$MERGE_SHA" "$osha" 2>/dev/null && continue
-        lacking="$lacking origin/$o"
-    done < <(git for-each-ref --format='%(refname) %(objectname)' refs/remotes/origin)
-    if [ -n "$lacking" ]; then
-        # A case-only ref is not the PR-only branch, so its origin refs are not this
-        # refusal's to list: the generic note-gate box answers it (#103 review).
-        if [ -z "$case_only" ]; then
-            for _r in $lacking; do
-                case " $OFF_REFS " in *" $_r "*) ;; *) OFF_REFS="${OFF_REFS:+$OFF_REFS }$_r" ;; esac
-            done
-            case " $OFF_SHORT " in *" $short "*) ;; *) OFF_SHORT="${OFF_SHORT:+$OFF_SHORT }$short" ;; esac
-            [ "$nmatch" -gt 1 ] && MULTI=1
-            [ -n "$exact" ] || case " $NO_EXACT " in *" $short "*) ;; *) NO_EXACT="${NO_EXACT:+$NO_EXACT }$short" ;; esac
-        fi
+    re_rc "$short" "$PR_ONLY_RE" exact || continue
+    if git rev-parse -q --verify "refs/remotes/origin/$short" >/dev/null 2>&1 \
+        && ! git merge-base --is-ancestor "$MERGE_SHA" "refs/remotes/origin/$short" 2>/dev/null; then
+        case " $OFF_REFS " in *" origin/$short "*) ;; *) OFF_REFS="${OFF_REFS:+$OFF_REFS }origin/$short" ;; esac
         continue
     fi
-    # Named only once the rest has passed: a forced local main is refused by origin's
-    # check, and blaming the case would mislead (#103 review). The refusal prints no
-    # command for it: the one it printed, pasted with ^MAIN$, made a local MAIN a
-    # reviewed back-merge (0.27.0 release review).
-    [ -n "$case_only" ] && { CASE_ONLY="$short"; continue; }
     if [ "$CLEAN" -eq 0 ]; then
         echo "✅ Back-merge of PR-only branch $short into $CURRENT_BRANCH — already reviewed, no note needed"
         exit 0
@@ -370,8 +359,40 @@ NOTE=$(git notes --ref=pre-merge-check show "$MERGE_SHA" 2>/dev/null || true)
 # failed to check — the error is shown and the person picks the way on (owner, 0.28.0
 # fix review). Where git is too old to tell, the merge goes on as before 0.28.0, said
 # aloud — refusing it would shut the note gate on every git older than 2.38.
-NOTE_PASSED=""
-echo "$NOTE" | grep -q "^passed:" && NOTE_PASSED=1
+#
+# A bare `passed:` proves nothing: an assistant wrote one by hand 12 times, mostly into
+# merge commands handed over to paste (#107). So a note counts only with its evidence —
+# the tree the check ran on, which must be this commit's, and a `ran:` line for what
+# ran. Anyone can still type both; what this stops is the bare shortcut, and a note
+# carried onto a commit it never checked.
+NOTE_PASSED=""; NOTE_BAD=""
+# grep -c, not -q, on the note: -q stops at the first match, printf then fails on the
+# closed pipe, and under pipefail a note bigger than the pipe's buffer read as having
+# no passed: line (0.29.0 release review, second pass, V14; as pre-commit's hit() reads).
+if [ -n "$NOTE" ] && ! printf '%s\n' "$NOTE" | grep -c "^passed:" >/dev/null; then
+    # A note with no line beginning passed: — indented, mistyped, failed: — got the
+    # generic box, which never said a note was read (#124, F1).
+    NOTE_BAD="it has no line beginning passed:"
+elif printf '%s\n' "$NOTE" | grep -c "^passed:" >/dev/null; then
+    _nt=$(printf '%s\n' "$NOTE" | sed -n 's/^passed:.* tree:\([0-9a-f]\{40,64\}\).*$/\1/p' | head -1)
+    if [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -Ec '^passed:(.*[^ ])?tree:[0-9a-f]{40,64}([^0-9a-f]|$)' >/dev/null; then
+        # A full hash with no space before tree: (passed:tree:…, subtree:…) is not a
+        # short one: name the space (#124, O-G1).
+        NOTE_BAD="its tree: has no space before it"
+    elif [ -z "$_nt" ] && printf '%s\n' "$NOTE" | grep -c '^passed:.*tree:' >/dev/null; then
+        # Typed by hand, a tree comes short, in capitals or after a space: name that,
+        # not "no tree" (fix review of #107, N-G1).
+        NOTE_BAD="its tree: is not a full, lowercase tree hash"
+    elif [ -z "$_nt" ]; then
+        NOTE_BAD="its passed: line has no tree:<hash>"
+    elif [ "$_nt" != "$(git rev-parse -q --verify "$MERGE_SHA^{tree}" 2>/dev/null)" ]; then
+        NOTE_BAD="its tree: is ${_nt:0:12}, not this commit's"
+    elif ! printf '%s\n' "$NOTE" | grep -c '^ran:[[:space:]]*[^[:space:]]' >/dev/null; then
+        NOTE_BAD="it has no ran: line saying what ran"
+    else
+        NOTE_PASSED=1
+    fi
+fi
 if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then
     if [ "$CLEAN" -eq 2 ]; then
         echo "⚠️  git merge-tree --write-tree failed here (it needs git 2.38 or later), so"
@@ -397,6 +418,8 @@ if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then
         TRAILER="Merge-authorisation: not required (MERGE_NEEDS_INSTRUCTION=off)"
     elif [ -n "$AUTHORISED" ]; then
         TRAILER="Merge-authorisation: explicit (FLIGHT_RULES_MERGE_AUTHORISED)"
+    elif go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, with nobody recorded as asking for it"; then
+        TRAILER="Merge-authorisation: went ahead (FLIGHT_RULES_GO_AHEAD)"
     else
         echo ""
         box_top
@@ -425,7 +448,7 @@ if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then
         box_row ""
         box_row "If this project does not want the check, its owner"
         box_row "sets MERGE_NEEDS_INSTRUCTION=off in"
-        box_row "  .ai/flight-rules.conf"
+        box_row "  $CONF_PATH"
         box_row "That is the owner's call — do not set it yourself."
         box_row ""
         box_row "Undo this half-finished merge:   git merge --abort"
@@ -438,8 +461,10 @@ if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -ne 1 ] && [ "$CLEAN" -ne 3 ]; then
     fi
 
     # Record it in the commit message: a note can be rewritten and is easy to miss,
-    # the message travels with the merge forever. Appended only if absent, so an
-    # amend or a rerun does not stack duplicates. interpret-trailers, not a printf
+    # the message travels with the merge forever. Appended only if absent: a message
+    # that already carries one (`git commit -F` of a message that has it) gets no second
+    # under a trailer.ifExists that adds; git's default already skips an identical one.
+    # An amend never gets here: it has no MERGE_HEAD. interpret-trailers, not a printf
     # of '\n%s\n': the file git hands this hook for a non-interactive merge ends
     # without a trailing newline, so that leading newline only closed the subject
     # and the line landed glued to it — greppable, but no trailer parser saw it,
@@ -465,21 +490,41 @@ _up=$(git rev-parse -q --verify '@{upstream}' 2>/dev/null) \
     && git merge-base --is-ancestor HEAD "$_up" 2>/dev/null \
     && CATCHUP=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)
 
+# The way through: the merge lands without a note the gate takes, and its commit says
+# so, where it can be found later. One command, where the route for a person working
+# alone was a note written by hand, tree hash and all (#149). What it went past is the
+# cause the box below names, as its title does: "no note" for a stamped branch whose
+# conflict was resolved in the merge, or a catch-up, recorded a reason that was not so
+# (0.29.0 release review, second pass, V11). One chain sets both, so they cannot part: kept
+# in step by hand, a refused note was recorded as "no note", and a merge git could not
+# check as "not git's clean merge" (third pass, W2). A refused note is named by a fixed
+# phrase, never $NOTE_BAD, which can quote the note.
+_past=""; _title="PRE-MERGE CHECK REQUIRED"
+if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -eq 3 ]; then _past="git could not check it against its pre-merge-check note"; _title="THIS MERGE COULD NOT BE CHECKED"
+elif [ -n "$NOTE_PASSED" ]; then _past="not the clean merge its pre-merge-check note checked"; _title="THE NOTE DID NOT CHECK THIS MERGE"
+elif [ -n "$CATCHUP" ]; then _past="a catch-up of $CATCHUP, made as a merge commit"; _title="A CATCH-UP PULL MADE A MERGE COMMIT"
+elif [ -n "$NOTE_BAD" ] && [ -z "$NOT_CLEAN" ]; then _past="a pre-merge-check note the gate does not take"; _title="THE NOTE DOES NOT SHOW THE CHECK"
+elif [ -n "$NOT_CLEAN" ] && [ "$CLEAN" -eq 1 ]; then _past="a $NOT_CLEAN that is not git's clean merge"
+elif [ -n "$NOT_CLEAN" ]; then _past="a $NOT_CLEAN, which git could not check is its clean merge"
+fi
+if go_ahead "the merge of $MERGE_BRANCH into $CURRENT_BRANCH, ${_past:+past the note gate: }${_past:-with no pre-merge-check note the gate takes}"; then
+    # Replacing one the message already carries: kept, a line written by hand ahead of
+    # the merge ("explicit") stood where this one belongs (commit security review, 2026-11-11).
+    if [ -n "${1:-}" ] && [ -f "$1" ]; then
+        git interpret-trailers --in-place --if-exists replace \
+            --trailer "Merge-authorisation: went ahead ${_past:+past the note gate: }${_past:-with no pre-merge-check note} (FLIGHT_RULES_GO_AHEAD)" "$1"
+    fi
+    exit 0
+fi
+
 # Both boxes say what `--abort` costs: it runs `reset --merge`, and on a leftover
 # MERGE_HEAD nobody is merging it deleted the staged work beside it (final release
 # /dg, 2026-10-18). For a real refused merge it is still the undo.
 echo ""
 box_top
 # A catch-up needs no check, so its box does not ask for one (0.28.0 release review).
-if [ -n "$NOTE_PASSED" ] && [ "$CLEAN" -eq 3 ]; then
-    box_row "❌  THIS MERGE COULD NOT BE CHECKED" 1
-elif [ -n "$NOTE_PASSED" ]; then
-    box_row "❌  THE NOTE DID NOT CHECK THIS MERGE" 1
-elif [ -n "$CATCHUP" ]; then
-    box_row "❌  A CATCH-UP PULL MADE A MERGE COMMIT" 1
-else
-    box_row "❌  PRE-MERGE CHECK REQUIRED" 1
-fi
+# The title is the cause set above, with the trailer's.
+box_row "❌  $_title" 1
 box_sep
 box_row ""
 box_row "Merging: $MERGE_BRANCH"
@@ -490,7 +535,7 @@ if [ -n "$BROKEN" ]; then
     # (#103 review): a sync merge into a feature branch had no route here at all.
     box_row "Gated because $BROKEN ($BROKEN_RE)"
     box_row "does not compile: every branch is taken as gated until"
-    box_row "the project owner fixes it (.ai/flight-rules.conf, or"
+    box_row "the project owner fixes it ($CONF_PATH, or"
     box_row "FLIGHT_RULES_$BROKEN in the environment). If"
     box_row "$CURRENT_BRANCH is not a branch it means, give the pattern"
     box_row "meant in front of the command:"
@@ -498,39 +543,17 @@ if [ -n "$BROKEN" ]; then
     box_row "    git commit --no-edit"
     box_row ""
 fi
-if [ -n "$CASE_ONLY" ]; then
-    box_row "Not taken for a back-merge: $CASE_ONLY matches"
-    box_row "PR_ONLY_BRANCHES ($PR_ONLY_RE) only ignoring case,"
-    box_row "and that exemption takes the pattern's exact case. If"
-    box_row "$CASE_ONLY is the PR-only branch, the project owner"
-    box_row "writes the pattern in its case in .ai/flight-rules.conf."
-    box_row ""
-fi
-if [ -n "$OFF_SHORT" ]; then
-    # Facts only, and no ref name inside a command: anyone who can push picks one.
-    box_row "Not taken for a back-merge: $OFF_SHORT matches"
-    box_row "PR_ONLY_BRANCHES, but this commit is not on:"
-    _n=0
-    for _r in $OFF_REFS; do
-        _n=$((_n+1)); [ "$_n" -le 5 ] && box_row "  $_r"
-    done
-    [ "$_n" -gt 5 ] && box_row "  … and $((_n-5)) more"
-    box_row "Every origin ref that matches it ignoring case must"
-    box_row "hold the commit."
+if [ -n "$OFF_REFS" ]; then
+    box_row "Not taken for a back-merge: this commit is not on"
+    for _r in $OFF_REFS; do box_row "  $_r"; done
     # What the hook knows is what was last fetched: it makes no network call.
-    for _b in $NO_EXACT; do
-        box_row "As of the last fetch, origin has no ref spelled $_b."
-    done
-    if [ -n "$MULTI" ] || [ -n "$NO_EXACT" ]; then
-        box_row "Which is the PR-only branch is the project owner's call."
-    fi
     box_row "If origin has moved on since the last fetch:"
     box_row "  git fetch --prune origin"
     box_row "  git commit --no-edit"
     box_row ""
 fi
 # A conflict is resolved on a branch, tested and stamped there, then merged back: the
-# note then vouches for a tip that holds the resolution (CLAUDE.md). Where git failed to
+# note then vouches for a tip that holds the resolution (AGENTS.md). Where git failed to
 # check, both ways on are printed and neither is chosen: the hook does not guess past
 # an error.
 if [ "$CLEAN" -eq 3 ] && { [ -n "$NOTE_PASSED" ] || [ -n "$NOT_CLEAN" ]; }; then
@@ -587,6 +610,18 @@ elif [ -n "$CATCHUP" ]; then
     box_row "$CATCHUP; merge.ff=false made it a merge commit."
     box_row "Undo it (below), and catch up without one:"
     box_row "  git pull --ff-only"
+elif [ -n "$NOTE_BAD" ]; then
+    if printf '%s\n' "$NOTE" | grep -c "^passed:" >/dev/null; then
+        box_row "The pre-merge-check note says passed, but"
+    else
+        box_row "There is a pre-merge-check note, but"
+    fi
+    box_row "$NOTE_BAD."
+    box_row "A note counts when its passed: line names tree:<hash>,"
+    box_row "the full hash of the tree the check ran on"
+    box_row "(git rev-parse '<branch>^{tree}'), and a ran: line says"
+    box_row "what ran. Run /pre-merge-check again on the branch's"
+    box_row "tip: it writes both."
 else
     box_row "Run /pre-merge-check in the feature worktree first. When"
     box_row "every check passes it stamps a note on the commit, and"
@@ -605,13 +640,15 @@ if [ -n "$NOTE_PASSED" ] || [ -n "$NOT_CLEAN" ] || [ -z "$CATCHUP" ]; then
     # flight-rules' README, by name: install.sh copies the hooks into a project, not the
     # README (0.28.0 release review).
     box_row "Working without an assistant: run the project's checks"
-    box_row "yourself — its tests at the least — then record what ran"
-    box_row "as a note on the tip of the branch being merged"
+    box_row "yourself — its tests at the least — then record what ran,"
+    box_row "and the tree it ran on, as a note on the tip of the"
+    box_row "branch being merged"
     box_row "(flight-rules' hooks/README.md → commit-msg has the"
     box_row "command). An assistant runs /pre-merge-check instead:"
     box_row "only running it may write the note."
 fi
 box_row ""
+go_ahead_rows "git commit --no-edit"
 box_row "Undo this half-finished merge:   git merge --abort"
 box_row "  — it also drops what you staged. A merge you never"
 box_row "  started is a leftover: check git status first."

@@ -12,12 +12,13 @@ Read `.ai/skills/feature-start/EXTENSIONS.md` first if the project has one: extr
 replacement steps, project rules, and `{PLACEHOLDER}` values. It overrides the
 defaults below. Branch and path parameters (`{PROTECTED_BRANCHES}`,
 `{PR_ONLY_BRANCHES}`, `{NOTE_GATED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`)
-come **only** from `.ai/flight-rules.conf`, the file the hooks read — an extension
-restating one is invisible to enforcement, so the conf wins.
+come **only** from the conf the hooks read — `.flight-rules/conf`, or, where that is
+absent, `.ai/flight-rules.conf` (a project not yet moved) — an extension restating one
+is invisible to enforcement, so the conf wins.
 
 Create a new branch as a git worktree per `rules/git-worktree-workflow.md`.
 Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_DIR}`
-(defaults: the hooks' anchored list, `^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)` / `main` / `.ai/worktrees/`).
+(defaults: the hooks' anchored list, `^(main|master|dev|develop|development|staging|stage|qa|uat|prod|production)$|^release(/|$)` / `main` / `.flight-rules/worktrees/`).
 
 ## Rules (non-negotiable)
 - NEVER `git checkout -b` / `git switch -c` — always `git worktree add`
@@ -30,34 +31,67 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    that's fine (worktree creation never commits to it). If it has uncommitted edits,
    say in one line that they stay there and do not come into the new worktree, and go
    on: edits there are usually work begun on the wrong branch.
-2. *Retired (#119); numbered so later steps keep theirs.*
-3. **Validate the branch name** — ask if not provided; verify the prefix.
+2. *Retired; numbered so later steps keep theirs.*
+3. **Validate the branch name** — ask if not provided; verify the prefix. A `hotfix/`
+   name goes straight to `main`, skipping `{INTEGRATION_BRANCH}` and its review
+   (`git-worktree-workflow.md` → *Merge flow*), so ask the person to approve it as
+   urgent. Without that approval — or with no one to ask — STOP: create nothing, and say
+   the fix can start again as an ordinary `fix/` branch. With it: in step 4, `git fetch
+   origin` only, and skip to step 5; step 6 cuts it from `origin/main`; then file an
+   issue in the project's tracker (`gh issue create` on GitHub), which their approval
+   covers, saying plainly that this hotfix bypassed `{INTEGRATION_BRANCH}`, was cut from
+   `origin/main`, and is merged straight into `main` — its PR links it (`pr-create`).
 4. **Sync the base from origin — non-negotiable.**
-   - `git fetch origin` first, **always**. New branches derive from
-     **`origin/{INTEGRATION_BRANCH}`** (the true remote state) — never a local copy
-     that may be behind. Branching off a stale local base is the exact way work gets
-     built on the wrong foundation.
+   - `git fetch origin` first, **always**, then pull origin into the local
+     `{INTEGRATION_BRANCH}`, in the checkout that has it. The base is the local one,
+     authoritative for every new branch, a revert aside (`git-worktree-workflow.md` →
+     *Which branch new work starts from*): it holds origin's work and any merges not yet
+     pushed, which a branch from origin's would miss; a local copy left behind is the
+     exact way work gets built on the wrong foundation.
+     ```bash
+     git pull --ff --no-rebase origin {INTEGRATION_BRANCH}
+     ```
+     Before it: a merge already in progress there, STOP and say so — it is the
+     person's to finish or abort, then run this again. Tracking nothing: `git branch -u origin/{INTEGRATION_BRANCH}
+     {INTEGRATION_BRANCH}`. Behind, the pull fast-forwards; ahead, nothing moves;
+     diverged, it merges its own upstream, which `commit-msg` lets through when clean.
+     It fails: STOP and show git's output, and leave whatever it left to the person —
+     abort nothing, never stash or touch their edits. No checkout has it: missing, `git
+     branch --track {INTEGRATION_BRANCH} origin/{INTEGRATION_BRANCH}`. The worktree that
+     held it gone (`git worktree list` marks it `prunable`): STOP and ask — git cannot
+     tell one moved, `git worktree repair <new path>`, from one deleted, `git worktree
+     prune`, which clears every worktree it cannot find; its folder still there and only
+     its `.git` file gone or broken, `git worktree repair <path>` restores it, staged
+     work included, though git prints an error as it does — then run this step again.
+     Otherwise origin's commits it lacks come in by fast-forward, if there are any:
+     ```bash
+     git merge-base --is-ancestor origin/{INTEGRATION_BRANCH} {INTEGRATION_BRANCH} \
+       || git fetch origin {INTEGRATION_BRANCH}:{INTEGRATION_BRANCH}
+     ```
+     Equal or ahead, nothing moves; behind, it fast-forwards. Refused — diverged
+     (merging them needs a checkout of it), never pushed, or unreachable; git's message
+     says which — STOP and ask.
    - **Reconcile `main` into the integration branch** — only when
      `{INTEGRATION_BRANCH}` differs from `main`. A hotfix or change applied straight
      to `main` is not on the integration branch, so a branch built off it silently
      misses it. Check:
      ```bash
-     git log --oneline origin/{INTEGRATION_BRANCH}..origin/main
+     git log --oneline {INTEGRATION_BRANCH}..origin/main
      ```
      If non-empty, first check whether `main` brings anything the integration branch
      lacks. A PR merged into `main` leaves a merge commit there and nowhere else, so in
      a project that promotes by PR this range is never empty, and the reverse range
      below read every such repo as diverged (0.27.0 release review):
      ```bash
-     t=$(git merge-tree --write-tree origin/{INTEGRATION_BRANCH} origin/main) \
-       && [ "$t" = "$(git rev-parse 'origin/{INTEGRATION_BRANCH}^{tree}')" ] \
+     t=$(git merge-tree --write-tree {INTEGRATION_BRANCH} origin/main) \
+       && [ "$t" = "$(git rev-parse '{INTEGRATION_BRANCH}^{tree}')" ] \
        && echo "NOTHING TO RECONCILE"
      ```
      `NOTHING TO RECONCILE` → merging `main` in would change no file: say so in one
      line and go on to step 5. Anything else — a conflict, or git older than 2.38, which
      has no `--write-tree` — check the reverse range too:
      ```bash
-     git log --oneline origin/main..origin/{INTEGRATION_BRANCH}
+     git log --oneline origin/main..{INTEGRATION_BRANCH}
      ```
      - Reverse range **empty** → the integration branch is strictly behind, and a
        fast-forward brings it up. That moves a protected branch on the remote, so it
@@ -78,11 +112,11 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
      `{INTEGRATION_BRANCH}`, skip fetch and reconcile, say so.
 5. **Count the open branches — past the limit, ask.** The limit is
    `FLIGHT_RULES_OPEN_BRANCH_LIMIT` if set, else `OPEN_BRANCH_LIMIT` in
-   `.ai/flight-rules.conf` (unset or not a positive whole number: 5; `off`: skip this
+   the conf (unset or not a positive whole number: 5; `off`: skip this
    step) — as `session-start` reads it. Open means a branch checked out in a worktree
    with commits in neither the local `{INTEGRATION_BRANCH}` nor
-   `origin/{INTEGRATION_BRANCH}` — step 4 fetches origin and never moves the local one,
-   so against it alone every branch merged by PR stayed open (0.27.0 release review) —
+   `origin/{INTEGRATION_BRANCH}` — against the local one alone, every branch merged by PR
+   stayed open until it was pulled (0.27.0 release review) —
    leaving out `{INTEGRATION_BRANCH}` itself and any
    branch the protected pattern matches: `FLIGHT_RULES_PROTECTED_BRANCHES` if set, else
    `{PROTECTED_BRANCHES}`, case-insensitive, as `session-start` reads it — unset, the
@@ -113,17 +147,24 @@ Project parameters: `{PROTECTED_BRANCHES}`, `{INTEGRATION_BRANCH}`, `{WORKTREE_D
    and ask, as at the limit (an error sent to `/dev/null` once read as zero open — fix
    review, 2026-10-24). At or over the limit, show the person how many are open and
    which, which of them have a passing note (`git notes --ref=pre-merge-check show
-   <branch>` begins `passed:`) and only wait to merge, and say where the limit is set:
-   *"OPEN_BRANCH_LIMIT is <n> in .ai/flight-rules.conf — raise it, or set it to off,
+   <branch>`: `passed:` with the tip's `tree:`, and a `ran:` line) and only wait to merge, and say where the limit is set:
+   *"OPEN_BRANCH_LIMIT is <n> in <the conf> — raise it, or set it to off,
    there"* (or that `FLIGHT_RULES_OPEN_BRANCH_LIMIT` set it). Create the branch only once
    they say it is okay. Under the limit, say nothing. With no one to ask, create
    nothing and report the count as the blocker — a question that cannot be put is not
    a yes. A pile of open branches is
    how this repo's own work came to depend on itself: more than ten sat unmerged
-   (2026-10-20 to 10-23), and the owner saw it only once they did (#108).
-6. **Create the worktree** from `origin/{INTEGRATION_BRANCH}` (repo root, absolute paths):
+   (2026-10-20 to 10-23), and the owner saw it only once they did.
+6. **Create the worktree** from the local `{INTEGRATION_BRANCH}` (step 4; repo root, absolute paths):
    ```bash
-   git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> origin/{INTEGRATION_BRANCH}
+   git worktree add {WORKTREE_DIR}/<slug> -b <full-branch-name> {INTEGRATION_BRANCH}
+   ```
+   If `git check-ignore -q {WORKTREE_DIR}/<slug>` exits 1, say that `git status` will
+   show it, and name the line to add to `.gitignore` on a branch: `{WORKTREE_DIR}/`.
+   An approved hotfix (step 3) is cut from `origin/main` instead, tracking nothing, so
+   that a bare `git push` or `git pull` in it never aims at `main` itself:
+   ```bash
+   git worktree add {WORKTREE_DIR}/<slug> -b hotfix/<slug> --no-track origin/main
    ```
 7. **Symlink untracked env files** from the main checkout (symlinks, not copies —
    copies go stale):

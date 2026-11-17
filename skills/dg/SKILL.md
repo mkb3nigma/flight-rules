@@ -93,8 +93,9 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    <why>` in the header, never "clean": a missing tool or a refused request that reads as
    no CVEs is the silent pass §2 forbids.
 
-2. **Independent pre-review (optional, best-effort)** — one strong reviewer looks at the
-   subject cold: no personas, no access to their findings. It enumerates correctness
+2. **Independent pre-review (optional, best-effort)** — one strong reviewer, on the top
+   tier where the project names tiers (step 3), looks at the subject cold: no personas,
+   no access to their findings. It enumerates correctness
    bugs, security issues, design weaknesses, and unstated assumptions with severity
    (critical/important/minor) and confidence. When the subject is code, the brief carries
    § Review Domains verbatim: a reviewer starts with nothing but its brief, and a class
@@ -129,8 +130,19 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
      no warning);
    - `✅ <reviewer> (<model>, not cross-family)` — a wired CLI ran, but on a
      same-family or unreported model (`pre-review-cli.md`, its last point);
+   - `✅ <reviewer> (<model>, below the top tier)` — where tiers are named and the
+     model that ran, CLI or subagent, is below the top tier, the fallback's
+     `<same-family reviewer>` below included; `(<model>, not cross-family, below the
+     top tier)` where both apply;
    - `✅ <same-family reviewer> · ⚠️ <cross-family reviewer> unavailable — <why>`;
    - `⚠️ unavailable — <why>` — no pre-review counted.
+
+   Where more than one pre-reviewer counts, the line names each, joined by ` · `, and
+   every one's findings reach round 2. Every pre-review's IDs carry a prefix the
+   orchestrator gives in its brief, naming its reviewer (`C1`, `F1`), with one
+   pre-reviewer as with several, so round 2's answers by ID do not collide: each
+   prefix distinct from the others, and never `A` or `D`, which the actions and
+   decisions use.
 
    If captured, the personas get it from round 2 on, not in round 1: *"An independent
    senior reviewer flagged the following — agree, escalate, or dispute each point as
@@ -164,8 +176,35 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    the review's. Every persona brief says: *"Research only — read the subject and produce your
    review. Do NOT edit any files."* A persona subagent has the full toolset, and a
    reviewer that fixes what it found leaves an unreviewed change in the tree the
-   verdict describes. When the subject is code, each brief also carries § Review Domains
-   verbatim, for step 2's reason.
+   verdict describes. A brief to any reviewer with a shell — a persona, step 2's
+   same-family subagent — also says, and simulating both voices you keep it yourself:
+   *"A probe that runs git or writes anything works in a directory it made, never in
+   the repository under review: in the same script as its git commands, at its top
+   level, not inside `$(…)` or a function,
+   `d=$(mktemp -d) && cd "$d" && d=$(pwd -P) || exit`, and after each `git init` it
+   stops unless `git rev-parse --absolute-git-dir` prints `$d/.git`, or, for a
+   repository made in a folder under it, that folder's `.git`."* A reviewer's probe
+   whose `cd` went nowhere ran its git commands, hooks switched off, in the repository
+   under review, and switched its branch (2026-11-12). When the subject is code, each
+   brief also carries § Review Domains verbatim, for step 2's reason.
+
+   **Which tier runs which part**, where the project names its planning tier and the
+   tier below (`multi-ai-setup.md` principle 6). By default there, step 2's pre-review
+   runs on the top tier, as the close, cold read of the subject against its sources,
+   and the two personas run on the tier below. A wired CLI runs whatever its own config
+   names: that is the person's choice (`pre-review-cli.md`), the assistant does not
+   edit it, and the header reports the model that ran. The preference for a
+   cross-family pre-review is unchanged. Where the tool cannot start a subagent on a
+   named model, each part runs on the session's model. With no tiers named, nothing
+   here applies: each part runs as before. The person can
+   override any of it. Why: in the 0.29.0 release review (2026-11-13/14) three
+   top-tier reviewers ran every pass, the ones that only confirmed rewordings included,
+   until the top tier's credits ran out and the final pass stopped; each pass's
+   decisive finding came from one reviewer, and the top tier's strength showed in the
+   pre-review's close reading against sources. Both halves of the split are testimony:
+   which part keeps its findings on the tier below has not been measured. To measure
+   it, where tiers are named the header records `> Personas: <model>` (the session's
+   model where the tool could not choose one); with no tiers named, no line.
 
 4. **Debate loop** (default 5 rounds) — Round 1: Dinesh presents → Gilfoyle responds.
    **Round 2 waits** until every pre-reviewer started — the cross-family one, its
@@ -173,18 +212,17 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    failed by step 2's check, and the dependency scan has reported. A pre-reviewer
    left running in the background while the debate went on finished after the verdict,
    and its findings reached no round (2026-10-18). The wait has a limit,
-   `DG_WAIT_MINUTES` in `.ai/flight-rules.conf` (default 15; read like step 6's keys):
+   `DG_WAIT_MINUTES` in the conf (default 15; read like step 6's keys):
    a run with no result that long after it started is stopped and counts as failed —
    step 2's fallback, then `⚠️ unavailable — no result in <n>m` (for the scan, `⚠️ not
    run — no result in <n>m`). A timeout an extension gives its own pre-reviewer is an
    inner limit under this one, so the extension need not read the key: a shorter one
-   fails that run sooner, a longer one is cut off here (#95). Round 2's table then
+   fails that run sooner, a longer one is cut off here. Round 2's table then
    answers each pre-review finding by its ID and each scan finding by its
    `<package>@<version>` and CVE, and Gilfoyle's harshest finding → Dinesh defends or
    concedes. Further rounds alternate who leads. Converge early when concessions leave
-   nothing disputed, but
-   never before round 2 has answered the pre-review and the scan: a debate that
-   converges in round 1 is the debate that ends before they arrive.
+   nothing disputed, but never before round 2 has answered the pre-review and the scan:
+   a debate that converges in round 1 is the debate that ends before they arrive.
 
 5. **Verdict** — merged summary: findings both agreed on, findings that shifted
    severity, each side's solo findings, pre-review-only findings (so nothing is
@@ -196,7 +234,8 @@ defends; Gilfoyle tears it apart. You get both takes, then a merged verdict.
    different order. The 0.25.0 release review went straight from the debate to fixes:
    the verdict reached only the PR body, and the comic was never offered (2026-10-17).
 
-6. **Comic strip, first** — two settings in `.ai/flight-rules.conf`, read like every
+6. **Comic strip, first** — two settings in the conf (`.flight-rules/conf`, or
+   `.ai/flight-rules.conf` where that is absent), read like every
    other key there (unset, no conf, or any other value: the default — `flight-rules-doctor.sh`
    warns about the value):
    - `DG_COMIC` — `always` (default) or `never`. With `always` the reply carries the
@@ -253,6 +292,7 @@ place a long verdict turns back into paragraphs.
 ## Review: <subject>
 > Pre-review: <one of the forms in step 2>
 > Dependency scan: ✅ <tool> — <n> findings | ⚠️ not run — <why> | n/a (no dependency files, or not code)
+> Personas: <model>   (where tiers are named, step 3)
 
 ## Comic
 ```
@@ -273,9 +313,10 @@ place a long verdict turns back into paragraphs.
 ### Pre-review-only (neither persona raised independently)
 ### Dependency scan
 ### Recommended Actions
+A1. <the action>
 
 ## Decisions waiting (<n>)
-1. **<the decision>** — what it is, why it came up, the evidence, what each option
+D1. **<the decision>** — what it is, why it came up, the evidence, what each option
    costs, and the recommendation: decidable from this item alone.
 
 Add the comic to the PR? (y/N)
@@ -283,12 +324,13 @@ Add the comic to the PR? (y/N)
 
 The `## Comic` section is absent with `DG_COMIC=never`, and the last line appears only
 with `DG_COMIC_PR=ask` on a review that is for a PR. The decisions are the reply's last
-section — only that optional line follows them — where a reader in a terminal lands; a numbered list, not a table, because each one is
-sentences, and a table of sentences wrapped past reading at terminal width
-(2026-10-24). With none, the section says so: `## Decisions waiting (0)`. This is the
-one place the order departs from `engineering-principles.md` §7, which leads with what
-needs deciding: a verdict runs to screens, and its first screen is the one scrolled
-past. Each decision is still decidable from its item alone, as §7 asks.
+section — only that optional line follows them — where a reader in a terminal lands;
+a list numbered D1, D2…, as the actions are A1, A2…, so a bare number in an answer
+means one item (2026-11-12) — not a table, because each one is sentences, and a table
+of sentences wrapped past reading at terminal width (2026-10-24). With none, the section says so: `## Decisions waiting (0)`. Last, as
+`engineering-principles.md` §7 puts them: a verdict runs to screens, and its first
+screen is the one scrolled past. Each decision is decidable from its item alone, as §7
+asks.
 
 `## Verdict` ends at Recommended Actions, so wherever a PR body takes "the verdict", it
 takes neither the comic, nor the round tables' BANTER lines, nor the decisions (the PR
@@ -315,7 +357,8 @@ other, and a reviewer who cannot fill it has said something weaker than it sound
 Adapt to the subject. For code, look for each class below that the diff gives a reason
 to. A finding names its place (`file:line`) and, where a test should have caught it,
 the test that would fail. A class with nothing found is not reported: the table holds
-findings, not a checklist (the classes and their warrant: #96).
+findings, not a checklist. The classes' warrant: an adopter found body ids its ownership
+sweep missed, which this list's generic "security" had not named (2026-10-21).
 
 - **Security** — *object-level authorization*: a record id a caller supplies (path,
   body, nested arrays, tool or RPC arguments) with no ownership check, or an ownership
